@@ -1,0 +1,17 @@
+apiVersion: trustyai.opendatahub.io.trustyai.opendatahub.io/v1alpha1
+kind: TrustyAIService
+metadata:
+  name: example-trustyai-service
+spec:
+  namespace: default
+#  image: quay.io/trustyai/trustyai-service
+#  tag: latest
+  replicas: 1
+  storage:
+    format: PVC
+    folder: /inputs
+  data:
+    filename: data.csv
+    format: CSV
+  metrics:
+    schedule: 5s
