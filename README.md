@@ -13,15 +13,15 @@ The operator ensures the service is properly configured, is discoverable by Prom
 
 ## Installation using pre-built Operator image
 
-This operator is available as a [Docker image on Quay.io](https://quay.io/repository/ruimvieira/trustyai-service-operator?tab=history). 
+This operator is available as an [image on Quay.io](https://quay.io/repository/ruimvieira/trustyai-service-operator?tab=history). 
 To deploy it on your cluster:
 
 1. **Install the Custom Resource Definition (CRD):**
 
-   Apply the CRD to your cluster:
+   Apply the CRD to your cluster (replace the URL with the relevant one, if using another repository):
 
     ```bash
-    kubectl apply -f https://raw.githubusercontent.com/username/trustyai-operator/main/config/crd/bases/trustyai.opendatahub.io.trustyai.opendatahub.io_trustyaiservices.yaml
+    kubectl apply -f https://raw.githubusercontent.com/ruimvieira/trustyai-operator/main/config/crd/bases/trustyai.opendatahub.io.trustyai.opendatahub.io_trustyaiservices.yaml
     ```
 
 2. **Deploy the Operator:**
