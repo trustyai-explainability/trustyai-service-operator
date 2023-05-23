@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -101,10 +102,12 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Define a new Deployment object
-	deploy := r.deploymentForTrustyAIService(instance)
+	deploy, err := r.reconcileDeployment(instance)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Error creating ")
+	}
 
 	// Check if this Deployment already exists
-
 	found := &appsv1.Deployment{}
 	err = r.Get(context.TODO(), types.NamespacedName{Name: deploy.Name, Namespace: deploy.Namespace}, found)
 	if err != nil {
@@ -118,12 +121,12 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// Handle error
 	}
 
-	// Fetch the AppService instance
+	// Fetch the TrustyAIService instance
 	trustyAIServiceService := &trustyaiopendatahubiov1alpha1.TrustyAIService{}
 	err = r.Get(ctx, req.NamespacedName, trustyAIServiceService)
 
 	// Create service
-	service, err := r.createService(trustyAIServiceService)
+	service, err := r.reconcileService(trustyAIServiceService)
 	if err != nil {
 		// handle error
 		return ctrl.Result{}, err
@@ -144,17 +147,17 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Create route
-	err = r.createRoute(instance, ctx)
+	err = r.reconcileRoute(instance, ctx)
 	if err != nil {
-
+		return ctrl.Result{}, err
 	}
 
 	// Deployment already exists - don't requeue
 	return ctrl.Result{}, nil
 }
 
-// deploymentForTrustyAIService returns a Deployment object with the same name/namespace as the cr
-func (r *TrustyAIServiceReconciler) deploymentForTrustyAIService(cr *trustyaiopendatahubiov1alpha1.TrustyAIService) *appsv1.Deployment {
+// reconcileDeployment returns a Deployment object with the same name/namespace as the cr
+func (r *TrustyAIServiceReconciler) reconcileDeployment(cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*appsv1.Deployment, error) {
 
 	labels := getCommonLabels(cr.Name)
 
@@ -188,7 +191,7 @@ func (r *TrustyAIServiceReconciler) deploymentForTrustyAIService(cr *trustyaiope
 		},
 	}
 
-	return &appsv1.Deployment{
+	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name,
 			Namespace: cr.Spec.Namespace,
@@ -209,9 +212,16 @@ func (r *TrustyAIServiceReconciler) deploymentForTrustyAIService(cr *trustyaiope
 			},
 		},
 	}
+	// Set TrustyAIService instance as the owner and controller
+	if err := controllerutil.SetControllerReference(cr, deployment, r.Scheme); err != nil {
+		return nil, err
+	}
+
+	return deployment, nil
+
 }
 
-func (r *TrustyAIServiceReconciler) createService(cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*corev1.Service, error) {
+func (r *TrustyAIServiceReconciler) reconcileService(cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*corev1.Service, error) {
 	annotations := map[string]string{
 		"prometheus.io/scrape": "true",
 		"prometheus.io/path":   "/q/metrics",
@@ -274,7 +284,7 @@ func (r *TrustyAIServiceReconciler) createOrUpdateModelMeshConfigMap(trustyAISer
 	return nil
 }
 
-func (r *TrustyAIServiceReconciler) createRoute(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
+func (r *TrustyAIServiceReconciler) reconcileRoute(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
 
 	labels := getCommonLabels(cr.Name)
 
@@ -354,11 +364,14 @@ func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendata
 	}
 
 	// Set AppService instance as the owner and controller
-	ctrl.SetControllerReference(cr, serviceMonitor, r.Scheme)
+	err := ctrl.SetControllerReference(cr, serviceMonitor, r.Scheme)
+	if err != nil {
+		return err
+	}
 
 	// Check if this ServiceMonitor already exists
 	found := &monitoringv1.ServiceMonitor{}
-	err := r.Get(ctx, types.NamespacedName{Name: serviceMonitor.Name, Namespace: serviceMonitor.Namespace}, found)
+	err = r.Get(ctx, types.NamespacedName{Name: serviceMonitor.Name, Namespace: serviceMonitor.Namespace}, found)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			log.FromContext(ctx).Info("Creating a new ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
