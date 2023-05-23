@@ -1,0 +1,29 @@
+name: Controller Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.20
+
+      - name: Download & install envtest binaries
+        run: |
+          version=$(curl -s https://storage.googleapis.com/kubebuilder-tools/kubebuilder-tools-1.27.1-linux-amd64.tar.gz | tar -xz -C /tmp/ && echo $version)
+
+      - name: Test
+        run: go test ./test/...
+        env:
+          KUBEBUILDER_ASSETS: /tmp/kubebuilder-tools-${version}/bin
