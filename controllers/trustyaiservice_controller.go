@@ -36,9 +36,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-const defaultImage = string("quay.io/trustyai/trustyai-service")
-const defaultTag = string("latest")
-const containerName = "trustyai-service"
+const (
+	defaultImage       = string("quay.io/trustyai/trustyai-service")
+	defaultTag         = string("latest")
+	containerName      = "trustyai-service"
+	serviceMonitorName = "trustyai-metrics"
+)
 
 // TrustyAIServiceReconciler reconciles a TrustyAIService object
 type TrustyAIServiceReconciler struct {
@@ -52,6 +55,7 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=list;watch;get;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=apps,resources=deployments/finalizers,verbs=update
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=list;watch;create
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 
@@ -342,7 +346,7 @@ func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendata
 
 	serviceMonitor := &monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "trustyai-metrics",
+			Name:      serviceMonitorName,
 			Namespace: cr.Namespace,
 			Labels: map[string]string{
 				"modelmesh-service": "modelmesh-serving",
@@ -397,9 +401,11 @@ func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendata
 			log.FromContext(ctx).Info("Creating a new ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
 			err = r.Create(ctx, serviceMonitor)
 			if err != nil {
+				log.FromContext(ctx).Error(err, "Not found ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
 				return nil, err
 			}
 		} else {
+			log.FromContext(ctx).Error(err, "Couldn't create new ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
 			return nil, err
 		}
 	}

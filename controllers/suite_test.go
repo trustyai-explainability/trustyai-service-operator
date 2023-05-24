@@ -20,6 +20,7 @@ import (
 	"context"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	trustyaiopendatahubiov1alpha1 "github.com/ruivieira/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -64,7 +65,8 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "config", "crd", "bases")},
+		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases"),
+			filepath.Join("..", "config", "prometheus")},
 		ErrorIfCRDPathMissing: true,
 	}
 
@@ -75,6 +77,10 @@ var _ = BeforeSuite(func() {
 	Expect(cfg).NotTo(BeNil())
 
 	err = trustyaiopendatahubiov1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Add Monitoring
+	err = monitoringv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	//+kubebuilder:scaffold:scheme
@@ -140,15 +146,14 @@ var _ = Describe("TrustyAI operator", func() {
 			ctx = context.Background()
 			Expect(k8sClient.Create(ctx, service)).Should(Succeed())
 
-			// Define name for the deployment created by the operator
-			deploymentName := types.NamespacedName{
-				Namespace: namespace,
-				Name:      name,
-			}
-
 			deployment := &appsv1.Deployment{}
 			Eventually(func() error {
-				return k8sClient.Get(ctx, deploymentName, deployment)
+				// Define name for the deployment created by the operator
+				namespacedNamed := types.NamespacedName{
+					Namespace: namespace,
+					Name:      name,
+				}
+				return k8sClient.Get(ctx, namespacedNamed, deployment)
 			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get Deployment")
 
 			Expect(*deployment.Spec.Replicas).Should(Equal(int32(1)))
@@ -159,7 +164,7 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(name))
 			Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(name))
 			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
-
+			
 		})
 
 	})
