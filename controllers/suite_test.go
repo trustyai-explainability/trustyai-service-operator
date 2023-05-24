@@ -17,11 +17,13 @@ limitations under the License.
 package controllers
 
 import (
-	"path/filepath"
-	"testing"
-
+	"context"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"path/filepath"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"testing"
 
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -40,6 +42,8 @@ import (
 var cfg *rest.Config
 var k8sClient client.Client
 var testEnv *envtest.Environment
+var ctx context.Context
+var cancel context.CancelFunc
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -49,6 +53,8 @@ func TestAPIs(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	ctx, cancel = context.WithCancel(context.TODO())
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
@@ -71,10 +77,56 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
+	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
+		Scheme: scheme.Scheme,
+	})
+	Expect(err).ToNot(HaveOccurred())
+
+	go func() {
+		defer GinkgoRecover()
+		err = k8sManager.Start(ctx)
+		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
+	}()
+
 })
 
 var _ = AfterSuite(func() {
+	cancel()
 	By("tearing down the test environment")
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
+})
+
+var _ = Describe("TrustyAI operator", func() {
+
+	Context("testing TrustyAI controller", func() {
+		var service *trustyaiopendatahubiov1alpha1.TrustyAIService
+		BeforeEach(func() {
+			service = &trustyaiopendatahubiov1alpha1.TrustyAIService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "example-trustyai",
+					Namespace: "default",
+				},
+				Spec: trustyaiopendatahubiov1alpha1.TrustyAIServiceSpec{
+					Namespace: "default",
+					Storage: trustyaiopendatahubiov1alpha1.StorageSpec{
+						Format: "PVC",
+						Folder: "/data",
+					},
+					Data: trustyaiopendatahubiov1alpha1.DataSpec{
+						Filename: "data.csv",
+						Format:   "CSV",
+					},
+					Metrics: trustyaiopendatahubiov1alpha1.MetricsSpec{
+						Schedule: "5s",
+					},
+				},
+			}
+		})
+
+		It("should create deployment", func() {
+			ctx = context.Background()
+			Expect(k8sClient.Create(ctx, service)).Should(Succeed())
+		})
+	})
 })
