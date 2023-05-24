@@ -56,6 +56,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - create
+  - list
+  - watch
+- apiGroups:
   - trustyai.opendatahub.io.trustyai.opendatahub.io
   resources:
   - trustyaiservices
