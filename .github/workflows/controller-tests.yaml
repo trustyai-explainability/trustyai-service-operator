@@ -22,4 +22,4 @@ jobs:
       - name: Test
         run: go test ./test/...
         env:
-          KUBEBUILDER_ASSETS: /tmp/kubebuilder-tools-${version}/bin
+          KUBEBUILDER_ASSETS: /tmp/kubebuilder-tools-1.27.1-linux-amd64/bin
