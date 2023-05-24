@@ -38,6 +38,7 @@ import (
 
 const defaultImage = string("quay.io/trustyai/trustyai-service")
 const defaultTag = string("latest")
+const containerName = "trustyai-service"
 
 // TrustyAIServiceReconciler reconciles a TrustyAIService object
 type TrustyAIServiceReconciler struct {
@@ -83,13 +84,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	if instance.Spec.Image == "" {
-		instance.Spec.Image = defaultImage
-	}
-	if instance.Spec.Tag == "" {
-		instance.Spec.Tag = defaultTag
-	}
-
 	// Create or update ModelMesh's ConfigMap
 	if err := r.createOrUpdateModelMeshConfigMap(instance, ctx); err != nil {
 		if errors.IsNotFound(err) {
@@ -104,26 +98,32 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// Define a new Deployment object
 	deployment, err := r.reconcileDeployment(instance)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Error creating ")
+		log.FromContext(ctx).Error(err, "Error creating deployment object.")
 	}
 
 	// Check if this Deployment already exists
 	found := &appsv1.Deployment{}
-	err = r.Get(context.TODO(), types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, found)
+	err = r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, found)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Deployment doesn't exist - create it
-			err = r.Create(context.TODO(), deployment)
+			log.FromContext(ctx).Info("Deployment doesn't exist. Creating.")
+			err = r.Create(ctx, deployment)
 			if err != nil {
-				// Handle error
+				log.FromContext(ctx).Error(err, "Error with creating deployment.")
 			}
 		}
 		// Handle error
+		log.FromContext(ctx).Error(err, "Error with deployment.")
 	}
 
 	// Fetch the TrustyAIService instance
 	trustyAIServiceService := &trustyaiopendatahubiov1alpha1.TrustyAIService{}
 	err = r.Get(ctx, req.NamespacedName, trustyAIServiceService)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Could not fetch service.")
+		return ctrl.Result{}, err
+	}
 
 	// Create service
 	service, err := r.reconcileService(trustyAIServiceService)
@@ -172,9 +172,26 @@ func (r *TrustyAIServiceReconciler) reconcileDeployment(cr *trustyaiopendatahubi
 
 	labels := getCommonLabels(cr.Name)
 
+	// Validate fields
+	if cr.Spec.Storage.Format != "PVC" {
+
+	}
+
+	if cr.Spec.Image == "" {
+		cr.Spec.Image = defaultImage
+	}
+	if cr.Spec.Tag == "" {
+		cr.Spec.Tag = defaultTag
+	}
+
+	replicas := int32(1)
+	if cr.Spec.Replicas == nil {
+		cr.Spec.Replicas = &replicas
+	}
+
 	containers := []corev1.Container{
 		{
-			Name:  "trustyai-service",
+			Name:  containerName,
 			Image: fmt.Sprintf("%s:%s", cr.Spec.Image, cr.Spec.Tag),
 			Env: []corev1.EnvVar{
 				{
@@ -205,7 +222,7 @@ func (r *TrustyAIServiceReconciler) reconcileDeployment(cr *trustyaiopendatahubi
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name,
-			Namespace: cr.Spec.Namespace,
+			Namespace: cr.Namespace,
 			Labels:    labels,
 		},
 		Spec: appsv1.DeploymentSpec{

@@ -1,3 +1,4 @@
+[![Controller Tests](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/controller-tests.yaml/badge.svg)](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/controller-tests.yaml)
 # TrustyAI Kubernetes Operator
 
 ## Overview
