@@ -102,18 +102,18 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Define a new Deployment object
-	deploy, err := r.reconcileDeployment(instance)
+	deployment, err := r.reconcileDeployment(instance)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error creating ")
 	}
 
 	// Check if this Deployment already exists
 	found := &appsv1.Deployment{}
-	err = r.Get(context.TODO(), types.NamespacedName{Name: deploy.Name, Namespace: deploy.Namespace}, found)
+	err = r.Get(context.TODO(), types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, found)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Deployment doesn't exist - create it
-			err = r.Create(context.TODO(), deploy)
+			err = r.Create(context.TODO(), deployment)
 			if err != nil {
 				// Handle error
 			}
@@ -141,17 +141,28 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Service Monitor
-	err = r.reconcileServiceMonitor(instance, ctx)
+	serviceMonitor, err := r.reconcileServiceMonitor(instance, ctx)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
 	// Create route
-	err = r.reconcileRoute(instance, ctx)
+	route, err := r.reconcileRoute(instance, ctx)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
+	// Add the TrustyAI instance as owner
+	// Set TrustyAIService instance as the owner and controller
+	if err := controllerutil.SetControllerReference(service, deployment, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := controllerutil.SetControllerReference(service, route, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := controllerutil.SetControllerReference(service, serviceMonitor, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
 	// Deployment already exists - don't requeue
 	return ctrl.Result{}, nil
 }
@@ -212,10 +223,6 @@ func (r *TrustyAIServiceReconciler) reconcileDeployment(cr *trustyaiopendatahubi
 			},
 		},
 	}
-	// Set TrustyAIService instance as the owner and controller
-	if err := controllerutil.SetControllerReference(cr, deployment, r.Scheme); err != nil {
-		return nil, err
-	}
 
 	return deployment, nil
 
@@ -266,10 +273,6 @@ func (r *TrustyAIServiceReconciler) createOrUpdateModelMeshConfigMap(trustyAISer
 		},
 	}
 
-	if err := ctrl.SetControllerReference(trustyAIService, cm, r.Scheme); err != nil {
-		return err
-	}
-
 	err := r.Create(ctx, cm)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
@@ -284,7 +287,7 @@ func (r *TrustyAIServiceReconciler) createOrUpdateModelMeshConfigMap(trustyAISer
 	return nil
 }
 
-func (r *TrustyAIServiceReconciler) reconcileRoute(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
+func (r *TrustyAIServiceReconciler) reconcileRoute(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) (*routev1.Route, error) {
 
 	labels := getCommonLabels(cr.Name)
 
@@ -311,14 +314,14 @@ func (r *TrustyAIServiceReconciler) reconcileRoute(cr *trustyaiopendatahubiov1al
 	}
 
 	// Use the client to create the route
-	err := r.Client.Create(context.Background(), route)
+	err := r.Client.Create(ctx, route)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return route, nil
 }
 
-func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
+func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) (*monitoringv1.ServiceMonitor, error) {
 
 	serviceMonitor := &monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
@@ -366,7 +369,7 @@ func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendata
 	// Set AppService instance as the owner and controller
 	err := ctrl.SetControllerReference(cr, serviceMonitor, r.Scheme)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Check if this ServiceMonitor already exists
@@ -377,14 +380,14 @@ func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendata
 			log.FromContext(ctx).Info("Creating a new ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
 			err = r.Create(ctx, serviceMonitor)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		} else {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return serviceMonitor, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
