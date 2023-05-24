@@ -22,6 +22,6 @@ jobs:
 
 
       - name: Test
-        run: go test ./test/...
+        run: make test
         env:
           KUBEBUILDER_ASSETS: /tmp/kubebuilder/bin
