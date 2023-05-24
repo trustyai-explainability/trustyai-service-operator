@@ -152,6 +152,13 @@ var _ = Describe("TrustyAI operator", func() {
 			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get Deployment")
 
 			Expect(*deployment.Spec.Replicas).Should(Equal(int32(1)))
+			Expect(deployment.Namespace).Should(Equal(namespace))
+			Expect(deployment.Name).Should(Equal(name))
+			Expect(deployment.Labels["app"]).Should(Equal(name))
+			Expect(deployment.Labels["app.kubernetes.io/name"]).Should(Equal(name))
+			Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(name))
+			Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(name))
+			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
 
 		})
 
