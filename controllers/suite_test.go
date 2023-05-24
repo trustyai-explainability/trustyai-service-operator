@@ -164,7 +164,7 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(name))
 			Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(name))
 			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
-			
+
 		})
 
 	})
