@@ -17,7 +17,8 @@ jobs:
 
       - name: Download & install envtest binaries
         run: |
-          version=$(curl -s https://storage.googleapis.com/kubebuilder-tools/kubebuilder-tools-1.27.1-linux-amd64.tar.gz | tar -xz -C /tmp/ && echo $version)
+          curl -sSL https://storage.googleapis.com/kubebuilder-tools/kubebuilder-tools-1.27.1-linux-amd64.tar.gz | tar -xz -C /tmp/
+
 
       - name: Test
         run: go test ./test/...
