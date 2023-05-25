@@ -236,11 +236,6 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 
 	labels := getCommonLabels(cr.Name)
 
-	// Validate fields
-	if cr.Spec.Storage.Format != "PVC" {
-
-	}
-
 	if cr.Spec.Image == "" {
 		cr.Spec.Image = defaultImage
 	}
@@ -303,6 +298,30 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 				},
 			},
 		},
+	}
+
+	pvc := &corev1.PersistentVolumeClaim{}
+	pvcerr := r.Get(ctx, types.NamespacedName{Name: defaultPvcName, Namespace: cr.Namespace}, pvc)
+	if pvcerr != nil {
+		log.FromContext(ctx).Error(pvcerr, "PVC not ready")
+	}
+	if pvcerr == nil && pvc.Status.Phase == corev1.ClaimBound {
+		// The PVC is ready. We can now add it to the Deployment spec.
+		deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
+			{
+				Name: "volume",
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: defaultPvcName,
+						ReadOnly:  false,
+					},
+				},
+			},
+		}
+	}
+
+	if err := ctrl.SetControllerReference(cr, deployment, r.Scheme); err != nil {
+		return nil, err
 	}
 
 	err := r.Create(ctx, deployment)
