@@ -47,7 +47,7 @@ To deploy it on your cluster:
         spec:
           containers:
             - name: trustyai-operator
-              image: quay.io/ruimvieira/trustyai-service-operator:v0.1.0
+              image: quay.io/ruimvieira/trustyai-service-operator:latest
               command:
                 - /manager
               resources:
@@ -70,7 +70,6 @@ apiVersion: trustyai.opendatahub.io.trusty.opendatahub.io/v1
 kind: TrustyAIService
 metadata:
   name: trustyai-service-example
-  namespace: default
 spec:
   # Optional values for replicas, image and tag. Below are the default values.
   # replicas: 1
@@ -86,7 +85,18 @@ spec:
     schedule: "5s"
 ```
 
-You can apply this manifest with `kubectl apply -f <file-name.yaml>` to create a service.
+You can apply this manifest with 
+
+```shell
+kubectl apply -f <file-name.yaml> -n $NAMESPACE` to create a service,
+```
+where `$NAMESPACE` is the namespace where you want to deploy it.
+
+
+Additionally, in that namespace:
+
+* a `ServiceMonitor` will be created to allow Prometheus to scrape metrics from the service.
+* (if on OpenShift) a `Route` will be created to allow external access to the service.
 
 ## Contributing
 
