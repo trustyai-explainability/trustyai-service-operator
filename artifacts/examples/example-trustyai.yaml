@@ -3,6 +3,7 @@ kind: TrustyAIService
 metadata:
   name: example-trustyai-service
 spec:
+  namespace: default
 #  image: quay.io/trustyai/trustyai-service
 #  tag: latest
   replicas: 1

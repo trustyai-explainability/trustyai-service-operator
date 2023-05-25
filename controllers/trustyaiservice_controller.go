@@ -99,26 +99,11 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	// Define a new Deployment object
-	deployment, err := r.reconcileDeployment(instance)
+	// Ensure Deployment object
+	deployment, err := r.ensureDeployment(ctx, instance)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Error creating deployment object.")
-	}
-
-	// Check if this Deployment already exists
-	found := &appsv1.Deployment{}
-	err = r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, found)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			// Deployment doesn't exist - create it
-			log.FromContext(ctx).Info("Deployment doesn't exist. Creating.")
-			err = r.Create(ctx, deployment)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "Error with creating deployment.")
-			}
-		}
-		// Handle error
-		log.FromContext(ctx).Error(err, "Error with deployment.")
+		// handle error, potentially requeue request
+		return ctrl.Result{}, err
 	}
 
 	// Fetch the TrustyAIService instance
@@ -171,8 +156,24 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{}, nil
 }
 
+func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (*appsv1.Deployment, error) {
+	deploy := &appsv1.Deployment{}
+	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deploy)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Deployment does not exist, create it
+			log.FromContext(ctx).Info("Could not find deployment.")
+			return r.createDeployment(ctx, instance)
+		}
+
+		// Some other error occurred when trying to get the Deployment
+		return nil, err
+	}
+	return deploy, nil
+}
+
 // reconcileDeployment returns a Deployment object with the same name/namespace as the cr
-func (r *TrustyAIServiceReconciler) reconcileDeployment(cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*appsv1.Deployment, error) {
+func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*appsv1.Deployment, error) {
 
 	labels := getCommonLabels(cr.Name)
 
@@ -243,6 +244,11 @@ func (r *TrustyAIServiceReconciler) reconcileDeployment(cr *trustyaiopendatahubi
 				},
 			},
 		},
+	}
+
+	err := r.Create(ctx, deployment)
+	if err != nil {
+		return nil, err
 	}
 
 	return deployment, nil
