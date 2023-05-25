@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	goerrors "errors"
 	"fmt"
 	routev1 "github.com/openshift/api/route/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -36,6 +37,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+var ErrPVCNotReady = goerrors.New("PVC is not ready")
 
 const (
 	defaultImage       = string("quay.io/trustyai/trustyai-service")
@@ -180,6 +183,47 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 		// Some other error occurred when trying to get the Deployment
 		return nil, err
 	}
+
+	// Deployment already exists
+	pvc := &corev1.PersistentVolumeClaim{}
+
+	err = r.Get(ctx, types.NamespacedName{Name: defaultPvcName, Namespace: instance.Namespace}, pvc)
+	if err != nil {
+		return nil, err
+	}
+
+	if pvc.Status.Phase != corev1.ClaimBound {
+		// The PVC is not ready yet.
+		return nil, ErrPVCNotReady
+	}
+
+	// Check if the PVC is set in the Deployment
+	volumeExists := false
+	for _, v := range deploy.Spec.Template.Spec.Volumes {
+		if v.PersistentVolumeClaim != nil && v.PersistentVolumeClaim.ClaimName == defaultPvcName {
+			volumeExists = true
+			break
+		}
+	}
+
+	if !volumeExists {
+		// PVC is ready but not set in Deployment, so we'll update the Deployment to use the PVC
+		volume := corev1.Volume{
+			Name: defaultPvcName,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: defaultPvcName,
+				},
+			},
+		}
+		deploy.Spec.Template.Spec.Volumes = append(deploy.Spec.Template.Spec.Volumes, volume)
+
+		if err := r.Update(ctx, deploy); err != nil {
+			return nil, err
+		}
+	}
+
+	// Deployment is ready and using the PVC
 	return deploy, nil
 }
 
