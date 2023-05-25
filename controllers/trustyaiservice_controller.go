@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"time"
 )
 
 const (
@@ -167,6 +168,13 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err := controllerutil.SetControllerReference(service, serviceMonitor, r.Scheme); err != nil {
 		return ctrl.Result{}, err
 	}
+
+	// Populate statuses
+	if err = r.reconcileStatuses(instance, ctx); err != nil {
+		log.FromContext(ctx).Error(err, "Error creating the statuses.")
+		return ctrl.Result{}, err
+	}
+
 	// Deployment already exists - don't requeue
 	return ctrl.Result{}, nil
 }
@@ -418,4 +426,65 @@ func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&trustyaiopendatahubiov1alpha1.TrustyAIService{}).
 		Complete(r)
+}
+
+func (r *TrustyAIServiceReconciler) reconcileStatuses(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
+	deploymentList := &appsv1.DeploymentList{}
+	labelSelector := client.MatchingLabels{"app.kubernetes.io/name": "modelmesh-controller"}
+	err := r.Client.List(ctx, deploymentList, client.InNamespace("modelmesh-serving"), labelSelector)
+
+	var condition trustyaiopendatahubiov1alpha1.Condition
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Error creating condition.")
+		return err
+	}
+
+	if len(deploymentList.Items) == 0 {
+		// No deployments found with the given label
+		condition = trustyaiopendatahubiov1alpha1.Condition{
+			Type:               "ModelMeshReady",
+			Status:             "False",
+			LastTransitionTime: metav1.Now().Format(time.RFC3339),
+			Reason:             "ModelMeshNotPresent",
+			Message:            "ModelMesh operator Deployment not found",
+		}
+	} else {
+		// We'll just check the first deployment found
+		deployment := &deploymentList.Items[0]
+		// The Deployment exists, check if it's ready
+		if isDeploymentReady(deployment) {
+			condition = trustyaiopendatahubiov1alpha1.Condition{
+				Type:               "ModelMeshReady",
+				Status:             "True",
+				LastTransitionTime: metav1.Now().Format(time.RFC3339),
+				Reason:             "ModelMeshHealthy",
+				Message:            "ModelMesh operator is running and healthy",
+			}
+		} else {
+			condition = trustyaiopendatahubiov1alpha1.Condition{
+				Type:               "ModelMeshReady",
+				Status:             "False",
+				LastTransitionTime: metav1.Now().Format(time.RFC3339),
+				Reason:             "ModelMeshNotHealthy",
+				Message:            "ModelMesh operator Deployment is not healthy",
+			}
+		}
+	}
+
+	// Update the condition
+	instance.Status.Conditions = append(instance.Status.Conditions, condition)
+
+	// Update the status of the custom resource
+	err = r.Status().Update(ctx, instance)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Error updating conditions.")
+		return err
+	}
+
+	return nil
+}
+
+func isDeploymentReady(deployment *appsv1.Deployment) bool {
+	return deployment.Status.Replicas == deployment.Status.UpdatedReplicas &&
+		deployment.Status.Replicas == deployment.Status.AvailableReplicas
 }
