@@ -10,6 +10,9 @@ spec:
   storage:
     format: PVC
     folder: /inputs
+    pv: "mypv"
+    size: 1Gi
+
   data:
     filename: data.csv
     format: CSV
