@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	goerrors "errors"
 	"fmt"
 	routev1 "github.com/openshift/api/route/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -26,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -36,9 +38,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+var ErrPVCNotReady = goerrors.New("PVC is not ready")
+
 const (
 	defaultImage       = string("quay.io/trustyai/trustyai-service")
 	defaultTag         = string("latest")
+	defaultPvcName     = "trustyai-pvc"
 	containerName      = "trustyai-service"
 	serviceMonitorName = "trustyai-metrics"
 )
@@ -58,6 +63,8 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=list;watch;create
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=list;get;watch
+//+kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=list;get;watch;create;update;patch;delete
 
 // getCommonLabels returns the service's common labels
 func getCommonLabels(serviceName string) map[string]string {
@@ -99,26 +106,18 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	// Define a new Deployment object
-	deployment, err := r.reconcileDeployment(instance)
+	// Ensure PVC
+	err = r.ensurePVC(ctx, instance)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Error creating deployment object.")
+		log.FromContext(ctx).Error(err, "Error creating PVC storage.")
+		return ctrl.Result{}, err
 	}
 
-	// Check if this Deployment already exists
-	found := &appsv1.Deployment{}
-	err = r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, found)
+	// Ensure Deployment object
+	deployment, err := r.ensureDeployment(ctx, instance)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			// Deployment doesn't exist - create it
-			log.FromContext(ctx).Info("Deployment doesn't exist. Creating.")
-			err = r.Create(ctx, deployment)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "Error with creating deployment.")
-			}
-		}
-		// Handle error
-		log.FromContext(ctx).Error(err, "Error with deployment.")
+		// handle error, potentially requeue request
+		return ctrl.Result{}, err
 	}
 
 	// Fetch the TrustyAIService instance
@@ -171,15 +170,115 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{}, nil
 }
 
+func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (*appsv1.Deployment, error) {
+	deploy := &appsv1.Deployment{}
+	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deploy)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Deployment does not exist, create it
+			log.FromContext(ctx).Info("Could not find deployment.")
+			return r.createDeployment(ctx, instance)
+		}
+
+		// Some other error occurred when trying to get the Deployment
+		return nil, err
+	}
+
+	// Deployment already exists
+	pvc := &corev1.PersistentVolumeClaim{}
+
+	err = r.Get(ctx, types.NamespacedName{Name: defaultPvcName, Namespace: instance.Namespace}, pvc)
+	if err != nil {
+		return nil, err
+	}
+
+	if pvc.Status.Phase != corev1.ClaimBound {
+		// The PVC is not ready yet.
+		return nil, ErrPVCNotReady
+	}
+
+	// Check if the PVC is set in the Deployment
+	volumeExists := false
+	for _, v := range deploy.Spec.Template.Spec.Volumes {
+		if v.PersistentVolumeClaim != nil && v.PersistentVolumeClaim.ClaimName == defaultPvcName {
+			volumeExists = true
+			break
+		}
+	}
+
+	if !volumeExists {
+		// PVC is ready but not set in Deployment, so we'll update the Deployment to use the PVC
+		volume := corev1.Volume{
+			Name: defaultPvcName,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: defaultPvcName,
+				},
+			},
+		}
+		deploy.Spec.Template.Spec.Volumes = append(deploy.Spec.Template.Spec.Volumes, volume)
+
+		if err := r.Update(ctx, deploy); err != nil {
+			return nil, err
+		}
+	}
+
+	// Deployment is ready and using the PVC
+	return deploy, nil
+}
+
+func (r *TrustyAIServiceReconciler) ensurePVC(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+	pvc := &corev1.PersistentVolumeClaim{}
+
+	err := r.Get(ctx, types.NamespacedName{Name: defaultPvcName, Namespace: instance.Namespace}, pvc)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			log.FromContext(ctx).Info("PVC not found. Creating.")
+			// The PVC doesn't exist, so we need to create it
+			return r.createPVC(ctx, instance)
+		}
+		return err
+	}
+
+	return nil
+}
+
+func (r *TrustyAIServiceReconciler) createPVC(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+	storageClass := ""
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      defaultPvcName,
+			Namespace: instance.Namespace,
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{
+				corev1.ReadWriteOnce,
+			},
+			StorageClassName: &storageClass,
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse(instance.Spec.Storage.Size),
+				},
+			},
+			VolumeName: instance.Spec.Storage.PV,
+			VolumeMode: func() *corev1.PersistentVolumeMode {
+				volumeMode := corev1.PersistentVolumeFilesystem
+				return &volumeMode
+			}(),
+		},
+	}
+
+	if err := ctrl.SetControllerReference(instance, pvc, r.Scheme); err != nil {
+		return err
+	}
+
+	return r.Create(ctx, pvc)
+}
+
 // reconcileDeployment returns a Deployment object with the same name/namespace as the cr
-func (r *TrustyAIServiceReconciler) reconcileDeployment(cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*appsv1.Deployment, error) {
+func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*appsv1.Deployment, error) {
 
 	labels := getCommonLabels(cr.Name)
-
-	// Validate fields
-	if cr.Spec.Storage.Format != "PVC" {
-
-	}
 
 	if cr.Spec.Image == "" {
 		cr.Spec.Image = defaultImage
@@ -243,6 +342,35 @@ func (r *TrustyAIServiceReconciler) reconcileDeployment(cr *trustyaiopendatahubi
 				},
 			},
 		},
+	}
+
+	pvc := &corev1.PersistentVolumeClaim{}
+	pvcerr := r.Get(ctx, types.NamespacedName{Name: defaultPvcName, Namespace: cr.Namespace}, pvc)
+	if pvcerr != nil {
+		log.FromContext(ctx).Error(pvcerr, "PVC not ready")
+	}
+	if pvcerr == nil && pvc.Status.Phase == corev1.ClaimBound {
+		// The PVC is ready. We can now add it to the Deployment spec.
+		deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
+			{
+				Name: "volume",
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: defaultPvcName,
+						ReadOnly:  false,
+					},
+				},
+			},
+		}
+	}
+
+	if err := ctrl.SetControllerReference(cr, deployment, r.Scheme); err != nil {
+		return nil, err
+	}
+
+	err := r.Create(ctx, deployment)
+	if err != nil {
+		return nil, err
 	}
 
 	return deployment, nil
