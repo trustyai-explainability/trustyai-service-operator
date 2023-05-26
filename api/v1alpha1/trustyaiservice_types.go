@@ -20,8 +20,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// TrustyAIService is the Schema for the trustyaiservices API
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+type TrustyAIService struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   TrustyAIServiceSpec   `json:"spec,omitempty"`
+	Status TrustyAIServiceStatus `json:"status,omitempty"`
+}
 
 type StorageSpec struct {
 	Format string `json:"format"`
@@ -41,6 +49,8 @@ type MetricsSpec struct {
 
 // TrustyAIServiceSpec defines the desired state of TrustyAIService
 type TrustyAIServiceSpec struct {
+	// The namespace in which to deploy the image
+	Namespace string `json:"namespace"`
 	// The image to deploy
 	// +optional
 	Image string `json:"image,omitempty"`
@@ -57,20 +67,19 @@ type TrustyAIServiceSpec struct {
 
 // TrustyAIServiceStatus defines the observed state of TrustyAIService
 type TrustyAIServiceStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Define your status fields here
+	Phase      string      `json:"phase"`
+	Replicas   int32       `json:"replicas"`
+	Conditions []Condition `json:"conditions"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
-
-// TrustyAIService is the Schema for the trustyaiservices API
-type TrustyAIService struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	Spec   TrustyAIServiceSpec   `json:"spec,omitempty"`
-	Status TrustyAIServiceStatus `json:"status,omitempty"`
+// Condition represents possible conditions of a TrustyAIServiceStatus
+type Condition struct {
+	Type               string `json:"type"`
+	Status             string `json:"status"`
+	LastTransitionTime string `json:"lastTransitionTime"`
+	Reason             string `json:"reason"`
+	Message            string `json:"message"`
 }
 
 //+kubebuilder:object:root=true
