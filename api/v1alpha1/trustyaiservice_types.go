@@ -41,11 +41,6 @@ type MetricsSpec struct {
 
 // TrustyAIServiceSpec defines the desired state of TrustyAIService
 type TrustyAIServiceSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// The namespace in which to deploy the image
-	Namespace string `json:"namespace"`
 	// The image to deploy
 	// +optional
 	Image string `json:"image,omitempty"`
