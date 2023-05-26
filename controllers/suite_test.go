@@ -18,11 +18,14 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	trustyaiopendatahubiov1alpha1 "github.com/ruivieira/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -49,13 +52,58 @@ var cancel context.CancelFunc
 
 const (
 	name      = "example-trustyai-service"
-	namespace = "default"
+	namespace = "trustyai"
 )
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
 
 	RunSpecs(t, "Controller Suite")
+}
+
+func createDefaultCR() *trustyaiopendatahubiov1alpha1.TrustyAIService {
+	service := trustyaiopendatahubiov1alpha1.TrustyAIService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: trustyaiopendatahubiov1alpha1.TrustyAIServiceSpec{
+			Storage: trustyaiopendatahubiov1alpha1.StorageSpec{
+				Format: "PVC",
+				Folder: "/data",
+				PV:     "mypv",
+				Size:   "1Gi",
+			},
+			Data: trustyaiopendatahubiov1alpha1.DataSpec{
+				Filename: "data.csv",
+				Format:   "CSV",
+			},
+			Metrics: trustyaiopendatahubiov1alpha1.MetricsSpec{
+				Schedule: "5s",
+			},
+		},
+	}
+	return &service
+}
+
+func createNamespace(ctx context.Context, k8sClient client.Client, namespace string) error {
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: namespace,
+		},
+	}
+
+	err := k8sClient.Create(ctx, ns)
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
+			// Handle the case where the namespace already exists
+			return nil
+		}
+		// Handle other errors
+		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+
+	return nil
 }
 
 var _ = BeforeSuite(func() {
@@ -119,32 +167,17 @@ var _ = AfterSuite(func() {
 var _ = Describe("TrustyAI operator", func() {
 
 	Context("Testing deployment with defaults", func() {
-		var service *trustyaiopendatahubiov1alpha1.TrustyAIService
+		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
 		BeforeEach(func() {
-			service = &trustyaiopendatahubiov1alpha1.TrustyAIService{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      name,
-					Namespace: namespace,
-				},
-				Spec: trustyaiopendatahubiov1alpha1.TrustyAIServiceSpec{
-					Storage: trustyaiopendatahubiov1alpha1.StorageSpec{
-						Format: "PVC",
-						Folder: "/data",
-					},
-					Data: trustyaiopendatahubiov1alpha1.DataSpec{
-						Filename: "data.csv",
-						Format:   "CSV",
-					},
-					Metrics: trustyaiopendatahubiov1alpha1.MetricsSpec{
-						Schedule: "5s",
-					},
-				},
-			}
+			instance = createDefaultCR()
+			Eventually(func() error {
+				return createNamespace(ctx, k8sClient, namespace)
+			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
 		})
 
 		It("should deploy the service with defaults", func() {
 			ctx = context.Background()
-			Expect(k8sClient.Create(ctx, service)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, instance)).Should(Succeed())
 
 			deployment := &appsv1.Deployment{}
 			Eventually(func() error {
@@ -164,6 +197,19 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(name))
 			Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(name))
 			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+
+			Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
+
+			service := &corev1.Service{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, service)
+			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get Service")
+
+			Expect(service.Annotations["prometheus.io/path"]).Should(Equal("/q/metrics"))
+			Expect(service.Annotations["prometheus.io/port"]).Should(Equal("8080"))
+			Expect(service.Annotations["prometheus.io/scheme"]).Should(Equal("http"))
+			Expect(service.Annotations["prometheus.io/scrape"]).Should(Equal("true"))
+			Expect(service.Namespace).Should(Equal(namespace))
 
 		})
 

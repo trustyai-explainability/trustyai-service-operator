@@ -34,6 +34,8 @@ type TrustyAIService struct {
 type StorageSpec struct {
 	Format string `json:"format"`
 	Folder string `json:"folder"`
+	PV     string `json:"pv"`
+	Size   string `json:"size"`
 }
 
 type DataSpec struct {

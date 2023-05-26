@@ -47,7 +47,7 @@ To deploy it on your cluster:
         spec:
           containers:
             - name: trustyai-operator
-              image: quay.io/ruimvieira/trustyai-service-operator:latest
+              image: quay.io/trustyai/trustyai-service-operator:latest
               command:
                 - /manager
               resources:
@@ -58,6 +58,12 @@ To deploy it on your cluster:
                   cpu: 100m
                   memory: 20Mi
     ```
+
+   or run
+
+   ```shell
+   kubectl apply -f https://raw.githubusercontent.com/trustyai-explainability/trustyai-service-operator/main/artifacts/examples/deploy-operator.yaml   
+   ```
 
 ## Usage
 
@@ -78,6 +84,8 @@ spec:
   storage:
     format: "PVC"
     folder: "/inputs"
+    pv: "mypv"
+    size: "1Gi"
   data:
     filename: "data.csv"
     format: "CSV"
@@ -85,12 +93,14 @@ spec:
     schedule: "5s"
 ```
 
+`mypv` must be an existing Persistent Volume (PV).
+
 You can apply this manifest with 
 
 ```shell
-kubectl apply -f <file-name.yaml> -n $NAMESPACE` to create a service,
+kubectl apply -f <file-name.yaml> -n $NAMESPACE
 ```
-where `$NAMESPACE` is the namespace where you want to deploy it.
+to create a service, where `$NAMESPACE` is the namespace where you want to deploy it.
 
 
 Additionally, in that namespace:
