@@ -5,14 +5,12 @@ metadata:
 spec:
 #  image: quay.io/trustyai/trustyai-service
 #  tag: latest
-  namespace: default
-  replicas: 1
+#  replicas: 1
   storage:
     format: PVC
     folder: /inputs
     pv: "mypv"
     size: 1Gi
-
   data:
     filename: data.csv
     format: CSV
