@@ -84,6 +84,26 @@ rules:
   - list
   - watch
 - apiGroups:
+  - serving.kserve.io
+  resources:
+  - servingruntimes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - serving.kserve.io
+  resources:
+  - servingruntimes/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - trustyai.opendatahub.io.trustyai.opendatahub.io
   resources:
   - trustyaiservices

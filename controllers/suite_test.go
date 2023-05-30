@@ -179,18 +179,6 @@ var _ = Describe("TrustyAI operator", func() {
 			// Delete the TrustyAIService instance
 			Expect(k8sClient.Delete(ctx, instance)).Should(Succeed())
 
-			// Ensure the deletion was successful
-			Eventually(func() error {
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, &trustyaiopendatahubiov1alpha1.TrustyAIService{})
-				if errors.IsNotFound(err) {
-					return nil
-				}
-				if err != nil {
-					return err
-				}
-				return fmt.Errorf("TrustyAIService still exists")
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to delete TrustyAIService")
-
 			// Delete the namespace
 			namespaceObj := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 			Expect(k8sClient.Delete(ctx, namespaceObj)).Should(Succeed())

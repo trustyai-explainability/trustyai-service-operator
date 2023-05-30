@@ -68,6 +68,8 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=list;get;watch
 //+kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=list;get;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes/status,verbs=get;update;patch
 
 // getCommonLabels returns the service's common labels
 func getCommonLabels(serviceName string) map[string]string {
@@ -93,12 +95,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// CR not found, it may have been deleted, so we'll remove the payload processor from the ModelMesh deployment
-			deploymentLabels := map[string]string{
-				"app.kubernetes.io/instance": "modelmesh-controller",
-				"app.kubernetes.io/name":     "modelmesh-controller",
-				"name":                       "modelmesh-serving-mlserver-0.x",
-			}
-			err := updatePayloadProcessor(ctx, r.Client, deploymentLabels, "mlserver", payloadProcessorName, req.Name, req.Namespace, true)
+			err := updatePayloadProcessor(ctx, r.Client, "mlserver", payloadProcessorName, req.Name, req.Namespace, true)
 			if err != nil {
 				// handle error
 			}
@@ -142,12 +139,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	instance.Status.Ready = corev1.ConditionTrue
 
 	// CR found, add or update the URL
-	deploymentLabels := map[string]string{
-		"app.kubernetes.io/instance": "modelmesh-controller",
-		"app.kubernetes.io/name":     "modelmesh-controller",
-		"name":                       "modelmesh-serving-mlserver-0.x",
-	}
-	err = updatePayloadProcessor(ctx, r.Client, deploymentLabels, "mlserver", payloadProcessorName, instance.Name, instance.Namespace, false)
+	err = updatePayloadProcessor(ctx, r.Client, "mlserver", payloadProcessorName, instance.Name, instance.Namespace, false)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update ModelMesh payload processor.")
 		// handle error
