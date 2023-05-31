@@ -14,7 +14,7 @@ The operator ensures the service is properly configured, is discoverable by Prom
 
 ## Installation using pre-built Operator image
 
-This operator is available as an [image on Quay.io](https://quay.io/repository/ruimvieira/trustyai-service-operator?tab=history). 
+This operator is available as an [image on Quay.io](https://quay.io/repository/trustyai/trustyai-service-operator?tab=history). 
 To deploy it on your cluster:
 
 1. **Install the Custom Resource Definition (CRD):**
