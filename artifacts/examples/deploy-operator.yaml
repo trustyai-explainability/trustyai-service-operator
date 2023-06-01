@@ -13,9 +13,11 @@ spec:
       labels:
         control-plane: trustyai-operator
     spec:
+      serviceAccountName: controller-manager
       containers:
         - name: trustyai-operator
           image: quay.io/trustyai/trustyai-service-operator:latest
+          imagePullPolicy: Always
           command:
             - /manager
           resources:
@@ -25,3 +27,11 @@ spec:
             requests:
               cpu: 100m
               memory: 20Mi
+          # readinessProbe:
+          #   httpGet:
+          #     path: /healthz
+          #     port: 8080
+          # livenessProbe:
+          #   httpGet:
+          #     path: /healthz
+          #     port: 8080
