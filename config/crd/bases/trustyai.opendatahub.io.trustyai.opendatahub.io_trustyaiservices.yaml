@@ -55,6 +55,9 @@ spec:
                 required:
                 - schedule
                 type: object
+              namespace:
+                description: The namespace in which to deploy the image
+                type: string
               replicas:
                 description: Number of replicas
                 format: int32
@@ -81,10 +84,46 @@ spec:
             required:
             - data
             - metrics
+            - namespace
             - storage
             type: object
           status:
             description: TrustyAIServiceStatus defines the observed state of TrustyAIService
+            properties:
+              conditions:
+                items:
+                  description: Condition represents possible conditions of a TrustyAIServiceStatus
+                  properties:
+                    lastTransitionTime:
+                      type: string
+                    message:
+                      type: string
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              phase:
+                description: Define your status fields here
+                type: string
+              ready:
+                type: string
+              replicas:
+                format: int32
+                type: integer
+            required:
+            - conditions
+            - phase
+            - replicas
             type: object
         type: object
     served: true

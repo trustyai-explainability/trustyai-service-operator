@@ -175,6 +175,16 @@ var _ = Describe("TrustyAI operator", func() {
 			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
 		})
 
+		AfterEach(func() {
+			// Delete the TrustyAIService instance
+			Expect(k8sClient.Delete(ctx, instance)).Should(Succeed())
+
+			// Delete the namespace
+			namespaceObj := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
+			Expect(k8sClient.Delete(ctx, namespaceObj)).Should(Succeed())
+
+		})
+
 		It("should deploy the service with defaults", func() {
 			ctx = context.Background()
 			Expect(k8sClient.Create(ctx, instance)).Should(Succeed())
@@ -214,4 +224,71 @@ var _ = Describe("TrustyAI operator", func() {
 		})
 
 	})
+
+	Context("Testing deployment with defaults in multiple namespaces", func() {
+		var instances []*trustyaiopendatahubiov1alpha1.TrustyAIService
+
+		namespaces := []string{"namespace1", "namespace2", "namespace3"}
+
+		BeforeEach(func() {
+			instances = make([]*trustyaiopendatahubiov1alpha1.TrustyAIService, len(namespaces))
+			for i, namespace := range namespaces {
+				instances[i] = createDefaultCR()
+				instances[i].Namespace = namespace
+				Eventually(func() error {
+					return createNamespace(ctx, k8sClient, namespace)
+				}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
+			}
+		})
+
+		It("should deploy the services with defaults", func() {
+			ctx = context.Background()
+			for _, instance := range instances {
+				Expect(k8sClient.Create(ctx, instance)).Should(Succeed())
+				deployment := &appsv1.Deployment{}
+				Eventually(func() error {
+					// Define name for the deployment created by the operator
+					namespacedNamed := types.NamespacedName{
+						Namespace: namespace,
+						Name:      name,
+					}
+					return k8sClient.Get(ctx, namespacedNamed, deployment)
+				}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get Deployment")
+
+				Expect(*deployment.Spec.Replicas).Should(Equal(int32(1)))
+				Expect(deployment.Namespace).Should(Equal(namespace))
+				Expect(deployment.Name).Should(Equal(name))
+				Expect(deployment.Labels["app"]).Should(Equal(name))
+				Expect(deployment.Labels["app.kubernetes.io/name"]).Should(Equal(name))
+				Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(name))
+				Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(name))
+				Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+
+				Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
+
+				service := &corev1.Service{}
+				Eventually(func() error {
+					return k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, service)
+				}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get Service")
+
+				Expect(service.Annotations["prometheus.io/path"]).Should(Equal("/q/metrics"))
+				Expect(service.Annotations["prometheus.io/port"]).Should(Equal("8080"))
+				Expect(service.Annotations["prometheus.io/scheme"]).Should(Equal("http"))
+				Expect(service.Annotations["prometheus.io/scrape"]).Should(Equal("true"))
+				Expect(service.Namespace).Should(Equal(namespace))
+			}
+		})
+
+		AfterEach(func() {
+			for _, instance := range instances {
+				// Delete the TrustyAIService instance
+				Expect(k8sClient.Delete(ctx, instance)).Should(Succeed())
+
+				// Delete the namespace
+				namespaceObj := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: instance.Namespace}}
+				Expect(k8sClient.Delete(ctx, namespaceObj)).Should(Succeed())
+			}
+		})
+	})
+
 })

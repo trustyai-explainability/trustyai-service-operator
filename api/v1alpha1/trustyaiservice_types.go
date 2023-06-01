@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -68,9 +69,10 @@ type TrustyAIServiceSpec struct {
 // TrustyAIServiceStatus defines the observed state of TrustyAIService
 type TrustyAIServiceStatus struct {
 	// Define your status fields here
-	Phase      string      `json:"phase"`
-	Replicas   int32       `json:"replicas"`
-	Conditions []Condition `json:"conditions"`
+	Phase      string                 `json:"phase"`
+	Replicas   int32                  `json:"replicas"`
+	Conditions []Condition            `json:"conditions"`
+	Ready      corev1.ConditionStatus `json:"ready,omitempty"`
 }
 
 // Condition represents possible conditions of a TrustyAIServiceStatus

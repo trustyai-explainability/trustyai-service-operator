@@ -42,11 +42,13 @@ import (
 var ErrPVCNotReady = goerrors.New("PVC is not ready")
 
 const (
-	defaultImage       = string("quay.io/trustyai/trustyai-service")
-	defaultTag         = string("latest")
-	defaultPvcName     = "trustyai-pvc"
-	containerName      = "trustyai-service"
-	serviceMonitorName = "trustyai-metrics"
+	defaultImage         = string("quay.io/trustyai/trustyai-service")
+	defaultTag           = string("latest")
+	defaultPvcName       = "trustyai-pvc"
+	containerName        = "trustyai-service"
+	serviceMonitorName   = "trustyai-metrics"
+	finalizerName        = "trustyai.opendatahub.io/finalizer"
+	payloadProcessorName = "MM_PAYLOAD_PROCESSORS"
 )
 
 // TrustyAIServiceReconciler reconciles a TrustyAIService object
@@ -66,6 +68,8 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=list;get;watch
 //+kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=list;get;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes/status,verbs=get;update;patch
 
 // getCommonLabels returns the service's common labels
 func getCommonLabels(serviceName string) map[string]string {
@@ -90,21 +94,55 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
+			// CR not found, it may have been deleted, so we'll remove the payload processor from the ModelMesh deployment
+			err := updatePayloadProcessor(ctx, r.Client, "mlserver", payloadProcessorName, req.Name, req.Namespace, true)
+			if err != nil {
+				// handle error
+			}
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
 		return ctrl.Result{}, err
 	}
 
-	// Create or update ModelMesh's ConfigMap
-	if err := r.createOrUpdateModelMeshConfigMap(instance, ctx); err != nil {
-		if errors.IsNotFound(err) {
-			// Log the error but don't return
-			log.FromContext(ctx).Error(err, "ModelMesh's ConfigMap not found")
-		} else {
-			// If it's another error, return
+	// Check if the CR is being deleted
+	if instance.DeletionTimestamp != nil {
+		// CR is being deleted
+		if containsString(instance.Finalizers, finalizerName) {
+			// The finalizer is present, so we handle external dependency deletion
+			if err := r.deleteExternalDependency(req.Name, req.Namespace, ctx); err != nil {
+				// If fail to delete the external dependency here, return with error
+				// so that it can be retried
+				log.FromContext(ctx).Error(err, "Failed to delete external dependencies.")
+				return ctrl.Result{}, err
+			}
+
+			// Remove the finalizer from the list and update it.
+			instance.Finalizers = removeString(instance.Finalizers, finalizerName)
+			if err := r.Update(ctx, instance); err != nil {
+				log.FromContext(ctx).Error(err, "Failed to remove the finalizer.")
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Add the finalizer if it does not exist
+	if !containsString(instance.Finalizers, finalizerName) {
+		instance.Finalizers = append(instance.Finalizers, finalizerName)
+		if err := r.Update(context.Background(), instance); err != nil {
+			log.FromContext(ctx).Error(err, "Failed to add the finalizer.")
 			return ctrl.Result{}, err
 		}
+	}
+
+	instance.Status.Ready = corev1.ConditionTrue
+
+	// CR found, add or update the URL
+	err = updatePayloadProcessor(ctx, r.Client, "mlserver", payloadProcessorName, instance.Name, instance.Namespace, false)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to update ModelMesh payload processor.")
+		// handle error
 	}
 
 	// Ensure PVC
@@ -419,31 +457,6 @@ func (r *TrustyAIServiceReconciler) reconcileService(cr *trustyaiopendatahubiov1
 	return service, nil
 }
 
-func (r *TrustyAIServiceReconciler) createOrUpdateModelMeshConfigMap(trustyAIService *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "model-serving-config",
-			Namespace: trustyAIService.Namespace,
-		},
-		Data: map[string]string{
-			"config.yaml": "payloadProcessors: http://trustyai-service." + trustyAIService.Namespace + "/consumer/kserve/v2",
-		},
-	}
-
-	err := r.Create(ctx, cm)
-	if err != nil {
-		if errors.IsAlreadyExists(err) {
-			// If ConfigMap already exists, update it anyway
-			log.FromContext(ctx).Info("ModelMesh's ConfigMap already exists, re-applying")
-			return r.Update(ctx, cm)
-		}
-
-		// Some other error, requeue
-		return err
-	}
-	return nil
-}
-
 func (r *TrustyAIServiceReconciler) reconcileRoute(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) (*routev1.Route, error) {
 
 	labels := getCommonLabels(cr.Name)
@@ -610,9 +623,4 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(instance *trustyaiopendata
 	}
 
 	return nil
-}
-
-func isDeploymentReady(deployment *appsv1.Deployment) bool {
-	return deployment.Status.Replicas == deployment.Status.UpdatedReplicas &&
-		deployment.Status.Replicas == deployment.Status.AvailableReplicas
 }
