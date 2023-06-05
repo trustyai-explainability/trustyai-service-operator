@@ -55,9 +55,6 @@ spec:
                 required:
                 - schedule
                 type: object
-              namespace:
-                description: The namespace in which to deploy the image
-                type: string
               replicas:
                 description: Number of replicas
                 format: int32
@@ -84,7 +81,6 @@ spec:
             required:
             - data
             - metrics
-            - namespace
             - storage
             type: object
           status:
