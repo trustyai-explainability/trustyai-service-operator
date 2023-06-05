@@ -13,6 +13,7 @@ spec:
       labels:
         control-plane: trustyai-operator
     spec:
+      serviceAccountName: controller-manager
       containers:
         - name: trustyai-operator
           image: quay.io/trustyai/trustyai-service-operator:latest
