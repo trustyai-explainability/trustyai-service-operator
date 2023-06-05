@@ -50,8 +50,6 @@ type MetricsSpec struct {
 
 // TrustyAIServiceSpec defines the desired state of TrustyAIService
 type TrustyAIServiceSpec struct {
-	// The namespace in which to deploy the image
-	Namespace string `json:"namespace"`
 	// The image to deploy
 	// +optional
 	Image string `json:"image,omitempty"`
