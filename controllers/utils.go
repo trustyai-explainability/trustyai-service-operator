@@ -31,6 +31,7 @@ func removeString(list []string, s string) []string {
 	return newList
 }
 
+// GetNamespace returns the namespace of a pod
 func GetNamespace() (string, error) {
 	ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 	if err != nil {
