@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trustyai-service-operator-config
+  namespace: trustyai
+data:
+  trustyaiServiceImageName: "quay.io/trustyai/trustyai-service"
+  trustyaiServiceImageTag: "alpha"

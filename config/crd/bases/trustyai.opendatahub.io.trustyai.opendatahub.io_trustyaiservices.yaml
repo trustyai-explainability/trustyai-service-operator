@@ -45,9 +45,6 @@ spec:
                 - filename
                 - format
                 type: object
-              image:
-                description: The image to deploy
-                type: string
               metrics:
                 properties:
                   schedule:
@@ -75,9 +72,6 @@ spec:
                 - pv
                 - size
                 type: object
-              tag:
-                description: The tag to deploy
-                type: string
             required:
             - data
             - metrics

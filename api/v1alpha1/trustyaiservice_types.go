@@ -50,12 +50,6 @@ type MetricsSpec struct {
 
 // TrustyAIServiceSpec defines the desired state of TrustyAIService
 type TrustyAIServiceSpec struct {
-	// The image to deploy
-	// +optional
-	Image string `json:"image,omitempty"`
-	// The tag to deploy
-	// +optional
-	Tag string `json:"tag,omitempty"`
 	// Number of replicas
 	// +optional
 	Replicas *int32      `json:"replicas"`
