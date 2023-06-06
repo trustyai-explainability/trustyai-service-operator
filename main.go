@@ -99,21 +99,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Get image and tag from ConfigMap
-	// If there's a ConfigMap with custom images, it is only applied when the operator is first deployed
-	// Changing (or creating) the ConfigMap after the operator is deployed will not have any effect
-	imageName, imageTag, err := controllers.GetConfigMapValues(mgr.GetClient(), ns, "trustyai-service-operator-config")
-	if err != nil {
-		setupLog.Error(err, "unable to read ConfigMap")
-		os.Exit(1)
-	}
-
 	if err = (&controllers.TrustyAIServiceReconciler{
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
 		Namespace: ns,
-		ImageName: imageName,
-		ImageTag:  imageTag,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "TrustyAIService")
 		os.Exit(1)
