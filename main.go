@@ -96,7 +96,6 @@ func main() {
 	ns, err := controllers.GetNamespace()
 	if err != nil {
 		setupLog.Error(err, "unable to operator's namespace")
-		os.Exit(1)
 	}
 
 	if err = (&controllers.TrustyAIServiceReconciler{

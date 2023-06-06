@@ -630,34 +630,38 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(instance *trustyaiopendata
 
 // getTrustyAIImageAndTagFromConfigMap gets a custom TrustyAI image and tag from a ConfigMap in the operator's namespace
 func (r *TrustyAIServiceReconciler) getImageAndTagFromConfigMap(ctx context.Context) (string, string, error) {
-	// Define the key for the ConfigMap
-	configMapKey := types.NamespacedName{
-		Namespace: r.Namespace,
-		Name:      "trustyai-service-operator-config",
-	}
-
-	// Create an empty ConfigMap object
-	var cm corev1.ConfigMap
-
-	// Try to get the ConfigMap
-	if err := r.Get(ctx, configMapKey, &cm); err != nil {
-		if errors.IsNotFound(err) {
-			// ConfigMap not found, fallback to default values
-			return defaultImage, defaultTag, nil
+	if r.Namespace != "" {
+		// Define the key for the ConfigMap
+		configMapKey := types.NamespacedName{
+			Namespace: r.Namespace,
+			Name:      "trustyai-service-operator-config",
 		}
-		// Other error occurred when trying to fetch the ConfigMap
-		return defaultImage, defaultTag, fmt.Errorf("Error reading configmap %s", configMapKey)
+
+		// Create an empty ConfigMap object
+		var cm corev1.ConfigMap
+
+		// Try to get the ConfigMap
+		if err := r.Get(ctx, configMapKey, &cm); err != nil {
+			if errors.IsNotFound(err) {
+				// ConfigMap not found, fallback to default values
+				return defaultImage, defaultTag, nil
+			}
+			// Other error occurred when trying to fetch the ConfigMap
+			return defaultImage, defaultTag, fmt.Errorf("Error reading configmap %s", configMapKey)
+		}
+
+		// ConfigMap is found, extract the image and tag
+		imageName, ok1 := cm.Data["trustyaiServiceImageName"]
+		imageTag, ok2 := cm.Data["trustyaiServiceImageTag"]
+
+		if !ok1 || !ok2 {
+			// One or both of the keys are not present in the ConfigMap, return error
+			return defaultImage, defaultTag, fmt.Errorf("configmap %s does not contain necessary keys", configMapKey)
+		}
+
+		// Return the image and tag
+		return imageName, imageTag, nil
+	} else {
+		return defaultImage, defaultTag, nil
 	}
-
-	// ConfigMap is found, extract the image and tag
-	imageName, ok1 := cm.Data["trustyaiServiceImageName"]
-	imageTag, ok2 := cm.Data["trustyaiServiceImageTag"]
-
-	if !ok1 || !ok2 {
-		// One or both of the keys are not present in the ConfigMap, return error
-		return defaultImage, defaultTag, fmt.Errorf("configmap %s does not contain necessary keys", configMapKey)
-	}
-
-	// Return the image and tag
-	return imageName, imageTag, nil
 }
