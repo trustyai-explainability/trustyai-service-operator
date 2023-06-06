@@ -1,6 +1,9 @@
 package controllers
 
-import appsv1 "k8s.io/api/apps/v1"
+import (
+	appsv1 "k8s.io/api/apps/v1"
+	"os"
+)
 
 func isDeploymentReady(deployment *appsv1.Deployment) bool {
 	return deployment.Status.Replicas == deployment.Status.UpdatedReplicas &&
@@ -26,4 +29,13 @@ func removeString(list []string, s string) []string {
 		}
 	}
 	return newList
+}
+
+// GetNamespace returns the namespace of a pod
+func GetNamespace() (string, error) {
+	ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+	if err != nil {
+		return "", err
+	}
+	return string(ns), nil
 }

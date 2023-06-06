@@ -108,6 +108,36 @@ Additionally, in that namespace:
 * a `ServiceMonitor` will be created to allow Prometheus to scrape metrics from the service.
 * (if on OpenShift) a `Route` will be created to allow external access to the service.
 
+### Custom Image Configuration using ConfigMap
+
+You can configure the operator to use custom images by creating a `ConfigMap` in the operator's namespace. 
+The operator only checks the ConfigMap at deployment, so changes made afterward won't trigger a redeployment of services.
+
+Here's an example of a ConfigMap that specifies a custom image:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trustyai-service-operator-config
+data:
+  trustyaiServiceImageName: 'quay.io/mycustomrepo/mycustomimage'
+  trustyaiServiceImageTag: 'v1.0.0'
+```
+
+You can apply this manifest with the following command, replacing `<file-name.yaml>` with the name of your manifest file:
+
+```shell
+kubectl apply -f <file-name.yaml> -n $OPERATOR_NAMESPACE
+```
+
+Please ensure the namespace specified is the same as the namespace where you have deployed the operator.
+
+After the ConfigMap is applied, you can then proceed to deploy the TrustyAI service.
+The operator will use the image name and tag specified in the ConfigMap for the deployment.
+
+If you want to use a different image or tag in the future, you'll need to update the ConfigMap and redeploy the operator to have the changes take effect. The running TrustyAI services won't be redeployed automatically. To use the new image or tag, you'll need to delete and recreate the TrustyAIService resources.
+
 ## Contributing
 
 Please see the [CONTRIBUTING.md](./CONTRIBUTING.md) file for more details on how to contribute to this project.

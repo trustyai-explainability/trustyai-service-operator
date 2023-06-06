@@ -54,7 +54,8 @@ const (
 // TrustyAIServiceReconciler reconciles a TrustyAIService object
 type TrustyAIServiceReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme    *runtime.Scheme
+	Namespace string
 }
 
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io.trustyai.opendatahub.io,resources=trustyaiservices,verbs=get;list;watch;create;update;patch;delete
@@ -217,13 +218,22 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 }
 
 func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (*appsv1.Deployment, error) {
+
+	// Get image and tag from ConfigMap
+	// If there's a ConfigMap with custom images, it is only applied when the operator is first deployed
+	// Changing (or creating) the ConfigMap after the operator is deployed will not have any effect
+	imageName, imageTag, err := r.getImageAndTagFromConfigMap(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	deploy := &appsv1.Deployment{}
-	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deploy)
+	err = r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deploy)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Deployment does not exist, create it
 			log.FromContext(ctx).Info("Could not find deployment.")
-			return r.createDeployment(ctx, instance)
+			return r.createDeployment(ctx, instance, imageName, imageTag)
 		}
 
 		// Some other error occurred when trying to get the Deployment
@@ -322,16 +332,9 @@ func (r *TrustyAIServiceReconciler) createPVC(ctx context.Context, instance *tru
 }
 
 // reconcileDeployment returns a Deployment object with the same name/namespace as the cr
-func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*appsv1.Deployment, error) {
+func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, imageName string, imageTag string) (*appsv1.Deployment, error) {
 
 	labels := getCommonLabels(cr.Name)
-
-	if cr.Spec.Image == "" {
-		cr.Spec.Image = defaultImage
-	}
-	if cr.Spec.Tag == "" {
-		cr.Spec.Tag = defaultTag
-	}
 
 	replicas := int32(1)
 	if cr.Spec.Replicas == nil {
@@ -341,7 +344,7 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 	containers := []corev1.Container{
 		{
 			Name:  containerName,
-			Image: fmt.Sprintf("%s:%s", cr.Spec.Image, cr.Spec.Tag),
+			Image: fmt.Sprintf("%s:%s", imageName, imageTag),
 			Env: []corev1.EnvVar{
 				{
 					Name:  "STORAGE_DATA_FILENAME",
@@ -623,4 +626,42 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(instance *trustyaiopendata
 	}
 
 	return nil
+}
+
+// getTrustyAIImageAndTagFromConfigMap gets a custom TrustyAI image and tag from a ConfigMap in the operator's namespace
+func (r *TrustyAIServiceReconciler) getImageAndTagFromConfigMap(ctx context.Context) (string, string, error) {
+	if r.Namespace != "" {
+		// Define the key for the ConfigMap
+		configMapKey := types.NamespacedName{
+			Namespace: r.Namespace,
+			Name:      "trustyai-service-operator-config",
+		}
+
+		// Create an empty ConfigMap object
+		var cm corev1.ConfigMap
+
+		// Try to get the ConfigMap
+		if err := r.Get(ctx, configMapKey, &cm); err != nil {
+			if errors.IsNotFound(err) {
+				// ConfigMap not found, fallback to default values
+				return defaultImage, defaultTag, nil
+			}
+			// Other error occurred when trying to fetch the ConfigMap
+			return defaultImage, defaultTag, fmt.Errorf("Error reading configmap %s", configMapKey)
+		}
+
+		// ConfigMap is found, extract the image and tag
+		imageName, ok1 := cm.Data["trustyaiServiceImageName"]
+		imageTag, ok2 := cm.Data["trustyaiServiceImageTag"]
+
+		if !ok1 || !ok2 {
+			// One or both of the keys are not present in the ConfigMap, return error
+			return defaultImage, defaultTag, fmt.Errorf("configmap %s does not contain necessary keys", configMapKey)
+		}
+
+		// Return the image and tag
+		return imageName, imageTag, nil
+	} else {
+		return defaultImage, defaultTag, nil
+	}
 }
