@@ -145,9 +145,38 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// handle error
 	}
 
+	// PV not found condition
+	pvAvailableCondition := trustyaiopendatahubiov1alpha1.Condition{
+		Type:    "PVAvailable",
+		Status:  corev1.ConditionFalse,
+		Reason:  "PVNotFound",
+		Message: "PV not found",
+	}
+
+	// Update the instance status to Not Ready
+	instance.Status.Phase = "Not Ready"
+	instance.Status.Ready = corev1.ConditionFalse
+
 	pv, err := r.ensurePV(ctx, instance)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Could not find requested PersistentVolume.")
+	} else {
+		// Set the conditions appropriately
+		pvAvailableCondition.Status = corev1.ConditionTrue
+		pvAvailableCondition.Reason = "PVFound"
+		pvAvailableCondition.Message = "PersistentVolume found"
+	}
+
+	// Update the conditions
+	instance.Status.Conditions = append(instance.Status.Conditions, pvAvailableCondition)
+
+	if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
+		log.FromContext(ctx).Error(updateErr, "Failed to update instance status")
+		return ctrl.Result{}, updateErr
+	}
+
+	if err != nil {
+		// If there was an error finding the PV, requeue the request
 		return ctrl.Result{}, err
 	}
 
@@ -215,6 +244,15 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// Populate statuses
 	if err = r.reconcileStatuses(instance, ctx); err != nil {
 		log.FromContext(ctx).Error(err, "Error creating the statuses.")
+		return ctrl.Result{}, err
+	}
+
+	// At the end of reconcile, update the instance status to Ready
+	instance.Status.Phase = "Ready"
+	instance.Status.Ready = corev1.ConditionTrue
+
+	if err := r.Status().Update(ctx, instance); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to update instance status")
 		return ctrl.Result{}, err
 	}
 
