@@ -84,6 +84,15 @@ rules:
   - list
   - watch
 - apiGroups:
+  - route.openshift.io
+  resources:
+  - routes
+  verbs:
+  - create
+  - get
+  - list
+  - update
+- apiGroups:
   - serving.kserve.io
   resources:
   - servingruntimes
