@@ -200,7 +200,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		pvcAvailableCondition.Status = corev1.ConditionTrue
 		pvcAvailableCondition.Reason = "PVCFound"
 		pvcAvailableCondition.Message = "PersistentVolumeClaim found"
-
 	}
 
 	// Set the condition
@@ -208,6 +207,10 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		log.FromContext(ctx).Error(err, "Failed to set condition")
 		return ctrl.Result{}, err
 	}
+
+	// At the end of reconcile, update the instance status to Ready
+	instance.Status.Phase = "Ready"
+	instance.Status.Ready = corev1.ConditionTrue
 
 	if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
 		log.FromContext(ctx).Error(updateErr, "Failed to update instance status")
