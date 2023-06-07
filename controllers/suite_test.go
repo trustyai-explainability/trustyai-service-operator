@@ -26,6 +26,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -106,6 +107,40 @@ func createNamespace(ctx context.Context, k8sClient client.Client, namespace str
 	return nil
 }
 
+func createMockPV(ctx context.Context, k8sClient client.Client, pvName string, size string) error {
+	pv := &corev1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: pvName,
+		},
+		Spec: corev1.PersistentVolumeSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{
+				corev1.ReadWriteOnce,
+			},
+			Capacity: corev1.ResourceList{
+				corev1.ResourceStorage: resource.MustParse(size),
+			},
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: "/tmp/" + pvName,
+				},
+			},
+			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimDelete,
+		},
+	}
+
+	err := k8sClient.Create(ctx, pv)
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
+			// PV already exists
+			return nil
+		}
+		// Other errors
+		return fmt.Errorf("failed to create PV: %w", err)
+	}
+
+	return nil
+}
+
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
@@ -173,6 +208,10 @@ var _ = Describe("TrustyAI operator", func() {
 			Eventually(func() error {
 				return createNamespace(ctx, k8sClient, namespace)
 			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
+			// Create a mock PV for the tests
+			Eventually(func() error {
+				return createMockPV(ctx, k8sClient, "mypv", "1Gi")
+			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create PV")
 		})
 
 		AfterEach(func() {
