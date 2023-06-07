@@ -162,28 +162,26 @@ spec:
   trustyaiMetrics:
     schedule: "15s"
   serviceMonitoring:
-    spec:
-      endpoints:
-        - interval: "4s"
-          path: "/q/metrics"
-          honorLabels: true
-          targetPort: 8080
-          scheme: "http"
-          bearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
-          bearerTokenSecret: 
-            key: "your-key-name" # replace this with your key name
-          params:
-            match[]:
-              - '{__name__= "trustyai_spd"}'
-              - '{__name__= "trustyai_dir"}'
-          metricRelabelConfigs:
-            - action: "keep"
-              regex: "trustyai_.*"
-              sourceLabels: ["__name__"]
-      selector:
-        matchLabels:
-          app.kubernetes.io/name: "trustyai-service-example"
-
+   endpoints:
+     - interval: "4s"
+       path: "/q/metrics"
+       honorLabels: true
+       targetPort: 8080
+       scheme: "http"
+       bearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+       bearerTokenSecret: 
+         key: "your-key-name" # replace this with your key name
+       params:
+         match[]:
+           - '{__name__= "trustyai_spd"}'
+           - '{__name__= "trustyai_dir"}'
+       metricRelabelConfigs:
+         - action: "keep"
+           regex: "trustyai_.*"
+           sourceLabels: ["__name__"]
+   selector:
+     matchLabels:
+       app.kubernetes.io/name: "trustyai-service-example"
 ```
 
 ## Contributing
