@@ -35,7 +35,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"time"
 )
 
 var ErrPVCNotReady = goerrors.New("PVC is not ready")
@@ -167,8 +166,11 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		pvAvailableCondition.Message = "PersistentVolume found"
 	}
 
-	// Update the conditions
-	instance.Status.Conditions = append(instance.Status.Conditions, pvAvailableCondition)
+	// Set the condition
+	if err := r.setCondition(instance, pvAvailableCondition); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to set condition")
+		return ctrl.Result{}, err
+	}
 
 	if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
 		log.FromContext(ctx).Error(updateErr, "Failed to update instance status")
@@ -583,7 +585,7 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(instance *trustyaiopendata
 		condition = trustyaiopendatahubiov1alpha1.Condition{
 			Type:               "ModelMeshReady",
 			Status:             "False",
-			LastTransitionTime: metav1.Now().Format(time.RFC3339),
+			LastTransitionTime: metav1.Now(),
 			Reason:             "ModelMeshNotPresent",
 			Message:            "ModelMesh operator Deployment not found",
 		}
@@ -595,7 +597,7 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(instance *trustyaiopendata
 			condition = trustyaiopendatahubiov1alpha1.Condition{
 				Type:               "ModelMeshReady",
 				Status:             "True",
-				LastTransitionTime: metav1.Now().Format(time.RFC3339),
+				LastTransitionTime: metav1.Now(),
 				Reason:             "ModelMeshHealthy",
 				Message:            "ModelMesh operator is running and healthy",
 			}
@@ -603,7 +605,7 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(instance *trustyaiopendata
 			condition = trustyaiopendatahubiov1alpha1.Condition{
 				Type:               "ModelMeshReady",
 				Status:             "False",
-				LastTransitionTime: metav1.Now().Format(time.RFC3339),
+				LastTransitionTime: metav1.Now(),
 				Reason:             "ModelMeshNotHealthy",
 				Message:            "ModelMesh operator Deployment is not healthy",
 			}

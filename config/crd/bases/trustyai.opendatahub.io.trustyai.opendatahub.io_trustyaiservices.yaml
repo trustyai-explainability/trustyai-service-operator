@@ -85,6 +85,7 @@ spec:
                   description: Condition represents possible conditions of a TrustyAIServiceStatus
                   properties:
                     lastTransitionTime:
+                      format: date-time
                       type: string
                     message:
                       type: string

@@ -71,7 +71,7 @@ type TrustyAIServiceStatus struct {
 type Condition struct {
 	Type               string                 `json:"type"`
 	Status             corev1.ConditionStatus `json:"status"`
-	LastTransitionTime string                 `json:"lastTransitionTime"`
+	LastTransitionTime metav1.Time            `json:"lastTransitionTime"`
 	Reason             string                 `json:"reason"`
 	Message            string                 `json:"message"`
 }
