@@ -69,11 +69,11 @@ type TrustyAIServiceStatus struct {
 
 // Condition represents possible conditions of a TrustyAIServiceStatus
 type Condition struct {
-	Type               string `json:"type"`
-	Status             string `json:"status"`
-	LastTransitionTime string `json:"lastTransitionTime"`
-	Reason             string `json:"reason"`
-	Message            string `json:"message"`
+	Type               string                 `json:"type"`
+	Status             corev1.ConditionStatus `json:"status"`
+	LastTransitionTime metav1.Time            `json:"lastTransitionTime"`
+	Reason             string                 `json:"reason"`
+	Message            string                 `json:"message"`
 }
 
 //+kubebuilder:object:root=true

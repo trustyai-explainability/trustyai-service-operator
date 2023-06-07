@@ -27,7 +27,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -36,7 +35,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"time"
 )
 
 var ErrPVCNotReady = goerrors.New("PVC is not ready")
@@ -147,8 +145,46 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// handle error
 	}
 
+	// PV not found condition
+	pvAvailableCondition := trustyaiopendatahubiov1alpha1.Condition{
+		Type:    "PVAvailable",
+		Status:  corev1.ConditionFalse,
+		Reason:  "PVNotFound",
+		Message: "PV not found",
+	}
+
+	// Update the instance status to Not Ready
+	instance.Status.Phase = "Not Ready"
+	instance.Status.Ready = corev1.ConditionFalse
+
+	pv, err := r.ensurePV(ctx, instance)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Could not find requested PersistentVolume.")
+	} else {
+		// Set the conditions appropriately
+		pvAvailableCondition.Status = corev1.ConditionTrue
+		pvAvailableCondition.Reason = "PVFound"
+		pvAvailableCondition.Message = "PersistentVolume found"
+	}
+
+	// Set the condition
+	if err := r.setCondition(instance, pvAvailableCondition); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to set condition")
+		return ctrl.Result{}, err
+	}
+
+	if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
+		log.FromContext(ctx).Error(updateErr, "Failed to update instance status")
+		return ctrl.Result{}, updateErr
+	}
+
+	if err != nil {
+		// If there was an error finding the PV, requeue the request
+		return ctrl.Result{}, err
+	}
+
 	// Ensure PVC
-	err = r.ensurePVC(ctx, instance)
+	err = r.ensurePVC(ctx, instance, pv)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error creating PVC storage.")
 		return ctrl.Result{}, err
@@ -211,6 +247,15 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// Populate statuses
 	if err = r.reconcileStatuses(instance, ctx); err != nil {
 		log.FromContext(ctx).Error(err, "Error creating the statuses.")
+		return ctrl.Result{}, err
+	}
+
+	// At the end of reconcile, update the instance status to Ready
+	instance.Status.Phase = "Ready"
+	instance.Status.Ready = corev1.ConditionTrue
+
+	if err := r.Status().Update(ctx, instance); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to update instance status")
 		return ctrl.Result{}, err
 	}
 
@@ -282,54 +327,6 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 
 	// Deployment is ready and using the PVC
 	return deploy, nil
-}
-
-func (r *TrustyAIServiceReconciler) ensurePVC(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
-	pvc := &corev1.PersistentVolumeClaim{}
-
-	err := r.Get(ctx, types.NamespacedName{Name: defaultPvcName, Namespace: instance.Namespace}, pvc)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			log.FromContext(ctx).Info("PVC not found. Creating.")
-			// The PVC doesn't exist, so we need to create it
-			return r.createPVC(ctx, instance)
-		}
-		return err
-	}
-
-	return nil
-}
-
-func (r *TrustyAIServiceReconciler) createPVC(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
-	storageClass := ""
-	pvc := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      defaultPvcName,
-			Namespace: instance.Namespace,
-		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{
-				corev1.ReadWriteOnce,
-			},
-			StorageClassName: &storageClass,
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse(instance.Spec.Storage.Size),
-				},
-			},
-			VolumeName: instance.Spec.Storage.PV,
-			VolumeMode: func() *corev1.PersistentVolumeMode {
-				volumeMode := corev1.PersistentVolumeFilesystem
-				return &volumeMode
-			}(),
-		},
-	}
-
-	if err := ctrl.SetControllerReference(instance, pvc, r.Scheme); err != nil {
-		return err
-	}
-
-	return r.Create(ctx, pvc)
 }
 
 // reconcileDeployment returns a Deployment object with the same name/namespace as the cr
@@ -589,7 +586,7 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(instance *trustyaiopendata
 		condition = trustyaiopendatahubiov1alpha1.Condition{
 			Type:               "ModelMeshReady",
 			Status:             "False",
-			LastTransitionTime: metav1.Now().Format(time.RFC3339),
+			LastTransitionTime: metav1.Now(),
 			Reason:             "ModelMeshNotPresent",
 			Message:            "ModelMesh operator Deployment not found",
 		}
@@ -601,7 +598,7 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(instance *trustyaiopendata
 			condition = trustyaiopendatahubiov1alpha1.Condition{
 				Type:               "ModelMeshReady",
 				Status:             "True",
-				LastTransitionTime: metav1.Now().Format(time.RFC3339),
+				LastTransitionTime: metav1.Now(),
 				Reason:             "ModelMeshHealthy",
 				Message:            "ModelMesh operator is running and healthy",
 			}
@@ -609,7 +606,7 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(instance *trustyaiopendata
 			condition = trustyaiopendatahubiov1alpha1.Condition{
 				Type:               "ModelMeshReady",
 				Status:             "False",
-				LastTransitionTime: metav1.Now().Format(time.RFC3339),
+				LastTransitionTime: metav1.Now(),
 				Reason:             "ModelMeshNotHealthy",
 				Message:            "ModelMesh operator Deployment is not healthy",
 			}
