@@ -300,7 +300,6 @@ func (r *TrustyAIServiceReconciler) ensurePVC(ctx context.Context, instance *tru
 }
 
 func (r *TrustyAIServiceReconciler) createPVC(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
-	storageClass := ""
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      defaultPvcName,
@@ -310,7 +309,6 @@ func (r *TrustyAIServiceReconciler) createPVC(ctx context.Context, instance *tru
 			AccessModes: []corev1.PersistentVolumeAccessMode{
 				corev1.ReadWriteOnce,
 			},
-			StorageClassName: &storageClass,
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceStorage: resource.MustParse(instance.Spec.Storage.Size),
