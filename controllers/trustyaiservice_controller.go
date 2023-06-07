@@ -21,7 +21,6 @@ import (
 	goerrors "errors"
 	"fmt"
 	routev1 "github.com/openshift/api/route/v1"
-	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	trustyaiopendatahubiov1alpha1 "github.com/ruivieira/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -492,77 +491,6 @@ func (r *TrustyAIServiceReconciler) reconcileRoute(cr *trustyaiopendatahubiov1al
 		return nil, err
 	}
 	return route, nil
-}
-
-func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) (*monitoringv1.ServiceMonitor, error) {
-
-	serviceMonitor := &monitoringv1.ServiceMonitor{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceMonitorName,
-			Namespace: cr.Namespace,
-			Labels: map[string]string{
-				"modelmesh-service": "modelmesh-serving",
-			},
-		},
-		Spec: monitoringv1.ServiceMonitorSpec{
-			Endpoints: []monitoringv1.Endpoint{
-				{
-					Interval:        "4s",
-					Path:            "/q/metrics",
-					HonorLabels:     true,
-					TargetPort:      &intstr.IntOrString{IntVal: 8080},
-					Scheme:          "http",
-					BearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token",
-					//BearerTokenSecret: monitoringv1.SecretKeySelector {
-					//	Key: ""
-					//},
-					Params: map[string][]string{
-						"match[]": {
-							`{__name__= "trustyai_spd"}`,
-							`{__name__= "trustyai_dir"}`,
-						},
-					},
-					MetricRelabelConfigs: []*monitoringv1.RelabelConfig{
-						{
-							Action:       "keep",
-							Regex:        "trustyai_.*",
-							SourceLabels: []monitoringv1.LabelName{"__name__"},
-						},
-					},
-				},
-			},
-			Selector: metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app.kubernetes.io/name": cr.Name,
-				},
-			},
-		},
-	}
-
-	// Set AppService instance as the owner and controller
-	err := ctrl.SetControllerReference(cr, serviceMonitor, r.Scheme)
-	if err != nil {
-		return nil, err
-	}
-
-	// Check if this ServiceMonitor already exists
-	found := &monitoringv1.ServiceMonitor{}
-	err = r.Get(ctx, types.NamespacedName{Name: serviceMonitor.Name, Namespace: serviceMonitor.Namespace}, found)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			log.FromContext(ctx).Info("Creating a new ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
-			err = r.Create(ctx, serviceMonitor)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "Not found ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
-				return nil, err
-			}
-		} else {
-			log.FromContext(ctx).Error(err, "Couldn't create new ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
-			return nil, err
-		}
-	}
-
-	return serviceMonitor, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -138,6 +138,54 @@ The operator will use the image name and tag specified in the ConfigMap for the 
 
 If you want to use a different image or tag in the future, you'll need to update the ConfigMap and redeploy the operator to have the changes take effect. The running TrustyAI services won't be redeployed automatically. To use the new image or tag, you'll need to delete and recreate the TrustyAIService resources.
 
+### Configuring the Service Monitor
+
+A `TrustyAIService` can be monitored with a Prometheus Service Monitor.
+The operator will create one by default, but you can also create your own Service Monitor and have the operator use that instead.
+This can be done by setting the `serviceMonitor` field in the `TrustyAIService` spec.
+As an example:
+
+```yaml
+apiVersion: trustyai.opendatahub.io/v1alpha1
+kind: TrustyAIService
+metadata:
+  name: trustyai-service-example
+spec:
+  storage:
+    format: "PVC"
+    folder: "/inputs"
+    pv: "mypv"
+    size: "1Gi"
+  data:
+    filename: "data.csv"
+    format: "CSV"
+  trustyaiMetrics:
+    schedule: "15s"
+  serviceMonitoring:
+    spec:
+      endpoints:
+        - interval: "4s"
+          path: "/q/metrics"
+          honorLabels: true
+          targetPort: 8080
+          scheme: "http"
+          bearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          bearerTokenSecret: 
+            key: "your-key-name" # replace this with your key name
+          params:
+            match[]:
+              - '{__name__= "trustyai_spd"}'
+              - '{__name__= "trustyai_dir"}'
+          metricRelabelConfigs:
+            - action: "keep"
+              regex: "trustyai_.*"
+              sourceLabels: ["__name__"]
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: "trustyai-service-example"
+
+```
+
 ## Contributing
 
 Please see the [CONTRIBUTING.md](./CONTRIBUTING.md) file for more details on how to contribute to this project.
