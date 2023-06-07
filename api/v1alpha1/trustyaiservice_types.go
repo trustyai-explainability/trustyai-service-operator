@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -52,10 +53,11 @@ type MetricsSpec struct {
 type TrustyAIServiceSpec struct {
 	// Number of replicas
 	// +optional
-	Replicas *int32      `json:"replicas"`
-	Storage  StorageSpec `json:"storage"`
-	Data     DataSpec    `json:"data"`
-	Metrics  MetricsSpec `json:"metrics"`
+	Replicas          *int32                           `json:"replicas"`
+	Storage           StorageSpec                      `json:"storage"`
+	Data              DataSpec                         `json:"data"`
+	Metrics           MetricsSpec                      `json:"metrics"`
+	ServiceMonitoring *monitoringv1.ServiceMonitorSpec `json:"serviceMonitoring,omitempty"`
 }
 
 // TrustyAIServiceStatus defines the observed state of TrustyAIService
