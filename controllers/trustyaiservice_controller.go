@@ -183,10 +183,39 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
+	// PV not found condition
+	pvcAvailableCondition := trustyaiopendatahubiov1alpha1.Condition{
+		Type:    "PVCAvailable",
+		Status:  corev1.ConditionFalse,
+		Reason:  "PVCNotFound",
+		Message: "PVC not found",
+	}
+
 	// Ensure PVC
 	err = r.ensurePVC(ctx, instance, pv)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error creating PVC storage.")
+	} else {
+		// Set the conditions appropriately
+		pvcAvailableCondition.Status = corev1.ConditionTrue
+		pvcAvailableCondition.Reason = "PVCFound"
+		pvcAvailableCondition.Message = "PersistentVolumeClaim found"
+
+	}
+
+	// Set the condition
+	if err = r.setCondition(instance, pvcAvailableCondition); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to set condition")
+		return ctrl.Result{}, err
+	}
+
+	if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
+		log.FromContext(ctx).Error(updateErr, "Failed to update instance status")
+		return ctrl.Result{}, updateErr
+	}
+
+	if err != nil {
+		// If there was an error finding the PVC, requeue the request
 		return ctrl.Result{}, err
 	}
 
