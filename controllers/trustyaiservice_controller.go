@@ -20,7 +20,6 @@ import (
 	"context"
 	goerrors "errors"
 	"fmt"
-	routev1 "github.com/openshift/api/route/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	trustyaiopendatahubiov1alpha1 "github.com/ruivieira/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -33,7 +32,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -484,46 +482,6 @@ func (r *TrustyAIServiceReconciler) reconcileService(cr *trustyaiopendatahubiov1
 		return nil, err
 	}
 	return service, nil
-}
-
-func (r *TrustyAIServiceReconciler) reconcileRoute(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
-
-	labels := getCommonLabels(cr.Name)
-
-	route := &routev1.Route{
-
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name,
-			Namespace: cr.Namespace,
-			Labels:    labels,
-		},
-		Spec: routev1.RouteSpec{
-			To: routev1.RouteTargetReference{
-				Kind: "Service",
-				Name: cr.Name,
-			},
-			Port: &routev1.RoutePort{
-				TargetPort: intstr.IntOrString{
-					Type:   intstr.String,
-					StrVal: "http",
-				},
-			},
-			TLS: nil,
-		},
-	}
-
-	if err := controllerutil.SetControllerReference(cr, route, r.Scheme); err != nil {
-		log.FromContext(ctx).Error(err, "Error setting TrustyAIService as route owner.")
-		return err
-	}
-
-	// Use the client to create the route
-	err := r.Client.Create(ctx, route)
-	if err != nil {
-		log.FromContext(ctx).Error(err, "Error creating Route.")
-		return err
-	}
-	return nil
 }
 
 func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
