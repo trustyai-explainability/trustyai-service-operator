@@ -622,7 +622,10 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(instance *trustyaiopendata
 	}
 
 	// Update the condition
-	instance.Status.Conditions = append(instance.Status.Conditions, condition)
+	if err = r.setCondition(instance, condition); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to set condition")
+		return err
+	}
 
 	// Update the status of the custom resource
 	err = r.Status().Update(ctx, instance)
@@ -630,7 +633,6 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(instance *trustyaiopendata
 		log.FromContext(ctx).Error(err, "Error updating conditions.")
 		return err
 	}
-
 	return nil
 }
 
