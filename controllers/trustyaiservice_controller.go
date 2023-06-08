@@ -145,81 +145,93 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// handle error
 	}
 
-	// PV not found condition
-	pvAvailableCondition := trustyaiopendatahubiov1alpha1.Condition{
-		Type:    "PVAvailable",
-		Status:  corev1.ConditionFalse,
-		Reason:  "PVNotFound",
-		Message: "PV not found",
-	}
-
 	// Update the instance status to Not Ready
 	instance.Status.Phase = "Not Ready"
 	instance.Status.Ready = corev1.ConditionFalse
 
 	pv, err := r.ensurePV(ctx, instance)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Could not find requested PersistentVolume.")
-	} else {
-		// Set the conditions appropriately
-		pvAvailableCondition.Status = corev1.ConditionTrue
-		pvAvailableCondition.Reason = "PVFound"
-		pvAvailableCondition.Message = "PersistentVolume found"
-	}
+		// PV not found condition
+		pvAvailableCondition := trustyaiopendatahubiov1alpha1.Condition{
+			Type:    "PVAvailable",
+			Status:  corev1.ConditionFalse,
+			Reason:  "PVNotFound",
+			Message: "PV not found",
+		}
+		if setConditionErr := r.setCondition(instance, pvAvailableCondition); setConditionErr != nil {
+			log.FromContext(ctx).Error(setConditionErr, "Failed to set condition")
+		}
 
-	// Set the condition
-	if err := r.setCondition(instance, pvAvailableCondition); err != nil {
-		log.FromContext(ctx).Error(err, "Failed to set condition")
-		return ctrl.Result{}, err
-	}
+		// Update the instance status to Not Ready
+		instance.Status.Phase = "Not Ready"
+		instance.Status.Ready = corev1.ConditionFalse
 
-	if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
-		log.FromContext(ctx).Error(updateErr, "Failed to update instance status")
-		return ctrl.Result{}, updateErr
-	}
+		// Update the status subresource
+		if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
+			log.FromContext(ctx).Error(updateErr, "Failed to update TrustyAIService status")
+		}
 
-	if err != nil {
 		// If there was an error finding the PV, requeue the request
+		log.FromContext(ctx).Error(err, "Could not find requested PersistentVolume.")
 		return ctrl.Result{}, err
-	}
+	} else {
+		// PV found, set the appropriate condition
+		pvAvailableCondition := trustyaiopendatahubiov1alpha1.Condition{
+			Type:    "PVAvailable",
+			Status:  corev1.ConditionTrue,
+			Reason:  "PVFound",
+			Message: "PersistentVolume found",
+		}
 
-	// PV not found condition
-	pvcAvailableCondition := trustyaiopendatahubiov1alpha1.Condition{
-		Type:    "PVCAvailable",
-		Status:  corev1.ConditionFalse,
-		Reason:  "PVCNotFound",
-		Message: "PVC not found",
+		if setConditionErr := r.setCondition(instance, pvAvailableCondition); setConditionErr != nil {
+			log.FromContext(ctx).Error(setConditionErr, "Failed to set condition")
+			return ctrl.Result{}, setConditionErr
+		}
 	}
 
 	// Ensure PVC
 	err = r.ensurePVC(ctx, instance, pv)
 	if err != nil {
+		// PVC not found condition
+		pvcAvailableCondition := trustyaiopendatahubiov1alpha1.Condition{
+			Type:    "PVCAvailable",
+			Status:  corev1.ConditionFalse,
+			Reason:  "PVCNotFound",
+			Message: "PersistentVolumeClaim not found",
+		}
 		log.FromContext(ctx).Error(err, "Error creating PVC storage.")
+
+		// Set the condition
+		if err = r.setCondition(instance, pvcAvailableCondition); err != nil {
+			log.FromContext(ctx).Error(err, "Failed to set condition")
+		}
+
+		// Update the instance status to Not Ready
+		instance.Status.Phase = "Not Ready"
+		instance.Status.Ready = corev1.ConditionFalse
+
+		// Update the status subresource
+		if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
+			log.FromContext(ctx).Error(updateErr, "Failed to update TrustyAIService status")
+		}
+
+		// If there was an error finding the PV, requeue the request
+		log.FromContext(ctx).Error(err, "Could not find requested PersistentVolumeClaim.")
+		return ctrl.Result{}, err
+
 	} else {
 		// Set the conditions appropriately
-		pvcAvailableCondition.Status = corev1.ConditionTrue
-		pvcAvailableCondition.Reason = "PVCFound"
-		pvcAvailableCondition.Message = "PersistentVolumeClaim found"
-	}
+		pvcAvailableCondition := trustyaiopendatahubiov1alpha1.Condition{
+			Type:    "PVCAvailable",
+			Status:  corev1.ConditionTrue,
+			Reason:  "PVCFound",
+			Message: "PersistentVolumeClaim found",
+		}
 
-	// Set the condition
-	if err = r.setCondition(instance, pvcAvailableCondition); err != nil {
-		log.FromContext(ctx).Error(err, "Failed to set condition")
-		return ctrl.Result{}, err
-	}
-
-	// At the end of reconcile, update the instance status to Ready
-	instance.Status.Phase = "Ready"
-	instance.Status.Ready = corev1.ConditionTrue
-
-	if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
-		log.FromContext(ctx).Error(updateErr, "Failed to update instance status")
-		return ctrl.Result{}, updateErr
-	}
-
-	if err != nil {
-		// If there was an error finding the PVC, requeue the request
-		return ctrl.Result{}, err
+		if setConditionErr := r.setCondition(instance, pvcAvailableCondition); setConditionErr != nil {
+			log.FromContext(ctx).Error(setConditionErr, "Failed to set condition")
+			return ctrl.Result{}, setConditionErr
+		}
 	}
 
 	// Ensure Deployment object
@@ -263,18 +275,13 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	// Populate statuses
-	if err = r.reconcileStatuses(instance, ctx); err != nil {
-		log.FromContext(ctx).Error(err, "Error creating the statuses.")
-		return ctrl.Result{}, err
-	}
-
 	// At the end of reconcile, update the instance status to Ready
 	instance.Status.Phase = "Ready"
 	instance.Status.Ready = corev1.ConditionTrue
 
-	if err := r.Status().Update(ctx, instance); err != nil {
-		log.FromContext(ctx).Error(err, "Failed to update instance status")
+	// Populate statuses
+	if err = r.reconcileStatuses(instance, ctx); err != nil {
+		log.FromContext(ctx).Error(err, "Error creating the statuses.")
 		return ctrl.Result{}, err
 	}
 
@@ -641,7 +648,10 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(instance *trustyaiopendata
 	}
 
 	// Update the condition
-	instance.Status.Conditions = append(instance.Status.Conditions, condition)
+	if err = r.setCondition(instance, condition); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to set condition")
+		return err
+	}
 
 	// Update the status of the custom resource
 	err = r.Status().Update(ctx, instance)
@@ -649,7 +659,6 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(instance *trustyaiopendata
 		log.FromContext(ctx).Error(err, "Error updating conditions.")
 		return err
 	}
-
 	return nil
 }
 
