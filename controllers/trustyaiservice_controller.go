@@ -173,11 +173,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
-		log.FromContext(ctx).Error(updateErr, "Failed to update instance status")
-		return ctrl.Result{}, updateErr
-	}
-
 	if err != nil {
 		// If there was an error finding the PV, requeue the request
 		return ctrl.Result{}, err
@@ -206,15 +201,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err = r.setCondition(instance, pvcAvailableCondition); err != nil {
 		log.FromContext(ctx).Error(err, "Failed to set condition")
 		return ctrl.Result{}, err
-	}
-
-	// At the end of reconcile, update the instance status to Ready
-	instance.Status.Phase = "Ready"
-	instance.Status.Ready = corev1.ConditionTrue
-
-	if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
-		log.FromContext(ctx).Error(updateErr, "Failed to update instance status")
-		return ctrl.Result{}, updateErr
 	}
 
 	if err != nil {
@@ -263,18 +249,13 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	// Populate statuses
-	if err = r.reconcileStatuses(instance, ctx); err != nil {
-		log.FromContext(ctx).Error(err, "Error creating the statuses.")
-		return ctrl.Result{}, err
-	}
-
 	// At the end of reconcile, update the instance status to Ready
 	instance.Status.Phase = "Ready"
 	instance.Status.Ready = corev1.ConditionTrue
 
-	if err := r.Status().Update(ctx, instance); err != nil {
-		log.FromContext(ctx).Error(err, "Failed to update instance status")
+	// Populate statuses
+	if err = r.reconcileStatuses(instance, ctx); err != nil {
+		log.FromContext(ctx).Error(err, "Error creating the statuses.")
 		return ctrl.Result{}, err
 	}
 
