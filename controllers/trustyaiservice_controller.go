@@ -200,7 +200,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		pvcAvailableCondition.Status = corev1.ConditionTrue
 		pvcAvailableCondition.Reason = "PVCFound"
 		pvcAvailableCondition.Message = "PersistentVolumeClaim found"
-
 	}
 
 	// Set the condition
@@ -208,6 +207,10 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		log.FromContext(ctx).Error(err, "Failed to set condition")
 		return ctrl.Result{}, err
 	}
+
+	// At the end of reconcile, update the instance status to Ready
+	instance.Status.Phase = "Ready"
+	instance.Status.Ready = corev1.ConditionTrue
 
 	if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
 		log.FromContext(ctx).Error(updateErr, "Failed to update instance status")
@@ -220,9 +223,8 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Ensure Deployment object
-	deployment, err := r.ensureDeployment(ctx, instance)
+	err = r.ensureDeployment(ctx, instance)
 	if err != nil {
-		// handle error, potentially requeue request
 		return ctrl.Result{}, err
 	}
 
@@ -250,26 +252,14 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Service Monitor
-	serviceMonitor, err := r.reconcileServiceMonitor(instance, ctx)
+	err = r.reconcileServiceMonitor(instance, ctx)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
 	// Create route
-	route, err := r.reconcileRoute(instance, ctx)
+	err = r.reconcileRoute(instance, ctx)
 	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// Add the TrustyAI instance as owner
-	// Set TrustyAIService instance as the owner and controller
-	if err := controllerutil.SetControllerReference(service, deployment, r.Scheme); err != nil {
-		return ctrl.Result{}, err
-	}
-	if err := controllerutil.SetControllerReference(service, route, r.Scheme); err != nil {
-		return ctrl.Result{}, err
-	}
-	if err := controllerutil.SetControllerReference(service, serviceMonitor, r.Scheme); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -292,14 +282,14 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{}, nil
 }
 
-func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (*appsv1.Deployment, error) {
+func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
 
 	// Get image and tag from ConfigMap
 	// If there's a ConfigMap with custom images, it is only applied when the operator is first deployed
 	// Changing (or creating) the ConfigMap after the operator is deployed will not have any effect
 	imageName, imageTag, err := r.getImageAndTagFromConfigMap(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	deploy := &appsv1.Deployment{}
@@ -312,7 +302,7 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 		}
 
 		// Some other error occurred when trying to get the Deployment
-		return nil, err
+		return err
 	}
 
 	// Deployment already exists
@@ -320,12 +310,12 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 
 	err = r.Get(ctx, types.NamespacedName{Name: defaultPvcName, Namespace: instance.Namespace}, pvc)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if pvc.Status.Phase != corev1.ClaimBound {
 		// The PVC is not ready yet.
-		return nil, ErrPVCNotReady
+		return ErrPVCNotReady
 	}
 
 	// Check if the PVC is set in the Deployment
@@ -350,16 +340,16 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 		deploy.Spec.Template.Spec.Volumes = append(deploy.Spec.Template.Spec.Volumes, volume)
 
 		if err := r.Update(ctx, deploy); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	// Deployment is ready and using the PVC
-	return deploy, nil
+	return nil
 }
 
 // reconcileDeployment returns a Deployment object with the same name/namespace as the cr
-func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, imageName string, imageTag string) (*appsv1.Deployment, error) {
+func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, imageName string, imageTag string) error {
 
 	labels := getCommonLabels(cr.Name)
 
@@ -441,15 +431,17 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 	}
 
 	if err := ctrl.SetControllerReference(cr, deployment, r.Scheme); err != nil {
-		return nil, err
+		log.FromContext(ctx).Error(err, "Error setting TrustyAIService as owner of Deployment.")
+		return err
 	}
 
 	err := r.Create(ctx, deployment)
 	if err != nil {
-		return nil, err
+		log.FromContext(ctx).Error(err, "Error creating Deployment.")
+		return err
 	}
 
-	return deployment, nil
+	return nil
 
 }
 
@@ -487,7 +479,7 @@ func (r *TrustyAIServiceReconciler) reconcileService(cr *trustyaiopendatahubiov1
 	return service, nil
 }
 
-func (r *TrustyAIServiceReconciler) reconcileRoute(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) (*routev1.Route, error) {
+func (r *TrustyAIServiceReconciler) reconcileRoute(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
 
 	labels := getCommonLabels(cr.Name)
 
@@ -513,15 +505,21 @@ func (r *TrustyAIServiceReconciler) reconcileRoute(cr *trustyaiopendatahubiov1al
 		},
 	}
 
+	if err := controllerutil.SetControllerReference(cr, route, r.Scheme); err != nil {
+		log.FromContext(ctx).Error(err, "Error setting TrustyAIService as route owner.")
+		return err
+	}
+
 	// Use the client to create the route
 	err := r.Client.Create(ctx, route)
 	if err != nil {
-		return nil, err
+		log.FromContext(ctx).Error(err, "Error creating Route.")
+		return err
 	}
-	return route, nil
+	return nil
 }
 
-func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) (*monitoringv1.ServiceMonitor, error) {
+func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
 
 	serviceMonitor := &monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
@@ -566,10 +564,10 @@ func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendata
 		},
 	}
 
-	// Set AppService instance as the owner and controller
+	// Set TrustyAIService instance as the owner and controller
 	err := ctrl.SetControllerReference(cr, serviceMonitor, r.Scheme)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Check if this ServiceMonitor already exists
@@ -581,15 +579,15 @@ func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendata
 			err = r.Create(ctx, serviceMonitor)
 			if err != nil {
 				log.FromContext(ctx).Error(err, "Not found ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
-				return nil, err
+				return err
 			}
 		} else {
 			log.FromContext(ctx).Error(err, "Couldn't create new ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
-			return nil, err
+			return err
 		}
 	}
 
-	return serviceMonitor, nil
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
