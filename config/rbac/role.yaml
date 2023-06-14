@@ -92,6 +92,7 @@ rules:
   - get
   - list
   - update
+  - watch
 - apiGroups:
   - serving.kserve.io
   resources:
