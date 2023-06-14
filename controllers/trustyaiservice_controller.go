@@ -67,7 +67,7 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=list;get;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;update;list;create
+//+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=list;watch;get;create;update;patch;delete
 
 // getCommonLabels returns the service's common labels
 func getCommonLabels(serviceName string) map[string]string {
