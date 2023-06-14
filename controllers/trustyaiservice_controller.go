@@ -20,6 +20,7 @@ import (
 	"context"
 	goerrors "errors"
 	"fmt"
+	kserveapi "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	trustyaiopendatahubiov1alpha1 "github.com/ruivieira/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -94,7 +95,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// CR not found, it may have been deleted, so we'll remove the payload processor from the ModelMesh deployment
-			err := updatePayloadProcessor(ctx, r.Client, modelMeshContainer, payloadProcessorName, req.Name, req.Namespace, true)
+			err := r.updatePayloadProcessor(ctx, modelMeshContainer, payloadProcessorName, req.Name, req.Namespace, true)
 			if err != nil {
 				// handle error
 			}
@@ -138,7 +139,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	instance.Status.Ready = corev1.ConditionTrue
 
 	// CR found, add or update the URL
-	err = updatePayloadProcessor(ctx, r.Client, modelMeshContainer, payloadProcessorName, instance.Name, instance.Namespace, false)
+	err = r.updatePayloadProcessor(ctx, modelMeshContainer, payloadProcessorName, instance.Name, instance.Namespace, false)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update ModelMesh payload processor.")
 		// handle error
@@ -558,6 +559,23 @@ func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendata
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := mgr.GetFieldIndexer().IndexField(context.TODO(), &appsv1.Deployment{}, ".metadata.controller", func(rawObj client.Object) []string {
+		// grab the deployment object, extract the owner...
+		deployment := rawObj.(*appsv1.Deployment)
+		owner := metav1.GetControllerOf(deployment)
+		if owner == nil {
+			return nil
+		}
+		// ...make sure it's a ServingRuntime...
+		if owner.APIVersion != kserveapi.APIVersion || owner.Kind != "ServingRuntime" {
+			return nil
+		}
+		// ...and if so, return it
+		return []string{owner.Name}
+	}); err != nil {
+		return err
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&trustyaiopendatahubiov1alpha1.TrustyAIService{}).
 		Complete(r)
