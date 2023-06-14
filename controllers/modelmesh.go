@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -11,6 +12,13 @@ import (
 func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Context, deployments []appsv1.Deployment, envVarName string, url string, remove bool) error {
 	// Loop over the Deployments
 	for _, deployment := range deployments {
+
+		// Check if all Pods are ready
+		if deployment.Status.ReadyReplicas != *deployment.Spec.Replicas {
+			// Not all replicas are ready, return an error
+			return fmt.Errorf("not all ModelMesh serving replicas are ready for deployment %s", deployment.Name)
+		}
+
 		// Loop over all containers in the Deployment's Pod template
 		for i, _ := range deployment.Spec.Template.Spec.Containers {
 			// Get the existing env var
