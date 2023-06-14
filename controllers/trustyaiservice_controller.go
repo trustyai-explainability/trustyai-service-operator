@@ -486,6 +486,13 @@ func (r *TrustyAIServiceReconciler) reconcileService(cr *trustyaiopendatahubiov1
 
 func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
 
+	tokenSecret := corev1.SecretKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{
+			Name: "",
+		},
+		Key: "",
+	}
+
 	serviceMonitor := &monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceMonitorName,
@@ -495,17 +502,18 @@ func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendata
 			},
 		},
 		Spec: monitoringv1.ServiceMonitorSpec{
+			NamespaceSelector: monitoringv1.NamespaceSelector{
+				MatchNames: []string{cr.Namespace},
+			},
 			Endpoints: []monitoringv1.Endpoint{
 				{
-					Interval:        "4s",
-					Path:            "/q/metrics",
-					HonorLabels:     true,
-					TargetPort:      &intstr.IntOrString{IntVal: 8080},
-					Scheme:          "http",
-					BearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token",
-					//BearerTokenSecret: monitoringv1.SecretKeySelector {
-					//	Key: ""
-					//},
+					Interval:          "4s",
+					Path:              "/q/metrics",
+					HonorLabels:       true,
+					TargetPort:        &intstr.IntOrString{IntVal: 8080},
+					Scheme:            "http",
+					BearerTokenFile:   "/var/run/secrets/kubernetes.io/serviceaccount/token",
+					BearerTokenSecret: tokenSecret,
 					Params: map[string][]string{
 						"match[]": {
 							`{__name__= "trustyai_spd"}`,
