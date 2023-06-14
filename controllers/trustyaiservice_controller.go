@@ -45,6 +45,7 @@ const (
 	serviceMonitorName   = "trustyai-metrics"
 	finalizerName        = "trustyai.opendatahub.io/finalizer"
 	payloadProcessorName = "MM_PAYLOAD_PROCESSORS"
+	modelMeshContainer   = "mm"
 )
 
 // TrustyAIServiceReconciler reconciles a TrustyAIService object
@@ -93,7 +94,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// CR not found, it may have been deleted, so we'll remove the payload processor from the ModelMesh deployment
-			err := updatePayloadProcessor(ctx, r.Client, "mlserver", payloadProcessorName, req.Name, req.Namespace, true)
+			err := updatePayloadProcessor(ctx, r.Client, modelMeshContainer, payloadProcessorName, req.Name, req.Namespace, true)
 			if err != nil {
 				// handle error
 			}
@@ -137,7 +138,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	instance.Status.Ready = corev1.ConditionTrue
 
 	// CR found, add or update the URL
-	err = updatePayloadProcessor(ctx, r.Client, "mlserver", payloadProcessorName, instance.Name, instance.Namespace, false)
+	err = updatePayloadProcessor(ctx, r.Client, modelMeshContainer, payloadProcessorName, instance.Name, instance.Namespace, false)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update ModelMesh payload processor.")
 		// handle error
