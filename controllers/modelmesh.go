@@ -5,6 +5,7 @@ import (
 	kserveapi "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"strings"
 )
 
@@ -15,6 +16,7 @@ func updatePayloadProcessor(ctx context.Context, r client.Client, containerName 
 
 	// Fetch the ServingRuntime and ClusterServingRuntime instances in the specified namespace
 	if err := r.List(ctx, runtimes, client.InNamespace(namespace)); err != nil {
+		log.FromContext(ctx).Error(err, "Could not find any ServingRuntimes.")
 		return err
 	}
 
@@ -25,6 +27,7 @@ func updatePayloadProcessor(ctx context.Context, r client.Client, containerName 
 	for _, runtime := range runtimes.Items {
 		err := processRuntime(ctx, r, &runtime, containerName, envVarName, url, remove)
 		if err != nil {
+			log.FromContext(ctx).Error(err, "Could not patch PAYLOAD_PROCESSOR on ServingRuntimes.")
 			return err
 		}
 	}
