@@ -34,6 +34,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"time"
 )
 
 var ErrPVCNotReady = goerrors.New("PVC is not ready")
@@ -142,9 +143,14 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// CR found, add or update the URL
 	// Call the function to patch environment variables for Deployments that match the label
-	if err := r.patchEnvVarsByLabelForDeployments(ctx, req.Namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, req.Name, false); err != nil {
+	shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, req.Namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, req.Name, false)
+	if err != nil {
 		log.FromContext(ctx).Error(err, "Could not patch environment variables for Deployments.")
 		return ctrl.Result{}, err
+	}
+	if !shouldContinue {
+		log.FromContext(ctx).Info("Not all replicas are ready, requeue the reconcile request")
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
 	}
 
 	// Update the instance status to Not Ready
