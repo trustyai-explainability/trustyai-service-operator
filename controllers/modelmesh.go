@@ -9,14 +9,14 @@ import (
 	"strings"
 )
 
-func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Context, deployments []appsv1.Deployment, envVarName string, url string, remove bool) error {
+func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Context, deployments []appsv1.Deployment, envVarName string, url string, remove bool) (bool, error) {
 	// Loop over the Deployments
 	for _, deployment := range deployments {
 
 		// Check if all Pods are ready
 		if deployment.Status.ReadyReplicas != *deployment.Spec.Replicas {
 			// Not all replicas are ready, return an error
-			return fmt.Errorf("not all ModelMesh serving replicas are ready for deployment %s", deployment.Name)
+			return false, fmt.Errorf("not all ModelMesh serving replicas are ready for deployment %s", deployment.Name)
 		}
 
 		// Loop over all containers in the Deployment's Pod template
@@ -44,32 +44,32 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 			// Update the Deployment
 			if err := r.Update(ctx, &deployment); err != nil {
 				log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
-				return err
+				return false, err
 			}
 		}
 	}
 
-	return nil
+	return true, nil
 }
 
-func (r *TrustyAIServiceReconciler) patchEnvVarsByLabelForDeployments(ctx context.Context, namespace string, labelKey string, labelValue string, envVarName string, crName string, remove bool) error {
+func (r *TrustyAIServiceReconciler) patchEnvVarsByLabelForDeployments(ctx context.Context, namespace string, labelKey string, labelValue string, envVarName string, crName string, remove bool) (bool, error) {
 	// Get all Deployments for the label
 	deployments, err := r.GetDeploymentsByLabel(ctx, namespace, labelKey, labelValue)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Could not get Deployments by label.")
-		return err
+		return false, err
 	}
 
 	// Build the payload processor endpoint
 	url := "http://" + crName + "." + namespace + ".svc.cluster.local/consumer/kserve/v2"
 
 	// Patch environment variables for the Deployments
-	if err := r.patchEnvVarsForDeployments(ctx, deployments, envVarName, url, remove); err != nil {
+	if shouldContinue, err := r.patchEnvVarsForDeployments(ctx, deployments, envVarName, url, remove); err != nil {
 		log.FromContext(ctx).Error(err, "Could not patch environment variables for Deployments.")
-		return err
+		return shouldContinue, err
 	}
 
-	return nil
+	return true, nil
 }
 
 // updateEnvVarValue updates the value of an environment variable based on the remove flag and current value
