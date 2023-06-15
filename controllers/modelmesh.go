@@ -54,6 +54,7 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 				log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
 				return false, err
 			}
+			log.FromContext(ctx).Info("Updating Deployment " + deployment.Name + ", container spec " + deployment.Spec.Template.Spec.Containers[i].Name + ", env var " + envVarName + " to " + url)
 		}
 	}
 
