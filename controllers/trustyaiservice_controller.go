@@ -180,7 +180,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 
 		// If there was an error finding the PV, requeue the request
-		log.FromContext(ctx).Error(err, "Could not find requested PersistentVolume.")
+		log.FromContext(ctx).Error(err, "Could not find requested PersistentVolume "+instance.Spec.Storage.PV+". Requeueing request.")
 		return ctrl.Result{}, err
 	} else {
 		// PV found, set the appropriate condition
