@@ -37,6 +37,14 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 					Value: url,
 				})
 			} else if envVar != nil {
+				// If the env var exists and already contains the value, don't do anything
+				existingValues := strings.Split(envVar.Value, " ")
+				for _, v := range existingValues {
+					if v == url {
+						continue
+					}
+				}
+
 				// Modify the existing env var based on the remove flag and current value
 				envVar.Value = updateEnvVarValue(envVar.Value, url, remove)
 			}
