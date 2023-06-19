@@ -34,6 +34,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"strconv"
 	"time"
 )
 
@@ -373,6 +374,13 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 		cr.Spec.Replicas = &replicas
 	}
 
+	var batchSize int
+	if cr.Spec.Metrics.BatchSize == nil {
+		batchSize = 5000
+	} else {
+		batchSize = *cr.Spec.Metrics.BatchSize
+	}
+
 	containers := []corev1.Container{
 		{
 			Name:  containerName,
@@ -397,6 +405,10 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 				{
 					Name:  "SERVICE_METRICS_SCHEDULE",
 					Value: cr.Spec.Metrics.Schedule,
+				},
+				{
+					Name:  "SERVICE_BATCH_SIZE",
+					Value: strconv.Itoa(batchSize),
 				},
 			},
 			// rest of the container spec
