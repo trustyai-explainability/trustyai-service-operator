@@ -77,10 +77,6 @@ kind: TrustyAIService
 metadata:
   name: trustyai-service-example
 spec:
-  # Optional values for replicas, image and tag. Below are the default values.
-  # replicas: 1
-  # image: quay.io/trustyaiservice/trustyai-service
-  # tag: latest
   storage:
     format: "PVC"
     folder: "/inputs"
@@ -91,6 +87,7 @@ spec:
     format: "CSV"
   metrics:
     schedule: "5s"
+    batchSize: 5000 # Optional, defaults to 5000
 ```
 
 `mypv` must be an existing Persistent Volume (PV).
