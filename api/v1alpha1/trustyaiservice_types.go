@@ -45,7 +45,8 @@ type DataSpec struct {
 }
 
 type MetricsSpec struct {
-	Schedule string `json:"schedule"`
+	Schedule  string `json:"schedule"`
+	BatchSize *int   `json:"batchSize,omitempty"`
 }
 
 // TrustyAIServiceSpec defines the desired state of TrustyAIService
