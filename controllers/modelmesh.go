@@ -46,7 +46,7 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 				}
 
 				// Modify the existing env var based on the remove flag and current value
-				envVar.Value = updateEnvVarValue(envVar.Value, url, remove)
+				envVar.Value = generateEnvVarValue(envVar.Value, url, remove)
 			}
 
 			// Update the Deployment
@@ -81,8 +81,8 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsByLabelForDeployments(ctx contex
 	return true, nil
 }
 
-// updateEnvVarValue updates the value of an environment variable based on the remove flag and current value
-func updateEnvVarValue(currentValue, newValue string, remove bool) string {
+// generateEnvVarValue Generates the final value of the MM_PAYLOAD_PROCESSOR environment variable based on the remove flag and current value
+func generateEnvVarValue(currentValue, newValue string, remove bool) string {
 	// Split the current value into parts
 	parts := strings.Split(currentValue, " ")
 
