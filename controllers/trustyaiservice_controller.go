@@ -98,11 +98,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			// CR not found, it may have been deleted, so we'll remove the payload processor from the ModelMesh deployment
-			//err := r.updatePayloadProcessor(ctx, modelMeshContainer, payloadProcessorName, req.Name, req.Namespace, true)
-			if err != nil {
-				// handle error
-			}
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
