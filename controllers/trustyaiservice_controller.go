@@ -34,7 +34,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"strconv"
 	"time"
 )
 
@@ -43,14 +42,13 @@ var ErrPVCNotReady = goerrors.New("PVC is not ready")
 const (
 	defaultImage         = string("quay.io/trustyai/trustyai-service")
 	defaultTag           = string("latest")
-	defaultPvcName       = "trustyai-pvc"
 	containerName        = "trustyai-service"
 	serviceMonitorName   = "trustyai-metrics"
 	finalizerName        = "trustyai.opendatahub.io/finalizer"
 	payloadProcessorName = "MM_PAYLOAD_PROCESSORS"
-	modelMeshContainer   = "mm"
 	modelMeshLabelKey    = "modelmesh-service"
 	modelMeshLabelValue  = "modelmesh-serving"
+	volumeMountName      = "volume"
 )
 
 // TrustyAIServiceReconciler reconciles a TrustyAIService object
@@ -68,6 +66,7 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups=apps,resources=deployments/finalizers,verbs=update
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=list;watch;create
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=list;get;watch
 //+kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=list;get;watch;create;update;patch;delete
@@ -153,48 +152,8 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	instance.Status.Phase = "Not Ready"
 	instance.Status.Ready = corev1.ConditionFalse
 
-	pv, err := r.ensurePV(ctx, instance)
-	if err != nil {
-		// PV not found condition
-		pvAvailableCondition := trustyaiopendatahubiov1alpha1.Condition{
-			Type:    "PVAvailable",
-			Status:  corev1.ConditionFalse,
-			Reason:  "PVNotFound",
-			Message: "PV not found",
-		}
-		if setConditionErr := r.setCondition(instance, pvAvailableCondition); setConditionErr != nil {
-			log.FromContext(ctx).Error(setConditionErr, "Failed to set condition")
-		}
-
-		// Update the instance status to Not Ready
-		instance.Status.Phase = "Not Ready"
-		instance.Status.Ready = corev1.ConditionFalse
-
-		// Update the status subresource
-		if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
-			log.FromContext(ctx).Error(updateErr, "Failed to update TrustyAIService status")
-		}
-
-		// If there was an error finding the PV, requeue the request
-		log.FromContext(ctx).Error(err, "Could not find requested PersistentVolume "+instance.Spec.Storage.PV+". Requeueing request.")
-		return ctrl.Result{}, err
-	} else {
-		// PV found, set the appropriate condition
-		pvAvailableCondition := trustyaiopendatahubiov1alpha1.Condition{
-			Type:    "PVAvailable",
-			Status:  corev1.ConditionTrue,
-			Reason:  "PVFound",
-			Message: "PersistentVolume found",
-		}
-
-		if setConditionErr := r.setCondition(instance, pvAvailableCondition); setConditionErr != nil {
-			log.FromContext(ctx).Error(setConditionErr, "Failed to set condition")
-			return ctrl.Result{}, setConditionErr
-		}
-	}
-
 	// Ensure PVC
-	err = r.ensurePVC(ctx, instance, pv)
+	err = r.ensurePVC(ctx, instance)
 	if err != nil {
 		// PVC not found condition
 		pvcAvailableCondition := trustyaiopendatahubiov1alpha1.Condition{
@@ -291,180 +250,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// Deployment already exists - don't requeue
 	return ctrl.Result{}, nil
-}
-
-func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
-
-	// Get image and tag from ConfigMap
-	// If there's a ConfigMap with custom images, it is only applied when the operator is first deployed
-	// Changing (or creating) the ConfigMap after the operator is deployed will not have any effect
-	imageName, imageTag, err := r.getImageAndTagFromConfigMap(ctx)
-	if err != nil {
-		return err
-	}
-
-	deploy := &appsv1.Deployment{}
-	err = r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deploy)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			// Deployment does not exist, create it
-			log.FromContext(ctx).Info("Could not find deployment.")
-			return r.createDeployment(ctx, instance, imageName, imageTag)
-		}
-
-		// Some other error occurred when trying to get the Deployment
-		return err
-	}
-
-	// Deployment already exists
-	pvc := &corev1.PersistentVolumeClaim{}
-
-	err = r.Get(ctx, types.NamespacedName{Name: defaultPvcName, Namespace: instance.Namespace}, pvc)
-	if err != nil {
-		return err
-	}
-
-	if pvc.Status.Phase != corev1.ClaimBound {
-		// The PVC is not ready yet.
-		return ErrPVCNotReady
-	}
-
-	// Check if the PVC is set in the Deployment
-	volumeExists := false
-	for _, v := range deploy.Spec.Template.Spec.Volumes {
-		if v.PersistentVolumeClaim != nil && v.PersistentVolumeClaim.ClaimName == defaultPvcName {
-			volumeExists = true
-			break
-		}
-	}
-
-	if !volumeExists {
-		// PVC is ready but not set in Deployment, so we'll update the Deployment to use the PVC
-		volume := corev1.Volume{
-			Name: defaultPvcName,
-			VolumeSource: corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: defaultPvcName,
-				},
-			},
-		}
-		deploy.Spec.Template.Spec.Volumes = append(deploy.Spec.Template.Spec.Volumes, volume)
-
-		if err := r.Update(ctx, deploy); err != nil {
-			return err
-		}
-	}
-
-	// Deployment is ready and using the PVC
-	return nil
-}
-
-// reconcileDeployment returns a Deployment object with the same name/namespace as the cr
-func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, imageName string, imageTag string) error {
-
-	labels := getCommonLabels(cr.Name)
-
-	replicas := int32(1)
-	if cr.Spec.Replicas == nil {
-		cr.Spec.Replicas = &replicas
-	}
-
-	var batchSize int
-	if cr.Spec.Metrics.BatchSize == nil {
-		batchSize = 5000
-	} else {
-		batchSize = *cr.Spec.Metrics.BatchSize
-	}
-
-	containers := []corev1.Container{
-		{
-			Name:  containerName,
-			Image: fmt.Sprintf("%s:%s", imageName, imageTag),
-			Env: []corev1.EnvVar{
-				{
-					Name:  "STORAGE_DATA_FILENAME",
-					Value: cr.Spec.Data.Filename,
-				},
-				{
-					Name:  "SERVICE_STORAGE_FORMAT",
-					Value: cr.Spec.Storage.Format,
-				},
-				{
-					Name:  "STORAGE_DATA_FOLDER",
-					Value: cr.Spec.Storage.Folder,
-				},
-				{
-					Name:  "SERVICE_DATA_FORMAT",
-					Value: cr.Spec.Data.Format,
-				},
-				{
-					Name:  "SERVICE_METRICS_SCHEDULE",
-					Value: cr.Spec.Metrics.Schedule,
-				},
-				{
-					Name:  "SERVICE_BATCH_SIZE",
-					Value: strconv.Itoa(batchSize),
-				},
-			},
-			// rest of the container spec
-		},
-	}
-
-	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name,
-			Namespace: cr.Namespace,
-			Labels:    labels,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: cr.Spec.Replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-				},
-				Spec: corev1.PodSpec{
-					Containers: containers,
-				},
-			},
-		},
-	}
-
-	pvc := &corev1.PersistentVolumeClaim{}
-	pvcerr := r.Get(ctx, types.NamespacedName{Name: defaultPvcName, Namespace: cr.Namespace}, pvc)
-	if pvcerr != nil {
-		log.FromContext(ctx).Error(pvcerr, "PVC not ready")
-	}
-	if pvcerr == nil && pvc.Status.Phase == corev1.ClaimBound {
-		// The PVC is ready. We can now add it to the Deployment spec.
-		deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
-			{
-				Name: "volume",
-				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: defaultPvcName,
-						ReadOnly:  false,
-					},
-				},
-			},
-		}
-	}
-
-	if err := ctrl.SetControllerReference(cr, deployment, r.Scheme); err != nil {
-		log.FromContext(ctx).Error(err, "Error setting TrustyAIService as owner of Deployment.")
-		return err
-	}
-
-	err := r.Create(ctx, deployment)
-	if err != nil {
-		log.FromContext(ctx).Error(err, "Error creating Deployment.")
-		return err
-	}
-
-	return nil
-
 }
 
 func (r *TrustyAIServiceReconciler) reconcileService(cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*corev1.Service, error) {
