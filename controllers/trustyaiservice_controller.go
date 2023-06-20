@@ -20,6 +20,7 @@ import (
 	"context"
 	goerrors "errors"
 	"fmt"
+	kserveapi "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	trustyaiopendatahubiov1alpha1 "github.com/ruivieira/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -34,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"strconv"
+	"time"
 )
 
 var ErrPVCNotReady = goerrors.New("PVC is not ready")
@@ -46,6 +48,9 @@ const (
 	serviceMonitorName   = "trustyai-metrics"
 	finalizerName        = "trustyai.opendatahub.io/finalizer"
 	payloadProcessorName = "MM_PAYLOAD_PROCESSORS"
+	modelMeshContainer   = "mm"
+	modelMeshLabelKey    = "modelmesh-service"
+	modelMeshLabelValue  = "modelmesh-serving"
 )
 
 // TrustyAIServiceReconciler reconciles a TrustyAIService object
@@ -93,11 +98,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			// CR not found, it may have been deleted, so we'll remove the payload processor from the ModelMesh deployment
-			err := updatePayloadProcessor(ctx, r.Client, "mlserver", payloadProcessorName, req.Name, req.Namespace, true)
-			if err != nil {
-				// handle error
-			}
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
@@ -138,10 +138,15 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	instance.Status.Ready = corev1.ConditionTrue
 
 	// CR found, add or update the URL
-	err = updatePayloadProcessor(ctx, r.Client, "mlserver", payloadProcessorName, instance.Name, instance.Namespace, false)
+	// Call the function to patch environment variables for Deployments that match the label
+	shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, req.Namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, req.Name, false)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Failed to update ModelMesh payload processor.")
-		// handle error
+		log.FromContext(ctx).Error(err, "Could not patch environment variables for Deployments.")
+		return ctrl.Result{}, err
+	}
+	if !shouldContinue {
+		log.FromContext(ctx).Info("Not all replicas are ready, requeue the reconcile request")
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
 	}
 
 	// Update the instance status to Not Ready
@@ -171,7 +176,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 
 		// If there was an error finding the PV, requeue the request
-		log.FromContext(ctx).Error(err, "Could not find requested PersistentVolume.")
+		log.FromContext(ctx).Error(err, "Could not find requested PersistentVolume "+instance.Spec.Storage.PV+". Requeueing request.")
 		return ctrl.Result{}, err
 	} else {
 		// PV found, set the appropriate condition
@@ -577,6 +582,23 @@ func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendata
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Watch ServingRuntime objects (not managed by this controller)
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &appsv1.Deployment{}, ".metadata.controller", func(rawObj client.Object) []string {
+		// Grab the deployment object and extract the owner
+		deployment := rawObj.(*appsv1.Deployment)
+		owner := metav1.GetControllerOf(deployment)
+		if owner == nil {
+			return nil
+		}
+		// Retain ServingRuntimes only
+		if owner.APIVersion != kserveapi.APIVersion || owner.Kind != "ServingRuntime" {
+			return nil
+		}
+		return []string{owner.Name}
+	}); err != nil {
+		return err
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&trustyaiopendatahubiov1alpha1.TrustyAIService{}).
 		Complete(r)
