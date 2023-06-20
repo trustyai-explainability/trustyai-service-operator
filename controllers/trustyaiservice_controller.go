@@ -582,18 +582,18 @@ func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendata
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := mgr.GetFieldIndexer().IndexField(context.TODO(), &appsv1.Deployment{}, ".metadata.controller", func(rawObj client.Object) []string {
-		// grab the deployment object, extract the owner...
+	// Watch ServingRuntime objects (not managed by this controller)
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &appsv1.Deployment{}, ".metadata.controller", func(rawObj client.Object) []string {
+		// Grab the deployment object and extract the owner
 		deployment := rawObj.(*appsv1.Deployment)
 		owner := metav1.GetControllerOf(deployment)
 		if owner == nil {
 			return nil
 		}
-		// ...make sure it's a ServingRuntime...
+		// Retain ServingRuntimes only
 		if owner.APIVersion != kserveapi.APIVersion || owner.Kind != "ServingRuntime" {
 			return nil
 		}
-		// ...and if so, return it
 		return []string{owner.Name}
 	}); err != nil {
 		return err
