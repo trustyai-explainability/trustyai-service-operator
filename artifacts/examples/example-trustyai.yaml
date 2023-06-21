@@ -3,16 +3,13 @@ kind: TrustyAIService
 metadata:
   name: example-trustyai-service
 spec:
-#  image: quay.io/trustyai/trustyai-service
-#  tag: latest
-#  replicas: 1
   storage:
     format: PVC
     folder: /inputs
-    pv: "trustyaipv"
     size: 1Gi
   data:
     filename: data.csv
     format: CSV
   metrics:
     schedule: 5s
+    batchSize: 5000 # Optional
