@@ -72,7 +72,6 @@ func createDefaultCR() *trustyaiopendatahubiov1alpha1.TrustyAIService {
 			Storage: trustyaiopendatahubiov1alpha1.StorageSpec{
 				Format: "PVC",
 				Folder: "/data",
-				PV:     "mypv",
 				Size:   "1Gi",
 			},
 			Data: trustyaiopendatahubiov1alpha1.DataSpec{

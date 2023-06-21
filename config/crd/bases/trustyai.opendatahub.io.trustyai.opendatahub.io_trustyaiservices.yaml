@@ -64,14 +64,11 @@ spec:
                     type: string
                   format:
                     type: string
-                  pv:
-                    type: string
                   size:
                     type: string
                 required:
                 - folder
                 - format
-                - pv
                 - size
                 type: object
             required:
