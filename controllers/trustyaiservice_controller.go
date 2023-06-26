@@ -43,7 +43,6 @@ const (
 	defaultImage         = string("quay.io/trustyai/trustyai-service")
 	defaultTag           = string("latest")
 	containerName        = "trustyai-service"
-	serviceMonitorName   = "trustyai-metrics"
 	finalizerName        = "trustyai.opendatahub.io/finalizer"
 	payloadProcessorName = "MM_PAYLOAD_PROCESSORS"
 	modelMeshLabelKey    = "modelmesh-service"
@@ -288,6 +287,8 @@ func (r *TrustyAIServiceReconciler) reconcileService(cr *trustyaiopendatahubiov1
 
 func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
 
+	serviceMonitorName := cr.Name + "-metrics"
+
 	tokenSecret := corev1.SecretKeySelector{
 		LocalObjectReference: corev1.LocalObjectReference{
 			Name: "",
@@ -298,7 +299,7 @@ func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendata
 	serviceMonitor := &monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceMonitorName,
-			Namespace: cr.Namespace,
+			Namespace: r.Namespace,
 			Labels: map[string]string{
 				"modelmesh-service": "modelmesh-serving",
 			},
