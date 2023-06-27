@@ -84,6 +84,12 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: labels,
+					Annotations: map[string]string{
+						"prometheus.io/path":   "/q/metrics",
+						"prometheus.io/port":   "8080",
+						"prometheus.io/scheme": "http",
+						"prometheus.io/scrape": "true",
+					},
 				},
 				Spec: corev1.PodSpec{
 					Containers: containers,
