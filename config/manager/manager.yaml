@@ -65,7 +65,7 @@ spec:
         - /manager
         args:
         - --leader-elect
-        image: controller:latest
+        image: controller:dev-metrics
         name: manager
         securityContext:
           runAsNonRoot: true

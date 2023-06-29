@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: quay.io/trustyai/trustyai-service-operator
-  newTag: latest
+  newTag: dev-metrics
