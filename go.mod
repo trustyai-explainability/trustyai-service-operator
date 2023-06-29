@@ -1,4 +1,4 @@
-module github.com/ruivieira/trustyai-service-operator
+module github.com/trustyai-explainability/trustyai-service-operator
 
 go 1.19
 

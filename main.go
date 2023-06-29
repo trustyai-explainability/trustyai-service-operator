@@ -34,8 +34,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	trustyaiopendatahubiov1alpha1 "github.com/ruivieira/trustyai-service-operator/api/v1alpha1"
-	"github.com/ruivieira/trustyai-service-operator/controllers"
+	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers"
 	//+kubebuilder:scaffold:imports
 )
 
