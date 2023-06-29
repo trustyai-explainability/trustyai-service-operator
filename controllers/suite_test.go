@@ -254,7 +254,6 @@ var _ = Describe("TrustyAI operator", func() {
 			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get Service")
 
 			Expect(service.Annotations["prometheus.io/path"]).Should(Equal("/q/metrics"))
-			Expect(service.Annotations["prometheus.io/port"]).Should(Equal("8080"))
 			Expect(service.Annotations["prometheus.io/scheme"]).Should(Equal("http"))
 			Expect(service.Annotations["prometheus.io/scrape"]).Should(Equal("true"))
 			Expect(service.Namespace).Should(Equal(namespace))
@@ -310,7 +309,6 @@ var _ = Describe("TrustyAI operator", func() {
 				}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get Service")
 
 				Expect(service.Annotations["prometheus.io/path"]).Should(Equal("/q/metrics"))
-				Expect(service.Annotations["prometheus.io/port"]).Should(Equal("8080"))
 				Expect(service.Annotations["prometheus.io/scheme"]).Should(Equal("http"))
 				Expect(service.Annotations["prometheus.io/scrape"]).Should(Equal("true"))
 				Expect(service.Namespace).Should(Equal(namespace))

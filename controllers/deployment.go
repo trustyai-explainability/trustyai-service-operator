@@ -86,7 +86,6 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 					Labels: labels,
 					Annotations: map[string]string{
 						"prometheus.io/path":   "/q/metrics",
-						"prometheus.io/port":   "8080",
 						"prometheus.io/scheme": "http",
 						"prometheus.io/scrape": "true",
 					},
