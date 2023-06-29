@@ -256,7 +256,6 @@ func (r *TrustyAIServiceReconciler) reconcileService(cr *trustyaiopendatahubiov1
 	annotations := map[string]string{
 		"prometheus.io/scrape": "true",
 		"prometheus.io/path":   "/q/metrics",
-		"prometheus.io/port":   "8080",
 		"prometheus.io/scheme": "http",
 	}
 	labels := getCommonLabels(cr.Name)
