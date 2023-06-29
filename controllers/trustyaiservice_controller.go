@@ -255,7 +255,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 func (r *TrustyAIServiceReconciler) reconcileService(cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*corev1.Service, error) {
 	annotations := map[string]string{
 		"prometheus.io/scrape": "true",
-		"prometheus.io/path":   "/q/metrics",
+		"prometheus.io/path":   "/metrics",
 		"prometheus.io/port":   "8080",
 		"prometheus.io/scheme": "http",
 	}
@@ -303,7 +303,7 @@ func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendata
 			Endpoints: []monitoringv1.Endpoint{
 				{
 					Interval:    "4s",
-					Path:        "/q/metrics",
+					Path:        "/metrics",
 					HonorLabels: true,
 					TargetPort:  &intstr.IntOrString{IntVal: 8080},
 					Scheme:      "http",
