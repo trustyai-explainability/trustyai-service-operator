@@ -305,7 +305,6 @@ func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendata
 					Interval:    "4s",
 					Path:        "/q/metrics",
 					HonorLabels: true,
-					TargetPort:  &intstr.IntOrString{IntVal: 8080},
 					Scheme:      "http",
 					Params: map[string][]string{
 						"match[]": {
