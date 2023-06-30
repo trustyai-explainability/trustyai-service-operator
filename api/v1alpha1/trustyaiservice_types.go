@@ -23,6 +23,7 @@ import (
 
 // TrustyAIService is the Schema for the trustyaiservices API
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 type TrustyAIService struct {
 	metav1.TypeMeta   `json:",inline"`
