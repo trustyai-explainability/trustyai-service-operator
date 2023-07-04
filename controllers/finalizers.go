@@ -11,7 +11,7 @@ func (r *TrustyAIServiceReconciler) deleteExternalDependency(crName, namespace s
 	_, err := r.patchEnvVarsByLabelForDeployments(ctx, namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, crName, true)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Could not remove environment variable from ModelMesh Deployment.")
-		return err
+		// Do not return the error to avoid finalizer loop if the namespace or other resources are deleted
 	}
 
 	return nil
