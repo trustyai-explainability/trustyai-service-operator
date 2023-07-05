@@ -44,7 +44,7 @@ const (
 	defaultTag           = string("latest")
 	containerName        = "trustyai-service"
 	serviceMonitorName   = "trustyai-metrics"
-	finalizerName        = "trustyai.opendatahub.io/finalizer"
+	finalizerName        = "trustyai.opendatahub.io.trustyai.opendatahub.io/finalizer"
 	payloadProcessorName = "MM_PAYLOAD_PROCESSORS"
 	modelMeshLabelKey    = "modelmesh-service"
 	modelMeshLabelValue  = "modelmesh-serving"
