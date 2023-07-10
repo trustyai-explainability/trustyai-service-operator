@@ -10,6 +10,6 @@ configMapGenerator:
   - name: config
     literals:
       - trustyaiServiceImageName=quay.io/trustyai/trustyai-service
-      - trustyaiServiceImageTag=1.7.0
+      - trustyaiServiceImageTag=latest
 generatorOptions:
   disableNameSuffixHash: true
