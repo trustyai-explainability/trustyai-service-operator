@@ -7,7 +7,7 @@ images:
   newName: quay.io/trustyai/trustyai-service-operator
   newTag: latest
 configMapGenerator:
-  - name: trustyai-service-operator-config
+  - name: config
     literals:
       - trustyaiServiceImageName=quay.io/trustyai/trustyai-service
       - trustyaiServiceImageTag=1.7.0
