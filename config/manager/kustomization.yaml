@@ -9,7 +9,7 @@ images:
 configMapGenerator:
   - name: trustyai-service-operator-config
     literals:
-      - trustyaiServiceImageName=quay.io/trustyai/trustyai-service-operator
+      - trustyaiServiceImageName=quay.io/trustyai/trustyai-service
       - trustyaiServiceImageTag=1.7.0
     options:
       disableNameSuffixHash: true
