@@ -6,3 +6,8 @@ images:
 - name: controller
   newName: quay.io/trustyai/trustyai-service-operator
   newTag: latest
+configMapGenerator:
+  - name: trustyai-service-operator-config
+    literals:
+      - trustyaiServiceImageName=quay.io/trustyai/trustyai-service-operator
+      - trustyaiServiceImageTag=latest
