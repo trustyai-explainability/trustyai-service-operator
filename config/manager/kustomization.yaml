@@ -10,4 +10,4 @@ configMapGenerator:
   - name: trustyai-service-operator-config
     literals:
       - trustyaiServiceImageName=quay.io/trustyai/trustyai-service-operator
-      - trustyaiServiceImageTag=latest
+      - trustyaiServiceImageTag=1.7.0
