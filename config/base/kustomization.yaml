@@ -1,6 +1,6 @@
 #namespace: trustyai-service-operator-system
 
-#namePrefix: trustyai-service-operator-
+namePrefix: trustyai-service-operator-
 
 resources:
 - ../crd
