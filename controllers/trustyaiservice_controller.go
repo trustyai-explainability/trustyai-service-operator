@@ -48,6 +48,7 @@ const (
 	modelMeshLabelKey    = "modelmesh-service"
 	modelMeshLabelValue  = "modelmesh-serving"
 	volumeMountName      = "volume"
+	serviceType          = "trustyai-service"
 )
 
 // TrustyAIServiceReconciler reconciles a TrustyAIService object
@@ -79,7 +80,7 @@ func getCommonLabels(serviceName string) map[string]string {
 		"app":                        serviceName,
 		"app.kubernetes.io/name":     serviceName,
 		"app.kubernetes.io/instance": serviceName,
-		"app.kubernetes.io/part-of":  serviceName,
+		"app.kubernetes.io/part-of":  serviceType,
 		"app.kubernetes.io/version":  "0.1.0",
 	}
 }
@@ -232,7 +233,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Central Service Monitor
-	err = r.ensureCentralServiceMonitor(instance, ctx)
+	err = r.ensureCentralServiceMonitor(ctx)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
