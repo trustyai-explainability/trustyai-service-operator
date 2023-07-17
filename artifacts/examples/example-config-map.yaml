@@ -4,4 +4,4 @@ metadata:
   name: trustyai-service-operator-config
 data:
   trustyaiServiceImageName: "quay.io/trustyai/trustyai-service"
-  trustyaiServiceImageTag: "alpha"
+  trustyaiServiceImageTag: "latest"
