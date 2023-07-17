@@ -1,4 +1,4 @@
-namespace: trustyai-service-operator-system
+#namespace: trustyai-service-operator-system
 
 namePrefix: trustyai-service-operator-
 
