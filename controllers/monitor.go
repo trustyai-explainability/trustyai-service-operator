@@ -11,8 +11,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-var isCentralServiceMonitorCreated = false
-
 // generateServiceMonitorSpecCentral generates the ServiceMonitor spec for central ServiceMonitor
 func generateServiceMonitorSpecCentral(deploymentNamespace string) *monitoringv1.ServiceMonitor {
 	serviceMonitor := &monitoringv1.ServiceMonitor{
@@ -60,11 +58,6 @@ func generateServiceMonitorSpecCentral(deploymentNamespace string) *monitoringv1
 
 // ensureCentralServiceMonitor ensures that the central ServiceMonitor is created
 func (r *TrustyAIServiceReconciler) ensureCentralServiceMonitor(ctx context.Context) error {
-	// Create only one central ServiceMonitor
-	if isCentralServiceMonitorCreated {
-		return nil
-	}
-
 	serviceMonitor := generateServiceMonitorSpecCentral(r.Namespace)
 
 	// Check if this ServiceMonitor already exists
@@ -77,17 +70,11 @@ func (r *TrustyAIServiceReconciler) ensureCentralServiceMonitor(ctx context.Cont
 			if err != nil {
 				log.FromContext(ctx).Error(err, "Failed to create central ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
 				return err
-			} else {
-				// Set the global variable to true after ServiceMonitor is successfully created
-				isCentralServiceMonitorCreated = true
 			}
 		} else {
 			log.FromContext(ctx).Error(err, "Failed to get central ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
 			return err
 		}
-	} else {
-		// Already exists, set the global variable to true
-		isCentralServiceMonitorCreated = true
 	}
 
 	return nil
