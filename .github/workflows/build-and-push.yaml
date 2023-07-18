@@ -82,4 +82,7 @@ jobs:
       - name: Log in to Quay
         run: docker login -u ${{ secrets.QUAY_ROBOT_USERNAME }} -p ${{ secrets.QUAY_ROBOT_SECRET }} quay.io
       - name: Build and push image
-        run: make docker-build docker-push IMG=${{ env.IMAGE_NAME }}:$TAG
+        run: | 
+          make all
+          make docker-build docker-push IMG=${{ env.IMAGE_NAME }}:$TAG
+      
