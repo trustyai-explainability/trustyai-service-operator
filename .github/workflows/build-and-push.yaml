@@ -79,9 +79,7 @@ jobs:
       - name: Put expiry date on CI-tagged image
         if:  env.BUILD_CONTEXT == 'ci'
         run: sed -i 's#summary="odh-trustyai-service-operator\"#summary="odh-trustyai-service-operator" \\ \n      quay.expires-after=7d#' Dockerfile
-      - name: Build image
-        run: docker build -t ${{ env.IMAGE_NAME }}:$TAG .
       - name: Log in to Quay
         run: docker login -u ${{ secrets.QUAY_ROBOT_USERNAME }} -p ${{ secrets.QUAY_ROBOT_SECRET }} quay.io
-      - name: Push to Quay CI repo
-        run: docker push ${{ env.IMAGE_NAME }}:$TAG
+      - name: Build and push image
+        run: make docker-build docker-push IMG=${{ env.IMAGE_NAME }}:$TAG
