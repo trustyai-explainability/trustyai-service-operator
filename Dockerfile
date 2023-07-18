@@ -31,3 +31,13 @@ COPY --from=builder /workspace/manager .
 USER 65532:65532
 
 ENTRYPOINT ["/manager"]
+
+LABEL com.redhat.component="odh-trustyai-service-operator-container" \
+      name="managed-open-data-hub/odh-trustyai-service-operator-rhel8" \
+      version="${CI_CONTAINER_VERSION}" \
+      summary="odh-trustyai-service-operator" \
+      io.openshift.expose-services="" \
+      io.k8s.display-name="odh-trustyai-service-operator" \
+      maintainer="['managed-open-data-hub@redhat.com']" \
+      description="The TrustyAI Operator manages TrustyAI deployments within a k8s cluster" \
+      com.redhat.license_terms="https://www.redhat.com/licenses/Red_Hat_Standard_EULA_20191108.pdf"
