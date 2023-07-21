@@ -97,10 +97,10 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			return ctrl.Result{}, nil
+			return Requeue()
 		}
 		// Error reading the object - requeue the request.
-		return ctrl.Result{}, err
+		return RequeueWithError(err)
 	}
 
 	// Check if the CR is being deleted
@@ -111,26 +111,23 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			if err := r.deleteExternalDependency(req.Name, req.Namespace, ctx); err != nil {
 				// If fail to delete the external dependency here, return with error
 				// so that it can be retried
-				log.FromContext(ctx).Error(err, "Failed to delete external dependencies.")
-				return ctrl.Result{}, err
+				return RequeueWithErrorMessage(ctx, err, "Failed to delete external dependencies.")
 			}
 
 			// Remove the finalizer from the list and update it.
 			instance.Finalizers = removeString(instance.Finalizers, finalizerName)
 			if err := r.Update(ctx, instance); err != nil {
-				log.FromContext(ctx).Error(err, "Failed to remove the finalizer.")
-				return ctrl.Result{}, err
+				return RequeueWithErrorMessage(ctx, err, "Failed to remove the finalizer.")
 			}
 		}
-		return ctrl.Result{}, nil
+		return DoNotRequeue()
 	}
 
 	// Add the finalizer if it does not exist
 	if !containsString(instance.Finalizers, finalizerName) {
 		instance.Finalizers = append(instance.Finalizers, finalizerName)
 		if err := r.Update(context.Background(), instance); err != nil {
-			log.FromContext(ctx).Error(err, "Failed to add the finalizer.")
-			return ctrl.Result{}, err
+			return RequeueWithErrorMessage(ctx, err, "Failed to add the finalizer.")
 		}
 	}
 
@@ -140,12 +137,10 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// Call the function to patch environment variables for Deployments that match the label
 	shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, req.Namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, req.Name, false)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Could not patch environment variables for Deployments.")
-		return ctrl.Result{}, err
+		return RequeueWithErrorMessage(ctx, err, "Could not patch environment variables for Deployments.")
 	}
 	if !shouldContinue {
-		log.FromContext(ctx).Info("Not all replicas are ready, requeue the reconcile request")
-		return ctrl.Result{RequeueAfter: time.Minute}, nil
+		return RequeueWithDelayMessage(ctx, time.Minute, "Not all replicas are ready, requeue the reconcile request")
 	}
 
 	// Update the instance status to Not Ready
@@ -179,8 +174,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 
 		// If there was an error finding the PV, requeue the request
-		log.FromContext(ctx).Error(err, "Could not find requested PersistentVolumeClaim.")
-		return ctrl.Result{}, err
+		return RequeueWithErrorMessage(ctx, err, "Could not find requested PersistentVolumeClaim.")
 
 	} else {
 		// Set the conditions appropriately
@@ -192,50 +186,48 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 
 		if setConditionErr := r.setCondition(instance, pvcAvailableCondition); setConditionErr != nil {
-			log.FromContext(ctx).Error(setConditionErr, "Failed to set condition")
-			return ctrl.Result{}, setConditionErr
+			return RequeueWithErrorMessage(ctx, setConditionErr, "Failed to set condition")
 		}
 	}
 
 	// Ensure Deployment object
 	err = r.ensureDeployment(ctx, instance)
 	if err != nil {
-		return ctrl.Result{}, err
+		return RequeueWithError(err)
 	}
 
 	// Fetch the TrustyAIService instance
 	trustyAIServiceService := &trustyaiopendatahubiov1alpha1.TrustyAIService{}
 	err = r.Get(ctx, req.NamespacedName, trustyAIServiceService)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Could not fetch service.")
-		return ctrl.Result{}, err
+		return RequeueWithErrorMessage(ctx, err, "Could not fetch service.")
 	}
 
 	// Create service
 	service, err := r.reconcileService(trustyAIServiceService)
 	if err != nil {
 		// handle error
-		return ctrl.Result{}, err
+		return RequeueWithError(err)
 	}
 	if err := r.Create(ctx, service); err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			// Service already exists, no problem
-			return ctrl.Result{}, nil
+		} else {
+			// handle any other error
+			return RequeueWithError(err)
 		}
-		// handle error
-		return ctrl.Result{}, err
 	}
 
 	// Service Monitor
 	err = r.reconcileServiceMonitor(instance, ctx)
 	if err != nil {
-		return ctrl.Result{}, err
+		return RequeueWithError(err)
 	}
 
 	// Create route
 	err = r.reconcileRoute(instance, ctx)
 	if err != nil {
-		return ctrl.Result{}, err
+		return RequeueWithError(err)
 	}
 
 	// At the end of reconcile, update the instance status to Ready
@@ -244,12 +236,11 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// Populate statuses
 	if err = r.reconcileStatuses(instance, ctx); err != nil {
-		log.FromContext(ctx).Error(err, "Error creating the statuses.")
-		return ctrl.Result{}, err
+		return RequeueWithErrorMessage(ctx, err, "Error creating the statuses.")
 	}
 
 	// Deployment already exists - don't requeue
-	return ctrl.Result{}, nil
+	return DoNotRequeue()
 }
 
 func (r *TrustyAIServiceReconciler) reconcileService(cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*corev1.Service, error) {
