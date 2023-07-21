@@ -97,7 +97,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			return Requeue()
+			return DoNotRequeue()
 		}
 		// Error reading the object - requeue the request.
 		return RequeueWithError(err)
