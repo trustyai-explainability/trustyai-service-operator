@@ -103,34 +103,36 @@ Additionally, in that namespace:
 * (if on OpenShift) a `Route` will be created to allow external access to the service.
 
 ### Custom Image Configuration using ConfigMap
-
-You can configure the operator to use custom images by creating a `ConfigMap` in the operator's namespace. 
-The operator only checks the ConfigMap at deployment, so changes made afterward won't trigger a redeployment of services.
-
-Here's an example of a ConfigMap that specifies a custom image:
+You can specify a custom TrustyAI-service image via adding parameters to the TrustyAI-Operator KFDef, for example:
 
 ```yaml
-apiVersion: v1
-kind: ConfigMap
+apiVersion: kfdef.apps.kubeflow.org/v1
+kind: KfDef
 metadata:
-  name: trustyai-service-operator-config
-data:
-  trustyaiServiceImageName: 'quay.io/mycustomrepo/mycustomimage'
-  trustyaiServiceImageTag: 'v1.0.0'
+  name: trustyai-service-operator
+  namespace: opendatahub
+spec:
+  applications:
+  - kustomizeConfig:
+      repoRef:
+        name: manifests
+        path: config
+      parameters:
+         - name: trustyaiServiceImageName
+           value: NEW_IMAGE_NAME
+        - name: trustyaiServiceImageTag
+          value: NEW_IMAGE_TAG
+    name: trustyai-service-operator
+  repos:
+  - name: manifests
+    uri: https://github.com/trustyai-explainability/trustyai-service-operator/tarball/main
+  version: v1.0.0
 ```
+If these parameters are unspecified, the [default image and tag](config/base/params.env) will be used.
 
-You can apply this manifest with the following command, replacing `<file-name.yaml>` with the name of your manifest file:
 
-```shell
-kubectl apply -f <file-name.yaml> -n $OPERATOR_NAMESPACE
-```
-
-Please ensure the namespace specified is the same as the namespace where you have deployed the operator.
-
-After the ConfigMap is applied, you can then proceed to deploy the TrustyAI service.
-The operator will use the image name and tag specified in the ConfigMap for the deployment.
-
-If you want to use a different image or tag in the future, you'll need to update the ConfigMap and redeploy the operator to have the changes take effect. The running TrustyAI services won't be redeployed automatically. To use the new image or tag, you'll need to delete and recreate the TrustyAIService resources.
+If you'd like to change the service image/tag after deploying the operator, simply change the parameters in the KFDef. Any
+TrustyAI service deployed subsequently will use the new image and tag. 
 
 ## Contributing
 

@@ -10,4 +10,24 @@ resources:
 patchesStrategicMerge:
 - manager_auth_proxy_patch.yaml
 
+configMapGenerator:
+  - name: config
+    env: params.env
+generatorOptions:
+  disableNameSuffixHash: true
+
 vars:
+  - name: trustyaiServiceImageName
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.trustyaiServiceImageName
+  - name: trustyaiServiceImageTag
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.trustyaiServiceImageTag
