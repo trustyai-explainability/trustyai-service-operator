@@ -31,3 +31,17 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.trustyaiServiceImageTag
+  - name: trustyaiOperatorImageName
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.trustyaiServiceImageName
+  - name: trustyaiOperatorImageTag
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.trustyaiServiceImageTag
