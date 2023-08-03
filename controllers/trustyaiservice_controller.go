@@ -21,7 +21,6 @@ import (
 	goerrors "errors"
 	"fmt"
 	kserveapi "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
-	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -49,6 +48,7 @@ const (
 	modelMeshLabelKey    = "modelmesh-service"
 	modelMeshLabelValue  = "modelmesh-serving"
 	volumeMountName      = "volume"
+	serviceType          = "trustyai-service"
 )
 
 // TrustyAIServiceReconciler reconciles a TrustyAIService object
@@ -80,7 +80,7 @@ func getCommonLabels(serviceName string) map[string]string {
 		"app":                        serviceName,
 		"app.kubernetes.io/name":     serviceName,
 		"app.kubernetes.io/instance": serviceName,
-		"app.kubernetes.io/part-of":  serviceName,
+		"app.kubernetes.io/part-of":  serviceType,
 		"app.kubernetes.io/version":  "0.1.0",
 	}
 }
@@ -218,8 +218,14 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	// Service Monitor
-	err = r.reconcileServiceMonitor(instance, ctx)
+	// Local Service Monitor
+	err = r.ensureLocalServiceMonitor(instance, ctx)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Central Service Monitor
+	err = r.ensureCentralServiceMonitor(ctx)
 	if err != nil {
 		return RequeueWithError(err)
 	}
@@ -274,75 +280,6 @@ func (r *TrustyAIServiceReconciler) reconcileService(cr *trustyaiopendatahubiov1
 		return nil, err
 	}
 	return service, nil
-}
-
-func (r *TrustyAIServiceReconciler) reconcileServiceMonitor(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
-
-	serviceMonitor := &monitoringv1.ServiceMonitor{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceMonitorName,
-			Namespace: cr.Namespace,
-			Labels: map[string]string{
-				"modelmesh-service": "modelmesh-serving",
-			},
-		},
-		Spec: monitoringv1.ServiceMonitorSpec{
-			NamespaceSelector: monitoringv1.NamespaceSelector{
-				MatchNames: []string{cr.Namespace},
-			},
-			Endpoints: []monitoringv1.Endpoint{
-				{
-					Interval:    "4s",
-					Path:        "/q/metrics",
-					HonorLabels: true,
-					Scheme:      "http",
-					Params: map[string][]string{
-						"match[]": {
-							`{__name__= "trustyai_spd"}`,
-							`{__name__= "trustyai_dir"}`,
-						},
-					},
-					MetricRelabelConfigs: []*monitoringv1.RelabelConfig{
-						{
-							Action:       "keep",
-							Regex:        "trustyai_.*",
-							SourceLabels: []monitoringv1.LabelName{"__name__"},
-						},
-					},
-				},
-			},
-			Selector: metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app.kubernetes.io/name": cr.Name,
-				},
-			},
-		},
-	}
-
-	// Set TrustyAIService instance as the owner and controller
-	err := ctrl.SetControllerReference(cr, serviceMonitor, r.Scheme)
-	if err != nil {
-		return err
-	}
-
-	// Check if this ServiceMonitor already exists
-	found := &monitoringv1.ServiceMonitor{}
-	err = r.Get(ctx, types.NamespacedName{Name: serviceMonitor.Name, Namespace: serviceMonitor.Namespace}, found)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			log.FromContext(ctx).Info("Creating a new ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
-			err = r.Create(ctx, serviceMonitor)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "Not found ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
-				return err
-			}
-		} else {
-			log.FromContext(ctx).Error(err, "Couldn't create new ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
-			return err
-		}
-	}
-
-	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
