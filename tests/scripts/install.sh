@@ -51,22 +51,20 @@ if [ -z "$PULL_NUMBER" ]; then
   sed -i "s#value: operatorTagPlaceholder#value: latest#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
   sed -i "s#value: operatorImagePlaceholder#value: quay.io/trustyai/trustyai-service-operator#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
 else
-  if [ $REPO_NAME == "trustyai-explainability" ]; then
-    echo "Setting manifests in kfctl_openshift to use pull number: $PULL_NUMBER"
-    sed -i "s#uri: https://github.com/trustyai-explainability/trustyai-explainability/tarball/main#uri: https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/tarball/pull/${PULL_NUMBER}/head#" ./${KFDEF_FILENAME}
+  echo "Setting manifests in kfctl_openshift to use pull number: $PULL_NUMBER"
+  sed -i "s#uri: https://github.com/trustyai-explainability/trustyai-explainability/tarball/main#uri: https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/tarball/pull/${PULL_NUMBER}/head#" ./${KFDEF_FILENAME}
 
-    BRANCH_SHA=$(curl  https://api.github.com/repos/trustyai-explainability/trustyai-explainability/pulls/${PULL_NUMBER} | jq ".head.sha"  | tr -d '"')
+  BRANCH_SHA=$(curl  https://api.github.com/repos/trustyai-explainability/trustyai-explainability/pulls/${PULL_NUMBER} | jq ".head.sha"  | tr -d '"')
 
     # echo "Setting TrustyAI service kfdef to use PR image"
     # sed -i "s#value: \"quay.io/trustyai/trustyai-service:latest\"#value: \"quay.io/trustyai/trustyai-service-ci:${BRANCH_SHA}\"#" ../resources/trustyai/trustyai_service_kfdef.yaml
 
-    echo "Setting TrustyAI operator configmap to use PR image"
-    sed -i "s#value: operatorImagePlaceholder#value: quay.io/trustyai/trustyai-service-operator-ci#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
-    sed -i "s#value: operatorTagPlaceholder#value: ${BRANCH_SHA}#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
+  echo "Setting TrustyAI operator configmap to use PR image"
+  sed -i "s#value: operatorImagePlaceholder#value: quay.io/trustyai/trustyai-service-operator-ci#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
+  sed -i "s#value: operatorTagPlaceholder#value: ${BRANCH_SHA}#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
 
-    echo "TrustyAI Operator KFDEF"
-    cat $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
-  fi
+  echo "TrustyAI Operator KFDEF:"
+  cat $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
 fi
 
 if [ -z "${OPENSHIFT_TESTUSER_NAME}" ] || [ -z "${OPENSHIFT_TESTUSER_PASS}" ]; then
@@ -100,6 +98,7 @@ else
   echo "Creating the following KfDef"
   cat ./${KFDEF_FILENAME} > ${ARTIFACT_DIR}/${KFDEF_FILENAME}
   cat $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml > ${ARTIFACT_DIR}/operator_kfdef.yaml
+
 
   oc apply -f ./${KFDEF_FILENAME}
   kfctl_result=$?
