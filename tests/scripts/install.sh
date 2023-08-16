@@ -46,7 +46,7 @@ pushd ~/kfdef
 sed -i "s#value: serviceTagPlaceholder#value: latest#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
 sed -i "s#value: serviceImagePlaceholder#value: quay.io/trustyai/trustyai-service#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
 
-if [ -z "$PULL_NUMBER" ] || [ $REPO_NAME -ne "trustyai-service-operator" ];; then
+if [ -z "$PULL_NUMBER" ] || [ $REPO_NAME != "trustyai-service-operator" ]; then
   echo "No pull number/not correct repo, using default values for ${KFDEF_FILENAME}"
   sed -i "s#value: operatorTagPlaceholder#value: latest#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
   sed -i "s#value: operatorImagePlaceholder#value: quay.io/trustyai/trustyai-service-operator#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
