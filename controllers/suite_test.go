@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -148,7 +149,8 @@ var _ = BeforeSuite(func() {
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases"),
-			filepath.Join("..", "config", "prometheus")},
+			filepath.Join("..", "config", "prometheus"),
+			filepath.Join("..", "tests", "crds")},
 		ErrorIfCRDPathMissing: true,
 	}
 
@@ -163,6 +165,10 @@ var _ = BeforeSuite(func() {
 
 	// Add Monitoring
 	err = monitoringv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Add InferenceServices
+	err = kservev1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	//+kubebuilder:scaffold:scheme

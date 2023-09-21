@@ -20,7 +20,7 @@ import (
 	"context"
 	goerrors "errors"
 	"fmt"
-	kserveapi "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
+	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -73,6 +73,8 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=list;watch;get;create;update;patch;delete
+// +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=list;watch;get;create;update;patch;delete
+// +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices/finalizers,verbs=get;list;watch;update
 
 // getCommonLabels returns the service's common labels
 func getCommonLabels(serviceName string) map[string]string {
@@ -135,7 +137,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// CR found, add or update the URL
 	// Call the function to patch environment variables for Deployments that match the label
-	shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, req.Namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, req.Name, false)
+	shouldContinue, err := r.handleInferenceServices(ctx, req.Namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, req.Name, false)
 	if err != nil {
 		return RequeueWithErrorMessage(ctx, err, "Could not patch environment variables for Deployments.")
 	}
@@ -293,7 +295,7 @@ func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return nil
 		}
 		// Retain ServingRuntimes only
-		if owner.APIVersion != kserveapi.APIVersion || owner.Kind != "ServingRuntime" {
+		if owner.APIVersion != kservev1beta1.APIVersion || owner.Kind != "ServingRuntime" {
 			return nil
 		}
 		return []string{owner.Name}
