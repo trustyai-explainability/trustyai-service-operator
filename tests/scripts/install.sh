@@ -52,9 +52,9 @@ if [ -z "$PULL_NUMBER" ] || [ $REPO_NAME != "trustyai-service-operator" ]; then
   sed -i "s#value: operatorImagePlaceholder#value: quay.io/trustyai/trustyai-service-operator#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
 else
   echo "Setting manifests in kfctl_openshift to use pull number: $PULL_NUMBER"
-  sed -i "s#uri: https://github.com/trustyai-explainability/trustyai-explainability/tarball/main#uri: https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/tarball/pull/${PULL_NUMBER}/head#" ./${KFDEF_FILENAME}
+  sed -i "s#uri: https://github.com/trustyai-explainability/trustyai-service-operator/tarball/main#uri: https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/tarball/pull/${PULL_NUMBER}/head#" ./${KFDEF_FILENAME}
 
-  BRANCH_SHA=$(curl  https://api.github.com/repos/trustyai-explainability/trustyai-explainability/pulls/${PULL_NUMBER} | jq ".head.sha"  | tr -d '"')
+  BRANCH_SHA=$(curl  https://api.github.com/repos/trustyai-explainability/trustyai-service-operator/pulls/${PULL_NUMBER} | jq ".head.sha"  | tr -d '"')
 
     # echo "Setting TrustyAI service kfdef to use PR image"
     # sed -i "s#value: \"quay.io/trustyai/trustyai-service:latest\"#value: \"quay.io/trustyai/trustyai-service-ci:${BRANCH_SHA}\"#" ../resources/trustyai/trustyai_service_kfdef.yaml
