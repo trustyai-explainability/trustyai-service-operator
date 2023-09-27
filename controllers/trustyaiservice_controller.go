@@ -38,19 +38,6 @@ import (
 
 var ErrPVCNotReady = goerrors.New("PVC is not ready")
 
-const (
-	defaultImage         = string("quay.io/trustyai/trustyai-service")
-	defaultTag           = string("latest")
-	containerName        = "trustyai-service"
-	serviceMonitorName   = "trustyai-metrics"
-	finalizerName        = "trustyai.opendatahub.io.trustyai.opendatahub.io/finalizer"
-	payloadProcessorName = "MM_PAYLOAD_PROCESSORS"
-	modelMeshLabelKey    = "modelmesh-service"
-	modelMeshLabelValue  = "modelmesh-serving"
-	volumeMountName      = "volume"
-	serviceType          = "trustyai-service"
-)
-
 // TrustyAIServiceReconciler reconciles a TrustyAIService object
 type TrustyAIServiceReconciler struct {
 	client.Client
@@ -80,7 +67,7 @@ func getCommonLabels(serviceName string) map[string]string {
 		"app":                        serviceName,
 		"app.kubernetes.io/name":     serviceName,
 		"app.kubernetes.io/instance": serviceName,
-		"app.kubernetes.io/part-of":  serviceType,
+		"app.kubernetes.io/part-of":  componentName,
 		"app.kubernetes.io/version":  "0.1.0",
 	}
 }
