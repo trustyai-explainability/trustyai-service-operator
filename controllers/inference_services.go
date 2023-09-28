@@ -3,8 +3,10 @@ package controllers
 import (
 	"context"
 	"fmt"
+	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"strings"
 )
@@ -70,7 +72,7 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsByLabelForDeployments(ctx contex
 	}
 
 	// Build the payload processor endpoint
-	url := "http://" + crName + "." + namespace + ".svc.cluster.local/consumer/kserve/v2"
+	url := generateServiceURL(crName, namespace) + "/consumer/kserve/v2"
 
 	// Patch environment variables for the Deployments
 	if shouldContinue, err := r.patchEnvVarsForDeployments(ctx, deployments, envVarName, url, remove); err != nil {
@@ -112,4 +114,74 @@ func generateEnvVarValue(currentValue, newValue string, remove bool) string {
 	}
 
 	return currentValue
+}
+
+func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context, namespace string, labelKey string, labelValue string, envVarName string, crName string, remove bool) (bool, error) {
+	var inferenceServices kservev1beta1.InferenceServiceList
+
+	if err := r.List(ctx, &inferenceServices, client.InNamespace(namespace)); err != nil {
+		log.FromContext(ctx).Error(err, "Could not list InferenceService objects.")
+		return false, err
+	}
+
+	for _, infService := range inferenceServices.Items {
+		annotations := infService.GetAnnotations()
+
+		// Check the annotation "serving.kserve.io/deploymentMode: ModelMesh"
+		if val, ok := annotations["serving.kserve.io/deploymentMode"]; ok && val == "ModelMesh" {
+			shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, namespace, labelKey, labelValue, envVarName, crName, remove)
+			if err != nil {
+				log.FromContext(ctx).Error(err, "Could not patch environment variables for ModelMesh deployments.")
+				return shouldContinue, err
+			}
+		} else {
+			err := r.patchKServe(ctx, infService, namespace, crName, remove)
+			if err != nil {
+				log.FromContext(ctx).Error(err, "Could not path InferenceLogger for KServe deployment.")
+				return false, err
+			}
+		}
+	}
+	return true, nil
+}
+
+// patchKServe adds a TrustyAI service as an InferenceLogger to a KServe InferenceService
+func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, infService kservev1beta1.InferenceService, namespace string, crName string, remove bool) error {
+
+	url := generateServiceURL(crName, namespace)
+
+	if remove {
+		if infService.Spec.Predictor.Logger == nil || *infService.Spec.Predictor.Logger.URL != url {
+			return nil // Removing, but InferenceLogger is not set or is not set to the expected URL. Do nothing.
+		}
+
+		// Remove the InferenceLogger
+		infService.Spec.Predictor.Logger = nil
+
+		// Remove Annotations
+		annotations := infService.GetAnnotations()
+		delete(annotations, "internal.serving.kserve.io/logger")
+		delete(annotations, "internal.serving.kserve.io/logger-mode")
+		delete(annotations, "internal.serving.kserve.io/logger-sink-url")
+		infService.SetAnnotations(annotations)
+	} else {
+		if infService.Spec.Predictor.Logger != nil && *infService.Spec.Predictor.Logger.URL == url {
+			return nil // InferenceLogger is already set to the expected URL. Do nothing.
+		}
+
+		// Construct the logger object
+		logger := kservev1beta1.LoggerSpec{
+			Mode: "all",
+			URL:  &url,
+		}
+
+		// Set the InferenceLogger to the InferenceService instance
+		infService.Spec.Predictor.Logger = &logger
+	}
+
+	// Update the InferenceService
+	if err := r.Update(ctx, &infService); err != nil {
+		return fmt.Errorf("failed to update InferenceService %s/%s: %v", infService.Namespace, infService.Name, err)
+	}
+	return nil
 }
