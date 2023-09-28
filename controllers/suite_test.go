@@ -249,7 +249,7 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(deployment.Labels["app"]).Should(Equal(name))
 			Expect(deployment.Labels["app.kubernetes.io/name"]).Should(Equal(name))
 			Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(name))
-			Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(serviceType))
+			Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
 			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
 
 			Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
@@ -304,7 +304,7 @@ var _ = Describe("TrustyAI operator", func() {
 				Expect(deployment.Labels["app"]).Should(Equal(name))
 				Expect(deployment.Labels["app.kubernetes.io/name"]).Should(Equal(name))
 				Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(name))
-				Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(serviceType))
+				Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
 				Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
 
 				Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
