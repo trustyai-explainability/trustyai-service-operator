@@ -48,7 +48,7 @@ func generateServiceMonitorSpecCentral(deploymentNamespace string) *monitoringv1
 			},
 			Selector: metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app.kubernetes.io/part-of": serviceType,
+					"app.kubernetes.io/part-of": componentName,
 				},
 			},
 		},
@@ -117,7 +117,7 @@ func generateServiceMonitorSpecLocal(deploymentNamespace string, serviceName str
 			},
 			Selector: metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app.kubernetes.io/part-of": serviceType,
+					"app.kubernetes.io/part-of": componentName,
 				},
 			},
 		},
