@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,7 +13,7 @@ import (
 	"strconv"
 )
 
-func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, imageName string, imageTag string) *appsv1.Deployment {
+func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, image string) *appsv1.Deployment {
 	labels := getCommonLabels(cr.Name)
 	pvcName := generatePVCName(cr)
 
@@ -33,7 +32,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	containers := []corev1.Container{
 		{
 			Name:  containerName,
-			Image: fmt.Sprintf("%s:%s", imageName, imageTag),
+			Image: image,
 			Env: []corev1.EnvVar{
 				{
 					Name:  "STORAGE_DATA_FILENAME",
@@ -111,7 +110,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 }
 
 // reconcileDeployment returns a Deployment object with the same name/namespace as the cr
-func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, imageName string, imageTag string) error {
+func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, imageName string) error {
 
 	pvcName := generatePVCName(cr)
 
@@ -123,7 +122,7 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 	}
 	if pvcerr == nil {
 		// The PVC is ready. We can now create the Deployment.
-		deployment := r.createDeploymentObject(ctx, cr, imageName, imageTag)
+		deployment := r.createDeploymentObject(ctx, cr, imageName)
 
 		if err := ctrl.SetControllerReference(cr, deployment, r.Scheme); err != nil {
 			log.FromContext(ctx).Error(err, "Error setting TrustyAIService as owner of Deployment.")
@@ -149,7 +148,7 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 	// Get image and tag from ConfigMap
 	// If there's a ConfigMap with custom images, it is only applied when the operator is first deployed
 	// Changing (or creating) the ConfigMap after the operator is deployed will not have any effect
-	imageName, imageTag, err := r.getImageAndTagFromConfigMap(ctx)
+	image, err := r.getImageFromConfigMap(ctx)
 	if err != nil {
 		return err
 	}
@@ -160,7 +159,7 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 		if errors.IsNotFound(err) {
 			// Deployment does not exist, create it
 			log.FromContext(ctx).Info("Could not find Deployment. Creating it.")
-			return r.createDeployment(ctx, instance, imageName, imageTag)
+			return r.createDeployment(ctx, instance, image)
 		}
 
 		// Some other error occurred when trying to get the Deployment
