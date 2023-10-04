@@ -43,13 +43,11 @@ fi
 popd
 ## Point manifests repo uri in the KFDEF to the manifests in the PR
 pushd ~/kfdef
-sed -i "s#value: serviceTagPlaceholder#value: ${SERVICE_IMAGE_TAG}#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
-sed -i "s#value: serviceImagePlaceholder#value: ${SERVICE_IMAGE_REPO}#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
+sed -i "s#value: serviceImagePlaceholder#value: ${SERVICE_IMAGE}#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
 
 if [ -z "$PULL_NUMBER" ] || [ $REPO_NAME != "trustyai-service-operator" ]; then
   echo "No pull number/not correct repo, using default values for ${KFDEF_FILENAME}"
-  sed -i "s#value: operatorTagPlaceholder#value: ${OPERATOR_IMAGE_TAG}#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
-  sed -i "s#value: operatorImagePlaceholder#value: ${OPERATOR_IMAGE_REPO}#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
+  sed -i "s#value: operatorImagePlaceholder#value: ${OPERATOR_IMAGE}#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
 else
   echo "Setting manifests in kfctl_openshift to use pull number: $PULL_NUMBER"
   sed -i "s#uri: https://github.com/trustyai-explainability/trustyai-service-operator/tarball/main#uri: https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/tarball/pull/${PULL_NUMBER}/head#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
@@ -60,8 +58,7 @@ else
     # sed -i "s#value: \"quay.io/trustyai/trustyai-service:latest\"#value: \"quay.io/trustyai/trustyai-service-ci:${BRANCH_SHA}\"#" ../resources/trustyai/trustyai_service_kfdef.yaml
 
   echo "Setting TrustyAI operator configmap to use PR image"
-  sed -i "s#value: operatorImagePlaceholder#value: quay.io/trustyai/trustyai-service-operator-ci#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
-  sed -i "s#value: operatorTagPlaceholder#value: ${BRANCH_SHA}#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
+  sed -i "s#value: operatorImagePlaceholder#value: quay.io/trustyai/trustyai-service-operator-ci:${BRANCH_SHA}#" $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
 
   echo "TrustyAI Operator KFDEF:"
   cat $HOME/peak/operator-tests/trustyai-explainability/resources/trustyai/trustyai_operator_kfdef.yaml
