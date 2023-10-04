@@ -24,31 +24,17 @@ generatorOptions:
   disableNameSuffixHash: true
 
 vars:
-  - name: trustyaiServiceImageName
+  - name: trustyaiServiceImage
     objref:
       kind: ConfigMap
       name: config
       apiVersion: v1
     fieldref:
-      fieldpath: data.trustyaiServiceImageName
-  - name: trustyaiServiceImageTag
+      fieldpath: data.trustyaiServiceImage
+  - name: trustyaiOperatorImage
     objref:
       kind: ConfigMap
       name: config
       apiVersion: v1
     fieldref:
-      fieldpath: data.trustyaiServiceImageTag
-  - name: trustyaiOperatorImageName
-    objref:
-      kind: ConfigMap
-      name: config
-      apiVersion: v1
-    fieldref:
-      fieldpath: data.trustyaiOperatorImageName
-  - name: trustyaiOperatorImageTag
-    objref:
-      kind: ConfigMap
-      name: config
-      apiVersion: v1
-    fieldref:
-      fieldpath: data.trustyaiOperatorImageTag
+      fieldpath: data.trustyaiOperatorImage

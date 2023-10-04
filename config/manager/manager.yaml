@@ -32,7 +32,7 @@ spec:
         - /manager
         args:
         - --leader-elect
-        image: $(trustyaiOperatorImageName):$(trustyaiOperatorImageTag)
+        image: $(trustyaiOperatorImage)
         name: manager
         securityContext:
           runAsNonRoot: true

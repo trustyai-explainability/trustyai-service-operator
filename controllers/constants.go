@@ -1,8 +1,7 @@
 package controllers
 
 const (
-	defaultImage         = string("quay.io/trustyai/trustyai-service")
-	defaultTag           = string("latest")
+	defaultImage         = string("quay.io/trustyai/trustyai-service:latest")
 	containerName        = "trustyai-service"
 	componentName        = "trustyai"
 	serviceMonitorName   = "trustyai-metrics"

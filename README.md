@@ -118,10 +118,8 @@ spec:
         name: manifests
         path: config
       parameters:
-         - name: trustyaiServiceImageName
+         - name: trustyaiServiceImage
            value: NEW_IMAGE_NAME
-        - name: trustyaiServiceImageTag
-          value: NEW_IMAGE_TAG
     name: trustyai-service-operator
   repos:
   - name: manifests
