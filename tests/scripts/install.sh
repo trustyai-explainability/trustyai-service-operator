@@ -103,6 +103,6 @@ else
     echo "The installation failed"
     exit $kfctl_result
   fi
-fi
+fi 
 set +x
 popd
