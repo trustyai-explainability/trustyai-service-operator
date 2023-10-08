@@ -17,12 +17,14 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 
 		// Check if all Pods are ready
 		if deployment.Status.ReadyReplicas != *deployment.Spec.Replicas {
-			// Not all replicas are ready, return an error
-			return false, fmt.Errorf("not all ModelMesh serving replicas are ready for deployment %s", deployment.Name)
+			// Not all replicas are ready, will retry later
+			log.FromContext(ctx).Info("Not all replicas are ready for deployment " + deployment.Name + ". Waiting.")
+			return false, nil
 		}
 
 		// Loop over all containers in the Deployment's Pod template
-		for i, _ := range deployment.Spec.Template.Spec.Containers {
+		for i := range deployment.Spec.Template.Spec.Containers {
+			// Store the original environment variable list
 			// Get the existing env var
 			var envVar *corev1.EnvVar
 			for j, e := range deployment.Spec.Template.Spec.Containers[i].Env {
@@ -32,12 +34,18 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 				}
 			}
 
+			var originalValue string
+			if envVar != nil {
+				originalValue = envVar.Value
+			}
+
 			// If the env var doesn't exist, add it (if we are not removing)
 			if envVar == nil && !remove {
-				deployment.Spec.Template.Spec.Containers[i].Env = append(deployment.Spec.Template.Spec.Containers[i].Env, corev1.EnvVar{
+				envVar = &corev1.EnvVar{
 					Name:  envVarName,
 					Value: url,
-				})
+				}
+				deployment.Spec.Template.Spec.Containers[i].Env = append(deployment.Spec.Template.Spec.Containers[i].Env, *envVar)
 			} else if envVar != nil {
 				// If the env var exists and already contains the value, don't do anything
 				existingValues := strings.Split(envVar.Value, " ")
@@ -51,12 +59,15 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 				envVar.Value = generateEnvVarValue(envVar.Value, url, remove)
 			}
 
-			// Update the Deployment
-			if err := r.Update(ctx, &deployment); err != nil {
-				log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
-				return false, err
+			// Only update the deployment if the var value has to change, or we are removing it
+			if originalValue != envVar.Value || remove {
+				// Update the Deployment
+				if err := r.Update(ctx, &deployment); err != nil {
+					log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
+					return false, err
+				}
+				log.FromContext(ctx).Info("Updating Deployment " + deployment.Name + ", container spec " + deployment.Spec.Template.Spec.Containers[i].Name + ", env var " + envVarName + " to " + url)
 			}
-			log.FromContext(ctx).Info("Updating Deployment " + deployment.Name + ", container spec " + deployment.Spec.Template.Spec.Containers[i].Name + ", env var " + envVarName + " to " + url)
 		}
 	}
 
@@ -126,7 +137,6 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 
 	for _, infService := range inferenceServices.Items {
 		annotations := infService.GetAnnotations()
-
 		// Check the annotation "serving.kserve.io/deploymentMode: ModelMesh"
 		if val, ok := annotations["serving.kserve.io/deploymentMode"]; ok && val == "ModelMesh" {
 			shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, namespace, labelKey, labelValue, envVarName, crName, remove)

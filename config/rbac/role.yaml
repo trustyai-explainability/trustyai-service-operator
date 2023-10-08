@@ -122,8 +122,10 @@ rules:
   resources:
   - inferenceservices/finalizers
   verbs:
+  - delete
   - get
   - list
+  - patch
   - update
   - watch
 - apiGroups:
