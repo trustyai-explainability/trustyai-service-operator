@@ -1,5 +1,7 @@
 package controllers
 
+import "time"
+
 const (
 	defaultImage         = string("quay.io/trustyai/trustyai-service:latest")
 	containerName        = "trustyai-service"
@@ -10,4 +12,5 @@ const (
 	modelMeshLabelKey    = "modelmesh-service"
 	modelMeshLabelValue  = "modelmesh-serving"
 	volumeMountName      = "volume"
+	defaultRequeueDelay  = time.Minute
 )

@@ -20,6 +20,7 @@ import (
 	"context"
 	goerrors "errors"
 	"fmt"
+	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -32,7 +33,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 	"time"
 )
 
@@ -61,7 +64,7 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=list;watch;get;create;update;patch;delete
 // +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=list;watch;get;update;patch
-// +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices/finalizers,verbs=get;list;watch;update
+// +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices/finalizers,verbs=list;watch;get;update;patch;delete
 
 // getCommonLabels returns the service's common labels
 func getCommonLabels(serviceName string) map[string]string {
@@ -115,7 +118,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// Add the finalizer if it does not exist
 	if !containsString(instance.Finalizers, finalizerName) {
 		instance.Finalizers = append(instance.Finalizers, finalizerName)
-		if err := r.Update(context.Background(), instance); err != nil {
+		if err := r.Update(ctx, instance); err != nil {
 			return RequeueWithErrorMessage(ctx, err, "Failed to add the finalizer.")
 		}
 	}
@@ -234,8 +237,8 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return RequeueWithErrorMessage(ctx, err, "Error creating the statuses.")
 	}
 
-	// Deployment already exists - don't requeue
-	return DoNotRequeue()
+	// Deployment already exists - requeue the request with a delay
+	return RequeueWithDelay(defaultRequeueDelay)
 }
 
 func (r *TrustyAIServiceReconciler) reconcileService(cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*corev1.Service, error) {
@@ -292,6 +295,8 @@ func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&trustyaiopendatahubiov1alpha1.TrustyAIService{}).
+		Watches(&source.Kind{Type: &kservev1beta1.InferenceService{}}, &handler.EnqueueRequestForObject{}).
+		Watches(&source.Kind{Type: &kservev1alpha1.ServingRuntime{}}, &handler.EnqueueRequestForObject{}).
 		Complete(r)
 }
 
@@ -372,7 +377,7 @@ func (r *TrustyAIServiceReconciler) getImageFromConfigMap(ctx context.Context) (
 				return defaultImage, nil
 			}
 			// Other error occurred when trying to fetch the ConfigMap
-			return defaultImage, fmt.Errorf("Error reading configmap %s", configMapKey)
+			return defaultImage, fmt.Errorf("error reading configmap %s", configMapKey)
 		}
 
 		// ConfigMap is found, extract the image and tag
