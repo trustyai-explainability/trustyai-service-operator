@@ -132,6 +132,31 @@ If these parameters are unspecified, the [default image and tag](config/base/par
 If you'd like to change the service image/tag after deploying the operator, simply change the parameters in the KFDef. Any
 TrustyAI service deployed subsequently will use the new image and tag. 
 
+### `TrustyAIService` Status Updates
+
+The `TrustyAIService` custom resource tracks the availability of `InferenceServices` and `PersistentVolumeClaims (PVCs)` 
+through its `status` field. Below are the status types and reasons that are available:
+
+#### `InferenceService` Status
+
+| Status Type                   | Status Reason                     | Description                       |
+|-------------------------------|-----------------------------------|-----------------------------------|
+| `InferenceServicesPresent`    | `InferenceServicesNotFound`       | InferenceServices were not found. |
+| `InferenceServicesPresent`    | `InferenceServicesFound`          | InferenceServices were found.     |
+
+#### `PersistentVolumeClaim` (PVCs) Status
+
+| Status Type      | Status Reason   | Description                        |
+|------------------|-----------------|------------------------------------|
+| `PVCAvailable`   | `PVCNotFound`   | `PersistentVolumeClaim` not found.  |
+| `PVCAvailable`   | `PVCFound`      | `PersistentVolumeClaim` found.      |
+
+
+#### Status Behavior
+
+- If a PVC is not available, the `Ready` status of `TrustyAIService` will be set to `False`.
+- However, if `InferenceServices` are not found, the `Ready` status of `TrustyAIService` will not be affected, _i.e._, it is `Ready` by all other conditions, it will remain so.
+
 ## Contributing
 
 Please see the [CONTRIBUTING.md](./CONTRIBUTING.md) file for more details on how to contribute to this project.
