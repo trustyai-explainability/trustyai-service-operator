@@ -50,3 +50,11 @@ func UpdatePVCNotAvailable(saved *trustyaiopendatahubiov1alpha1.TrustyAIService)
 func UpdatePVCAvailable(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
 	saved.SetStatus(StatusTypePVCAvailable, StatusReasonPVCFound, "PersistentVolumeClaim found", v1.ConditionTrue)
 }
+
+func UpdateRouteAvailable(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+	saved.SetStatus(StatusTypeRouteAvailable, StatusReasonRouteFound, "Route found", v1.ConditionTrue)
+}
+
+func UpdateRouteNotAvailable(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+	saved.SetStatus(StatusTypeRouteAvailable, StatusReasonRouteNotFound, "Route not found", v1.ConditionFalse)
+}

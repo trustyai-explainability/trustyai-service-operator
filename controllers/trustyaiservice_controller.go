@@ -198,10 +198,17 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// Create route
 	err = r.reconcileRoute(instance, ctx)
 	if err != nil {
-		return RequeueWithError(err)
+		// Could not create Route object, update status and return.
+		_, updateErr := r.updateStatus(ctx, instance, UpdateRouteNotAvailable)
+		if updateErr != nil {
+			return RequeueWithErrorMessage(ctx, err, "Failed to update status")
+		}
+		return RequeueWithErrorMessage(ctx, err, "Failed to get or create Route")
 	}
-	
+
 	_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+		// Set Route has available
+		UpdateRouteAvailable(saved)
 		// At the end of reconcile, update the instance status to Ready
 		saved.Status.Phase = "Ready"
 		saved.Status.Ready = corev1.ConditionTrue
