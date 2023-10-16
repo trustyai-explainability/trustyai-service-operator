@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
+	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -127,12 +128,21 @@ func generateEnvVarValue(currentValue, newValue string, remove bool) string {
 	return currentValue
 }
 
-func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context, namespace string, labelKey string, labelValue string, envVarName string, crName string, remove bool) (bool, error) {
+func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, namespace string, labelKey string, labelValue string, envVarName string, crName string, remove bool) (bool, error) {
 	var inferenceServices kservev1beta1.InferenceServiceList
 
 	if err := r.List(ctx, &inferenceServices, client.InNamespace(namespace)); err != nil {
 		log.FromContext(ctx).Error(err, "Could not list InferenceService objects.")
 		return false, err
+	}
+
+	if len(inferenceServices.Items) == 0 {
+		_, updateErr := r.updateStatus(ctx, instance, UpdateInferenceServiceNotPresent)
+		if updateErr != nil {
+			log.FromContext(ctx).Error(updateErr, "Could not update status for InferenceService not present")
+			return false, updateErr
+		}
+		return true, nil
 	}
 
 	for _, infService := range inferenceServices.Items {
@@ -151,6 +161,13 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 				return false, err
 			}
 		}
+	}
+
+	instance.SetStatus("InferenceServicesPresent", "InferenceServicesFound", "InferenceServices found", corev1.ConditionTrue)
+	_, updateErr := r.updateStatus(ctx, instance, UpdateInferenceServicePresent)
+	if updateErr != nil {
+		log.FromContext(ctx).Error(updateErr, "Could not update status for InferenceService present")
+		return false, updateErr
 	}
 	return true, nil
 }

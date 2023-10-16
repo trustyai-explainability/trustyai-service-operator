@@ -14,3 +14,17 @@ const (
 	volumeMountName      = "volume"
 	defaultRequeueDelay  = time.Minute
 )
+
+// Status types
+const (
+	StatusTypeInferenceServicesPresent = "InferenceServicesPresent"
+	StatusTypePVCAvailable             = "PVCAvailable"
+)
+
+// Status reasons
+const (
+	StatusReasonInferenceServicesNotFound = "InferenceServicesNotFound"
+	StatusReasonInferenceServicesFound    = "InferenceServicesFound"
+	StatusReasonPVCNotFound               = "PVCNotFound"
+	StatusReasonPVCFound                  = "PVCFound"
+)

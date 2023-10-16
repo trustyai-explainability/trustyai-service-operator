@@ -89,3 +89,27 @@ type TrustyAIServiceList struct {
 func init() {
 	SchemeBuilder.Register(&TrustyAIService{}, &TrustyAIServiceList{})
 }
+
+// SetStatus sets the status of the TrustyAIService
+func (t *TrustyAIService) SetStatus(condType, reason, message string, status corev1.ConditionStatus) {
+	now := metav1.Now()
+	condition := Condition{
+		Type:               condType,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		LastTransitionTime: now,
+	}
+	// Replace or append condition
+	found := false
+	for i, cond := range t.Status.Conditions {
+		if cond.Type == condType {
+			t.Status.Conditions[i] = condition
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Status.Conditions = append(t.Status.Conditions, condition)
+	}
+}
