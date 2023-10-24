@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -44,8 +45,9 @@ var ErrPVCNotReady = goerrors.New("PVC is not ready")
 // TrustyAIServiceReconciler reconciles a TrustyAIService object
 type TrustyAIServiceReconciler struct {
 	client.Client
-	Scheme    *runtime.Scheme
-	Namespace string
+	Scheme        *runtime.Scheme
+	Namespace     string
+	EventRecorder record.EventRecorder
 }
 
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io.trustyai.opendatahub.io,resources=trustyaiservices,verbs=get;list;watch;create;update;patch;delete
@@ -63,8 +65,9 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=list;watch;get;create;update;patch;delete
-// +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=list;watch;get;update;patch
-// +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices/finalizers,verbs=list;watch;get;update;patch;delete
+//+kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=list;watch;get;update;patch
+//+kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices/finalizers,verbs=list;watch;get;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
 
 // getCommonLabels returns the service's common labels
 func getCommonLabels(serviceName string) map[string]string {
@@ -100,7 +103,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// CR is being deleted
 		if containsString(instance.Finalizers, finalizerName) {
 			// The finalizer is present, so we handle external dependency deletion
-			if err := r.deleteExternalDependency(req.Name, req.Namespace, ctx); err != nil {
+			if err := r.deleteExternalDependency(req.Name, instance, req.Namespace, ctx); err != nil {
 				// If fail to delete the external dependency here, return with error
 				// so that it can be retried
 				return RequeueWithErrorMessage(ctx, err, "Failed to delete external dependencies.")
@@ -122,8 +125,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			return RequeueWithErrorMessage(ctx, err, "Failed to add the finalizer.")
 		}
 	}
-
-	instance.Status.Ready = corev1.ConditionTrue
 
 	// CR found, add or update the URL
 	// Call the function to patch environment variables for Deployments that match the label
@@ -205,7 +206,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 		return RequeueWithErrorMessage(ctx, err, "Failed to get or create Route")
 	}
-
 	_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
 		// Set Route has available
 		UpdateRouteAvailable(saved)

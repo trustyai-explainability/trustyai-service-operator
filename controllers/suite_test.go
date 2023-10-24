@@ -267,10 +267,13 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
+	recorder := k8sManager.GetEventRecorderFor("trustyai-service-operator")
+
 	err = (&TrustyAIServiceReconciler{
 		Client: k8sManager.GetClient(),
 		//Log:    ctrl.Log.WithName("controllers").WithName("YourController"),
-		Scheme: k8sManager.GetScheme(),
+		Scheme:        k8sManager.GetScheme(),
+		EventRecorder: recorder,
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 

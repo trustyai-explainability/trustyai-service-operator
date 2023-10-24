@@ -97,15 +97,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	recorder := mgr.GetEventRecorderFor("trustyai-service-operator")
+
 	ns, err := controllers.GetNamespace()
 	if err != nil {
 		setupLog.Error(err, "unable to operator's namespace")
 	}
 
 	if err = (&controllers.TrustyAIServiceReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		Namespace: ns,
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		Namespace:     ns,
+		EventRecorder: recorder,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "TrustyAIService")
 		os.Exit(1)

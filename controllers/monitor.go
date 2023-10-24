@@ -145,6 +145,8 @@ func (r *TrustyAIServiceReconciler) ensureLocalServiceMonitor(cr *trustyaiopenda
 			if err != nil {
 				log.FromContext(ctx).Error(err, "Failed to create local ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
 				return err
+			} else {
+				r.eventLocalServiceMonitorCreated(cr)
 			}
 		} else {
 			log.FromContext(ctx).Error(err, "Failed to get local ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)

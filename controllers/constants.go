@@ -31,3 +31,10 @@ const (
 	StatusReasonRouteNotFound             = "RouteNotFound"
 	StatusReasonRouteFound                = "RouteFound"
 )
+
+// Event reasons
+const (
+	EventReasonPVCCreated                 = "PVCCreated"
+	EventReasonInferenceServiceConfigured = "InferenceServiceConfigured"
+	EventReasonServiceMonitorCreated      = "ServiceMonitorCreated"
+)
