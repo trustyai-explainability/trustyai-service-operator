@@ -68,6 +68,7 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=list;watch;get;update;patch
 //+kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices/finalizers,verbs=list;watch;get;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // getCommonLabels returns the service's common labels
 func getCommonLabels(serviceName string) map[string]string {
@@ -125,6 +126,18 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			return RequeueWithErrorMessage(ctx, err, "Failed to add the finalizer.")
 		}
 	}
+
+	err = r.reconcileOAuthSecret(ctx, instance)
+	if err != nil {
+		return RequeueWithError(err)
+	}
+
+	err = r.ReconcileOAuthService(ctx, instance)
+	if err != nil {
+		return RequeueWithError(err)
+	}
+
+	instance.Status.Ready = corev1.ConditionTrue
 
 	// CR found, add or update the URL
 	// Call the function to patch environment variables for Deployments that match the label
@@ -197,7 +210,9 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Create route
-	err = r.reconcileRoute(instance, ctx)
+	// TODO: Change argument order
+	err = r.ReconcileRoute(instance, ctx)
+	//err = r.reconcileRoute(instance, ctx)
 	if err != nil {
 		// Could not create Route object, update status and return.
 		_, updateErr := r.updateStatus(ctx, instance, UpdateRouteNotAvailable)

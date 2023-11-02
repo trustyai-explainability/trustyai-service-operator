@@ -55,14 +55,60 @@ var ctx context.Context
 var cancel context.CancelFunc
 
 const (
-	name      = "example-trustyai-service"
-	namespace = "trustyai"
+	name          = "example-trustyai-service"
+	namespace     = "trustyai"
+	configMapName = "oauth-config"
 )
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
 
 	RunSpecs(t, "Controller Suite")
+}
+
+func createOAuthConfigMaps(k8sClient client.Client, namespace string) error {
+	proxyTLSData := map[string]string{
+		"tls.crt": "example-tls-certificate-data",
+		"tls.key": "example-tls-key-data",
+	}
+	oauthConfigData := map[string]string{
+		"config.yaml": "example-config-data",
+	}
+	oauthClientData := map[string]string{
+		"client.yaml": "example-client-data",
+	}
+	configMaps := []corev1.ConfigMap{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "proxy-tls",
+				Namespace: namespace,
+			},
+			Data: proxyTLSData,
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "oauth-config",
+				Namespace: namespace,
+			},
+			Data: oauthConfigData,
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "oauth-client",
+				Namespace: namespace,
+			},
+			Data: oauthClientData,
+		},
+	}
+
+	for _, configMap := range configMaps {
+		err := k8sClient.Create(context.TODO(), &configMap)
+		if err != nil {
+			return fmt.Errorf("failed to create ConfigMap %s: %w", configMap.Name, err)
+		}
+	}
+
+	return nil
 }
 
 func createDefaultCR(namespaceCurrent string) *trustyaiopendatahubiov1alpha1.TrustyAIService {
@@ -305,6 +351,8 @@ var _ = Describe("TrustyAI operator", func() {
 		It("should deploy the service with defaults", func() {
 			ctx = context.Background()
 			thisNamespace := "trusty-ns-1"
+			// Create ConfigMap
+			_ = createOAuthConfigMaps(k8sClient, thisNamespace)
 			instance = createDefaultCR(thisNamespace)
 			Eventually(func() error {
 				return createNamespace(ctx, k8sClient, thisNamespace)
@@ -356,6 +404,8 @@ var _ = Describe("TrustyAI operator", func() {
 		It("should deploy the service with defaults and one InferenceService", func() {
 			ctx = context.Background()
 			thisNamespace := "trusty-ns-2"
+			// Create ConfigMap
+			_ = createOAuthConfigMaps(k8sClient, thisNamespace)
 			instance = createDefaultCR(thisNamespace)
 			Eventually(func() error {
 				return createNamespace(ctx, k8sClient, thisNamespace)
@@ -441,6 +491,8 @@ var _ = Describe("TrustyAI operator", func() {
 				Eventually(func() error {
 					return createNamespace(ctx, k8sClient, thisNamespace)
 				}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
+				// Create ConfigMap
+				_ = createOAuthConfigMaps(k8sClient, thisNamespace)
 			}
 		})
 

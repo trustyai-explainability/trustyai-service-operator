@@ -15,6 +15,13 @@ const (
 	defaultRequeueDelay  = time.Minute
 )
 
+// OAuth constants
+const (
+	OAuthServicePort     = 443
+	OAuthServicePortName = "oauth-proxy"
+	OAuthProxyImage      = "registry.redhat.io/openshift4/ose-oauth-proxy:latest"
+)
+
 // Status types
 const (
 	StatusTypeInferenceServicesPresent = "InferenceServicesPresent"
