@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Context, deployments []appsv1.Deployment, envVarName string, url string, remove bool) (bool, error) {
+func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, deployments []appsv1.Deployment, envVarName string, url string, remove bool) (bool, error) {
 	// Loop over the Deployments
 	for _, deployment := range deployments {
 
@@ -67,6 +67,7 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 					log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
 					return false, err
 				}
+				r.eventModelMeshConfigured(instance)
 				log.FromContext(ctx).Info("Updating Deployment " + deployment.Name + ", container spec " + deployment.Spec.Template.Spec.Containers[i].Name + ", env var " + envVarName + " to " + url)
 			}
 		}
@@ -75,7 +76,7 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 	return true, nil
 }
 
-func (r *TrustyAIServiceReconciler) patchEnvVarsByLabelForDeployments(ctx context.Context, namespace string, labelKey string, labelValue string, envVarName string, crName string, remove bool) (bool, error) {
+func (r *TrustyAIServiceReconciler) patchEnvVarsByLabelForDeployments(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, namespace string, labelKey string, labelValue string, envVarName string, crName string, remove bool) (bool, error) {
 	// Get all Deployments for the label
 	deployments, err := r.GetDeploymentsByLabel(ctx, namespace, labelKey, labelValue)
 	if err != nil {
@@ -87,7 +88,7 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsByLabelForDeployments(ctx contex
 	url := generateServiceURL(crName, namespace) + "/consumer/kserve/v2"
 
 	// Patch environment variables for the Deployments
-	if shouldContinue, err := r.patchEnvVarsForDeployments(ctx, deployments, envVarName, url, remove); err != nil {
+	if shouldContinue, err := r.patchEnvVarsForDeployments(ctx, instance, deployments, envVarName, url, remove); err != nil {
 		log.FromContext(ctx).Error(err, "Could not patch environment variables for Deployments.")
 		return shouldContinue, err
 	}
@@ -149,13 +150,13 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 		annotations := infService.GetAnnotations()
 		// Check the annotation "serving.kserve.io/deploymentMode: ModelMesh"
 		if val, ok := annotations["serving.kserve.io/deploymentMode"]; ok && val == "ModelMesh" {
-			shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, namespace, labelKey, labelValue, envVarName, crName, remove)
+			shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, instance, namespace, labelKey, labelValue, envVarName, crName, remove)
 			if err != nil {
 				log.FromContext(ctx).Error(err, "Could not patch environment variables for ModelMesh deployments.")
 				return shouldContinue, err
 			}
 		} else {
-			err := r.patchKServe(ctx, infService, namespace, crName, remove)
+			err := r.patchKServe(ctx, instance, infService, namespace, crName, remove)
 			if err != nil {
 				log.FromContext(ctx).Error(err, "Could not path InferenceLogger for KServe deployment.")
 				return false, err
@@ -173,7 +174,7 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 }
 
 // patchKServe adds a TrustyAI service as an InferenceLogger to a KServe InferenceService
-func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, infService kservev1beta1.InferenceService, namespace string, crName string, remove bool) error {
+func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, infService kservev1beta1.InferenceService, namespace string, crName string, remove bool) error {
 
 	url := generateServiceURL(crName, namespace)
 
@@ -207,7 +208,10 @@ func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, infService 
 	}
 
 	// Update the InferenceService
-	if err := r.Update(ctx, &infService); err != nil {
+	err := r.Update(ctx, &infService)
+	if err != nil {
+		r.eventKServeConfigured(instance)
+	} else {
 		return fmt.Errorf("failed to update InferenceService %s/%s: %v", infService.Namespace, infService.Name, err)
 	}
 	return nil

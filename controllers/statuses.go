@@ -32,7 +32,6 @@ func (r *TrustyAIServiceReconciler) updateStatus(ctx context.Context, original *
 
 func UpdateInferenceServiceNotPresent(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
 	saved.SetStatus(StatusTypeInferenceServicesPresent, StatusReasonInferenceServicesNotFound, "InferenceServices not found", v1.ConditionFalse)
-	saved.Status.Phase = "Not Ready"
 	saved.Status.Ready = v1.ConditionFalse
 
 }

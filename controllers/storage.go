@@ -26,7 +26,14 @@ func (r *TrustyAIServiceReconciler) ensurePVC(ctx context.Context, instance *tru
 		if apierrors.IsNotFound(err) {
 			log.FromContext(ctx).Info("PVC not found. Creating.")
 			// The PVC doesn't exist, so we need to create it
-			return r.createPVC(ctx, instance)
+
+			creationErr := r.createPVC(ctx, instance)
+			if creationErr == nil {
+				// Creation successful, emit Event
+				log.FromContext(ctx).Info("Created PVC " + pvcName + ".")
+				r.eventPVCCreated(instance)
+			}
+			return creationErr
 		}
 		return err
 	}
