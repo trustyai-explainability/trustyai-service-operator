@@ -6,105 +6,12 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"strconv"
 )
-
-// createOAuthProxyContainer creates a OAuth-Proxy container specification
-func createOAuthProxyContainer() corev1.Container {
-	return corev1.Container{
-		Name:  "oauth-proxy",
-		Image: "registry.redhat.io/openshift4/ose-oauth-proxy@sha256:4bef31eb993feb6f1096b51b4876c65a6fb1f4401fee97fa4f4542b6b7c9bc46",
-		Env: []corev1.EnvVar{
-			{
-				Name: "NAMESPACE",
-				ValueFrom: &corev1.EnvVarSource{
-					FieldRef: &corev1.ObjectFieldSelector{
-						APIVersion: "v1",
-						FieldPath:  "metadata.namespace",
-					},
-				},
-			},
-		},
-		Args: []string{
-			"--https-address=:8443",
-			"--provider=openshift",
-			"--upstream=http://localhost:8080",
-			"--tls-cert=/etc/tls/private/tls.crt",
-			"--tls-key=/etc/tls/private/tls.key",
-			"--client-id=trustyai-oauth-client",
-			"--client-secret-file=/etc/oauth/client/secret",
-			"--cookie-secret=SECRET",
-			"'--openshift-delegate-urls={\"/\": {\"namespace\": \"{{.AuthNamespace}}\", \"resource\": \"services\", \"verb\": \"get\"}}'",
-			"'--openshift-sar={\"namespace\": \"{{.AuthNamespace}}\", \"resource\": \"services\", \"verb\": \"get\"}'",
-			"--skip-auth-regex='(^/metrics|^/apis/v1beta1/healthz)'",
-		},
-		Ports: []corev1.ContainerPort{
-			{
-				ContainerPort: 8443,
-				Name:          "https",
-			},
-		},
-		LivenessProbe: &corev1.Probe{
-			InitialDelaySeconds: 30,
-			TimeoutSeconds:      1,
-			PeriodSeconds:       5,
-			SuccessThreshold:    1,
-			FailureThreshold:    3,
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/oauth/healthz",
-					Port:   intstr.FromInt(8443),
-					Scheme: corev1.URISchemeHTTPS,
-				},
-			},
-		},
-
-		ReadinessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/oauth/healthz",
-					Port:   intstr.FromInt(8443),
-					Scheme: corev1.URISchemeHTTPS,
-				},
-			},
-			InitialDelaySeconds: 5,
-			TimeoutSeconds:      1,
-			PeriodSeconds:       5,
-			SuccessThreshold:    1,
-			FailureThreshold:    3,
-		},
-		Resources: corev1.ResourceRequirements{
-			Limits: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("1000m"),
-				corev1.ResourceMemory: resource.MustParse("2Gi"),
-			},
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("500m"),
-				corev1.ResourceMemory: resource.MustParse("1Gi"),
-			},
-		},
-		VolumeMounts: []corev1.VolumeMount{
-			{
-				MountPath: "/etc/tls/private",
-				Name:      "proxy-tls",
-			},
-			{
-				MountPath: "/etc/oauth/config",
-				Name:      "oauth-config",
-			},
-			{
-				MountPath: "/etc/oauth/client",
-				Name:      "oauth-client",
-			},
-		},
-	}
-}
 
 func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, image string) *appsv1.Deployment {
 	labels := getCommonLabels(cr.Name)
@@ -201,8 +108,9 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 					},
 				},
 				Spec: corev1.PodSpec{
-					Containers: containers,
-					Volumes:    volumes,
+					ServiceAccountName: cr.Name + "-proxy",
+					Containers:         containers,
+					Volumes:            volumes,
 				},
 			},
 		},

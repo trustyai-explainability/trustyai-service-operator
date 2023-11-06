@@ -111,7 +111,6 @@ func createRouteObject(instance *trustyaiopendatahubiov1alpha1.TrustyAIService) 
 			TLS: &routev1.TLSConfig{
 				Termination: routev1.TLSTerminationPassthrough,
 			},
-			WildcardPolicy: routev1.WildcardPolicyNone,
 		},
 		Status: routev1.RouteStatus{
 			Ingress: []routev1.RouteIngress{},

@@ -69,6 +69,7 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices/finalizers,verbs=list;watch;get;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create
 
 // getCommonLabels returns the service's common labels
 func getCommonLabels(serviceName string) map[string]string {
@@ -127,7 +128,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	err = r.reconcileOAuthSecret(ctx, instance)
+	err = r.createServiceAccount(ctx, instance)
 	if err != nil {
 		return RequeueWithError(err)
 	}
