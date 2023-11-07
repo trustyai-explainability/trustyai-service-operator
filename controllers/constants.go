@@ -18,6 +18,7 @@ const (
 // OAuth constants
 const (
 	OAuthServicePort     = 443
+	OAuthName            = "oauth-proxy"
 	OAuthServicePortName = "oauth-proxy"
 	OAuthProxyImage      = "registry.redhat.io/openshift4/ose-oauth-proxy:latest"
 	ServiceAccountName   = componentName

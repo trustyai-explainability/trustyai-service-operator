@@ -16,6 +16,7 @@ import (
 func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, image string) *appsv1.Deployment {
 	labels := getCommonLabels(cr.Name)
 	pvcName := generatePVCName(cr)
+	serviceAccountName := generateServiceAccountName(cr)
 
 	replicas := int32(1)
 	if cr.Spec.Replicas == nil {
@@ -30,7 +31,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	}
 
 	// Create the OAuth-Proxy container spec
-	oauthProxyContainer := InjectOAuthProxy(cr, OAuthConfig{ProxyImage: OAuthProxyImage})
+	oauthProxyContainer := generateOAuthProxyContainer(cr, OAuthConfig{ProxyImage: OAuthProxyImage})
 
 	containers := []corev1.Container{
 		{
@@ -83,7 +84,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 			},
 		},
 	}
-	volumes := InjectOAuthVolumes(cr, OAuthConfig{ProxyImage: OAuthProxyImage})
+	volumes := generateOAuthVolumes(cr, OAuthConfig{ProxyImage: OAuthProxyImage})
 
 	volumes = append(volumes, volume)
 
@@ -108,7 +109,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 					},
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName: cr.Name + "-proxy",
+					ServiceAccountName: serviceAccountName,
 					Containers:         containers,
 					Volumes:            volumes,
 				},

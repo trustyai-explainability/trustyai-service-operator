@@ -18,10 +18,10 @@ type OAuthConfig struct {
 	ProxyImage string
 }
 
-func InjectOAuthProxy(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, oauth OAuthConfig) corev1.Container {
-	// https://pkg.go.dev/k8s.io/api/core/v1#Container
+// generateOAuthProxyContainer create the OAuth-proxy container object for a TrustyAI service instance
+func generateOAuthProxyContainer(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, oauth OAuthConfig) corev1.Container {
 	proxyContainer := corev1.Container{
-		Name:            "oauth-proxy",
+		Name:            OAuthName,
 		Image:           oauth.ProxyImage,
 		ImagePullPolicy: corev1.PullAlways,
 		Env: []corev1.EnvVar{{
@@ -35,14 +35,15 @@ func InjectOAuthProxy(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, o
 		Args: []string{
 			"--cookie-secret=SECRET",
 			"--https-address=:8443",
+			"--email-domain=*",
 			fmt.Sprintf("--openshift-service-account=%s", instance.Name+"-proxy"),
 			"--provider=openshift",
 			"--tls-cert=/etc/tls/private/tls.crt",
 			"--tls-key=/etc/tls/private/tls.key",
 			"--upstream=http://localhost:8080",
 			"--skip-auth-regex='(^/metrics|^/apis/v1beta1/healthz)'",
-			"'--openshift-sar={\"namespace\":\"" + instance.Namespace + "\",\"resource\":\"pods\",\"verb\":\"get\"}'",
-			"'--openshift-delegate-urls={\"/\": {\"namespace\": \"" + instance.Namespace + "\", \"resource\": \"pods\", \"verb\": \"get\"}}'",
+			fmt.Sprintf("--openshift-sar={\"namespace\":\"%s\",\"resource\":\"pods\",\"verb\":\"get\"}", instance.Namespace),
+			fmt.Sprintf("--openshift-delegate-urls={\"/\": {\"namespace\": \"%s\", \"resource\": \"pods\", \"verb\": \"get\"}}", instance.Namespace),
 		},
 		Ports: []corev1.ContainerPort{{
 			Name:          OAuthServicePortName,
@@ -88,24 +89,17 @@ func InjectOAuthProxy(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, o
 			},
 		},
 		VolumeMounts: []corev1.VolumeMount{
-			//{
-			//	Name:      "oauth-config",
-			//	MountPath: "/etc/oauth/config",
-			//},
 			{
 				Name:      instance.Name + "-tls",
 				MountPath: "/etc/tls/private",
 			},
-			//{
-			//	MountPath: "/etc/oauth/client",
-			//	Name:      "oauth-client",
-			//},
 		},
 	}
 	return proxyContainer
 }
 
-func InjectOAuthVolumes(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, oauth OAuthConfig) []corev1.Volume {
+// generateOAuthVolumes create the OAuth necessary volume objects
+func generateOAuthVolumes(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, oauth OAuthConfig) []corev1.Volume {
 
 	volumes := []corev1.Volume{
 		{
@@ -120,8 +114,8 @@ func InjectOAuthVolumes(instance *trustyaiopendatahubiov1alpha1.TrustyAIService,
 	return volumes
 }
 
-// NewTrustyAIOAuthService defines the desired OAuth service object
-func NewTrustyAIOAuthService(instance *trustyaiopendatahubiov1alpha1.TrustyAIService) *corev1.Service {
+// generateTrustyAIOAuthService defines the desired OAuth service object
+func generateTrustyAIOAuthService(instance *trustyaiopendatahubiov1alpha1.TrustyAIService) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name + "-tls",
@@ -147,12 +141,12 @@ func NewTrustyAIOAuthService(instance *trustyaiopendatahubiov1alpha1.TrustyAISer
 	}
 }
 
-// ReconcileOAuthService will manage the OAuth service reconciliation required
+// reconcileOAuthService will manage the OAuth service reconciliation required
 // by the service's OAuth proxy
-func (r *TrustyAIServiceReconciler) ReconcileOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+func (r *TrustyAIServiceReconciler) reconcileOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
 
-	// Generate the desired OAuth service
-	desiredService := NewTrustyAIOAuthService(instance)
+	// Generate the desired OAuth service object
+	desiredService := generateTrustyAIOAuthService(instance)
 
 	// Create the OAuth service if it does not already exist
 	foundService := &corev1.Service{}
