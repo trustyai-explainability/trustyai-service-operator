@@ -41,7 +41,6 @@ func InjectOAuthProxy(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, o
 			"--tls-key=/etc/tls/private/tls.key",
 			"--upstream=http://localhost:8080",
 			"--skip-auth-regex='(^/metrics|^/apis/v1beta1/healthz)'",
-			"--scope=user:full",
 			"'--openshift-sar={\"namespace\":\"" + instance.Namespace + "\",\"resource\":\"pods\",\"verb\":\"get\"}'",
 			"'--openshift-delegate-urls={\"/\": {\"namespace\": \"" + instance.Namespace + "\", \"resource\": \"pods\", \"verb\": \"get\"}}'",
 		},
