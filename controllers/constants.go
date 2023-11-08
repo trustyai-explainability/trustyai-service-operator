@@ -13,15 +13,15 @@ const (
 	modelMeshLabelValue  = "modelmesh-serving"
 	volumeMountName      = "volume"
 	defaultRequeueDelay  = time.Minute
+	imageConfigMap       = "trustyai-service-operator-config"
 )
 
 // OAuth constants
 const (
-	OAuthServicePort     = 443
-	OAuthName            = "oauth-proxy"
-	OAuthServicePortName = "oauth-proxy"
-	OAuthProxyImage      = "registry.redhat.io/openshift4/ose-oauth-proxy:latest"
-	ServiceAccountName   = componentName
+	OAuthServicePort       = 443
+	OAuthName              = "oauth-proxy"
+	OAuthServicePortName   = "oauth-proxy"
+	defaultOAuthProxyImage = "registry.redhat.io/openshift4/ose-oauth-proxy:latest"
 )
 
 // Status types

@@ -31,7 +31,12 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	}
 
 	// Create the OAuth-Proxy container spec
-	oauthProxyContainer := generateOAuthProxyContainer(cr, OAuthConfig{ProxyImage: OAuthProxyImage})
+
+	oauthProxyImage, err := r.getImageFromConfigMap(ctx, "oauthProxyImage", defaultOAuthProxyImage)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Error getting OAuth image from ConfigMap. Using the default image value of "+defaultOAuthProxyImage)
+	}
+	oauthProxyContainer := generateOAuthProxyContainer(cr, oauthProxyImage)
 
 	containers := []corev1.Container{
 		{
@@ -84,7 +89,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 			},
 		},
 	}
-	volumes := generateOAuthVolumes(cr, OAuthConfig{ProxyImage: OAuthProxyImage})
+	volumes := generateOAuthVolumes(cr, OAuthConfig{ProxyImage: defaultOAuthProxyImage})
 
 	volumes = append(volumes, volume)
 
@@ -158,7 +163,7 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 	// Get image and tag from ConfigMap
 	// If there's a ConfigMap with custom images, it is only applied when the operator is first deployed
 	// Changing (or creating) the ConfigMap after the operator is deployed will not have any effect
-	image, err := r.getImageFromConfigMap(ctx)
+	image, err := r.getImageFromConfigMap(ctx, "trustyaiServiceImage", defaultImage)
 	if err != nil {
 		return err
 	}

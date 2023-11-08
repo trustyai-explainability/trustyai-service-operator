@@ -19,7 +19,6 @@ package controllers
 import (
 	"context"
 	goerrors "errors"
-	"fmt"
 	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
@@ -29,7 +28,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -293,41 +291,4 @@ func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&source.Kind{Type: &kservev1beta1.InferenceService{}}, &handler.EnqueueRequestForObject{}).
 		Watches(&source.Kind{Type: &kservev1alpha1.ServingRuntime{}}, &handler.EnqueueRequestForObject{}).
 		Complete(r)
-}
-
-// getTrustyAIImageAndTagFromConfigMap gets a custom TrustyAI image and tag from a ConfigMap in the operator's namespace
-func (r *TrustyAIServiceReconciler) getImageFromConfigMap(ctx context.Context) (string, error) {
-	if r.Namespace != "" {
-		// Define the key for the ConfigMap
-		configMapKey := types.NamespacedName{
-			Namespace: r.Namespace,
-			Name:      "trustyai-service-operator-config",
-		}
-
-		// Create an empty ConfigMap object
-		var cm corev1.ConfigMap
-
-		// Try to get the ConfigMap
-		if err := r.Get(ctx, configMapKey, &cm); err != nil {
-			if errors.IsNotFound(err) {
-				// ConfigMap not found, fallback to default values
-				return defaultImage, nil
-			}
-			// Other error occurred when trying to fetch the ConfigMap
-			return defaultImage, fmt.Errorf("error reading configmap %s", configMapKey)
-		}
-
-		// ConfigMap is found, extract the image and tag
-		image, ok := cm.Data["trustyaiServiceImage"]
-
-		if !ok {
-			// One or both of the keys are not present in the ConfigMap, return error
-			return defaultImage, fmt.Errorf("configmap %s does not contain necessary keys", configMapKey)
-		}
-
-		// Return the image and tag
-		return image, nil
-	} else {
-		return defaultImage, nil
-	}
 }

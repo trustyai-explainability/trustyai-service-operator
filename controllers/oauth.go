@@ -19,10 +19,10 @@ type OAuthConfig struct {
 }
 
 // generateOAuthProxyContainer create the OAuth-proxy container object for a TrustyAI service instance
-func generateOAuthProxyContainer(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, oauth OAuthConfig) corev1.Container {
+func generateOAuthProxyContainer(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, oauthProxyImage string) corev1.Container {
 	proxyContainer := corev1.Container{
 		Name:            OAuthName,
-		Image:           oauth.ProxyImage,
+		Image:           oauthProxyImage,
 		ImagePullPolicy: corev1.PullAlways,
 		Env: []corev1.EnvVar{{
 			Name: "NAMESPACE",

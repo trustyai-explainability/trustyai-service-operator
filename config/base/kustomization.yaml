@@ -38,3 +38,10 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.trustyaiOperatorImage
+  - name: oauthProxyImage
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.oauthProxyImage
