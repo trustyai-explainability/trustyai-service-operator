@@ -34,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	"path/filepath"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,11 +49,16 @@ import (
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
-var cfg *rest.Config
-var k8sClient client.Client
-var testEnv *envtest.Environment
-var ctx context.Context
-var cancel context.CancelFunc
+var (
+	cfg        *rest.Config
+	k8sClient  client.Client
+	testEnv    *envtest.Environment
+	ctx        context.Context
+	cancel     context.CancelFunc
+	reconciler *TrustyAIServiceReconciler
+	instance   *trustyaiopendatahubiov1alpha1.TrustyAIService
+	recorder   *record.FakeRecorder
+)
 
 const (
 	name      = "example-trustyai-service"
@@ -270,8 +276,7 @@ var _ = BeforeSuite(func() {
 	recorder := k8sManager.GetEventRecorderFor("trustyai-service-operator")
 
 	err = (&TrustyAIServiceReconciler{
-		Client: k8sManager.GetClient(),
-		//Log:    ctrl.Log.WithName("controllers").WithName("YourController"),
+		Client:        k8sManager.GetClient(),
 		Scheme:        k8sManager.GetScheme(),
 		EventRecorder: recorder,
 	}).SetupWithManager(k8sManager)
@@ -431,7 +436,7 @@ var _ = Describe("TrustyAI operator", func() {
 	Context("Testing deployment with defaults in multiple namespaces", func() {
 		var instances []*trustyaiopendatahubiov1alpha1.TrustyAIService
 
-		namespaces := []string{"namespace1", "namespace2", "namespace3"}
+		var namespaces = []string{"namespace1", "namespace2", "namespace3"}
 
 		BeforeEach(func() {
 			instances = make([]*trustyaiopendatahubiov1alpha1.TrustyAIService, len(namespaces))
@@ -445,7 +450,6 @@ var _ = Describe("TrustyAI operator", func() {
 		})
 
 		It("should deploy the services with defaults", func() {
-			ctx = context.Background()
 			for _, instance := range instances {
 				Expect(k8sClient.Create(ctx, instance)).Should(Succeed())
 				deployment := &appsv1.Deployment{}
