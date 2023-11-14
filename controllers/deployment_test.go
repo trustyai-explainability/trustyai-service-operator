@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
@@ -13,6 +15,15 @@ import (
 	"time"
 	//+kubebuilder:scaffold:imports
 )
+
+func printKubeObject(obj interface{}) {
+	bytes, err := json.MarshalIndent(obj, "", "    ")
+	if err != nil {
+		fmt.Println("Error printing object:", err)
+	} else {
+		fmt.Println(string(bytes))
+	}
+}
 
 var _ = Describe("TrustyAI operator", func() {
 
@@ -29,20 +40,16 @@ var _ = Describe("TrustyAI operator", func() {
 
 	Context("When deploying with default settings without an InferenceService", func() {
 		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+
 		It("Creates a deployment and a service with the default configuration", func() {
-			namespace := "trusty-ns-1"
+
+			namespace := "trusty-ns-a-1"
+			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
 			instance = createDefaultCR(namespace)
-			Eventually(func() error {
-				return createNamespace(ctx, k8sClient, namespace)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
 
-			Eventually(func() error {
-				return createTestPVC(ctx, k8sClient, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create PVC")
-
-			Eventually(func() error {
-				return reconciler.ensureDeployment(ctx, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create deployment")
+			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
+			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
+			Expect(reconciler.ensureDeployment(ctx, instance)).To(Succeed())
 
 			deployment := &appsv1.Deployment{}
 			err := k8sClient.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deployment)
@@ -75,51 +82,167 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(service.Annotations["prometheus.io/scrape"]).Should(Equal("true"))
 			Expect(service.Namespace).Should(Equal(namespace))
 		})
+	})
 
-		Context("When deploying with an associated InferenceService", func() {
-			It("Sets up the InferenceService and links it to the TrustyAIService deployment", func() {
-				namespace := "trusty-ns-2"
-				instance = createDefaultCR(namespace)
+	Context("When deploying with default settings without an InferenceService", func() {
+		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
 
-				Eventually(func() error {
-					return createNamespace(ctx, k8sClient, namespace)
-				}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
-				Eventually(func() error {
-					return createTestPVC(ctx, k8sClient, instance)
-				}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create PVC")
-				Eventually(func() error {
-					return reconciler.ensureDeployment(ctx, instance)
-				}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create deployment")
+		It("should set environment variables correctly", func() {
 
-				// Creating the InferenceService
-				inferenceService := createInferenceService("my-model", namespace)
-				Eventually(func() error {
-					return k8sClient.Create(ctx, inferenceService)
-				}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create deployment")
+			namespace := "trusty-ns-a-4"
+			instance = createDefaultCR(namespace)
+			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
+			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
+			Expect(reconciler.ensureDeployment(ctx, instance)).To(Succeed())
 
-				Expect(reconciler.patchKServe(ctx, instance, *inferenceService, namespace, instance.Name, false)).ToNot(HaveOccurred())
+			deployment := &appsv1.Deployment{}
+			namespacedName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+			Expect(k8sClient.Get(ctx, namespacedName, deployment)).Should(Succeed())
 
-				deployment := &appsv1.Deployment{}
-				Eventually(func() error {
-					// Define defaultServiceName for the deployment created by the operator
-					namespacedNamed := types.NamespacedName{
-						Namespace: namespace,
-						Name:      instance.Name,
+			foundEnvVar := func(envVars []corev1.EnvVar, name string) *corev1.EnvVar {
+				for _, env := range envVars {
+					if env.Name == name {
+						return &env
 					}
-					return k8sClient.Get(ctx, namespacedNamed, deployment)
-				}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get Deployment")
+				}
+				return nil
+			}
 
-				Expect(*deployment.Spec.Replicas).Should(Equal(int32(1)))
-				Expect(deployment.Namespace).Should(Equal(namespace))
-				Expect(deployment.Name).Should(Equal(defaultServiceName))
-				Expect(deployment.Labels["app"]).Should(Equal(defaultServiceName))
-				Expect(deployment.Labels["app.kubernetes.io/name"]).Should(Equal(defaultServiceName))
-				Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(defaultServiceName))
-				Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
-				Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+			var trustyaiServiceContainer *corev1.Container
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				if container.Name == "trustyai-service" {
+					trustyaiServiceContainer = &container
+					break
+				}
+			}
 
-			})
+			Expect(trustyaiServiceContainer).NotTo(BeNil(), "trustyai-service container not found")
+
+			// Checking the environment variables of the trustyai-service container
+			var envVar *corev1.EnvVar
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_BATCH_SIZE")
+			Expect(envVar).NotTo(BeNil(), "Env var SERVICE_BATCH_SIZE not found")
+			Expect(envVar.Value).To(Equal("5000"))
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "STORAGE_DATA_FILENAME")
+			Expect(envVar).NotTo(BeNil(), "Env var STORAGE_DATA_FILENAME not found")
+			Expect(envVar.Value).To(Equal("data.csv"))
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_STORAGE_FORMAT")
+			Expect(envVar).NotTo(BeNil(), "Env var SERVICE_STORAGE_FORMAT not found")
+			Expect(envVar.Value).To(Equal("PVC"))
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "STORAGE_DATA_FOLDER")
+			Expect(envVar).NotTo(BeNil(), "Env var STORAGE_DATA_FOLDER not found")
+			Expect(envVar.Value).To(Equal("/data"))
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_DATA_FORMAT")
+			Expect(envVar).NotTo(BeNil(), "Env var SERVICE_DATA_FORMAT not found")
+			Expect(envVar.Value).To(Equal("CSV"))
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_METRICS_SCHEDULE")
+			Expect(envVar).NotTo(BeNil(), "Env var SERVICE_METRICS_SCHEDULE not found")
+			Expect(envVar.Value).To(Equal("5s"))
 		})
+	})
+
+	Context("When deploying with default settings without an InferenceService", func() {
+		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+
+		It("should use the correct service account", func() {
+
+			namespace := "trusty-ns-a-6"
+			instance = createDefaultCR(namespace)
+			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
+			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
+			Eventually(func() error {
+				return reconciler.ensureDeployment(ctx, instance)
+			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create deployment")
+
+			deployment := &appsv1.Deployment{}
+			namespacedName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+			Expect(k8sClient.Get(ctx, namespacedName, deployment)).Should(Succeed())
+
+			Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(instance.Name + "-proxy"))
+		})
+	})
+
+})
+
+var _ = Describe("TrustyAI operator", func() {
+
+	BeforeEach(func() {
+		recorder = record.NewFakeRecorder(10)
+		reconciler = &TrustyAIServiceReconciler{
+			Client:        k8sClient,
+			Scheme:        scheme.Scheme,
+			EventRecorder: recorder,
+			Namespace:     operatorNamespace,
+		}
+		ctx = context.Background()
+	})
+
+	Context("When deploying with an associated InferenceService", func() {
+
+		It("Sets up the InferenceService and links it to the TrustyAIService deployment", func() {
+
+			namespace := "trusty-ns-2"
+			instance := createDefaultCR(namespace)
+			Eventually(func() error {
+				return createNamespace(ctx, k8sClient, namespace)
+			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
+			Eventually(func() error {
+				return createTestPVC(ctx, k8sClient, instance)
+			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create PVC")
+			Eventually(func() error {
+				return reconciler.ensureDeployment(ctx, instance)
+			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create deployment")
+
+			// Creating the InferenceService
+			inferenceService := createInferenceService("my-model", namespace)
+			Eventually(func() error {
+				return k8sClient.Create(ctx, inferenceService)
+			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create deployment")
+
+			Expect(reconciler.patchKServe(ctx, instance, *inferenceService, namespace, instance.Name, false)).ToNot(HaveOccurred())
+
+			deployment := &appsv1.Deployment{}
+			Eventually(func() error {
+				// Define defaultServiceName for the deployment created by the operator
+				namespacedNamed := types.NamespacedName{
+					Namespace: namespace,
+					Name:      instance.Name,
+				}
+				return k8sClient.Get(ctx, namespacedNamed, deployment)
+			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get Deployment")
+
+			Expect(*deployment.Spec.Replicas).Should(Equal(int32(1)))
+			Expect(deployment.Namespace).Should(Equal(namespace))
+			Expect(deployment.Name).Should(Equal(defaultServiceName))
+			Expect(deployment.Labels["app"]).Should(Equal(defaultServiceName))
+			Expect(deployment.Labels["app.kubernetes.io/name"]).Should(Equal(defaultServiceName))
+			Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(defaultServiceName))
+			Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
+			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+
+		})
+	})
+})
+
+var _ = Describe("TrustyAI operator", func() {
+
+	BeforeEach(func() {
+		recorder = record.NewFakeRecorder(10)
+		reconciler = &TrustyAIServiceReconciler{
+			Client:        k8sClient,
+			Scheme:        scheme.Scheme,
+			EventRecorder: recorder,
+			Namespace:     operatorNamespace,
+		}
+		ctx = context.Background()
 	})
 
 	Context("Across multiple namespaces", func() {
