@@ -209,7 +209,7 @@ func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *t
 
 	// Update the InferenceService
 	err := r.Update(ctx, &infService)
-	if err != nil {
+	if err == nil {
 		r.eventKServeConfigured(instance)
 	} else {
 		return fmt.Errorf("failed to update InferenceService %s/%s: %v", infService.Namespace, infService.Name, err)
