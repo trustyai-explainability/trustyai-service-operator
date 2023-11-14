@@ -53,10 +53,10 @@ var _ = Describe("Route Reconciliation", func() {
 			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
 
 			// Create a Route with the expected spec
-			existingRoute, _ := reconciler.createRouteObject(instance)
+			existingRoute := reconciler.createRouteObject(instance)
 			Expect(reconciler.Client.Create(ctx, existingRoute)).To(Succeed())
 
-			err := reconciler.reconcileRoute(instance, ctx)
+			err := reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Fetch the Route

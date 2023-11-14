@@ -90,7 +90,7 @@ func (r *TrustyAIServiceReconciler) reconcileRoute(cr *trustyaiopendatahubiov1al
 	return nil
 }
 
-func createRouteObject(instance *trustyaiopendatahubiov1alpha1.TrustyAIService) *routev1.Route {
+func (r *TrustyAIServiceReconciler) createRouteObject(instance *trustyaiopendatahubiov1alpha1.TrustyAIService) *routev1.Route {
 	return &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name,
@@ -163,5 +163,5 @@ func (r *TrustyAIServiceReconciler) reconcileRouteAuth(instance *trustyaiopendat
 // TLS route when the service is reconciled
 func (r *TrustyAIServiceReconciler) ReconcileRoute(
 	instance *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
-	return r.reconcileRouteAuth(instance, ctx, createRouteObject)
+	return r.reconcileRouteAuth(instance, ctx, r.createRouteObject)
 }
