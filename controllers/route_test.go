@@ -8,12 +8,14 @@ import (
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"time"
 )
 
 var _ = Describe("Route Reconciliation", func() {
 
 	BeforeEach(func() {
+		recorder = record.NewFakeRecorder(10)
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
 			Scheme:        scheme.Scheme,
