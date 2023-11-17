@@ -149,11 +149,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// If there was an error finding the PV, requeue the request
 		return RequeueWithErrorMessage(ctx, err, "Could not find requested PersistentVolumeClaim.")
 
-	} else {
-		_, updateErr := r.updateStatus(ctx, instance, UpdatePVCAvailable)
-		if updateErr != nil {
-			return RequeueWithErrorMessage(ctx, err, "Failed to update status")
-		}
 	}
 
 	// Ensure Deployment object
@@ -206,18 +201,14 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 		return RequeueWithErrorMessage(ctx, err, "Failed to get or create Route")
 	}
-	_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
-		// Set Route has available
-		UpdateRouteAvailable(saved)
-		// At the end of reconcile, update the instance status to Ready
-		saved.Status.Phase = "Ready"
-		saved.Status.Ready = corev1.ConditionTrue
-	})
-	if updateErr != nil {
-		return RequeueWithErrorMessage(ctx, err, "Failed to update status")
+
+	// Reconcile statuses
+	result, err := r.reconcileStatuses(ctx, instance)
+	if err != nil {
+		return result, err
 	}
 
-	// Deployment already exists - requeue the request with a delay
+	// Requeue the request with a delay
 	return RequeueWithDelay(defaultRequeueDelay)
 }
 
