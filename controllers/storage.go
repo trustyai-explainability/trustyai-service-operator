@@ -67,3 +67,22 @@ func (r *TrustyAIServiceReconciler) createPVC(ctx context.Context, instance *tru
 
 	return r.Create(ctx, pvc)
 }
+
+func (r *TrustyAIServiceReconciler) checkPVCReady(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (bool, error) {
+	pvc := &corev1.PersistentVolumeClaim{}
+
+	err := r.Get(ctx, types.NamespacedName{Name: generatePVCName(instance), Namespace: instance.Namespace}, pvc)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	if pvc.Status.Phase == corev1.ClaimBound {
+		// The PVC is bound, so it's ready
+		return true, nil
+	}
+
+	return false, nil
+}

@@ -179,7 +179,6 @@ func createTestPVC(ctx context.Context, k8sClient client.Client, instance *trust
 		},
 	}
 
-	// Use k8sClient to create the PVC in the cluster
 	if err := k8sClient.Create(ctx, pvc); err != nil {
 		return fmt.Errorf("failed to create PVC: %v", err)
 	}
@@ -208,7 +207,7 @@ func removeFinalizerAndDeleteInstance(ctx context.Context, k8sClient client.Clie
 	_ = k8sClient.Delete(ctx, instance)
 }
 
-// Function to create the InferenceService
+// createInferenceService Function to create the InferenceService
 func createInferenceService(name string, namespace string) *kservev1beta1.InferenceService {
 	return &kservev1beta1.InferenceService{
 		ObjectMeta: metav1.ObjectMeta{
@@ -239,7 +238,7 @@ func createDeploymentWithInferenceService(ctx context.Context, k8sClient client.
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: pointer.Int32Ptr(1), // Example: Set the desired number of replicas
+			Replicas: pointer.Int32Ptr(1),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"app": name,
@@ -267,7 +266,6 @@ func createDeploymentWithInferenceService(ctx context.Context, k8sClient client.
 		},
 	}
 
-	// Create the Deployment in Kubernetes
 	if err := k8sClient.Create(ctx, deployment); err != nil {
 		return err
 	}
@@ -309,6 +307,67 @@ func checkTrustyAIServiceReadyStatus(client client.Client, instance *trustyaiope
 	}
 
 	return fmt.Errorf("Ready status did not match expectations. Expected: %s, Actual: %s", expectedStatus, instance.Status.Ready)
+}
+
+func makePVCReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+	pvc := &corev1.PersistentVolumeClaim{}
+	pvcName := types.NamespacedName{
+		Name:      generatePVCName(instance),
+		Namespace: instance.Namespace,
+	}
+	if err := k8sClient.Get(ctx, pvcName, pvc); err != nil {
+		return err
+	}
+
+	pvc.Status.Phase = corev1.ClaimBound
+	return k8sClient.Status().Update(ctx, pvc)
+}
+
+func makeDeploymentReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+	deployment := &appsv1.Deployment{}
+	deploymentName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+
+	if err := k8sClient.Get(ctx, deploymentName, deployment); err != nil {
+		return err
+	}
+
+	deployment.Status.Conditions = []appsv1.DeploymentCondition{
+		{
+			Type:    appsv1.DeploymentAvailable,
+			Status:  corev1.ConditionTrue,
+			Reason:  "DeploymentReady",
+			Message: "The deployment is ready",
+		},
+	}
+
+	if deployment.Spec.Replicas != nil {
+		deployment.Status.ReadyReplicas = 1
+		deployment.Status.Replicas = 1
+	}
+
+	return k8sClient.Update(ctx, deployment)
+}
+
+func makeRouteReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+	route := &routev1.Route{}
+	routeName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+
+	if err := k8sClient.Get(ctx, routeName, route); err != nil {
+		return err
+	}
+
+	route.Status.Ingress = []routev1.RouteIngress{
+		{
+			Conditions: []routev1.RouteIngressCondition{
+				{
+					Type:   routev1.RouteAdmitted,
+					Status: corev1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	return k8sClient.Status().Update(ctx, route)
 }
 
 var _ = BeforeSuite(func() {
