@@ -19,6 +19,10 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"testing"
+	"time"
+
 	"github.com/google/uuid"
 	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
@@ -37,14 +41,11 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
-	"path/filepath"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"testing"
-	"time"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -186,27 +187,6 @@ func createTestPVC(ctx context.Context, k8sClient client.Client, instance *trust
 	return nil
 }
 
-func removeFinalizerAndDeleteInstance(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, finalizerName string) {
-	// Get the latest state of the TrustyAIService instance
-	_ = k8sClient.Get(ctx, client.ObjectKey{Name: instance.Name, Namespace: instance.Namespace}, instance)
-
-	// Remove the finalizer from the TrustyAIService instance
-	finalizerIndex := -1
-	for i, f := range instance.Finalizers {
-		if f == finalizerName {
-			finalizerIndex = i
-			break
-		}
-	}
-	if finalizerIndex >= 0 {
-		instance.Finalizers = append(instance.Finalizers[:finalizerIndex], instance.Finalizers[finalizerIndex+1:]...)
-		_ = k8sClient.Update(ctx, instance)
-	}
-
-	// Delete the TrustyAIService instance
-	_ = k8sClient.Delete(ctx, instance)
-}
-
 // createInferenceService Function to create the InferenceService
 func createInferenceService(name string, namespace string) *kservev1beta1.InferenceService {
 	return &kservev1beta1.InferenceService{
@@ -224,89 +204,6 @@ func createInferenceService(name string, namespace string) *kservev1beta1.Infere
 			},
 		},
 	}
-}
-
-// createDeploymentWithInferenceService creates a Deployment with multiple containers
-func createDeploymentWithInferenceService(ctx context.Context, k8sClient client.Client, name string, namespace string, inferenceServiceName string) error {
-	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app":                       name,
-				"app.kubernetes.io/part-of": inferenceServiceName, // Label to associate with the InferenceService
-			},
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: pointer.Int32Ptr(1),
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": name,
-				},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app": name,
-					},
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "main-container",
-							Image: "main-container-image", // Mock container
-						},
-						{
-							Name:  "helper-container",
-							Image: "helper-container-image", // Mock container
-						},
-					},
-				},
-			},
-		},
-	}
-
-	if err := k8sClient.Create(ctx, deployment); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func checkTrustyAIServiceCondition(client client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, expectedType string, expectedStatus corev1.ConditionStatus, expectedReason string) error {
-	err := client.Get(context.TODO(), types.NamespacedName{
-		Namespace: instance.Namespace,
-		Name:      instance.Name,
-	}, instance)
-
-	if err != nil {
-		return err
-	}
-
-	for _, condition := range instance.Status.Conditions {
-		if condition.Type == expectedType && condition.Status == expectedStatus && condition.Reason == expectedReason {
-			return nil // Condition matches expectations
-		}
-	}
-
-	return fmt.Errorf("Condition did not match expectations. Expected Type: %s, Status: %s, Reason: %s", expectedType, expectedStatus, expectedReason)
-}
-
-func checkTrustyAIServiceReadyStatus(client client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, expectedStatus corev1.ConditionStatus) error {
-	err := client.Get(context.TODO(), types.NamespacedName{
-		Namespace: instance.Namespace,
-		Name:      instance.Name,
-	}, instance)
-
-	if err != nil {
-		return err
-	}
-
-	if instance.Status.Ready == expectedStatus {
-		return nil // Ready status matches expectations
-	}
-
-	return fmt.Errorf("Ready status did not match expectations. Expected: %s, Actual: %s", expectedStatus, instance.Status.Ready)
 }
 
 func makePVCReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
