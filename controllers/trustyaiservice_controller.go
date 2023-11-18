@@ -19,13 +19,14 @@ package controllers
 import (
 	"context"
 	goerrors "errors"
+	"time"
+
 	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -35,7 +36,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-	"time"
 )
 
 var ErrPVCNotReady = goerrors.New("PVC is not ready")
@@ -182,7 +182,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return RequeueWithError(err)
 	}
 	if err := r.Create(ctx, service); err != nil {
-		if apierrors.IsAlreadyExists(err) {
+		if errors.IsAlreadyExists(err) {
 			// Service already exists, no problem
 		} else {
 			// handle any other error
