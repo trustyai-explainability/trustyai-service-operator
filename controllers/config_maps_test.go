@@ -2,9 +2,13 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -24,27 +28,51 @@ var _ = Describe("ConfigMap tests", func() {
 		ctx = context.Background()
 	})
 
+	AfterEach(func() {
+		// Attempt to delete the ConfigMap
+		configMap := &corev1.ConfigMap{}
+		err := k8sClient.Get(ctx, types.NamespacedName{
+			Namespace: operatorNamespace,
+			Name:      imageConfigMap,
+		}, configMap)
+
+		// If the ConfigMap exists, delete it
+		if err == nil {
+			Expect(k8sClient.Delete(ctx, configMap)).To(Succeed())
+		} else if !apierrors.IsNotFound(err) {
+			Fail(fmt.Sprintf("Unexpected error while getting ConfigMap: %s", err))
+		}
+	})
+
 	Context("When deploying a ConfigMap to the operator's namespace", func() {
 
 		It("Should get back the correct values", func() {
 
 			serviceImage := "custom-service-image:foo"
 			oauthImage := "custom-oauth-proxy:bar"
+
 			WaitFor(func() error {
 				configMap := createConfigMap(operatorNamespace, oauthImage, serviceImage)
 				return k8sClient.Create(ctx, configMap)
 			}, "failed to create ConfigMap")
 
 			var actualOAuthImage string
+			var actualServiceImage string
 
 			WaitFor(func() error {
 				var err error
-				actualOAuthImage, err = reconciler.getImageFromConfigMap(ctx, oauthImage, defaultOAuthProxyImage)
+				actualOAuthImage, err = reconciler.getImageFromConfigMap(ctx, configMapOAuthProxyImageKey, defaultOAuthProxyImage)
 				return err
-			}, "failed to get image from ConfigMap")
+			}, "failed to get oauth image from ConfigMap")
+
+			WaitFor(func() error {
+				var err error
+				actualServiceImage, err = reconciler.getImageFromConfigMap(ctx, configMapServiceImageKey, defaultImage)
+				return err
+			}, "failed to get service image from ConfigMap")
 
 			Expect(actualOAuthImage).Should(Equal(oauthImage))
-
+			Expect(actualServiceImage).Should(Equal(serviceImage))
 		})
 	})
 

@@ -10,6 +10,7 @@ import (
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
@@ -38,6 +39,22 @@ var _ = Describe("TrustyAI operator", func() {
 			Namespace:     operatorNamespace,
 		}
 		ctx = context.Background()
+	})
+
+	AfterEach(func() {
+		// Attempt to delete the ConfigMap
+		configMap := &corev1.ConfigMap{}
+		err := k8sClient.Get(ctx, types.NamespacedName{
+			Namespace: operatorNamespace,
+			Name:      imageConfigMap,
+		}, configMap)
+
+		// If the ConfigMap exists, delete it
+		if err == nil {
+			Expect(k8sClient.Delete(ctx, configMap)).To(Succeed())
+		} else if !apierrors.IsNotFound(err) {
+			Fail(fmt.Sprintf("Unexpected error while getting ConfigMap: %s", err))
+		}
 	})
 
 	Context("When deploying with default settings without an InferenceService", func() {
@@ -110,6 +127,7 @@ var _ = Describe("TrustyAI operator", func() {
 			serviceImage := "custom-service-image:foo"
 			oauthImage := "custom-oauth-proxy:bar"
 			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+
 			WaitFor(func() error {
 				configMap := createConfigMap(operatorNamespace, oauthImage, serviceImage)
 				return k8sClient.Create(ctx, configMap)
