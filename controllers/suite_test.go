@@ -67,10 +67,21 @@ const (
 	operatorNamespace  = "system"
 )
 
+const (
+	defaultTimeout = time.Second * 10
+	defaultPolling = time.Millisecond * 250
+)
+
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
 
 	RunSpecs(t, "Controller Suite")
+}
+
+// WaitFor is a function that takes a function which returns an error, and an error message.
+// It will repeatedly call the provided function until it succeeds or the timeout is reached.
+func WaitFor(operation func() error, errorMsg string) {
+	Eventually(operation, defaultTimeout, defaultPolling).Should(Succeed(), errorMsg)
 }
 
 func createDefaultCR(namespaceCurrent string) *trustyaiopendatahubiov1alpha1.TrustyAIService {
