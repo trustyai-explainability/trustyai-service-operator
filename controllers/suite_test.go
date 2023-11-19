@@ -84,6 +84,7 @@ func WaitFor(operation func() error, errorMsg string) {
 	Eventually(operation, defaultTimeout, defaultPolling).Should(Succeed(), errorMsg)
 }
 
+// createDefaultCR creates a TrustyAIService instance with default values
 func createDefaultCR(namespaceCurrent string) *trustyaiopendatahubiov1alpha1.TrustyAIService {
 	service := trustyaiopendatahubiov1alpha1.TrustyAIService{
 		ObjectMeta: metav1.ObjectMeta{
@@ -109,6 +110,7 @@ func createDefaultCR(namespaceCurrent string) *trustyaiopendatahubiov1alpha1.Tru
 	return &service
 }
 
+// createNamespace creates a new namespace
 func createNamespace(ctx context.Context, k8sClient client.Client, namespace string) error {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -127,6 +129,21 @@ func createNamespace(ctx context.Context, k8sClient client.Client, namespace str
 	}
 
 	return nil
+}
+
+// createConfigMap creates a configuration in the specified namespace
+func createConfigMap(namespace string, oauthImage string, trustyaiServiceImage string) *corev1.ConfigMap {
+	// Define the ConfigMap with the necessary data
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      imageConfigMap,
+			Namespace: namespace,
+		},
+		Data: map[string]string{
+			configMapOAuthProxyImageKey: oauthImage,
+			configMapServiceImageKey:    trustyaiServiceImage,
+		},
+	}
 }
 
 func createMockPV(ctx context.Context, k8sClient client.Client, pvName string, size string) error {

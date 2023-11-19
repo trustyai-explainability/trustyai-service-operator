@@ -13,7 +13,13 @@ const (
 	modelMeshLabelValue  = "modelmesh-serving"
 	volumeMountName      = "volume"
 	defaultRequeueDelay  = time.Minute
-	imageConfigMap       = "trustyai-service-operator-config"
+)
+
+// Configuration constants
+const (
+	imageConfigMap              = "trustyai-service-operator-config"
+	configMapOAuthProxyImageKey = "oauthProxyImage"
+	configMapServiceImageKey    = "trustyaiServiceImage"
 )
 
 // OAuth constants

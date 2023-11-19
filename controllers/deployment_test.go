@@ -83,6 +83,90 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(service.Annotations["prometheus.io/scheme"]).Should(Equal("http"))
 			Expect(service.Annotations["prometheus.io/scrape"]).Should(Equal("true"))
 			Expect(service.Namespace).Should(Equal(namespace))
+
+			WaitFor(func() error {
+				err := reconciler.reconcileOAuthService(ctx, instance)
+				return err
+			}, "failed to create oauth service")
+
+			desiredOAuthService := generateTrustyAIOAuthService(instance)
+
+			oauthService := &corev1.Service{}
+			WaitFor(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: desiredOAuthService.Name, Namespace: namespace}, oauthService)
+			}, "failed to get OAuth Service")
+
+		})
+	})
+
+	Context("When deploying with a ConfigMap and without an InferenceService", func() {
+		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+
+		It("Creates a deployment and a service with the ConfigMap configuration", func() {
+
+			namespace := "trusty-ns-a-1-cm"
+			serviceImage := "custom-service-image:foo"
+			oauthImage := "custom-oauth-proxy:bar"
+			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			WaitFor(func() error {
+				configMap := createConfigMap(operatorNamespace, oauthImage, serviceImage)
+				return k8sClient.Create(ctx, configMap)
+			}, "failed to create ConfigMap")
+
+			instance = createDefaultCR(namespace)
+
+			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
+			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
+			WaitFor(func() error {
+				return reconciler.ensureDeployment(ctx, instance)
+			}, "failed to reconcile deployment")
+
+			deployment := &appsv1.Deployment{}
+			WaitFor(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: namespace}, deployment)
+			}, "failed to get updated deployment")
+			Expect(deployment).ToNot(BeNil())
+
+			Expect(*deployment.Spec.Replicas).Should(Equal(int32(1)))
+			Expect(deployment.Namespace).Should(Equal(namespace))
+			Expect(deployment.Name).Should(Equal(defaultServiceName))
+			Expect(deployment.Labels["app"]).Should(Equal(defaultServiceName))
+			Expect(deployment.Labels["app.kubernetes.io/name"]).Should(Equal(defaultServiceName))
+			Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(defaultServiceName))
+			Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
+			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+
+			Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
+			Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal(serviceImage))
+			Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal(oauthImage))
+
+			WaitFor(func() error {
+				service, _ := reconciler.reconcileService(instance)
+				return reconciler.Create(ctx, service)
+			}, "failed to create service")
+
+			service := &corev1.Service{}
+			WaitFor(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: defaultServiceName, Namespace: namespace}, service)
+			}, "failed to get Service")
+
+			Expect(service.Annotations["prometheus.io/path"]).Should(Equal("/q/metrics"))
+			Expect(service.Annotations["prometheus.io/scheme"]).Should(Equal("http"))
+			Expect(service.Annotations["prometheus.io/scrape"]).Should(Equal("true"))
+			Expect(service.Namespace).Should(Equal(namespace))
+
+			WaitFor(func() error {
+				err := reconciler.reconcileOAuthService(ctx, instance)
+				return err
+			}, "failed to create oauth service")
+
+			desiredOAuthService := generateTrustyAIOAuthService(instance)
+
+			oauthService := &corev1.Service{}
+			WaitFor(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: desiredOAuthService.Name, Namespace: namespace}, oauthService)
+			}, "failed to get OAuth Service")
+
 		})
 	})
 
@@ -290,7 +374,9 @@ var _ = Describe("TrustyAI operator", func() {
 				Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
 				Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
 
+				Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
 				Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
+				Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("registry.redhat.io/openshift4/ose-oauth-proxy:latest"))
 
 			}
 		})
