@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
@@ -12,7 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
-	"time"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -65,7 +66,9 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
 			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
 
+			Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
 			Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
+			Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("registry.redhat.io/openshift4/ose-oauth-proxy:latest"))
 
 			Eventually(func() error {
 				service, _ := reconciler.reconcileService(instance)
