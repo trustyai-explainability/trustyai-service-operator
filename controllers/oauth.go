@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -98,7 +99,7 @@ func generateOAuthProxyContainer(instance *trustyaiopendatahubiov1alpha1.TrustyA
 	return proxyContainer
 }
 
-// generateOAuthVolumes create the OAuth necessary volume objects
+// generateOAuthVolumes create the necessary OAuth volume objects
 func generateOAuthVolumes(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, oauth OAuthConfig) []corev1.Volume {
 
 	volumes := []corev1.Volume{
