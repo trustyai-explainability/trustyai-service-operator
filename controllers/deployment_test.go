@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -29,6 +30,7 @@ var _ = Describe("TrustyAI operator", func() {
 
 	BeforeEach(func() {
 		recorder = record.NewFakeRecorder(10)
+		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
 			Scheme:        scheme.Scheme,
