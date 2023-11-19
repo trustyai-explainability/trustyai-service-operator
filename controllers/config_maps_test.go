@@ -76,4 +76,28 @@ var _ = Describe("ConfigMap tests", func() {
 		})
 	})
 
+	Context("When no ConfigMap in the operator's namespace", func() {
+
+		It("Should get back the default values", func() {
+
+			var actualOAuthImage string
+			var actualServiceImage string
+
+			WaitFor(func() error {
+				var err error
+				actualOAuthImage, err = reconciler.getImageFromConfigMap(ctx, configMapOAuthProxyImageKey, defaultOAuthProxyImage)
+				return err
+			}, "failed to get oauth image from ConfigMap")
+
+			WaitFor(func() error {
+				var err error
+				actualServiceImage, err = reconciler.getImageFromConfigMap(ctx, configMapServiceImageKey, defaultImage)
+				return err
+			}, "failed to get service image from ConfigMap")
+
+			Expect(actualOAuthImage).Should(Equal(defaultOAuthProxyImage))
+			Expect(actualServiceImage).Should(Equal(defaultImage))
+		})
+	})
+
 })
