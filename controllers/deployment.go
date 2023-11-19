@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"context"
+	"strconv"
+
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -10,9 +12,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"strconv"
 )
 
+// createDeploymentObject returns a Deployment for the TrustyAI Service instance
 func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, image string) *appsv1.Deployment {
 	labels := getCommonLabels(cr.Name)
 	pvcName := generatePVCName(cr)
@@ -32,6 +34,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 
 	// Create the OAuth-Proxy container spec
 
+	// Get OAuth-proxy image from ConfigMap
 	oauthProxyImage, err := r.getImageFromConfigMap(ctx, "oauthProxyImage", defaultOAuthProxyImage)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error getting OAuth image from ConfigMap. Using the default image value of "+defaultOAuthProxyImage)
