@@ -4,6 +4,7 @@ import (
 	"context"
 	routev1 "github.com/openshift/api/route/v1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -86,4 +87,27 @@ func (r *TrustyAIServiceReconciler) reconcileRoute(cr *trustyaiopendatahubiov1al
 	}
 
 	return nil
+}
+
+func (r *TrustyAIServiceReconciler) checkRouteReady(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (bool, error) {
+	existingRoute := &routev1.Route{}
+
+	err := r.Client.Get(ctx, types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, existingRoute)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	for _, ingress := range existingRoute.Status.Ingress {
+		for _, condition := range ingress.Conditions {
+			if condition.Type == routev1.RouteAdmitted && condition.Status == corev1.ConditionTrue {
+				// The Route is admitted, so it's ready
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
 }

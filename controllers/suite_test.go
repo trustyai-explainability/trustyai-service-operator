@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
@@ -34,6 +35,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/pointer"
 	"path/filepath"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,15 +51,19 @@ import (
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
-var cfg *rest.Config
-var k8sClient client.Client
-var testEnv *envtest.Environment
-var ctx context.Context
-var cancel context.CancelFunc
+var (
+	cfg        *rest.Config
+	k8sClient  client.Client
+	testEnv    *envtest.Environment
+	ctx        context.Context
+	cancel     context.CancelFunc
+	reconciler *TrustyAIServiceReconciler
+	recorder   *record.FakeRecorder
+)
 
 const (
-	name      = "example-trustyai-service"
-	namespace = "trustyai"
+	defaultServiceName = "example-trustyai-service"
+	operatorNamespace  = "system"
 )
 
 func TestAPIs(t *testing.T) {
@@ -68,8 +75,9 @@ func TestAPIs(t *testing.T) {
 func createDefaultCR(namespaceCurrent string) *trustyaiopendatahubiov1alpha1.TrustyAIService {
 	service := trustyaiopendatahubiov1alpha1.TrustyAIService{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      defaultServiceName,
 			Namespace: namespaceCurrent,
+			UID:       types.UID(uuid.New().String()),
 		},
 		Spec: trustyaiopendatahubiov1alpha1.TrustyAIServiceSpec{
 			Storage: trustyaiopendatahubiov1alpha1.StorageSpec{
@@ -143,6 +151,41 @@ func createMockPV(ctx context.Context, k8sClient client.Client, pvName string, s
 	return nil
 }
 
+func createTestPVC(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name + "-pvc",
+			Namespace: instance.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion:         "trustyai.opendatahub.io/v1alpha1",
+					Kind:               "TrustyAIService",
+					Name:               instance.Name,
+					UID:                instance.UID,
+					Controller:         pointer.Bool(true),
+					BlockOwnerDeletion: pointer.Bool(true),
+				},
+			},
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse("1Gi"),
+				},
+			},
+			StorageClassName: pointer.String("standard"),
+			VolumeMode:       (*corev1.PersistentVolumeMode)(pointer.String("Filesystem")),
+		},
+	}
+
+	if err := k8sClient.Create(ctx, pvc); err != nil {
+		return fmt.Errorf("failed to create PVC: %v", err)
+	}
+
+	return nil
+}
+
 func removeFinalizerAndDeleteInstance(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, finalizerName string) {
 	// Get the latest state of the TrustyAIService instance
 	_ = k8sClient.Get(ctx, client.ObjectKey{Name: instance.Name, Namespace: instance.Namespace}, instance)
@@ -164,7 +207,7 @@ func removeFinalizerAndDeleteInstance(ctx context.Context, k8sClient client.Clie
 	_ = k8sClient.Delete(ctx, instance)
 }
 
-// Function to create the InferenceService
+// createInferenceService Function to create the InferenceService
 func createInferenceService(name string, namespace string) *kservev1beta1.InferenceService {
 	return &kservev1beta1.InferenceService{
 		ObjectMeta: metav1.ObjectMeta{
@@ -181,6 +224,53 @@ func createInferenceService(name string, namespace string) *kservev1beta1.Infere
 			},
 		},
 	}
+}
+
+// createDeploymentWithInferenceService creates a Deployment with multiple containers
+func createDeploymentWithInferenceService(ctx context.Context, k8sClient client.Client, name string, namespace string, inferenceServiceName string) error {
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app":                       name,
+				"app.kubernetes.io/part-of": inferenceServiceName, // Label to associate with the InferenceService
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: pointer.Int32Ptr(1),
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": name,
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": name,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "main-container",
+							Image: "main-container-image", // Mock container
+						},
+						{
+							Name:  "helper-container",
+							Image: "helper-container-image", // Mock container
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := k8sClient.Create(ctx, deployment); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func checkTrustyAIServiceCondition(client client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, expectedType string, expectedStatus corev1.ConditionStatus, expectedReason string) error {
@@ -217,6 +307,67 @@ func checkTrustyAIServiceReadyStatus(client client.Client, instance *trustyaiope
 	}
 
 	return fmt.Errorf("Ready status did not match expectations. Expected: %s, Actual: %s", expectedStatus, instance.Status.Ready)
+}
+
+func makePVCReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+	pvc := &corev1.PersistentVolumeClaim{}
+	pvcName := types.NamespacedName{
+		Name:      generatePVCName(instance),
+		Namespace: instance.Namespace,
+	}
+	if err := k8sClient.Get(ctx, pvcName, pvc); err != nil {
+		return err
+	}
+
+	pvc.Status.Phase = corev1.ClaimBound
+	return k8sClient.Status().Update(ctx, pvc)
+}
+
+func makeDeploymentReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+	deployment := &appsv1.Deployment{}
+	deploymentName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+
+	if err := k8sClient.Get(ctx, deploymentName, deployment); err != nil {
+		return err
+	}
+
+	deployment.Status.Conditions = []appsv1.DeploymentCondition{
+		{
+			Type:    appsv1.DeploymentAvailable,
+			Status:  corev1.ConditionTrue,
+			Reason:  "DeploymentReady",
+			Message: "The deployment is ready",
+		},
+	}
+
+	if deployment.Spec.Replicas != nil {
+		deployment.Status.ReadyReplicas = 1
+		deployment.Status.Replicas = 1
+	}
+
+	return k8sClient.Update(ctx, deployment)
+}
+
+func makeRouteReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+	route := &routev1.Route{}
+	routeName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+
+	if err := k8sClient.Get(ctx, routeName, route); err != nil {
+		return err
+	}
+
+	route.Status.Ingress = []routev1.RouteIngress{
+		{
+			Conditions: []routev1.RouteIngressCondition{
+				{
+					Type:   routev1.RouteAdmitted,
+					Status: corev1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	return k8sClient.Status().Update(ctx, route)
 }
 
 var _ = BeforeSuite(func() {
@@ -270,12 +421,19 @@ var _ = BeforeSuite(func() {
 	recorder := k8sManager.GetEventRecorderFor("trustyai-service-operator")
 
 	err = (&TrustyAIServiceReconciler{
-		Client: k8sManager.GetClient(),
-		//Log:    ctrl.Log.WithName("controllers").WithName("YourController"),
+		Client:        k8sManager.GetClient(),
 		Scheme:        k8sManager.GetScheme(),
 		EventRecorder: recorder,
+		Namespace:     operatorNamespace,
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
+
+	Eventually(func() error {
+		return createNamespace(ctx, k8sClient, operatorNamespace)
+	}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
+	Eventually(func() error {
+		return createMockPV(ctx, k8sClient, "mypv", "100Gi")
+	}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create PV")
 
 	go func() {
 		defer GinkgoRecover()
@@ -290,206 +448,4 @@ var _ = AfterSuite(func() {
 	By("tearing down the test environment")
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
-})
-
-var _ = Describe("TrustyAI operator", func() {
-
-	Context("Testing deployment with defaults and no InferenceService", func() {
-		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
-		BeforeEach(func() {
-			Eventually(func() error {
-				return createMockPV(ctx, k8sClient, "mypv", "1Gi")
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create PV")
-		})
-
-		It("should deploy the service with defaults", func() {
-			ctx = context.Background()
-			thisNamespace := "trusty-ns-1"
-			instance = createDefaultCR(thisNamespace)
-			Eventually(func() error {
-				return createNamespace(ctx, k8sClient, thisNamespace)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
-
-			Expect(k8sClient.Create(ctx, instance)).Should(Succeed())
-
-			deployment := &appsv1.Deployment{}
-			Eventually(func() error {
-				// Define name for the deployment created by the operator
-				namespacedNamed := types.NamespacedName{
-					Namespace: thisNamespace,
-					Name:      name,
-				}
-				return k8sClient.Get(ctx, namespacedNamed, deployment)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get Deployment")
-
-			Expect(*deployment.Spec.Replicas).Should(Equal(int32(1)))
-			Expect(deployment.Namespace).Should(Equal(thisNamespace))
-			Expect(deployment.Name).Should(Equal(name))
-			Expect(deployment.Labels["app"]).Should(Equal(name))
-			Expect(deployment.Labels["app.kubernetes.io/name"]).Should(Equal(name))
-			Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(name))
-			Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
-			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
-
-			Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
-
-			service := &corev1.Service{}
-			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: thisNamespace}, service)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get Service")
-
-			Expect(service.Annotations["prometheus.io/path"]).Should(Equal("/q/metrics"))
-			Expect(service.Annotations["prometheus.io/scheme"]).Should(Equal("http"))
-			Expect(service.Annotations["prometheus.io/scrape"]).Should(Equal("true"))
-			Expect(service.Namespace).Should(Equal(thisNamespace))
-
-			Eventually(func() error {
-				return checkTrustyAIServiceCondition(k8sClient, instance, StatusTypePVCAvailable, corev1.ConditionTrue, StatusReasonPVCFound)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get the correct condition")
-
-			// No InferenceService deployed yet
-			Eventually(func() error {
-				return checkTrustyAIServiceCondition(k8sClient, instance, StatusTypeInferenceServicesPresent, corev1.ConditionFalse, StatusReasonInferenceServicesNotFound)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get the correct condition")
-		})
-
-		It("should deploy the service with defaults and one InferenceService", func() {
-			ctx = context.Background()
-			thisNamespace := "trusty-ns-2"
-			instance = createDefaultCR(thisNamespace)
-			Eventually(func() error {
-				return createNamespace(ctx, k8sClient, thisNamespace)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
-
-			// Creating the InferenceService
-			inferenceService := createInferenceService("my-model", thisNamespace)
-			Expect(k8sClient.Create(ctx, inferenceService)).Should(Succeed())
-
-			timeout := 10 * time.Second
-			interval := 1 * time.Second
-
-			// Wait for the InferenceService to be ready
-			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKey{
-					Namespace: inferenceService.Namespace,
-					Name:      inferenceService.Name,
-				}, inferenceService)
-
-				if err != nil {
-					return false
-				}
-
-				return true // return true when the InferenceService is ready
-			}, timeout, interval).Should(BeTrue())
-
-			Expect(k8sClient.Create(ctx, instance)).Should(Succeed())
-
-			deployment := &appsv1.Deployment{}
-			Eventually(func() error {
-				// Define name for the deployment created by the operator
-				namespacedNamed := types.NamespacedName{
-					Namespace: thisNamespace,
-					Name:      name,
-				}
-				return k8sClient.Get(ctx, namespacedNamed, deployment)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get Deployment")
-
-			Expect(*deployment.Spec.Replicas).Should(Equal(int32(1)))
-			Expect(deployment.Namespace).Should(Equal(thisNamespace))
-			Expect(deployment.Name).Should(Equal(name))
-			Expect(deployment.Labels["app"]).Should(Equal(name))
-			Expect(deployment.Labels["app.kubernetes.io/name"]).Should(Equal(name))
-			Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(name))
-			Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
-			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
-
-			Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
-
-			service := &corev1.Service{}
-			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: thisNamespace}, service)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get Service")
-
-			Expect(service.Annotations["prometheus.io/path"]).Should(Equal("/q/metrics"))
-			Expect(service.Annotations["prometheus.io/scheme"]).Should(Equal("http"))
-			Expect(service.Annotations["prometheus.io/scrape"]).Should(Equal("true"))
-			Expect(service.Namespace).Should(Equal(thisNamespace))
-
-			Eventually(func() error {
-				return checkTrustyAIServiceCondition(k8sClient, instance, StatusTypePVCAvailable, corev1.ConditionTrue, StatusReasonPVCFound)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get the correct condition")
-
-			// No InferenceService deployed yet
-			Eventually(func() error {
-				return checkTrustyAIServiceCondition(k8sClient, instance, StatusTypeInferenceServicesPresent, corev1.ConditionTrue, StatusReasonInferenceServicesFound)
-			}, time.Second*20, time.Millisecond*250).Should(Succeed(), "failed to get the correct condition")
-
-		})
-
-	})
-
-	Context("Testing deployment with defaults in multiple namespaces", func() {
-		var instances []*trustyaiopendatahubiov1alpha1.TrustyAIService
-
-		namespaces := []string{"namespace1", "namespace2", "namespace3"}
-
-		BeforeEach(func() {
-			instances = make([]*trustyaiopendatahubiov1alpha1.TrustyAIService, len(namespaces))
-			for i, thisNamespace := range namespaces {
-				instances[i] = createDefaultCR(thisNamespace)
-				instances[i].Namespace = thisNamespace
-				Eventually(func() error {
-					return createNamespace(ctx, k8sClient, thisNamespace)
-				}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
-			}
-		})
-
-		It("should deploy the services with defaults", func() {
-			ctx = context.Background()
-			for _, instance := range instances {
-				Expect(k8sClient.Create(ctx, instance)).Should(Succeed())
-				deployment := &appsv1.Deployment{}
-				Eventually(func() error {
-					// Define name for the deployment created by the operator
-					namespacedNamed := types.NamespacedName{
-						Namespace: instance.Namespace,
-						Name:      name,
-					}
-					return k8sClient.Get(ctx, namespacedNamed, deployment)
-				}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get Deployment")
-
-				Expect(*deployment.Spec.Replicas).Should(Equal(int32(1)))
-				Expect(deployment.Namespace).Should(Equal(instance.Namespace))
-				Expect(deployment.Name).Should(Equal(name))
-				Expect(deployment.Labels["app"]).Should(Equal(name))
-				Expect(deployment.Labels["app.kubernetes.io/name"]).Should(Equal(name))
-				Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(name))
-				Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
-				Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
-
-				Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
-
-				service := &corev1.Service{}
-				Eventually(func() error {
-					return k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: instance.Namespace}, service)
-				}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get Service")
-
-				Expect(service.Annotations["prometheus.io/path"]).Should(Equal("/q/metrics"))
-				Expect(service.Annotations["prometheus.io/scheme"]).Should(Equal("http"))
-				Expect(service.Annotations["prometheus.io/scrape"]).Should(Equal("true"))
-			}
-		})
-
-		AfterEach(func() {
-			for _, instance := range instances {
-				// Delete the TrustyAIService instance
-				Expect(k8sClient.Delete(ctx, instance)).Should(Succeed())
-
-				// Delete the namespace
-				namespaceObj := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: instance.Namespace}}
-				Expect(k8sClient.Delete(ctx, namespaceObj)).Should(Succeed())
-			}
-		})
-	})
-
 })
