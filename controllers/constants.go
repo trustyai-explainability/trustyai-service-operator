@@ -15,6 +15,21 @@ const (
 	defaultRequeueDelay  = time.Minute
 )
 
+// Configuration constants
+const (
+	imageConfigMap              = "trustyai-service-operator-config"
+	configMapOAuthProxyImageKey = "oauthProxyImage"
+	configMapServiceImageKey    = "trustyaiServiceImage"
+)
+
+// OAuth constants
+const (
+	OAuthServicePort       = 443
+	OAuthName              = "oauth-proxy"
+	OAuthServicePortName   = "oauth-proxy"
+	defaultOAuthProxyImage = "registry.redhat.io/openshift4/ose-oauth-proxy:latest"
+)
+
 // Status types
 const (
 	StatusTypeInferenceServicesPresent = "InferenceServicesPresent"

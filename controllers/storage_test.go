@@ -12,7 +12,6 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"time"
 )
 
 var _ = Describe("PVC Reconciliation", func() {
@@ -33,9 +32,9 @@ var _ = Describe("PVC Reconciliation", func() {
 		It("should create a new PVC and emit an event", func() {
 			namespace := "pvc-test-namespace-1"
 			instance = createDefaultCR(namespace)
-			Eventually(func() error {
+			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
+			}, "failed to create namespace")
 
 			err := reconciler.ensurePVC(ctx, instance)
 			Expect(err).ToNot(HaveOccurred())
@@ -56,9 +55,9 @@ var _ = Describe("PVC Reconciliation", func() {
 		It("should not attempt to create the PVC", func() {
 			namespace := "pvc-test-namespace-2"
 			instance = createDefaultCR(namespace)
-			Eventually(func() error {
+			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
+			}, "failed to create namespace")
 
 			// Simulate existing PVC
 			existingPVC := &corev1.PersistentVolumeClaim{

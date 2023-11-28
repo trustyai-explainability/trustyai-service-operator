@@ -11,7 +11,6 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"time"
 )
 
 func checkCondition(conditions []trustyaiopendatahubiov1alpha1.Condition, conditionType string, expectedStatus corev1.ConditionStatus, allowMissing bool) (*trustyaiopendatahubiov1alpha1.Condition, bool, error) {
@@ -46,9 +45,9 @@ var _ = Describe("Status and condition tests", func() {
 			namespace := "statuses-test-namespace-1"
 			instance = createDefaultCR(namespace)
 
-			Eventually(func() error {
+			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
+			}, "failed to create namespace")
 
 			// Call the reconcileStatuses function
 			_, _ = reconciler.reconcileStatuses(ctx, instance)
@@ -73,45 +72,44 @@ var _ = Describe("Status and condition tests", func() {
 		It("Should be available", func() {
 			namespace := "statuses-test-namespace-2"
 			instance = createDefaultCR(namespace)
-			Eventually(func() error {
+			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
-			Eventually(func() error {
+			}, "failed to create namespace")
+			WaitFor(func() error {
 				return reconciler.reconcileRoute(instance, ctx)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create route")
-			Eventually(func() error {
+			}, "failed to create route")
+			WaitFor(func() error {
 				return makeRouteReady(ctx, k8sClient, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to make route ready")
-			Eventually(func() error {
+			}, "failed to make route ready")
+			WaitFor(func() error {
 				return reconciler.ensurePVC(ctx, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create PVC")
-			Eventually(func() error {
+			}, "failed to create PVC")
+			WaitFor(func() error {
 				return makePVCReady(ctx, k8sClient, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to bind PVC")
-			Eventually(func() error {
+			}, "failed to bind PVC")
+			WaitFor(func() error {
 				return reconciler.ensureDeployment(ctx, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create deployment")
-			Eventually(func() error {
+			}, "failed to create deployment")
+			WaitFor(func() error {
 				return makeDeploymentReady(ctx, k8sClient, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to make deployment ready")
-
-			Eventually(func() error {
+			}, "failed to make deployment ready")
+			WaitFor(func() error {
 				return k8sClient.Create(ctx, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create TrustyAIService")
+			}, "failed to create TrustyAIService")
 
 			// Call the reconcileStatuses function
-			Eventually(func() error {
+			WaitFor(func() error {
 				_, err := reconciler.reconcileStatuses(ctx, instance)
 				return err
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to update statuses")
+			}, "failed to update statuses")
 
 			// Fetch the updated instance
-			Eventually(func() error {
+			WaitFor(func() error {
 				return k8sClient.Get(ctx, types.NamespacedName{
 					Name:      instance.Name,
 					Namespace: instance.Namespace,
 				}, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get updated instance")
+			}, "failed to get updated instance")
 
 			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, "Ready", corev1.ConditionTrue, true)
 			Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
@@ -146,52 +144,52 @@ var _ = Describe("Status and condition tests", func() {
 		It("Should be available", func() {
 			namespace := "statuses-test-namespace-2"
 			instance = createDefaultCR(namespace)
-			Eventually(func() error {
+			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
-			Eventually(func() error {
+			}, "failed to create namespace")
+			WaitFor(func() error {
 				return reconciler.reconcileRoute(instance, ctx)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create route")
-			Eventually(func() error {
+			}, "failed to create route")
+			WaitFor(func() error {
 				return makeRouteReady(ctx, k8sClient, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to make route ready")
-			Eventually(func() error {
+			}, "failed to make route ready")
+			WaitFor(func() error {
 				return reconciler.ensurePVC(ctx, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create PVC")
-			Eventually(func() error {
+			}, "failed to create PVC")
+			WaitFor(func() error {
 				return makePVCReady(ctx, k8sClient, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to bind PVC")
-			Eventually(func() error {
+			}, "failed to bind PVC")
+			WaitFor(func() error {
 				return reconciler.ensureDeployment(ctx, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create deployment")
-			Eventually(func() error {
+			}, "failed to create deployment")
+			WaitFor(func() error {
 				return makeDeploymentReady(ctx, k8sClient, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to make deployment ready")
+			}, "failed to make deployment ready")
 
 			inferenceService := createInferenceService("my-model", namespace)
-			Eventually(func() error {
+			WaitFor(func() error {
 				return k8sClient.Create(ctx, inferenceService)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create InferenceService")
+			}, "failed to create InferenceService")
 
 			Expect(reconciler.patchKServe(ctx, instance, *inferenceService, namespace, instance.Name, false)).ToNot(HaveOccurred())
 
-			Eventually(func() error {
+			WaitFor(func() error {
 				return k8sClient.Create(ctx, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create TrustyAIService")
+			}, "failed to create TrustyAIService")
 
 			// Call the reconcileStatuses function
-			Eventually(func() error {
+			WaitFor(func() error {
 				_, err := reconciler.reconcileStatuses(ctx, instance)
 				return err
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to update statuses")
+			}, "failed to update statuses")
 
 			// Fetch the updated instance
-			Eventually(func() error {
+			WaitFor(func() error {
 				return k8sClient.Get(ctx, types.NamespacedName{
 					Name:      instance.Name,
 					Namespace: instance.Namespace,
 				}, instance)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to get updated instance")
+			}, "failed to get updated instance")
 
 			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, "Ready", corev1.ConditionTrue, true)
 			Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
