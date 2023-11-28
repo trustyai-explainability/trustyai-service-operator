@@ -1,17 +1,16 @@
-#namespace: trustyai-service-operator-system
-
+---
 namePrefix: trustyai-service-operator-
 
 resources:
-- ../crd
-- ../rbac
-- ../manager
+  - ../crd
+  - ../rbac
+  - ../manager
 
 commonLabels:
   app.kubernetes.io/part-of: trustyai
 
 patchesStrategicMerge:
-- manager_auth_proxy_patch.yaml
+  - manager_auth_proxy_patch.yaml
 
 configMapGenerator:
   - env: params.env
