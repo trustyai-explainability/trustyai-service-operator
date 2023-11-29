@@ -53,10 +53,17 @@ type MetricsSpec struct {
 type TrustyAIServiceSpec struct {
 	// Number of replicas
 	// +optional
-	Replicas *int32      `json:"replicas"`
-	Storage  StorageSpec `json:"storage"`
-	Data     DataSpec    `json:"data"`
-	Metrics  MetricsSpec `json:"metrics"`
+	Replicas         *int32                `json:"replicas"`
+	Storage          StorageSpec           `json:"storage"`
+	Data             DataSpec              `json:"data"`
+	Metrics          MetricsSpec           `json:"metrics"`
+	PayloadProcessor *PayloadProcessorSpec `json:"payloadProcessor,omitempty"`
+}
+
+// PayloadProcessorSpec defines whether a specific InferenceService type should be configured to use a payload processor
+type PayloadProcessorSpec struct {
+	ModelMesh string `json:"modelmesh,omitempty"`
+	KServe    string `json:"kserve,omitempty"`
 }
 
 // TrustyAIServiceStatus defines the observed state of TrustyAIService
@@ -88,6 +95,44 @@ type TrustyAIServiceList struct {
 
 func init() {
 	SchemeBuilder.Register(&TrustyAIService{}, &TrustyAIServiceList{})
+}
+
+func (t *TrustyAIService) SetDefaults() {
+	if t.Spec.PayloadProcessor == nil {
+		// Set both fields to their defaults if payloadProcessor is entirely missing
+		t.Spec.PayloadProcessor = &PayloadProcessorSpec{
+			ModelMesh: "yes", // Default for ModelMesh
+			KServe:    "no",  // Default for KServe
+		}
+	} else {
+		// Set individual fields to their defaults if they are not specified
+		if t.Spec.PayloadProcessor.ModelMesh == "" {
+			t.Spec.PayloadProcessor.ModelMesh = "yes"
+		}
+		if t.Spec.PayloadProcessor.KServe == "" {
+			t.Spec.PayloadProcessor.KServe = "no"
+		}
+	}
+}
+
+// IsModelMeshEnabled checks if ModelMesh is enabled in the payloadProcessor settings
+// Defaults to true if payloadProcessor is not specified
+func (t *TrustyAIService) IsModelMeshEnabled() bool {
+	// Default to true if payloadProcessor is not specified
+	if t.Spec.PayloadProcessor == nil {
+		return true
+	}
+	return t.Spec.PayloadProcessor.ModelMesh == "yes"
+}
+
+// IsKServeEnabled checks if KServe is enabled in the payloadProcessor settings
+// Defaults to false if payloadProcessor is not specified
+func (t *TrustyAIService) IsKServeEnabled() bool {
+	// Default to false if payloadProcessor is not specified
+	if t.Spec.PayloadProcessor == nil {
+		return false
+	}
+	return t.Spec.PayloadProcessor.KServe == "yes"
 }
 
 // SetStatus sets the status of the TrustyAIService

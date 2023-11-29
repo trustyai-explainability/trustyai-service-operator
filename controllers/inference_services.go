@@ -3,13 +3,14 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"strings"
 )
 
 func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, deployments []appsv1.Deployment, envVarName string, url string, remove bool) (bool, error) {
@@ -145,16 +146,20 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 		annotations := infService.GetAnnotations()
 		// Check the annotation "serving.kserve.io/deploymentMode: ModelMesh"
 		if val, ok := annotations["serving.kserve.io/deploymentMode"]; ok && val == "ModelMesh" {
-			shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, instance, namespace, labelKey, labelValue, envVarName, crName, remove)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "Could not patch environment variables for ModelMesh deployments.")
-				return shouldContinue, err
+			if instance.IsModelMeshEnabled() {
+				shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, instance, namespace, labelKey, labelValue, envVarName, crName, remove)
+				if err != nil {
+					log.FromContext(ctx).Error(err, "Could not patch environment variables for ModelMesh deployments.")
+					return shouldContinue, err
+				}
 			}
 		} else {
-			err := r.patchKServe(ctx, instance, infService, namespace, crName, remove)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "Could not path InferenceLogger for KServe deployment.")
-				return false, err
+			if instance.IsKServeEnabled() {
+				err := r.patchKServe(ctx, instance, infService, namespace, crName, remove)
+				if err != nil {
+					log.FromContext(ctx).Error(err, "Could not path InferenceLogger for KServe deployment.")
+					return false, err
+				}
 			}
 		}
 	}
