@@ -110,6 +110,46 @@ func createDefaultCR(namespaceCurrent string) *trustyaiopendatahubiov1alpha1.Tru
 	return &service
 }
 
+// createDefaultCR creates a TrustyAIService instance with custom payload processor values
+func createCustomCR(namespaceCurrent string, modelMeshEnabled bool, kserveEnabled bool) *trustyaiopendatahubiov1alpha1.TrustyAIService {
+	modelMesh := "no"
+	if modelMeshEnabled {
+		modelMesh = "yes"
+	}
+
+	kserve := "no"
+	if kserveEnabled {
+		kserve = "yes"
+	}
+
+	service := trustyaiopendatahubiov1alpha1.TrustyAIService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      defaultServiceName,
+			Namespace: namespaceCurrent,
+			UID:       types.UID(uuid.New().String()),
+		},
+		Spec: trustyaiopendatahubiov1alpha1.TrustyAIServiceSpec{
+			Storage: trustyaiopendatahubiov1alpha1.StorageSpec{
+				Format: "PVC",
+				Folder: "/data",
+				Size:   "1Gi",
+			},
+			Data: trustyaiopendatahubiov1alpha1.DataSpec{
+				Filename: "data.csv",
+				Format:   "CSV",
+			},
+			Metrics: trustyaiopendatahubiov1alpha1.MetricsSpec{
+				Schedule: "5s",
+			},
+			PayloadProcessor: &trustyaiopendatahubiov1alpha1.PayloadProcessorSpec{
+				ModelMesh: modelMesh,
+				KServe:    kserve,
+			},
+		},
+	}
+	return &service
+}
+
 // createNamespace creates a new namespace
 func createNamespace(ctx context.Context, k8sClient client.Client, namespace string) error {
 	ns := &corev1.Namespace{
