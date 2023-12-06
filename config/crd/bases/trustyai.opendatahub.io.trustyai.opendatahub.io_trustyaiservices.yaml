@@ -5,9 +5,9 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.11.1
   creationTimestamp: null
-  name: trustyaiservices.trustyai.opendatahub.io.trustyai.opendatahub.io
+  name: trustyaiservices.trustyai.opendatahub.io
 spec:
-  group: trustyai.opendatahub.io.trustyai.opendatahub.io
+  group: trustyai.opendatahub.io
   names:
     kind: TrustyAIService
     listKind: TrustyAIServiceList

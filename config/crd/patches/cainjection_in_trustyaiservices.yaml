@@ -3,4 +3,4 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     cert-manager.io/inject-ca-from: $(CERTIFICATE_NAMESPACE)/$(CERTIFICATE_NAME)
-  name: trustyaiservices.trustyai.opendatahub.io.trustyai.opendatahub.io
+  name: trustyaiservices.trustyai.opendatahub.io

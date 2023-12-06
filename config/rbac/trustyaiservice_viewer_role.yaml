@@ -14,7 +14,7 @@ metadata:
   name: trustyaiservice-viewer-role
 rules:
   - apiGroups:
-      - trustyai.opendatahub.io.trustyai.opendatahub.io
+      - trustyai.opendatahub.io
     resources:
       - trustyaiservices
     verbs:
@@ -22,7 +22,7 @@ rules:
       - list
       - watch
   - apiGroups:
-      - trustyai.opendatahub.io.trustyai.opendatahub.io
+      - trustyai.opendatahub.io
     resources:
       - trustyaiservices/status
     verbs:
