@@ -9,9 +9,6 @@ resources:
 commonLabels:
   app.kubernetes.io/part-of: trustyai
 
-patchesStrategicMerge:
-  - manager_auth_proxy_patch.yaml
-
 configMapGenerator:
   - env: params.env
     name: config
