@@ -115,6 +115,10 @@ var _ = Describe("TrustyAI operator", func() {
 				return k8sClient.Get(ctx, types.NamespacedName{Name: desiredOAuthService.Name, Namespace: namespace}, oauthService)
 			}, "failed to get OAuth Service")
 
+			// Check the default payload processor configuration
+			Expect(instance.IsModelMeshEnabled()).Should(Equal(true))
+			Expect(instance.IsKServeEnabled()).Should(Equal(false))
+
 		})
 	})
 
@@ -399,6 +403,62 @@ var _ = Describe("TrustyAI operator", func() {
 				Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("registry.redhat.io/openshift4/ose-oauth-proxy:latest"))
 
 			}
+		})
+	})
+
+})
+
+var _ = Describe("TrustyAI operator payload processor", func() {
+
+	BeforeEach(func() {
+		recorder = record.NewFakeRecorder(10)
+		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
+		reconciler = &TrustyAIServiceReconciler{
+			Client:        k8sClient,
+			Scheme:        scheme.Scheme,
+			EventRecorder: recorder,
+			Namespace:     operatorNamespace,
+		}
+		ctx = context.Background()
+	})
+
+	Context("When no payload processor specified", func() {
+		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+
+		It("Should use the default values", func() {
+			namespace := "trusty-ns-processor-1"
+			instance = createDefaultCR(namespace)
+			// Check the default payload processor configuration
+			Expect(instance.IsModelMeshEnabled()).Should(Equal(true))
+			Expect(instance.IsKServeEnabled()).Should(Equal(false))
+		})
+	})
+
+	Context("When only ModelMesh is specified", func() {
+		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+
+		It("Should use the correct values", func() {
+			namespace := "trusty-ns-processor-2"
+			mmEnabled := true
+			kserveEnabled := false
+			instance = createCustomCR(namespace, mmEnabled, kserveEnabled)
+
+			Expect(instance.IsModelMeshEnabled()).Should(Equal(mmEnabled))
+			Expect(instance.IsKServeEnabled()).Should(Equal(kserveEnabled))
+		})
+	})
+
+	Context("When only KServe is specified", func() {
+		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+
+		It("Should use the correct values", func() {
+			namespace := "trusty-ns-processor-3"
+			mmEnabled := false
+			kserveEnabled := true
+			instance = createCustomCR(namespace, mmEnabled, kserveEnabled)
+
+			Expect(instance.IsModelMeshEnabled()).Should(Equal(mmEnabled))
+			Expect(instance.IsKServeEnabled()).Should(Equal(kserveEnabled))
 		})
 	})
 

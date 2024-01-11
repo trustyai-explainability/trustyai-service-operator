@@ -102,6 +102,42 @@ Additionally, in that namespace:
 * a `ServiceMonitor` will be created to allow Prometheus to scrape metrics from the service.
 * (if on OpenShift) a `Route` will be created to allow external access to the service.
 
+By default, the `TrustyAIService` will only attempt to configure ModelMesh `InferenceServices`.
+This can be customized using the optional `payloadProcessor` section of the CR.
+For instance,
+
+```yaml
+apiVersion: trustyai.opendatahub.io.trusty.opendatahub.io/v1
+kind: TrustyAIService
+metadata:
+  name: trustyai-service-example
+spec:
+  storage:
+    format: "PVC"
+    folder: "/inputs"
+    size: "1Gi"
+  data:
+    filename: "data.csv"
+    format: "CSV"
+  metrics:
+    schedule: "5s"
+    batchSize: 5000
+  payloadProcessor:
+    modelmesh: "yes"
+    kserve: "yes"
+```
+
+Will enable configuration of KServe inference services too, while
+
+```yaml
+  # ...
+  payloadProcessor:
+    modelmesh: "no"
+    kserve: "yes"
+```
+
+would configure KServe _only_.
+
 ### Custom Image Configuration using ConfigMap
 You can specify a custom TrustyAI-service image via adding parameters to the TrustyAI-Operator KFDef, for example:
 
