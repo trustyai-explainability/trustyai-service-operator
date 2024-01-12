@@ -9,7 +9,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
-	"time"
 )
 
 var _ = Describe("Route Reconciliation", func() {
@@ -30,9 +29,9 @@ var _ = Describe("Route Reconciliation", func() {
 			namespace := "route-test-namespace-1"
 			instance = createDefaultCR(namespace)
 
-			Eventually(func() error {
+			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
+			}, "failed to create namespace")
 
 			err := reconciler.reconcileRoute(instance, ctx)
 			Expect(err).ToNot(HaveOccurred())
@@ -50,15 +49,15 @@ var _ = Describe("Route Reconciliation", func() {
 		It("Should not update Route", func() {
 			namespace := "route-test-namespace-2"
 			instance = createDefaultCR(namespace)
-			Eventually(func() error {
+			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace)
-			}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
+			}, "failed to create namespace")
 
 			// Create a Route with the expected spec
-			existingRoute, _ := reconciler.createRouteObject(instance)
+			existingRoute := reconciler.createRouteObject(instance)
 			Expect(reconciler.Client.Create(ctx, existingRoute)).To(Succeed())
 
-			err := reconciler.reconcileRoute(instance, ctx)
+			err := reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Fetch the Route
