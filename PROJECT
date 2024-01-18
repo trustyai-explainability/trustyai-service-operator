@@ -15,8 +15,8 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: trustyai.opendatahub.io
-  group: trustyai.opendatahub.io
+  domain: opendatahub.io
+  group: trustyai
   kind: TrustyAIService
   path: github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1
   version: v1alpha1
