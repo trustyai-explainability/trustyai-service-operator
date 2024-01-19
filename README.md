@@ -22,7 +22,7 @@ To deploy it on your cluster:
    Apply the CRD to your cluster (replace the URL with the relevant one, if using another repository):
 
     ```bash
-    kubectl apply -f https://raw.githubusercontent.com/trustyai-explainability/trustyai-service-operator/main/config/crd/bases/trustyai.opendatahub.io.trustyai.opendatahub.io_trustyaiservices.yaml
+    kubectl apply -f https://raw.githubusercontent.com/trustyai-explainability/trustyai-service-operator/main/config/crd/bases/trustyai.opendatahub.io_trustyaiservices.yaml
     ```
 
 2. **Deploy the Operator:**
@@ -72,7 +72,7 @@ Once the operator is installed, you can create `TrustyAIService` resources, and 
 Here's an example `TrustyAIService` manifest:
 
 ```yaml
-apiVersion: trustyai.opendatahub.io.trusty.opendatahub.io/v1
+apiVersion: trusty.opendatahub.io/v1
 kind: TrustyAIService
 metadata:
   name: trustyai-service-example
