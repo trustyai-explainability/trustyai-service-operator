@@ -13,7 +13,7 @@ metadata:
   name: trustyaiservice-editor-role
 rules:
   - apiGroups:
-      - trustyai.opendatahub.io.trustyai.opendatahub.io
+      - trustyai.opendatahub.io
     resources:
       - trustyaiservices
     verbs:
@@ -25,7 +25,7 @@ rules:
       - update
       - watch
   - apiGroups:
-      - trustyai.opendatahub.io.trustyai.opendatahub.io
+      - trustyai.opendatahub.io
     resources:
       - trustyaiservices/status
     verbs:
