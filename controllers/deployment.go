@@ -149,8 +149,8 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 							},
 							Items: []corev1.KeyToPath{
 								{
-									Key:  "ca-bundle.crt",
-									Path: "tls-ca-bundle.pem",
+									Key:  CERTIFICATES_DEFAULT_BUNDLE_KEY,
+									Path: CERTIFICATES_DEFAULT_BUNDLE_PATH,
 								},
 							},
 						},

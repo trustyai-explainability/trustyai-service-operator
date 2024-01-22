@@ -6,6 +6,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	CERTIFICATES_DEFAULT_BUNDLE_KEY  = "ca-bundle.crt"
+	CERTIFICATES_DEFAULT_BUNDLE_PATH = "tls-ca-bundle.pem"
+)
+
 // getConfigMapNamesWithLabel retrieves the names of ConfigMaps that have the specified label
 func (r *TrustyAIServiceReconciler) getConfigMapNamesWithLabel(ctx context.Context, namespace string, labelSelector client.MatchingLabels) ([]string, error) {
 	configMapList := &corev1.ConfigMapList{}
