@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"context"
+	"strconv"
+
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -11,12 +13,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"strconv"
 )
 
+// createDeploymentObject returns a Deployment for the TrustyAI Service instance
 func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, image string) *appsv1.Deployment {
 	labels := getCommonLabels(cr.Name)
 	pvcName := generatePVCName(cr)
+	serviceAccountName := generateServiceAccountName(cr)
 
 	replicas := int32(1)
 	if cr.Spec.Replicas == nil {
@@ -29,6 +32,15 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	} else {
 		batchSize = *cr.Spec.Metrics.BatchSize
 	}
+
+	// Create the OAuth-Proxy container spec
+
+	// Get OAuth-proxy image from ConfigMap
+	oauthProxyImage, err := r.getImageFromConfigMap(ctx, configMapOAuthProxyImageKey, defaultOAuthProxyImage)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Error getting OAuth image from ConfigMap. Using the default image value of "+defaultOAuthProxyImage)
+	}
+	oauthProxyContainer := generateOAuthProxyContainer(cr, oauthProxyImage)
 
 	containers := []corev1.Container{
 		{
@@ -68,7 +80,22 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 				},
 			},
 		},
+		oauthProxyContainer,
 	}
+
+	volume := corev1.Volume{
+
+		Name: volumeMountName,
+		VolumeSource: corev1.VolumeSource{
+			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+				ClaimName: pvcName,
+				ReadOnly:  false,
+			},
+		},
+	}
+	volumes := generateOAuthVolumes(cr, OAuthConfig{ProxyImage: defaultOAuthProxyImage})
+
+	volumes = append(volumes, volume)
 
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -91,18 +118,9 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 					},
 				},
 				Spec: corev1.PodSpec{
-					Containers: containers,
-					Volumes: []corev1.Volume{
-						{
-							Name: volumeMountName,
-							VolumeSource: corev1.VolumeSource{
-								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: pvcName,
-									ReadOnly:  false,
-								},
-							},
-						},
-					},
+					ServiceAccountName: serviceAccountName,
+					Containers:         containers,
+					Volumes:            volumes,
 				},
 			},
 		},
@@ -196,7 +214,7 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 	// Get image and tag from ConfigMap
 	// If there's a ConfigMap with custom images, it is only applied when the operator is first deployed
 	// Changing (or creating) the ConfigMap after the operator is deployed will not have any effect
-	image, err := r.getImageFromConfigMap(ctx)
+	image, err := r.getImageFromConfigMap(ctx, configMapServiceImageKey, defaultImage)
 	if err != nil {
 		return err
 	}
@@ -215,4 +233,26 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 	}
 	// Deployment is ready and using the PVC
 	return nil
+}
+
+func (r *TrustyAIServiceReconciler) checkDeploymentReady(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (bool, error) {
+	deployment := &appsv1.Deployment{}
+
+	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deployment)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	for _, cond := range deployment.Status.Conditions {
+		if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
+			if deployment.Status.ReadyReplicas == *deployment.Spec.Replicas {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
 }

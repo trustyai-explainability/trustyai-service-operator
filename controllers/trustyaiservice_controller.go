@@ -19,17 +19,16 @@ package controllers
 import (
 	"context"
 	goerrors "errors"
-	"fmt"
+	"time"
+
 	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -37,7 +36,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-	"time"
 )
 
 var ErrPVCNotReady = goerrors.New("PVC is not ready")
@@ -50,9 +48,9 @@ type TrustyAIServiceReconciler struct {
 	EventRecorder record.EventRecorder
 }
 
-//+kubebuilder:rbac:groups=trustyai.opendatahub.io.trustyai.opendatahub.io,resources=trustyaiservices,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=trustyai.opendatahub.io.trustyai.opendatahub.io,resources=trustyaiservices/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=trustyai.opendatahub.io.trustyai.opendatahub.io,resources=trustyaiservices/finalizers,verbs=update
+//+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=trustyaiservices,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=trustyaiservices/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=trustyaiservices/finalizers,verbs=update
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=list;watch;get;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=apps,resources=deployments/finalizers,verbs=update
@@ -68,6 +66,9 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=list;watch;get;update;patch
 //+kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices/finalizers,verbs=list;watch;get;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;delete
 
 // getCommonLabels returns the service's common labels
 func getCommonLabels(serviceName string) map[string]string {
@@ -126,6 +127,16 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
+	err = r.createServiceAccount(ctx, instance)
+	if err != nil {
+		return RequeueWithError(err)
+	}
+
+	err = r.reconcileOAuthService(ctx, instance)
+	if err != nil {
+		return RequeueWithError(err)
+	}
+
 	// CR found, add or update the URL
 	// Call the function to patch environment variables for Deployments that match the label
 	shouldContinue, err := r.handleInferenceServices(ctx, instance, req.Namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, req.Name, false)
@@ -149,11 +160,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// If there was an error finding the PV, requeue the request
 		return RequeueWithErrorMessage(ctx, err, "Could not find requested PersistentVolumeClaim.")
 
-	} else {
-		_, updateErr := r.updateStatus(ctx, instance, UpdatePVCAvailable)
-		if updateErr != nil {
-			return RequeueWithErrorMessage(ctx, err, "Failed to update status")
-		}
 	}
 
 	// Ensure Deployment object
@@ -176,7 +182,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return RequeueWithError(err)
 	}
 	if err := r.Create(ctx, service); err != nil {
-		if apierrors.IsAlreadyExists(err) {
+		if errors.IsAlreadyExists(err) {
 			// Service already exists, no problem
 		} else {
 			// handle any other error
@@ -197,7 +203,9 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Create route
-	err = r.reconcileRoute(instance, ctx)
+	// TODO: Change argument order
+	err = r.ReconcileRoute(instance, ctx)
+	//err = r.reconcileRoute(instance, ctx)
 	if err != nil {
 		// Could not create Route object, update status and return.
 		_, updateErr := r.updateStatus(ctx, instance, UpdateRouteNotAvailable)
@@ -206,18 +214,14 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 		return RequeueWithErrorMessage(ctx, err, "Failed to get or create Route")
 	}
-	_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
-		// Set Route has available
-		UpdateRouteAvailable(saved)
-		// At the end of reconcile, update the instance status to Ready
-		saved.Status.Phase = "Ready"
-		saved.Status.Ready = corev1.ConditionTrue
-	})
-	if updateErr != nil {
-		return RequeueWithErrorMessage(ctx, err, "Failed to update status")
+
+	// Reconcile statuses
+	result, err := r.reconcileStatuses(ctx, instance)
+	if err != nil {
+		return result, err
 	}
 
-	// Deployment already exists - requeue the request with a delay
+	// Requeue the request with a delay
 	return RequeueWithDelay(defaultRequeueDelay)
 }
 
@@ -278,41 +282,4 @@ func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&source.Kind{Type: &kservev1beta1.InferenceService{}}, &handler.EnqueueRequestForObject{}).
 		Watches(&source.Kind{Type: &kservev1alpha1.ServingRuntime{}}, &handler.EnqueueRequestForObject{}).
 		Complete(r)
-}
-
-// getTrustyAIImageAndTagFromConfigMap gets a custom TrustyAI image and tag from a ConfigMap in the operator's namespace
-func (r *TrustyAIServiceReconciler) getImageFromConfigMap(ctx context.Context) (string, error) {
-	if r.Namespace != "" {
-		// Define the key for the ConfigMap
-		configMapKey := types.NamespacedName{
-			Namespace: r.Namespace,
-			Name:      "trustyai-service-operator-config",
-		}
-
-		// Create an empty ConfigMap object
-		var cm corev1.ConfigMap
-
-		// Try to get the ConfigMap
-		if err := r.Get(ctx, configMapKey, &cm); err != nil {
-			if errors.IsNotFound(err) {
-				// ConfigMap not found, fallback to default values
-				return defaultImage, nil
-			}
-			// Other error occurred when trying to fetch the ConfigMap
-			return defaultImage, fmt.Errorf("error reading configmap %s", configMapKey)
-		}
-
-		// ConfigMap is found, extract the image and tag
-		image, ok := cm.Data["trustyaiServiceImage"]
-
-		if !ok {
-			// One or both of the keys are not present in the ConfigMap, return error
-			return defaultImage, fmt.Errorf("configmap %s does not contain necessary keys", configMapKey)
-		}
-
-		// Return the image and tag
-		return image, nil
-	} else {
-		return defaultImage, nil
-	}
 }

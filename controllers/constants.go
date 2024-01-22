@@ -7,7 +7,7 @@ const (
 	containerName        = "trustyai-service"
 	componentName        = "trustyai"
 	serviceMonitorName   = "trustyai-metrics"
-	finalizerName        = "trustyai.opendatahub.io.trustyai.opendatahub.io/finalizer"
+	finalizerName        = "trustyai.opendatahub.io/finalizer"
 	payloadProcessorName = "MM_PAYLOAD_PROCESSORS"
 	modelMeshLabelKey    = "modelmesh-service"
 	modelMeshLabelValue  = "modelmesh-serving"
@@ -15,11 +15,27 @@ const (
 	defaultRequeueDelay  = time.Minute
 )
 
+// Configuration constants
+const (
+	imageConfigMap              = "trustyai-service-operator-config"
+	configMapOAuthProxyImageKey = "oauthProxyImage"
+	configMapServiceImageKey    = "trustyaiServiceImage"
+)
+
+// OAuth constants
+const (
+	OAuthServicePort       = 443
+	OAuthName              = "oauth-proxy"
+	OAuthServicePortName   = "oauth-proxy"
+	defaultOAuthProxyImage = "registry.redhat.io/openshift4/ose-oauth-proxy:latest"
+)
+
 // Status types
 const (
 	StatusTypeInferenceServicesPresent = "InferenceServicesPresent"
 	StatusTypePVCAvailable             = "PVCAvailable"
 	StatusTypeRouteAvailable           = "RouteAvailable"
+	StatusTypeAvailable                = "Available"
 )
 
 // Status reasons
@@ -30,6 +46,8 @@ const (
 	StatusReasonPVCFound                  = "PVCFound"
 	StatusReasonRouteNotFound             = "RouteNotFound"
 	StatusReasonRouteFound                = "RouteFound"
+	StatusAvailable                       = "AllComponentsReady"
+	StatusNotAvailable                    = "NotAllComponentsReady"
 )
 
 // Event reasons

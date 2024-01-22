@@ -8,23 +8,25 @@ metadata:
     app.kubernetes.io/created-by: trustyai-service-operator
     app.kubernetes.io/part-of: trustyai-service-operator
     app.kubernetes.io/managed-by: kustomize
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
   name: trustyaiservice-editor-role
 rules:
-- apiGroups:
-  - trustyai.opendatahub.io.trustyai.opendatahub.io
-  resources:
-  - trustyaiservices
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - trustyai.opendatahub.io.trustyai.opendatahub.io
-  resources:
-  - trustyaiservices/status
-  verbs:
-  - get
+  - apiGroups:
+      - trustyai.opendatahub.io
+    resources:
+      - trustyaiservices
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - trustyai.opendatahub.io
+    resources:
+      - trustyaiservices/status
+    verbs:
+      - get

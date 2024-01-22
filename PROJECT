@@ -2,7 +2,7 @@
 # This file is used to track the info used to scaffold your project
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
-domain: trustyai.opendatahub.io
+domain: opendatahub.io
 layout:
 - go.kubebuilder.io/v3
 plugins:
@@ -15,8 +15,8 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: trustyai.opendatahub.io
-  group: trustyai.opendatahub.io
+  domain: opendatahub.io
+  group: trustyai
   kind: TrustyAIService
   path: github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1
   version: v1alpha1
