@@ -20,3 +20,7 @@ func (r *TrustyAIServiceReconciler) eventPVCCreated(instance *trustyaiopendatahu
 func (r *TrustyAIServiceReconciler) eventLocalServiceMonitorCreated(instance *trustyaiopendatahubiov1alpha1.TrustyAIService) {
 	r.EventRecorder.Event(instance, corev1.EventTypeNormal, EventReasonServiceMonitorCreated, "Local ServiceMonitor created")
 }
+
+func (r *TrustyAIServiceReconciler) eventUserCertificatesMounted(instance *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+	r.EventRecorder.Event(instance, corev1.EventTypeNormal, EventReasonServiceUserCerficates, "Using user-provided certificates for service "+instance.Name)
+}

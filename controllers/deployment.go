@@ -167,7 +167,8 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 
 				// Add the volume mount to the service's container
 				deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, volumeMount)
-
+				log.FromContext(ctx).Info("Using custom CA bundle from ConfigMap " + selectedConfigMapName)
+				r.eventUserCertificatesMounted(cr)
 			}
 		}
 	}
