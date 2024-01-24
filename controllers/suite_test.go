@@ -18,7 +18,9 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"path/filepath"
 	"testing"
 	"time"
@@ -293,6 +295,58 @@ func makeRouteReady(ctx context.Context, k8sClient client.Client, instance *trus
 	}
 
 	return k8sClient.Status().Update(ctx, route)
+}
+
+func checkServiceAccountAnnotations(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, k8sClient client.Client) {
+	serviceAccount := &corev1.ServiceAccount{}
+	serviceAccountName := generateServiceAccountName(instance)
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: serviceAccountName, Namespace: instance.Namespace}, serviceAccount)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(serviceAccount).ToNot(BeNil())
+
+	// Build the OAuth redirect reference
+	oauthRedirectRef := struct {
+		Kind       string `json:"kind"`
+		APIVersion string `json:"apiVersion"`
+		Reference  struct {
+			Kind string `json:"kind"`
+			Name string `json:"name"`
+		} `json:"reference"`
+	}{
+		Kind:       "OAuthRedirectReference",
+		APIVersion: "v1",
+		Reference: struct {
+			Kind string `json:"kind"`
+			Name string `json:"name"`
+		}{
+			Kind: "Route",
+			Name: instance.Name,
+		},
+	}
+
+	oauthRedirectRefJSON, err := json.Marshal(oauthRedirectRef)
+	Expect(err).ToNot(HaveOccurred())
+
+	annotation := serviceAccount.Annotations["serviceaccounts.openshift.io/oauth-redirectreference.primary"]
+	Expect(annotation).To(Equal(string(oauthRedirectRefJSON)))
+}
+
+func checkClusterRoleBinding(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, k8sClient client.Client) {
+	clusterRoleBindingName := instance.Name + "-" + instance.Namespace + "-proxy-rolebinding"
+
+	clusterRoleBinding := &rbacv1.ClusterRoleBinding{}
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: clusterRoleBindingName, Namespace: instance.Namespace}, clusterRoleBinding)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(clusterRoleBinding).ToNot(BeNil())
+	Expect(clusterRoleBinding.Name).To(Equal(clusterRoleBindingName))
+
+	Expect(clusterRoleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
+	Expect(clusterRoleBinding.RoleRef.Name).To(Equal("trustyai-service-operator-proxy-role"))
+	Expect(clusterRoleBinding.Subjects).To(ContainElement(rbacv1.Subject{
+		Kind:      "ServiceAccount",
+		Name:      generateServiceAccountName(instance),
+		Namespace: instance.Namespace,
+	}))
 }
 
 var _ = BeforeSuite(func() {
