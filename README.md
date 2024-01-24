@@ -72,7 +72,7 @@ Once the operator is installed, you can create `TrustyAIService` resources, and 
 Here's an example `TrustyAIService` manifest:
 
 ```yaml
-apiVersion: trusty.opendatahub.io/v1
+apiVersion: trustyai.opendatahub.io/v1alpha1
 kind: TrustyAIService
 metadata:
   name: trustyai-service-example

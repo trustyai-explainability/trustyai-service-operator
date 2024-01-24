@@ -99,7 +99,7 @@ func (r *TrustyAIServiceReconciler) createServiceAccount(ctx context.Context, in
 func (r *TrustyAIServiceReconciler) createClusterRoleBinding(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, serviceAccountName string) error {
 	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.Name + "-proxy-rolebinding",
+			Name:      instance.Name + "-" + instance.Namespace + "-proxy-rolebinding",
 			Namespace: instance.Namespace,
 		},
 		Subjects: []rbacv1.Subject{
@@ -128,10 +128,9 @@ func (r *TrustyAIServiceReconciler) createClusterRoleBinding(ctx context.Context
 		log.FromContext(ctx).Info("Creating a new ClusterRoleBinding", "Name", clusterRoleBinding.Name)
 		err = r.Create(ctx, clusterRoleBinding)
 		if err != nil {
+			log.FromContext(ctx).Error(err, "Error creating a new ClusterRoleBinding")
 			return err
 		}
-	} else if err != nil {
-		return err
 	}
 
 	return nil
