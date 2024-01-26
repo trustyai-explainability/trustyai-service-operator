@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -124,6 +125,54 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 			},
 		},
 	}
+
+	// Check if the CA bundle ConfigMap exists
+	labelSelector := client.MatchingLabels{"config.openshift.io/inject-trusted-cabundle": "true"}
+	configMapNames, err := r.getConfigMapNamesWithLabel(ctx, cr.Namespace, labelSelector)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Error checking for trusted CA bundle ConfigMap. Using no custom CA bundle.")
+	} else {
+		var selectedConfigMapName string
+		if len(configMapNames) > 0 {
+			selectedConfigMapName = configMapNames[0]
+
+			if selectedConfigMapName != "" {
+				volumeName := "trusted-ca"
+
+				// Create the ConfigMap volume object
+				configMapVolume := corev1.Volume{
+					Name: volumeName,
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: selectedConfigMapName,
+							},
+							Items: []corev1.KeyToPath{
+								{
+									Key:  CERTIFICATES_DEFAULT_BUNDLE_KEY,
+									Path: CERTIFICATES_DEFAULT_BUNDLE_PATH,
+								},
+							},
+						},
+					},
+				}
+
+				deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, configMapVolume)
+
+				volumeMount := corev1.VolumeMount{
+					Name:      volumeName,
+					MountPath: "/etc/pki/ca-trust/extracted/pem",
+					ReadOnly:  true,
+				}
+
+				// Add the volume mount to the service's container
+				deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, volumeMount)
+				log.FromContext(ctx).Info("Using custom CA bundle from ConfigMap " + selectedConfigMapName)
+				r.eventUserCertificatesMounted(cr)
+			}
+		}
+	}
+
 	return deployment
 }
 

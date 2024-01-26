@@ -55,4 +55,5 @@ const (
 	EventReasonPVCCreated                 = "PVCCreated"
 	EventReasonInferenceServiceConfigured = "InferenceServiceConfigured"
 	EventReasonServiceMonitorCreated      = "ServiceMonitorCreated"
+	EventReasonServiceUserCerficates      = "ServiceUserCertificates"
 )
