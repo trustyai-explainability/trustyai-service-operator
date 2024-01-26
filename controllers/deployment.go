@@ -2,128 +2,66 @@ package controllers
 
 import (
 	"context"
+	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/templates"
+	"reflect"
 	"strconv"
 
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// createDeploymentObject returns a Deployment for the TrustyAI Service instance
-func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, image string) *appsv1.Deployment {
-	labels := getCommonLabels(cr.Name)
-	pvcName := generatePVCName(cr)
-	serviceAccountName := generateServiceAccountName(cr)
+const (
+	defaultBatchSize       = 5000
+	deploymentTemplatePath = "service/deployment.tmpl.yaml"
+)
 
-	replicas := int32(1)
-	if cr.Spec.Replicas == nil {
-		cr.Spec.Replicas = &replicas
-	}
+type DeploymentConfig struct {
+	Instance        *trustyaiopendatahubiov1alpha1.TrustyAIService
+	ServiceImage    string
+	OAuthImage      string
+	Schedule        string
+	VolumeMountName string
+	PVCClaimName    string
+}
+
+// createDeploymentObject returns a Deployment for the TrustyAI Service instance
+func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, serviceImage string) *appsv1.Deployment {
 
 	var batchSize int
-	if cr.Spec.Metrics.BatchSize == nil {
-		batchSize = 5000
+	// If not batch size is provided, assume the default one
+	if instance.Spec.Metrics.BatchSize == nil {
+		batchSize = defaultBatchSize
 	} else {
-		batchSize = *cr.Spec.Metrics.BatchSize
+		batchSize = *instance.Spec.Metrics.BatchSize
 	}
 
-	// Create the OAuth-Proxy container spec
-
+	pvcName := generatePVCName(instance)
 	// Get OAuth-proxy image from ConfigMap
 	oauthProxyImage, err := r.getImageFromConfigMap(ctx, configMapOAuthProxyImageKey, defaultOAuthProxyImage)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error getting OAuth image from ConfigMap. Using the default image value of "+defaultOAuthProxyImage)
 	}
-	oauthProxyContainer := generateOAuthProxyContainer(cr, oauthProxyImage)
 
-	containers := []corev1.Container{
-		{
-			Name:  containerName,
-			Image: image,
-			Env: []corev1.EnvVar{
-				{
-					Name:  "STORAGE_DATA_FILENAME",
-					Value: cr.Spec.Data.Filename,
-				},
-				{
-					Name:  "SERVICE_STORAGE_FORMAT",
-					Value: cr.Spec.Storage.Format,
-				},
-				{
-					Name:  "STORAGE_DATA_FOLDER",
-					Value: cr.Spec.Storage.Folder,
-				},
-				{
-					Name:  "SERVICE_DATA_FORMAT",
-					Value: cr.Spec.Data.Format,
-				},
-				{
-					Name:  "SERVICE_METRICS_SCHEDULE",
-					Value: cr.Spec.Metrics.Schedule,
-				},
-				{
-					Name:  "SERVICE_BATCH_SIZE",
-					Value: strconv.Itoa(batchSize),
-				},
-			},
-			VolumeMounts: []corev1.VolumeMount{
-				{
-					Name:      volumeMountName,
-					MountPath: cr.Spec.Storage.Folder,
-					ReadOnly:  false,
-				},
-			},
-		},
-		oauthProxyContainer,
+	deploymentConfig := DeploymentConfig{
+		Instance:        instance,
+		ServiceImage:    serviceImage,
+		OAuthImage:      oauthProxyImage,
+		Schedule:        strconv.Itoa(batchSize),
+		VolumeMountName: volumeMountName,
+		PVCClaimName:    pvcName,
 	}
 
-	volume := corev1.Volume{
-
-		Name: volumeMountName,
-		VolumeSource: corev1.VolumeSource{
-			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-				ClaimName: pvcName,
-				ReadOnly:  false,
-			},
-		},
+	var deployment *appsv1.Deployment
+	deployment, err = templateParser.ParseResource[appsv1.Deployment](deploymentTemplatePath, deploymentConfig, reflect.TypeOf(&appsv1.Deployment{}))
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Error parsing the service's deployment template")
 	}
-	volumes := generateOAuthVolumes(cr, OAuthConfig{ProxyImage: defaultOAuthProxyImage})
 
-	volumes = append(volumes, volume)
-
-	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name,
-			Namespace: cr.Namespace,
-			Labels:    labels,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: cr.Spec.Replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-					Annotations: map[string]string{
-						"prometheus.io/path":   "/q/metrics",
-						"prometheus.io/scheme": "http",
-						"prometheus.io/scrape": "true",
-					},
-				},
-				Spec: corev1.PodSpec{
-					ServiceAccountName: serviceAccountName,
-					Containers:         containers,
-					Volumes:            volumes,
-				},
-			},
-		},
-	}
 	return deployment
 }
 
