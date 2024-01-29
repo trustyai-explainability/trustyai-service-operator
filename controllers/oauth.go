@@ -2,144 +2,43 @@ package controllers
 
 import (
 	"context"
-	"fmt"
-
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
+	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/templates"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
+	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+)
+
+const (
+	tlsServiceTemplatePath = "service/service-tls.tmpl.yaml"
 )
 
 type OAuthConfig struct {
 	ProxyImage string
 }
 
-// generateOAuthProxyContainer create the OAuth-proxy container object for a TrustyAI service instance
-func generateOAuthProxyContainer(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, oauthProxyImage string) corev1.Container {
-	proxyContainer := corev1.Container{
-		Name:            OAuthName,
-		Image:           oauthProxyImage,
-		ImagePullPolicy: corev1.PullAlways,
-		Env: []corev1.EnvVar{{
-			Name: "NAMESPACE",
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath: "metadata.namespace",
-				},
-			},
-		}},
-		Args: []string{
-			"--cookie-secret=SECRET",
-			"--https-address=:8443",
-			"--email-domain=*",
-			fmt.Sprintf("--openshift-service-account=%s", instance.Name+"-proxy"),
-			"--provider=openshift",
-			"--tls-cert=/etc/tls/private/tls.crt",
-			"--tls-key=/etc/tls/private/tls.key",
-			"--upstream=http://localhost:8080",
-			"--skip-auth-regex='(^/metrics|^/apis/v1beta1/healthz)'",
-			fmt.Sprintf("--openshift-sar={\"namespace\":\"%s\",\"resource\":\"pods\",\"verb\":\"get\"}", instance.Namespace),
-			fmt.Sprintf("--openshift-delegate-urls={\"/\": {\"namespace\": \"%s\", \"resource\": \"pods\", \"verb\": \"get\"}}", instance.Namespace),
-		},
-		Ports: []corev1.ContainerPort{{
-			Name:          OAuthServicePortName,
-			ContainerPort: 8443,
-			Protocol:      corev1.ProtocolTCP,
-		}},
-		LivenessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/oauth/healthz",
-					Port:   intstr.FromString(OAuthServicePortName),
-					Scheme: corev1.URISchemeHTTPS,
-				},
-			},
-			InitialDelaySeconds: 30,
-			TimeoutSeconds:      1,
-			PeriodSeconds:       5,
-			SuccessThreshold:    1,
-			FailureThreshold:    3,
-		},
-		ReadinessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/oauth/healthz",
-					Port:   intstr.FromString(OAuthServicePortName),
-					Scheme: corev1.URISchemeHTTPS,
-				},
-			},
-			InitialDelaySeconds: 5,
-			TimeoutSeconds:      1,
-			PeriodSeconds:       5,
-			SuccessThreshold:    1,
-			FailureThreshold:    3,
-		},
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				"cpu":    resource.MustParse("100m"),
-				"memory": resource.MustParse("64Mi"),
-			},
-			Limits: corev1.ResourceList{
-				"cpu":    resource.MustParse("100m"),
-				"memory": resource.MustParse("64Mi"),
-			},
-		},
-		VolumeMounts: []corev1.VolumeMount{
-			{
-				Name:      instance.Name + "-tls",
-				MountPath: "/etc/tls/private",
-			},
-		},
-	}
-	return proxyContainer
-}
-
-// generateOAuthVolumes create the necessary OAuth volume objects
-func generateOAuthVolumes(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, oauth OAuthConfig) []corev1.Volume {
-
-	volumes := []corev1.Volume{
-		{
-			Name: instance.Name + "-tls",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: instance.Name + "-tls",
-				},
-			},
-		},
-	}
-	return volumes
+type ServiceTLSConfig struct {
+	Instance *trustyaiopendatahubiov1alpha1.TrustyAIService
 }
 
 // generateTrustyAIOAuthService defines the desired OAuth service object
-func generateTrustyAIOAuthService(instance *trustyaiopendatahubiov1alpha1.TrustyAIService) *corev1.Service {
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.Name + "-tls",
-			Namespace: instance.Namespace,
-			Labels: map[string]string{
-				"trustyai-service-name": instance.Name,
-			},
-			Annotations: map[string]string{
-				"service.beta.openshift.io/serving-cert-secret-name": instance.Name + "-tls",
-			},
-		},
-		Spec: corev1.ServiceSpec{
-			Ports: []corev1.ServicePort{{
-				Name:       OAuthServicePortName,
-				Port:       OAuthServicePort,
-				TargetPort: intstr.FromInt(8443),
-				Protocol:   corev1.ProtocolTCP,
-			}},
-			Selector: map[string]string{
-				"app": instance.Name,
-			},
-		},
+func generateTrustyAIOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (*corev1.Service, error) {
+
+	serviceTLSConfig := ServiceTLSConfig{
+		Instance: instance,
 	}
+
+	var serviceTLS *corev1.Service
+	serviceTLS, err := templateParser.ParseResource[corev1.Service](tlsServiceTemplatePath, serviceTLSConfig, reflect.TypeOf(&corev1.Service{}))
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Error parsing the service's deployment template")
+		return nil, err
+	}
+
+	return serviceTLS, nil
 }
 
 // reconcileOAuthService will manage the OAuth service reconciliation required
@@ -147,11 +46,15 @@ func generateTrustyAIOAuthService(instance *trustyaiopendatahubiov1alpha1.Trusty
 func (r *TrustyAIServiceReconciler) reconcileOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
 
 	// Generate the desired OAuth service object
-	desiredService := generateTrustyAIOAuthService(instance)
+	desiredService, err := generateTrustyAIOAuthService(ctx, instance)
+	if err != nil {
+		// Error creating the oauth service resource object
+		return err
+	}
 
 	// Create the OAuth service if it does not already exist
 	foundService := &corev1.Service{}
-	err := r.Get(ctx, types.NamespacedName{
+	err = r.Get(ctx, types.NamespacedName{
 		Name:      desiredService.GetName(),
 		Namespace: instance.GetNamespace(),
 	}, foundService)

@@ -108,7 +108,8 @@ var _ = Describe("TrustyAI operator", func() {
 				return err
 			}, "failed to create oauth service")
 
-			desiredOAuthService := generateTrustyAIOAuthService(instance)
+			desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance)
+			Expect(err).ToNot(HaveOccurred())
 
 			oauthService := &corev1.Service{}
 			WaitFor(func() error {
@@ -180,7 +181,8 @@ var _ = Describe("TrustyAI operator", func() {
 				return err
 			}, "failed to create oauth service")
 
-			desiredOAuthService := generateTrustyAIOAuthService(instance)
+			desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance)
+			Expect(err).ToNot(HaveOccurred())
 
 			oauthService := &corev1.Service{}
 			WaitFor(func() error {
