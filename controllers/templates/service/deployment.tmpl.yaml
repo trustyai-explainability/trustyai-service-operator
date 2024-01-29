@@ -54,6 +54,11 @@ spec:
             - name: {{ .VolumeMountName }}
               mountPath: {{ .Instance.Spec.Storage.Folder }}
               readOnly: false
+            {{ if .CustomCertificatesBundle.IsDefined }}
+            - name: {{ .CustomCertificatesBundle.VolumeName }}
+              readOnly: true
+              mountPath: /etc/pki/ca-trust/extracted/pem
+            {{ end }}
         - resources:
             limits:
               cpu: 100m
@@ -95,6 +100,11 @@ spec:
           volumeMounts:
             - name: {{ .Instance.Name }}-tls
               mountPath: /etc/tls/private
+            {{ if .CustomCertificatesBundle.IsDefined }}
+            - name: {{ .CustomCertificatesBundle.VolumeName }}
+              readOnly: true
+              mountPath: /etc/pki/ca-trust/extracted/pem
+            {{ end }}
           image: {{ .OAuthImage }}
           args:
             - '--cookie-secret=SECRET'
@@ -102,6 +112,9 @@ spec:
             - '--email-domain=*'
             - '--openshift-service-account={{ .Instance.Name }}-proxy'
             - '--provider=openshift'
+            {{ if .CustomCertificatesBundle.IsDefined }}
+            - '--openshift-ca=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem'
+            {{ end }}
             - '--tls-cert=/etc/tls/private/tls.crt'
             - '--tls-key=/etc/tls/private/tls.key'
             - '--upstream=http://localhost:8080'
@@ -120,3 +133,12 @@ spec:
         - name: volume
           persistentVolumeClaim:
             claimName: {{ .PVCClaimName }}
+        {{ if .CustomCertificatesBundle.IsDefined }}
+        - name: {{ .CustomCertificatesBundle.VolumeName}}
+          configMap:
+            name: {{ .CustomCertificatesBundle.ConfigMapName }}
+            items:
+              - key: ca-bundle.crt
+                path: tls-ca-bundle.pem
+            defaultMode: 420
+        {{ end }}

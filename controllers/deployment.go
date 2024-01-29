@@ -4,6 +4,7 @@ import (
 	"context"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/templates"
 	"reflect"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strconv"
 
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
@@ -18,15 +19,24 @@ import (
 const (
 	defaultBatchSize       = 5000
 	deploymentTemplatePath = "service/deployment.tmpl.yaml"
+	caBundleAnnotation     = "config.openshift.io/inject-trusted-cabundle"
+	caBundleName           = "odh-trusted-ca-bundle"
 )
 
+type CustomCertificatesBundle struct {
+	IsDefined     bool
+	VolumeName    string
+	ConfigMapName string
+}
+
 type DeploymentConfig struct {
-	Instance        *trustyaiopendatahubiov1alpha1.TrustyAIService
-	ServiceImage    string
-	OAuthImage      string
-	Schedule        string
-	VolumeMountName string
-	PVCClaimName    string
+	Instance                 *trustyaiopendatahubiov1alpha1.TrustyAIService
+	ServiceImage             string
+	OAuthImage               string
+	Schedule                 string
+	VolumeMountName          string
+	PVCClaimName             string
+	CustomCertificatesBundle CustomCertificatesBundle
 }
 
 // createDeploymentObject returns a Deployment for the TrustyAI Service instance
@@ -47,13 +57,35 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		log.FromContext(ctx).Error(err, "Error getting OAuth image from ConfigMap. Using the default image value of "+defaultOAuthProxyImage)
 	}
 
+	var customCertificatesBundle CustomCertificatesBundle
+	// Check for custom certificate bundle config map presend
+	labelSelector := client.MatchingLabels{caBundleAnnotation: "true"}
+	configMapNames, err := r.getConfigMapNamesWithLabel(ctx, r.Namespace, labelSelector)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Error checking for trusted CA bundle ConfigMap. Using no custom CA bundle.")
+		customCertificatesBundle.IsDefined = false
+	} else {
+		log.FromContext(ctx).Info("Found trusted CA bundle ConfigMap. Using custom CA bundle.")
+		var selectedConfigMapName string
+		if len(configMapNames) > 0 {
+			selectedConfigMapName = configMapNames[0]
+
+			if selectedConfigMapName != "" {
+				customCertificatesBundle.IsDefined = true
+				customCertificatesBundle.VolumeName = caBundleName
+				customCertificatesBundle.ConfigMapName = caBundleName
+			}
+		}
+	}
+
 	deploymentConfig := DeploymentConfig{
-		Instance:        instance,
-		ServiceImage:    serviceImage,
-		OAuthImage:      oauthProxyImage,
-		Schedule:        strconv.Itoa(batchSize),
-		VolumeMountName: volumeMountName,
-		PVCClaimName:    pvcName,
+		Instance:                 instance,
+		ServiceImage:             serviceImage,
+		OAuthImage:               oauthProxyImage,
+		Schedule:                 strconv.Itoa(batchSize),
+		VolumeMountName:          volumeMountName,
+		PVCClaimName:             pvcName,
+		CustomCertificatesBundle: customCertificatesBundle,
 	}
 
 	var deployment *appsv1.Deployment

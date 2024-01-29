@@ -278,6 +278,100 @@ var _ = Describe("TrustyAI operator", func() {
 		})
 	})
 
+	Context("When deploying with no custom CA bundle ConfigMap", func() {
+		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+
+		It("should use the correct service account and not include CustomCertificatesBundle", func() {
+
+			namespace := "trusty-ns-a-7"
+			instance = createDefaultCR(namespace)
+			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
+			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
+			WaitFor(func() error {
+				return reconciler.ensureDeployment(ctx, instance)
+			}, "failed to create deployment")
+
+			deployment := &appsv1.Deployment{}
+			namespacedName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+			Expect(k8sClient.Get(ctx, namespacedName, deployment)).Should(Succeed())
+
+			Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(instance.Name + "-proxy"))
+
+			customCertificatesBundleVolumeName := caBundleName
+			for _, volume := range deployment.Spec.Template.Spec.Volumes {
+				Expect(volume.Name).ToNot(Equal(customCertificatesBundleVolumeName))
+			}
+
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				for _, volumeMount := range container.VolumeMounts {
+					Expect(volumeMount.Name).ToNot(Equal(customCertificatesBundleVolumeName))
+				}
+				for _, arg := range container.Args {
+					Expect(arg).ToNot(ContainSubstring("--openshift-ca"))
+				}
+			}
+		})
+	})
+
+	Context("When deploying with a custom CA bundle ConfigMap", func() {
+		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+
+		It("should use the correct service account and include CustomCertificatesBundle", func() {
+
+			namespace := "trusty-ns-a-8"
+			instance = createDefaultCR(namespace)
+			caBundleConfigMap := createTrustedCABundleConfigMap(operatorNamespace)
+			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			Expect(k8sClient.Create(ctx, caBundleConfigMap)).To(Succeed())
+			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
+			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
+			WaitFor(func() error {
+				return reconciler.ensureDeployment(ctx, instance)
+			}, "failed to create deployment")
+
+			deployment := &appsv1.Deployment{}
+			namespacedName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+			Expect(k8sClient.Get(ctx, namespacedName, deployment)).Should(Succeed())
+
+			Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(instance.Name + "-proxy"))
+
+			foundTrustedCAVolume := false
+			for _, volume := range deployment.Spec.Template.Spec.Volumes {
+				if volume.Name == caBundleName && volume.ConfigMap != nil && volume.ConfigMap.Name == caBundleName {
+					foundTrustedCAVolume = true
+					Expect(volume.ConfigMap.Items).To(ContainElement(corev1.KeyToPath{
+						Key:  "ca-bundle.crt",
+						Path: "tls-ca-bundle.pem",
+					}))
+				}
+			}
+			Expect(foundTrustedCAVolume).To(BeTrue(), caBundleName+" volume not found")
+
+			foundTrustedCAVolumeMount := false
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				for _, volumeMount := range container.VolumeMounts {
+					if volumeMount.Name == caBundleName && volumeMount.MountPath == "/etc/pki/ca-trust/extracted/pem" {
+						foundTrustedCAVolumeMount = true
+					}
+
+					if container.Name == "oauth-proxy" {
+						foundOpenshiftCAArg := false
+						for _, arg := range container.Args {
+							if arg == "--openshift-ca=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem" {
+								foundOpenshiftCAArg = true
+							}
+						}
+						Expect(foundOpenshiftCAArg).To(BeTrue(), "oauth-proxy container missing --openshift-ca argument")
+					}
+				}
+			}
+			Expect(foundTrustedCAVolumeMount).To(BeTrue(), caBundleName+"trusted-ca volume mount not found in any container")
+			Expect(k8sClient.Delete(ctx, caBundleConfigMap)).To(Succeed(), "failed to delete custom CA bundle ConfigMap")
+
+		})
+	})
+
 })
 
 var _ = Describe("TrustyAI operator", func() {
