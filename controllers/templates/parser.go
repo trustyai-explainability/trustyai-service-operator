@@ -8,7 +8,7 @@ import (
 	"text/template"
 )
 
-//go:embed service/*.yaml.tmpl
+//go:embed service/*.tmpl.yaml
 var templateFS embed.FS
 
 // executeTemplate parses the template file and executes it with the provided data.
