@@ -25,7 +25,7 @@ type ServiceTLSConfig struct {
 }
 
 // generateTrustyAIOAuthService defines the desired OAuth service object
-func generateTrustyAIOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) *corev1.Service {
+func generateTrustyAIOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (*corev1.Service, error) {
 
 	serviceTLSConfig := ServiceTLSConfig{
 		Instance: instance,
@@ -35,9 +35,10 @@ func generateTrustyAIOAuthService(ctx context.Context, instance *trustyaiopendat
 	serviceTLS, err := templateParser.ParseResource[corev1.Service](tlsServiceTemplatePath, serviceTLSConfig, reflect.TypeOf(&corev1.Service{}))
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error parsing the service's deployment template")
+		return nil, err
 	}
 
-	return serviceTLS
+	return serviceTLS, nil
 }
 
 // reconcileOAuthService will manage the OAuth service reconciliation required
@@ -45,11 +46,15 @@ func generateTrustyAIOAuthService(ctx context.Context, instance *trustyaiopendat
 func (r *TrustyAIServiceReconciler) reconcileOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
 
 	// Generate the desired OAuth service object
-	desiredService := generateTrustyAIOAuthService(ctx, instance)
+	desiredService, err := generateTrustyAIOAuthService(ctx, instance)
+	if err != nil {
+		// Error creating the oauth service resource object
+		return err
+	}
 
 	// Create the OAuth service if it does not already exist
 	foundService := &corev1.Service{}
-	err := r.Get(ctx, types.NamespacedName{
+	err = r.Get(ctx, types.NamespacedName{
 		Name:      desiredService.GetName(),
 		Namespace: instance.GetNamespace(),
 	}, foundService)

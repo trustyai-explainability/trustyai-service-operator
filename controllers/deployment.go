@@ -30,7 +30,7 @@ type DeploymentConfig struct {
 }
 
 // createDeploymentObject returns a Deployment for the TrustyAI Service instance
-func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, serviceImage string) *appsv1.Deployment {
+func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, serviceImage string) (*appsv1.Deployment, error) {
 
 	var batchSize int
 	// If not batch size is provided, assume the default one
@@ -60,9 +60,10 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	deployment, err = templateParser.ParseResource[appsv1.Deployment](deploymentTemplatePath, deploymentConfig, reflect.TypeOf(&appsv1.Deployment{}))
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error parsing the service's deployment template")
+		return nil, err
 	}
 
-	return deployment
+	return deployment, nil
 }
 
 // reconcileDeployment returns a Deployment object with the same name/namespace as the cr
@@ -78,14 +79,18 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 	}
 	if pvcerr == nil {
 		// The PVC is ready. We can now create the Deployment.
-		deployment := r.createDeploymentObject(ctx, cr, imageName)
+		deployment, err := r.createDeploymentObject(ctx, cr, imageName)
+		if err != nil {
+			// Error creating the deployment resource object
+			return err
+		}
 
 		if err := ctrl.SetControllerReference(cr, deployment, r.Scheme); err != nil {
 			log.FromContext(ctx).Error(err, "Error setting TrustyAIService as owner of Deployment.")
 			return err
 		}
 		log.FromContext(ctx).Info("Creating Deployment.")
-		err := r.Create(ctx, deployment)
+		err = r.Create(ctx, deployment)
 		if err != nil {
 			log.FromContext(ctx).Error(err, "Error creating Deployment.")
 			return err
