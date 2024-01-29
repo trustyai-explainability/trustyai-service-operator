@@ -167,6 +167,16 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 
 				// Add the volume mount to the service's container
 				deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, volumeMount)
+
+				// Add the volume mount to the OAuth proxy container
+				trustedCaVolumeMount := corev1.VolumeMount{
+					Name:      "trusted-ca",
+					MountPath: "/etc/pki/ca-trust/extracted/pem",
+					ReadOnly:  true,
+				}
+
+				deployment.Spec.Template.Spec.Containers[1].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[1].VolumeMounts, trustedCaVolumeMount)
+
 				log.FromContext(ctx).Info("Using custom CA bundle from ConfigMap " + selectedConfigMapName)
 				r.eventUserCertificatesMounted(cr)
 			}
