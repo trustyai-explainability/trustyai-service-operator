@@ -108,12 +108,21 @@ var _ = Describe("TrustyAI operator", func() {
 				return err
 			}, "failed to create oauth service")
 
-			desiredOAuthService := generateTrustyAIOAuthService(instance)
+			desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance)
+			Expect(err).ToNot(HaveOccurred())
 
 			oauthService := &corev1.Service{}
 			WaitFor(func() error {
 				return k8sClient.Get(ctx, types.NamespacedName{Name: desiredOAuthService.Name, Namespace: namespace}, oauthService)
 			}, "failed to get OAuth Service")
+
+			// Check if the OAuth service has the expected labels
+			Expect(oauthService.Labels["app"]).Should(Equal(instance.Name))
+			Expect(oauthService.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
+			Expect(oauthService.Labels["app.kubernetes.io/name"]).Should(Equal(instance.Name))
+			Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal("trustyai"))
+			Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+			Expect(oauthService.Labels["trustyai-service-name"]).Should(Equal(instance.Name))
 
 		})
 	})
@@ -180,12 +189,21 @@ var _ = Describe("TrustyAI operator", func() {
 				return err
 			}, "failed to create oauth service")
 
-			desiredOAuthService := generateTrustyAIOAuthService(instance)
+			desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance)
+			Expect(err).ToNot(HaveOccurred())
 
 			oauthService := &corev1.Service{}
 			WaitFor(func() error {
 				return k8sClient.Get(ctx, types.NamespacedName{Name: desiredOAuthService.Name, Namespace: namespace}, oauthService)
 			}, "failed to get OAuth Service")
+
+			// Check if the OAuth service has the expected labels
+			Expect(oauthService.Labels["app"]).Should(Equal(instance.Name))
+			Expect(oauthService.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
+			Expect(oauthService.Labels["app.kubernetes.io/name"]).Should(Equal(instance.Name))
+			Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal("trustyai"))
+			Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+			Expect(oauthService.Labels["trustyai-service-name"]).Should(Equal(instance.Name))
 
 		})
 	})
@@ -334,6 +352,27 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
 			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
 
+			WaitFor(func() error {
+				err := reconciler.reconcileOAuthService(ctx, instance)
+				return err
+			}, "failed to create oauth service")
+
+			desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance)
+			Expect(err).ToNot(HaveOccurred())
+
+			oauthService := &corev1.Service{}
+			WaitFor(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: desiredOAuthService.Name, Namespace: namespace}, oauthService)
+			}, "failed to get OAuth Service")
+
+			// Check if the OAuth service has the expected labels
+			Expect(oauthService.Labels["app"]).Should(Equal(instance.Name))
+			Expect(oauthService.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
+			Expect(oauthService.Labels["app.kubernetes.io/name"]).Should(Equal(instance.Name))
+			Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal("trustyai"))
+			Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+			Expect(oauthService.Labels["trustyai-service-name"]).Should(Equal(instance.Name))
+
 		})
 	})
 })
@@ -397,6 +436,27 @@ var _ = Describe("TrustyAI operator", func() {
 				Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
 				Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
 				Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("registry.redhat.io/openshift4/ose-oauth-proxy:latest"))
+
+				WaitFor(func() error {
+					err := reconciler.reconcileOAuthService(ctx, instance)
+					return err
+				}, "failed to create oauth service")
+
+				desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance)
+				Expect(err).ToNot(HaveOccurred())
+
+				oauthService := &corev1.Service{}
+				WaitFor(func() error {
+					return k8sClient.Get(ctx, types.NamespacedName{Name: desiredOAuthService.Name, Namespace: instance.Namespace}, oauthService)
+				}, "failed to get OAuth Service")
+
+				// Check if the OAuth service has the expected labels
+				Expect(oauthService.Labels["app"]).Should(Equal(instance.Name))
+				Expect(oauthService.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
+				Expect(oauthService.Labels["app.kubernetes.io/name"]).Should(Equal(instance.Name))
+				Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal("trustyai"))
+				Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+				Expect(oauthService.Labels["trustyai-service-name"]).Should(Equal(instance.Name))
 
 			}
 		})
