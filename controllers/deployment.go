@@ -62,8 +62,9 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	labelSelector := client.MatchingLabels{caBundleAnnotation: "true"}
 	// Check for the presence of the ConfigMap in the operator's namespace
 	configMapNames, err := r.getConfigMapNamesWithLabel(ctx, r.Namespace, labelSelector)
+	caNotFoundMessage := "CA bundle ConfigMap named '" + caBundleName + "' not found. Not using custom CA bundle."
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Error checking for trusted CA bundle ConfigMap. Using no custom CA bundle.")
+		log.FromContext(ctx).Info(caNotFoundMessage)
 		customCertificatesBundle.IsDefined = false
 	} else {
 		found := false
@@ -79,7 +80,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 			customCertificatesBundle.VolumeName = caBundleName
 			customCertificatesBundle.ConfigMapName = caBundleName
 		} else {
-			log.FromContext(ctx).Info("CA bundle ConfigMap named '" + caBundleName + "' not found. Not using custom CA bundle.")
+			log.FromContext(ctx).Info(caNotFoundMessage)
 			customCertificatesBundle.IsDefined = false
 		}
 	}
