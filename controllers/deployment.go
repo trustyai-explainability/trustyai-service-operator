@@ -58,25 +58,29 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	}
 
 	var customCertificatesBundle CustomCertificatesBundle
-	// Check for custom certificate bundle config map presend
+	// Check for custom certificate bundle config map presence
 	labelSelector := client.MatchingLabels{caBundleAnnotation: "true"}
+	// Check for the presence of the ConfigMap in the operator's namespace
 	configMapNames, err := r.getConfigMapNamesWithLabel(ctx, r.Namespace, labelSelector)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error checking for trusted CA bundle ConfigMap. Using no custom CA bundle.")
 		customCertificatesBundle.IsDefined = false
 	} else {
-		log.FromContext(ctx).Info("Found trusted CA bundle ConfigMap. Using custom CA bundle.")
-		var selectedConfigMapName string
-		if len(configMapNames) > 0 {
-			selectedConfigMapName = configMapNames[0]
-
-			if selectedConfigMapName == caBundleName {
-				customCertificatesBundle.IsDefined = true
-				customCertificatesBundle.VolumeName = caBundleName
-				customCertificatesBundle.ConfigMapName = caBundleName
-			} else {
-				customCertificatesBundle.IsDefined = false
+		found := false
+		for _, configMapName := range configMapNames {
+			if configMapName == caBundleName {
+				found = true
+				break
 			}
+		}
+		if found {
+			log.FromContext(ctx).Info("Found trusted CA bundle ConfigMap. Using custom CA bundle.")
+			customCertificatesBundle.IsDefined = true
+			customCertificatesBundle.VolumeName = caBundleName
+			customCertificatesBundle.ConfigMapName = caBundleName
+		} else {
+			log.FromContext(ctx).Info("CA bundle ConfigMap named '" + caBundleName + "' not found. Not using custom CA bundle.")
+			customCertificatesBundle.IsDefined = false
 		}
 	}
 
