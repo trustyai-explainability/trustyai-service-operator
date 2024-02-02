@@ -70,10 +70,12 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		if len(configMapNames) > 0 {
 			selectedConfigMapName = configMapNames[0]
 
-			if selectedConfigMapName != "" {
+			if selectedConfigMapName != caBundleName {
 				customCertificatesBundle.IsDefined = true
 				customCertificatesBundle.VolumeName = caBundleName
 				customCertificatesBundle.ConfigMapName = caBundleName
+			} else {
+				customCertificatesBundle.IsDefined = false
 			}
 		}
 	}
