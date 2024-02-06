@@ -321,8 +321,8 @@ var _ = Describe("TrustyAI operator", func() {
 
 			namespace := "trusty-ns-a-8"
 			instance = createDefaultCR(namespace)
-			caBundleConfigMap := createTrustedCABundleConfigMap(operatorNamespace)
 			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			caBundleConfigMap := createTrustedCABundleConfigMap(instance.Namespace)
 			Expect(k8sClient.Create(ctx, caBundleConfigMap)).To(Succeed())
 			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
 			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
