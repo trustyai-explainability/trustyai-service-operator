@@ -19,6 +19,7 @@ var _ = Describe("Service Monitor Reconciliation", func() {
 			Client:        k8sClient,
 			Scheme:        scheme.Scheme,
 			EventRecorder: recorder,
+			Namespace:     operatorNamespace,
 		}
 		ctx = context.Background()
 	})
