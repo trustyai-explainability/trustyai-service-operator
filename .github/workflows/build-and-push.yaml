@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - main
-      - ManifestPusher
     tags:
       - v*
     paths-ignore:
