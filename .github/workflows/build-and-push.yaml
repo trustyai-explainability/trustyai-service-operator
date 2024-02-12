@@ -59,29 +59,52 @@ jobs:
           echo "CI IMAGE AT: quay.io/trustyai/trustyai-service-operator-ci:${{ github.event.pull_request.head.sha }}"
       #
       # Set environments depending on context
-      - name: Set CI environment
-        if:  env.BUILD_CONTEXT == 'ci'
-        run: | 
-          echo "TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
-          echo "IMAGE_NAME=quay.io/trustyai/trustyai-service-operator-ci" >> $GITHUB_ENV
-      - name: Set main-branch environment
-        if:  env.BUILD_CONTEXT == 'main'
+      - name: Set TAG test
         run: |
-          echo "TAG=latest" >> $GITHUB_ENV
-          echo "IMAGE_NAME=${{ vars.QUAY_RELEASE_REPO }}" >> $GITHUB_ENV
-      - name: Set tag environment
-        if: env.BUILD_CONTEXT == 'tag'
-        run: |
-          echo "TAG=${{ github.ref_name }}" >> $GITHUB_ENV
-          echo "IMAGE_NAME=${{ vars.QUAY_RELEASE_REPO }}" >> $GITHUB_ENV
+          echo "TAGA=123123897123" >> $GITHUB_ENV
+#      - name: Set CI environment
+#        if:  env.BUILD_CONTEXT == 'ci'
+#        run: |
+#          echo "TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+#          echo "IMAGE_NAME=quay.io/trustyai/trustyai-service-operator-ci" >> $GITHUB_ENV
+#      - name: Set main-branch environment
+#        if:  env.BUILD_CONTEXT == 'main'
+#        run: |
+#          echo "TAG=latest" >> $GITHUB_ENV
+#          echo "IMAGE_NAME=${{ vars.QUAY_RELEASE_REPO }}" >> $GITHUB_ENV
+#      - name: Set tag environment
+#        if: env.BUILD_CONTEXT == 'tag'
+#        run: |
+#          echo "TAG=${{ github.ref_name }}" >> $GITHUB_ENV
+#          echo "IMAGE_NAME=${{ vars.QUAY_RELEASE_REPO }}" >> $GITHUB_ENV
       #
       # Run docker commands
-      - name: Put expiry date on CI-tagged image
-        if:  env.BUILD_CONTEXT == 'ci'
-        run: sed -i 's#summary="odh-trustyai-service-operator\"#summary="odh-trustyai-service-operator" \\ \n      quay.expires-after=7d#' Dockerfile
-      - name: Log in to Quay
-        run: docker login -u ${{ secrets.QUAY_ROBOT_USERNAME }} -p ${{ secrets.QUAY_ROBOT_SECRET }} quay.io
-      - name: Build image
-        run: docker build -t ${{ env.IMAGE_NAME }}:$TAG .
-      - name: Push to Quay CI repo
-        run: docker push ${{ env.IMAGE_NAME }}:$TAG
+#      - name: Put expiry date on CI-tagged image
+#        if:  env.BUILD_CONTEXT == 'ci'
+#        run: sed -i 's#summary="odh-trustyai-service-operator\"#summary="odh-trustyai-service-operator" \\ \n      quay.expires-after=7d#' Dockerfile
+#      - name: Log in to Quay
+#        run: docker login -u ${{ secrets.QUAY_ROBOT_USERNAME }} -p ${{ secrets.QUAY_ROBOT_SECRET }} quay.io
+#      - name: Build image
+#        run: docker build -t ${{ env.IMAGE_NAME }}:$TAG .
+#      - name: Push to Quay CI repo
+#        run: docker push ${{ env.IMAGE_NAME }}:$TAG
+      - name: Set up manifests for CI
+        #if: env.BUILD_CONTEXT == 'ci'
+        run: |
+          sed -i 's#quay.io/trustyai/trustyai-service-operator:latest#${{ env.IMAGE_NAME }}:$TAG#' ./config/base/params.env
+          rm -Rf $(ls . | grep -v config)
+          rm -Rf .gitignore .dockerignore .github .yamllint.yaml
+      # pysh to ci-manifest repo
+      - uses: cpina/github-action-push-to-another-repository@main
+        #if:  env.BUILD_CONTEXT == 'ci'
+        env:
+          SSH_DEPLOY_KEY: ${{ secrets.TRUSTYAI_CI_BOT_SSH_KEY}}
+        with:
+          source-directory: '.'
+          destination-github-username: 'trustyai-ci-bot'
+          destination-repository-username: 'trustyai-explainability'
+          destination-repository-name: 'trustyai-service-operator-ci'
+          target-branch: $TAG
+          create-target-branch-if-needed: 'true'
+          file_pattern: 'config/*'
+
