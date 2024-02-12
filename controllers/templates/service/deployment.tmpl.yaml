@@ -105,7 +105,7 @@ spec:
             - '--tls-cert=/etc/tls/private/tls.crt'
             - '--tls-key=/etc/tls/private/tls.key'
             - '--upstream=http://localhost:8080'
-            - '--skip-auth-regex=''(^/metrics|^/apis/v1beta1/healthz)'''
+            - '--skip-auth-regex=''(^/apis/v1beta1/healthz)'''
             - >-
               --openshift-sar={"namespace":"{{ .Instance.Namespace }}","resource":"pods","verb":"get"}
             - >-
