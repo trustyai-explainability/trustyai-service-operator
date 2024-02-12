@@ -25,11 +25,9 @@ import (
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -176,7 +174,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Create service
-	service, err := r.reconcileService(trustyAIServiceService)
+	service, err := r.reconcileService(ctx, trustyAIServiceService)
 	if err != nil {
 		// handle error
 		return RequeueWithError(err)
@@ -223,39 +221,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// Requeue the request with a delay
 	return RequeueWithDelay(defaultRequeueDelay)
-}
-
-func (r *TrustyAIServiceReconciler) reconcileService(cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*corev1.Service, error) {
-	annotations := map[string]string{
-		"prometheus.io/scrape": "true",
-		"prometheus.io/path":   "/q/metrics",
-		"prometheus.io/scheme": "http",
-	}
-	labels := getCommonLabels(cr.Name)
-
-	service := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        cr.Name,
-			Namespace:   cr.Namespace,
-			Labels:      labels,
-			Annotations: annotations,
-		},
-		Spec: corev1.ServiceSpec{
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "http",
-					Port:       80,
-					TargetPort: intstr.FromInt(8080),
-				},
-			},
-			Selector: labels,
-			Type:     corev1.ServiceTypeClusterIP,
-		},
-	}
-	if err := ctrl.SetControllerReference(cr, service, r.Scheme); err != nil {
-		return nil, err
-	}
-	return service, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
