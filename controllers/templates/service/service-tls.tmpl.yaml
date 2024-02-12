@@ -6,6 +6,11 @@ metadata:
     name: {{ .Instance.Name }}-tls
     namespace: {{ .Instance.Namespace }}
     labels:
+        app: {{ .Instance.Name }}
+        app.kubernetes.io/instance: {{ .Instance.Name }}
+        app.kubernetes.io/name: {{ .Instance.Name }}
+        app.kubernetes.io/part-of: trustyai
+        app.kubernetes.io/version: 0.1.0
         trustyai-service-name: {{ .Instance.Name }}
 spec:
     ports:
