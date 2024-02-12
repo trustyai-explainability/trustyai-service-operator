@@ -138,7 +138,7 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
 
 			WaitFor(func() error {
-				configMap := createConfigMap(operatorNamespace, oauthImage, serviceImage)
+				configMap := createConfigMap(operatorNamespace, oauthImage, serviceImage, false)
 				return k8sClient.Create(ctx, configMap)
 			}, "failed to create ConfigMap")
 

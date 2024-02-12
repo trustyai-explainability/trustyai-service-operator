@@ -18,6 +18,7 @@ const (
 // Configuration constants
 const (
 	imageConfigMap              = "trustyai-service-operator-config"
+	imageConfigMapCustom        = "trustyai-service-operator-config-custom"
 	configMapOAuthProxyImageKey = "oauthProxyImage"
 	configMapServiceImageKey    = "trustyaiServiceImage"
 )

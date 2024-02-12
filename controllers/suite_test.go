@@ -134,11 +134,15 @@ func createNamespace(ctx context.Context, k8sClient client.Client, namespace str
 }
 
 // createConfigMap creates a configuration in the specified namespace
-func createConfigMap(namespace string, oauthImage string, trustyaiServiceImage string) *corev1.ConfigMap {
+func createConfigMap(namespace string, oauthImage string, trustyaiServiceImage string, isCustom bool) *corev1.ConfigMap {
 	// Define the ConfigMap with the necessary data
+	configMapName := imageConfigMap
+	if isCustom {
+		configMapName = imageConfigMapCustom
+	}
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      imageConfigMap,
+			Name:      configMapName,
 			Namespace: namespace,
 		},
 		Data: map[string]string{
