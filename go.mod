@@ -71,9 +71,9 @@ require (
 	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/oauth2 v0.10.0 // indirect
-	golang.org/x/sys v0.13.0 // indirect
-	golang.org/x/term v0.13.0 // indirect
-	golang.org/x/text v0.13.0 // indirect
+	golang.org/x/sys v0.15.0 // indirect
+	golang.org/x/term v0.15.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.9.3 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
@@ -98,7 +98,7 @@ require (
 	knative.dev/serving v0.37.1 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
-	sigs.k8s.io/yaml v1.3.0 // indirect
+	sigs.k8s.io/yaml v1.3.0
 )
 
 replace (
@@ -106,6 +106,8 @@ replace (
 	// this dependency comes from k8s.io/component-base@v0.26.4 and k8s.io/apiextensions-apiserver@v0.26.4
 	// before removing it make sure that the next version of the related k8s dependencies contains the fix
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp => go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.44.0
+	// Fixes CVE-2023-48795 - golang.org/x/crypto Authentication Bypass by Capture-replay
+	golang.org/x/crypto => golang.org/x/crypto v0.17.0
 	// remove when upgrade to controller-runtime 0.15.x or apimachinery to 0.27.x
 	// Fixes github.com/elazarl/goproxy Denial of Service (DoS)
 	// This dependency was removed from apimachinery 0.27.0
