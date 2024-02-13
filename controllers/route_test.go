@@ -33,14 +33,14 @@ var _ = Describe("Route Reconciliation", func() {
 				return createNamespace(ctx, k8sClient, namespace)
 			}, "failed to create namespace")
 
-			err := reconciler.reconcileRoute(instance, ctx)
+			err := reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
 			Expect(err).ToNot(HaveOccurred())
 
 			route := &routev1.Route{}
 			err = reconciler.Client.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, route)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(route).ToNot(BeNil())
-			Expect(route.Spec.To.Name).To(Equal(instance.Name))
+			Expect(route.Spec.To.Name).To(Equal(instance.Name + "-tls"))
 		})
 	})
 
@@ -54,10 +54,11 @@ var _ = Describe("Route Reconciliation", func() {
 			}, "failed to create namespace")
 
 			// Create a Route with the expected spec
-			existingRoute := reconciler.createRouteObject(instance)
+			existingRoute, err := reconciler.createRouteObject(ctx, instance)
+			Expect(err).ToNot(HaveOccurred())
 			Expect(reconciler.Client.Create(ctx, existingRoute)).To(Succeed())
 
-			err := reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
+			err = reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Fetch the Route

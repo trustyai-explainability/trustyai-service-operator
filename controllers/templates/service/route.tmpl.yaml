@@ -1,0 +1,16 @@
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+    name: {{ .Name }}
+    namespace: {{ .Namespace }}
+    labels:
+        trustyai-service-name: {{ .Name }}
+spec:
+    to:
+        kind: Service
+        name: {{ .Name }}-tls
+        weight: 100
+    port:
+        targetPort: {{ .PortName }}
+    tls:
+        termination: passthrough

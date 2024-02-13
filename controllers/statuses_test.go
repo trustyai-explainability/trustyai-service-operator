@@ -76,7 +76,7 @@ var _ = Describe("Status and condition tests", func() {
 				return createNamespace(ctx, k8sClient, namespace)
 			}, "failed to create namespace")
 			WaitFor(func() error {
-				return reconciler.reconcileRoute(instance, ctx)
+				return reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
 			}, "failed to create route")
 			WaitFor(func() error {
 				return makeRouteReady(ctx, k8sClient, instance)
@@ -148,7 +148,7 @@ var _ = Describe("Status and condition tests", func() {
 				return createNamespace(ctx, k8sClient, namespace)
 			}, "failed to create namespace")
 			WaitFor(func() error {
-				return reconciler.reconcileRoute(instance, ctx)
+				return reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
 			}, "failed to create route")
 			WaitFor(func() error {
 				return makeRouteReady(ctx, k8sClient, instance)
