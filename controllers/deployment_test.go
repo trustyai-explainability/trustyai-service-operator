@@ -89,7 +89,7 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("registry.redhat.io/openshift4/ose-oauth-proxy:latest"))
 
 			WaitFor(func() error {
-				service, _ := reconciler.reconcileService(instance)
+				service, _ := reconciler.reconcileService(ctx, instance)
 				return reconciler.Create(ctx, service)
 			}, "failed to create service")
 
@@ -170,7 +170,7 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal(oauthImage))
 
 			WaitFor(func() error {
-				service, _ := reconciler.reconcileService(instance)
+				service, _ := reconciler.reconcileService(ctx, instance)
 				return reconciler.Create(ctx, service)
 			}, "failed to create service")
 
