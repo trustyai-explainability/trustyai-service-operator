@@ -1,0 +1,30 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+    name: {{ .ServiceName }}
+    namespace: {{ .Namespace }}
+    labels:
+        modelmesh-service: modelmesh-serving
+spec:
+    endpoints:
+        - bearerTokenSecret:
+              key: ''
+          honorLabels: true
+          interval: 4s
+          metricRelabelings:
+              - action: keep
+                regex: trustyai_.*
+                sourceLabels:
+                    - __name__
+          params:
+              'match[]':
+                  - '{__name__= "trustyai_spd"}'
+                  - '{__name__= "trustyai_dir"}'
+          path: /q/metrics
+          scheme: http
+    namespaceSelector:
+        matchNames:
+            - {{ .Namespace }}
+    selector:
+        matchLabels:
+            app.kubernetes.io/part-of: {{ .ComponentName }}
