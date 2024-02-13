@@ -103,6 +103,27 @@ jobs:
           destination-github-username: 'trustyai-ci-bot'
           destination-repository-username: 'trustyai-explainability'
           destination-repository-name: 'trustyai-service-operator-ci'
-          target-branch: ${{ env.TAG }}
+          target-branch: operator-${{ env.TAG }}
           create-target-branch-if-needed: 'true'
+
+      # Leave comment
+      - uses: peter-evans/find-comment@v3
+        name: Find Comment
+        id: fc
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: PR image build and manifest generation completed successfully
+      - uses: peter-evans/create-or-update-comment@v4
+        name: Generate/update success message comment
+        with:
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          edit-mode: replace
+          body: |
+            PR image build and manifest generation completed successfully!
+
+            📦 [PR image](https://quay.io/trustyai/trustyai-service-ci:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/trustyai-service-ci:${{ github.event.pull_request.head.sha }}`
+
+            🗂️ [CI manifests](https://github.com/trustyai-explainability/trustyai-service-operator-ci/tree/operator-${{ env.TAG }})
 
