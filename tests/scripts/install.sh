@@ -28,19 +28,19 @@ else
   done
 fi
 
-popd
-## Grabbing and applying the patch in the PR we are testing
-pushd ~/src/${REPO_NAME}
-if [ -z "$PULL_NUMBER" ]; then
-  echo "No pull number, assuming nightly run"
-else
-  if [ $REPO_OWNER == "trustyai-explainability" ]; then
-    curl -O -L https://github.com/${REPO_OWNER}/${REPO_NAME}/pull/${PULL_NUMBER}.patch
-    echo "Applying followng patch:"
-    cat ${PULL_NUMBER}.patch > ${ARTIFACT_DIR}/github-pr-${PULL_NUMBER}.patch
-    git apply ${PULL_NUMBER}.patch
-  fi
-fi
+#popd
+### Grabbing and applying the patch in the PR we are testing
+#pushd ~/src/${REPO_NAME}
+#if [ -z "$PULL_NUMBER" ]; then
+#  echo "No pull number, assuming nightly run"
+#else
+#  if [ $REPO_OWNER == "trustyai-explainability" ]; then
+#    curl -O -L https://github.com/${REPO_OWNER}/${REPO_NAME}/pull/${PULL_NUMBER}.patch
+#    echo "Applying followng patch:"
+#    cat ${PULL_NUMBER}.patch > ${ARTIFACT_DIR}/github-pr-${PULL_NUMBER}.patch
+#    git apply ${PULL_NUMBER}.patch
+#  fi
+#fi
 
 popd
 ## Point manifests repo uri in the KFDEF to the manifests in the PR
