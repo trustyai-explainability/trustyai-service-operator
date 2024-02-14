@@ -6,6 +6,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // getImageFromConfigMap gets a custom image value from a ConfigMap in the operator's namespace
@@ -43,4 +44,22 @@ func (r *TrustyAIServiceReconciler) getImageFromConfigMap(ctx context.Context, k
 	} else {
 		return defaultImage, nil
 	}
+}
+
+// getConfigMapNamesWithLabel retrieves the names of ConfigMaps that have the specified label
+func (r *TrustyAIServiceReconciler) getConfigMapNamesWithLabel(ctx context.Context, namespace string, labelSelector client.MatchingLabels) ([]string, error) {
+	configMapList := &corev1.ConfigMapList{}
+
+	// List ConfigMaps with the specified label selector
+	err := r.Client.List(ctx, configMapList, client.InNamespace(namespace), labelSelector)
+	if err != nil {
+		return nil, err
+	}
+
+	var names []string
+	for _, cm := range configMapList.Items {
+		names = append(names, cm.Name)
+	}
+
+	return names, nil
 }
