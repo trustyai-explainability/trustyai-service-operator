@@ -75,6 +75,8 @@ var _ = Describe("Status and condition tests", func() {
 			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace)
 			}, "failed to create namespace")
+			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
+
 			WaitFor(func() error {
 				return reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
 			}, "failed to create route")
@@ -88,7 +90,7 @@ var _ = Describe("Status and condition tests", func() {
 				return makePVCReady(ctx, k8sClient, instance)
 			}, "failed to bind PVC")
 			WaitFor(func() error {
-				return reconciler.ensureDeployment(ctx, instance)
+				return reconciler.ensureDeployment(ctx, instance, caBundle)
 			}, "failed to create deployment")
 			WaitFor(func() error {
 				return makeDeploymentReady(ctx, k8sClient, instance)
@@ -147,6 +149,8 @@ var _ = Describe("Status and condition tests", func() {
 			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace)
 			}, "failed to create namespace")
+			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
+
 			WaitFor(func() error {
 				return reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
 			}, "failed to create route")
@@ -160,7 +164,7 @@ var _ = Describe("Status and condition tests", func() {
 				return makePVCReady(ctx, k8sClient, instance)
 			}, "failed to bind PVC")
 			WaitFor(func() error {
-				return reconciler.ensureDeployment(ctx, instance)
+				return reconciler.ensureDeployment(ctx, instance, caBundle)
 			}, "failed to create deployment")
 			WaitFor(func() error {
 				return makeDeploymentReady(ctx, k8sClient, instance)

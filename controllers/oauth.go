@@ -21,14 +21,16 @@ type OAuthConfig struct {
 }
 
 type ServiceTLSConfig struct {
-	Instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+	Instance                 *trustyaiopendatahubiov1alpha1.TrustyAIService
+	CustomCertificatesBundle CustomCertificatesBundle
 }
 
 // generateTrustyAIOAuthService defines the desired OAuth service object
-func generateTrustyAIOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (*corev1.Service, error) {
+func generateTrustyAIOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, caBundle CustomCertificatesBundle) (*corev1.Service, error) {
 
 	serviceTLSConfig := ServiceTLSConfig{
-		Instance: instance,
+		Instance:                 instance,
+		CustomCertificatesBundle: caBundle,
 	}
 
 	var serviceTLS *corev1.Service
@@ -43,10 +45,10 @@ func generateTrustyAIOAuthService(ctx context.Context, instance *trustyaiopendat
 
 // reconcileOAuthService will manage the OAuth service reconciliation required
 // by the service's OAuth proxy
-func (r *TrustyAIServiceReconciler) reconcileOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+func (r *TrustyAIServiceReconciler) reconcileOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, caBundle CustomCertificatesBundle) error {
 
 	// Generate the desired OAuth service object
-	desiredService, err := generateTrustyAIOAuthService(ctx, instance)
+	desiredService, err := generateTrustyAIOAuthService(ctx, instance, caBundle)
 	if err != nil {
 		// Error creating the oauth service resource object
 		return err

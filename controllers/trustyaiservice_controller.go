@@ -130,7 +130,9 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return RequeueWithError(err)
 	}
 
-	err = r.reconcileOAuthService(ctx, instance)
+	caBundle := r.GetCustomCertificatesBundle(ctx, instance)
+
+	err = r.reconcileOAuthService(ctx, instance, caBundle)
 	if err != nil {
 		return RequeueWithError(err)
 	}
@@ -161,7 +163,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Ensure Deployment object
-	err = r.ensureDeployment(ctx, instance)
+	err = r.ensureDeployment(ctx, instance, caBundle)
 	if err != nil {
 		return RequeueWithError(err)
 	}

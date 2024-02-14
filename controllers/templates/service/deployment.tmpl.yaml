@@ -95,6 +95,11 @@ spec:
           volumeMounts:
             - name: {{ .Instance.Name }}-tls
               mountPath: /etc/tls/private
+            {{ if .CustomCertificatesBundle.IsDefined }}
+            - name: {{ .CustomCertificatesBundle.VolumeName }}
+              readOnly: true
+              mountPath: /etc/pki/ca-trust/extracted/pem
+            {{ end }}
           image: {{ .OAuthImage }}
           args:
             - '--cookie-secret=SECRET'
@@ -102,8 +107,12 @@ spec:
             - '--email-domain=*'
             - '--openshift-service-account={{ .Instance.Name }}-proxy'
             - '--provider=openshift'
+            {{ if .CustomCertificatesBundle.IsDefined }}
+            - '--openshift-ca=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem'
+            {{ else }}
             - '--tls-cert=/etc/tls/private/tls.crt'
             - '--tls-key=/etc/tls/private/tls.key'
+            {{ end}}
             - '--upstream=http://localhost:8080'
             - '--skip-auth-regex=''(^/apis/v1beta1/healthz)'''
             - >-
@@ -120,3 +129,12 @@ spec:
         - name: volume
           persistentVolumeClaim:
             claimName: {{ .PVCClaimName }}
+        {{ if .CustomCertificatesBundle.IsDefined }}
+        - name: {{ .CustomCertificatesBundle.VolumeName}}
+          configMap:
+            name: {{ .CustomCertificatesBundle.ConfigMapName }}
+            items:
+              - key: ca-bundle.crt
+                path: tls-ca-bundle.pem
+            defaultMode: 420
+        {{ end }}
