@@ -1,8 +1,10 @@
 kind: Service
 apiVersion: v1
 metadata:
+    {{ if not .CustomCertificatesBundle.IsDefined }}
     annotations:
         service.beta.openshift.io/serving-cert-secret-name: {{ .Instance.Name }}-tls
+    {{ end }}
     name: {{ .Instance.Name }}-tls
     namespace: {{ .Instance.Namespace }}
     labels:

@@ -4,133 +4,61 @@ import (
 	"context"
 	routev1 "github.com/openshift/api/route/v1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
+	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/templates"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
 	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func (r *TrustyAIServiceReconciler) createRouteObjectNoAuth(cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*routev1.Route, error) {
-	labels := getCommonLabels(cr.Name)
+const (
+	routeTemplatePath = "service/route.tmpl.yaml"
+)
 
-	route := &routev1.Route{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name,
-			Namespace: cr.Namespace,
-			Labels:    labels,
-		},
-		Spec: routev1.RouteSpec{
-			To: routev1.RouteTargetReference{
-				Kind: "Service",
-				Name: cr.Name,
-			},
-			Port: &routev1.RoutePort{
-				TargetPort: intstr.IntOrString{
-					Type:   intstr.String,
-					StrVal: "http",
-				},
-			},
-			TLS: &routev1.TLSConfig{
-				Termination:                   routev1.TLSTerminationReencrypt,
-				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
-			},
-		},
+type RouteConfig struct {
+	Name      string
+	Namespace string
+	PortName  string
+}
+
+func (r *TrustyAIServiceReconciler) createRouteObject(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (*routev1.Route, error) {
+
+	config := RouteConfig{
+		Name:      instance.Name,
+		Namespace: instance.Namespace,
+		PortName:  OAuthServicePortName,
 	}
 
-	if err := controllerutil.SetControllerReference(cr, route, r.Scheme); err != nil {
+	var route *routev1.Route
+	route, err := templateParser.ParseResource[routev1.Route](routeTemplatePath, config, reflect.TypeOf(&routev1.Route{}))
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Error parsing the route's template")
+		return nil, err
+	}
+	if err := ctrl.SetControllerReference(instance, route, r.Scheme); err != nil {
 		return nil, err
 	}
 
 	return route, nil
 }
 
-func (r *TrustyAIServiceReconciler) reconcileRoute(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
-	createdRoute, err := r.createRouteObjectNoAuth(cr)
-	if err != nil {
-		log.FromContext(ctx).Error(err, "Error creating Route object.")
-		return err
-	}
-
-	existingRoute := &routev1.Route{}
-	err = r.Client.Get(ctx, types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, existingRoute)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			// Route does not exist, create it.
-			err := r.Client.Create(ctx, createdRoute)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "Error creating Route.")
-				return err
-			}
-		} else {
-			// Error occurred during Get
-			log.FromContext(ctx).Error(err, "Error getting Route.")
-			return err
-		}
-	} else {
-		// Route exists, check if it is the same as the one we want to create.
-		if reflect.DeepEqual(existingRoute.Spec, createdRoute.Spec) {
-			// They are the same, so no action needed.
-			return nil
-		} else {
-			// They are different, update the existing route.
-			existingRoute.Spec = createdRoute.Spec
-			err := r.Client.Update(ctx, existingRoute)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "Error updating Route.")
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (r *TrustyAIServiceReconciler) createRouteObject(instance *trustyaiopendatahubiov1alpha1.TrustyAIService) *routev1.Route {
-	return &routev1.Route{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.Name,
-			Namespace: instance.Namespace,
-			Labels: map[string]string{
-				"trustyai-service-name": instance.Name,
-			},
-		},
-		Spec: routev1.RouteSpec{
-			To: routev1.RouteTargetReference{
-				Kind:   "Service",
-				Name:   instance.Name + "-tls",
-				Weight: pointer.Int32Ptr(100),
-			},
-			Port: &routev1.RoutePort{
-				TargetPort: intstr.FromString(OAuthServicePortName),
-			},
-			TLS: &routev1.TLSConfig{
-				Termination: routev1.TLSTerminationPassthrough,
-			},
-		},
-		Status: routev1.RouteStatus{
-			Ingress: []routev1.RouteIngress{},
-		},
-	}
-}
-
 // Reconcile will manage the creation, update and deletion of the route returned
 // by the newRoute function
 func (r *TrustyAIServiceReconciler) reconcileRouteAuth(instance *trustyaiopendatahubiov1alpha1.TrustyAIService,
-	ctx context.Context, newRoute func(*trustyaiopendatahubiov1alpha1.TrustyAIService) *routev1.Route) error {
+	ctx context.Context, newRoute func(context.Context, *trustyaiopendatahubiov1alpha1.TrustyAIService) (*routev1.Route, error)) error {
 
 	// Generate the desired route
-	desiredRoute := newRoute(instance)
+	desiredRoute, err := newRoute(ctx, instance)
+	if err != nil {
+		return err
+	}
 
 	// Create the route if it does not already exist
 	foundRoute := &routev1.Route{}
 	//justCreated := false
-	err := r.Get(ctx, types.NamespacedName{
+	err = r.Get(ctx, types.NamespacedName{
 		Name:      desiredRoute.Name,
 		Namespace: instance.Namespace,
 	}, foundRoute)

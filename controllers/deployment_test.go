@@ -66,9 +66,11 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
 			instance = createDefaultCR(namespace)
 
+			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
+
 			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
 			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
-			Expect(reconciler.ensureDeployment(ctx, instance)).To(Succeed())
+			Expect(reconciler.ensureDeployment(ctx, instance, caBundle)).To(Succeed())
 
 			deployment := &appsv1.Deployment{}
 			err := k8sClient.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deployment)
@@ -89,7 +91,7 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("registry.redhat.io/openshift4/ose-oauth-proxy:latest"))
 
 			WaitFor(func() error {
-				service, _ := reconciler.reconcileService(instance)
+				service, _ := reconciler.reconcileService(ctx, instance)
 				return reconciler.Create(ctx, service)
 			}, "failed to create service")
 
@@ -104,11 +106,11 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(service.Namespace).Should(Equal(namespace))
 
 			WaitFor(func() error {
-				err := reconciler.reconcileOAuthService(ctx, instance)
+				err := reconciler.reconcileOAuthService(ctx, instance, caBundle)
 				return err
 			}, "failed to create oauth service")
 
-			desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance)
+			desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance, caBundle)
 			Expect(err).ToNot(HaveOccurred())
 
 			oauthService := &corev1.Service{}
@@ -144,10 +146,12 @@ var _ = Describe("TrustyAI operator", func() {
 
 			instance = createDefaultCR(namespace)
 
+			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
+
 			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
 			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
 			WaitFor(func() error {
-				return reconciler.ensureDeployment(ctx, instance)
+				return reconciler.ensureDeployment(ctx, instance, caBundle)
 			}, "failed to reconcile deployment")
 
 			deployment := &appsv1.Deployment{}
@@ -170,7 +174,7 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal(oauthImage))
 
 			WaitFor(func() error {
-				service, _ := reconciler.reconcileService(instance)
+				service, _ := reconciler.reconcileService(ctx, instance)
 				return reconciler.Create(ctx, service)
 			}, "failed to create service")
 
@@ -185,11 +189,11 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(service.Namespace).Should(Equal(namespace))
 
 			WaitFor(func() error {
-				err := reconciler.reconcileOAuthService(ctx, instance)
+				err := reconciler.reconcileOAuthService(ctx, instance, caBundle)
 				return err
 			}, "failed to create oauth service")
 
-			desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance)
+			desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance, caBundle)
 			Expect(err).ToNot(HaveOccurred())
 
 			oauthService := &corev1.Service{}
@@ -216,9 +220,12 @@ var _ = Describe("TrustyAI operator", func() {
 			namespace := "trusty-ns-a-4"
 			instance = createDefaultCR(namespace)
 			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+
+			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
+
 			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
 			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
-			Expect(reconciler.ensureDeployment(ctx, instance)).To(Succeed())
+			Expect(reconciler.ensureDeployment(ctx, instance, caBundle)).To(Succeed())
 
 			deployment := &appsv1.Deployment{}
 			namespacedName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
@@ -272,6 +279,106 @@ var _ = Describe("TrustyAI operator", func() {
 		})
 	})
 
+	Context("When deploying with no custom CA bundle ConfigMap", func() {
+		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+
+		It("should use the correct service account and not include CustomCertificatesBundle", func() {
+
+			namespace := "trusty-ns-a-7"
+			instance = createDefaultCR(namespace)
+			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+
+			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
+
+			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
+			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
+			WaitFor(func() error {
+				return reconciler.ensureDeployment(ctx, instance, caBundle)
+			}, "failed to create deployment")
+
+			deployment := &appsv1.Deployment{}
+			namespacedName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+			Expect(k8sClient.Get(ctx, namespacedName, deployment)).Should(Succeed())
+
+			Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(instance.Name + "-proxy"))
+
+			customCertificatesBundleVolumeName := caBundle
+			for _, volume := range deployment.Spec.Template.Spec.Volumes {
+				Expect(volume.Name).ToNot(Equal(customCertificatesBundleVolumeName))
+			}
+
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				for _, volumeMount := range container.VolumeMounts {
+					Expect(volumeMount.Name).ToNot(Equal(customCertificatesBundleVolumeName))
+				}
+				for _, arg := range container.Args {
+					Expect(arg).ToNot(ContainSubstring("--openshift-ca"))
+				}
+			}
+		})
+	})
+
+	Context("When deploying with a custom CA bundle ConfigMap", func() {
+		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+
+		It("should use the correct service account and include CustomCertificatesBundle", func() {
+
+			namespace := "trusty-ns-a-8"
+			instance = createDefaultCR(namespace)
+			caBundleConfigMap := createTrustedCABundleConfigMap(namespace)
+			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			Expect(k8sClient.Create(ctx, caBundleConfigMap)).To(Succeed())
+
+			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
+
+			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
+			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
+			WaitFor(func() error {
+				return reconciler.ensureDeployment(ctx, instance, caBundle)
+			}, "failed to create deployment")
+
+			deployment := &appsv1.Deployment{}
+			namespacedName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+			Expect(k8sClient.Get(ctx, namespacedName, deployment)).Should(Succeed())
+
+			Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(instance.Name + "-proxy"))
+
+			foundTrustedCAVolume := false
+			for _, volume := range deployment.Spec.Template.Spec.Volumes {
+				if volume.Name == caBundleName && volume.ConfigMap != nil && volume.ConfigMap.Name == caBundleName {
+					foundTrustedCAVolume = true
+					Expect(volume.ConfigMap.Items).To(ContainElement(corev1.KeyToPath{
+						Key:  "ca-bundle.crt",
+						Path: "tls-ca-bundle.pem",
+					}))
+				}
+			}
+			Expect(foundTrustedCAVolume).To(BeTrue(), caBundleName+" volume not found")
+
+			foundTrustedCAVolumeMount := false
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				for _, volumeMount := range container.VolumeMounts {
+					if volumeMount.Name == caBundleName && volumeMount.MountPath == "/etc/pki/ca-trust/extracted/pem" {
+						foundTrustedCAVolumeMount = true
+					}
+
+					if container.Name == "oauth-proxy" {
+						foundOpenshiftCAArg := false
+						for _, arg := range container.Args {
+							if arg == "--openshift-ca=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem" {
+								foundOpenshiftCAArg = true
+							}
+						}
+						Expect(foundOpenshiftCAArg).To(BeTrue(), "oauth-proxy container missing --openshift-ca argument")
+					}
+				}
+			}
+			Expect(foundTrustedCAVolumeMount).To(BeTrue(), caBundleName+"trusted-ca volume mount not found in any container")
+			Expect(k8sClient.Delete(ctx, caBundleConfigMap)).To(Succeed(), "failed to delete custom CA bundle ConfigMap")
+
+		})
+	})
+
 	Context("When deploying with default settings without an InferenceService", func() {
 		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
 
@@ -280,10 +387,13 @@ var _ = Describe("TrustyAI operator", func() {
 			namespace := "trusty-ns-a-6"
 			instance = createDefaultCR(namespace)
 			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+
+			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
+
 			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
 			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
 			WaitFor(func() error {
-				return reconciler.ensureDeployment(ctx, instance)
+				return reconciler.ensureDeployment(ctx, instance, caBundle)
 			}, "failed to create deployment")
 
 			deployment := &appsv1.Deployment{}
@@ -318,11 +428,14 @@ var _ = Describe("TrustyAI operator", func() {
 			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace)
 			}, "failed to create namespace")
+
+			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
+
 			WaitFor(func() error {
 				return createTestPVC(ctx, k8sClient, instance)
 			}, "failed to create PVC")
 			WaitFor(func() error {
-				return reconciler.ensureDeployment(ctx, instance)
+				return reconciler.ensureDeployment(ctx, instance, caBundle)
 			}, "failed to create deployment")
 
 			// Creating the InferenceService
@@ -353,11 +466,11 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
 
 			WaitFor(func() error {
-				err := reconciler.reconcileOAuthService(ctx, instance)
+				err := reconciler.reconcileOAuthService(ctx, instance, caBundle)
 				return err
 			}, "failed to create oauth service")
 
-			desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance)
+			desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance, caBundle)
 			Expect(err).ToNot(HaveOccurred())
 
 			oauthService := &corev1.Service{}
@@ -407,11 +520,13 @@ var _ = Describe("TrustyAI operator", func() {
 			}
 
 			for _, instance := range instances {
+				caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
+
 				WaitFor(func() error {
 					return createTestPVC(ctx, k8sClient, instance)
 				}, "failed to create PVC")
 				WaitFor(func() error {
-					return reconciler.ensureDeployment(ctx, instance)
+					return reconciler.ensureDeployment(ctx, instance, caBundle)
 				}, "failed to create deployment")
 				//Expect(k8sClient.Create(ctx, instance)).Should(Succeed())
 				deployment := &appsv1.Deployment{}
@@ -438,11 +553,11 @@ var _ = Describe("TrustyAI operator", func() {
 				Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("registry.redhat.io/openshift4/ose-oauth-proxy:latest"))
 
 				WaitFor(func() error {
-					err := reconciler.reconcileOAuthService(ctx, instance)
+					err := reconciler.reconcileOAuthService(ctx, instance, caBundle)
 					return err
 				}, "failed to create oauth service")
 
-				desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance)
+				desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance, caBundle)
 				Expect(err).ToNot(HaveOccurred())
 
 				oauthService := &corev1.Service{}

@@ -18,19 +18,28 @@ import (
 const (
 	defaultBatchSize       = 5000
 	deploymentTemplatePath = "service/deployment.tmpl.yaml"
+	caBundleAnnotation     = "config.openshift.io/inject-trusted-cabundle"
+	caBundleName           = "odh-trusted-ca-bundle"
 )
 
+type CustomCertificatesBundle struct {
+	IsDefined     bool
+	VolumeName    string
+	ConfigMapName string
+}
+
 type DeploymentConfig struct {
-	Instance        *trustyaiopendatahubiov1alpha1.TrustyAIService
-	ServiceImage    string
-	OAuthImage      string
-	Schedule        string
-	VolumeMountName string
-	PVCClaimName    string
+	Instance                 *trustyaiopendatahubiov1alpha1.TrustyAIService
+	ServiceImage             string
+	OAuthImage               string
+	Schedule                 string
+	VolumeMountName          string
+	PVCClaimName             string
+	CustomCertificatesBundle CustomCertificatesBundle
 }
 
 // createDeploymentObject returns a Deployment for the TrustyAI Service instance
-func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, serviceImage string) (*appsv1.Deployment, error) {
+func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, serviceImage string, caBunble CustomCertificatesBundle) (*appsv1.Deployment, error) {
 
 	var batchSize int
 	// If not batch size is provided, assume the default one
@@ -48,12 +57,13 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	}
 
 	deploymentConfig := DeploymentConfig{
-		Instance:        instance,
-		ServiceImage:    serviceImage,
-		OAuthImage:      oauthProxyImage,
-		Schedule:        strconv.Itoa(batchSize),
-		VolumeMountName: volumeMountName,
-		PVCClaimName:    pvcName,
+		Instance:                 instance,
+		ServiceImage:             serviceImage,
+		OAuthImage:               oauthProxyImage,
+		Schedule:                 strconv.Itoa(batchSize),
+		VolumeMountName:          volumeMountName,
+		PVCClaimName:             pvcName,
+		CustomCertificatesBundle: caBunble,
 	}
 
 	var deployment *appsv1.Deployment
@@ -67,7 +77,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 }
 
 // reconcileDeployment returns a Deployment object with the same name/namespace as the cr
-func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, imageName string) error {
+func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, imageName string, caBundle CustomCertificatesBundle) error {
 
 	pvcName := generatePVCName(cr)
 
@@ -79,7 +89,7 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 	}
 	if pvcerr == nil {
 		// The PVC is ready. We can now create the Deployment.
-		deployment, err := r.createDeploymentObject(ctx, cr, imageName)
+		deployment, err := r.createDeploymentObject(ctx, cr, imageName, caBundle)
 		if err != nil {
 			// Error creating the deployment resource object
 			return err
@@ -104,7 +114,7 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 
 }
 
-func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, caBundle CustomCertificatesBundle) error {
 
 	// Get image and tag from ConfigMap
 	// If there's a ConfigMap with custom images, it is only applied when the operator is first deployed
@@ -120,7 +130,7 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 		if errors.IsNotFound(err) {
 			// Deployment does not exist, create it
 			log.FromContext(ctx).Info("Could not find Deployment. Creating it.")
-			return r.createDeployment(ctx, instance, image)
+			return r.createDeployment(ctx, instance, image, caBundle)
 		}
 
 		// Some other error occurred when trying to get the Deployment

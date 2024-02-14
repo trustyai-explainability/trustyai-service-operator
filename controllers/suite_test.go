@@ -148,6 +148,21 @@ func createConfigMap(namespace string, oauthImage string, trustyaiServiceImage s
 	}
 }
 
+// createTrustedCABundleConfigMap creates a ConfigMap in the specified namespace
+// with the label to inject the trusted CA bundle by OpenShift
+func createTrustedCABundleConfigMap(namespace string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      caBundleName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				caBundleAnnotation: "true",
+			},
+		},
+		Data: map[string]string{},
+	}
+}
+
 func createMockPV(ctx context.Context, k8sClient client.Client, pvName string, size string) error {
 	pv := &corev1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
