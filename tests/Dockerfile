@@ -53,7 +53,7 @@ RUN mkdir -p $HOME/peak/operator-tests/trustyai-explainability/ &&\
     cp -r $HOME/src/trustyai-explainability/tests/resources/ $HOME/peak/operator-tests/trustyai-explainability/resources &&\
     cp $HOME/src/trustyai-explainability/tests/util $HOME/peak/operator-tests/trustyai-explainability &&\
     cp -r $HOME/src/trustyai-explainability/tests/basictests $HOME/peak/operator-tests/trustyai-explainability/basictests &&\
-    cp -r $HOME/src/trustyai-explainability/tests/setup/odh-core.yaml $HOME/kfdef/ &&\
+    cp -r $HOME/src/trustyai-explainability/tests/setup/odh-*.yaml $HOME/kfdef/ &&\
     cp -r $HOME/src/trustyai-explainability/tests/setup/*setup $HOME/peak/ &&\
     cp -r $HOME/src/trustyai-explainability/tests/scripts/installandtest.sh $HOME/peak/
 
