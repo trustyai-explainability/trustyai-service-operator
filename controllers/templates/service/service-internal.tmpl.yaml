@@ -12,7 +12,7 @@ metadata:
         app.kubernetes.io/instance: {{ .Name }}
         app.kubernetes.io/name: {{ .Name }}
         app.kubernetes.io/part-of: trustyai
-        app.kubernetes.io/version: 0.1.0
+        app.kubernetes.io/version: {{ .Version }}
 spec:
     ports:
         - name: http
@@ -25,4 +25,4 @@ spec:
         app.kubernetes.io/instance: {{ .Name }}
         app.kubernetes.io/name: {{ .Name }}
         app.kubernetes.io/part-of: trustyai
-        app.kubernetes.io/version: 0.1.0
+        app.kubernetes.io/version: {{ .Version }}
