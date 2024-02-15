@@ -51,7 +51,7 @@ if [ -z "$PULL_NUMBER" ] || [ $REPO_OWNER != "trustyai-explainability" ] || [ $R
   sed -i "s#trustyaiRepoPlaceholder#https://github.com/trustyai-explainability/trustyai-service-operator/tarball/main#" ./${DSC_FILENAME}
 else
   echo "Setting TrustyAI devflags to use PR image"
-  sed -i "s#trustyaiRepoPlaceholder#https://github.com/trustyai-explainability/trustyai-serivce-operator-ci/tarball/operator-${BRANCH_SHA}#" ./${DSC_FILENAME}
+  sed -i "s#trustyaiRepoPlaceholder#https://api.github.com/repos/trustyai-explainability/trustyai-service-operator-ci/tarball/operator-${BRANCH_SHA}#" ./${DSC_FILENAME}
 fi
 
 if [ -z "${OPENSHIFT_TESTUSER_NAME}" ] || [ -z "${OPENSHIFT_TESTUSER_PASS}" ]; then
