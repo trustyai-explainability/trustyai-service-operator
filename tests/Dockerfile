@@ -5,14 +5,14 @@ ARG BRANCH=main
 ARG ODS_CI_REPO=https://github.com/red-hat-data-services/ods-ci
 # This git reference should always reference a stable commit from ods-ci that supports ODH
 # This hash corresponds to a March 24th, 2023 commit
-ARG ODS_CI_GITREF=a0d8e0a8cf58629f895a1660c5d766c3aa4ce82e
+ARG ODS_CI_GITREF=867a617bc224726cf98fa3354293f8e50b4f5eb5
 ARG OC_CLI_URL=https://mirror.openshift.com/pub/openshift-v4/amd64/clients/ocp/latest/openshift-client-linux.tar.gz
 
 ENV HOME /root
 WORKDIR /root
 
 RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm &&\
-    dnf install -y jq bc git go-toolset python38 unzip chromium chromedriver && \
+    dnf install -y jq bc git go-toolset python3.11 python3.11-pip python3.11-devel unzip chromium chromedriver && \
     dnf clean all && \
     git clone https://github.com/opendatahub-io/peak $HOME/peak && \
     cd $HOME/peak && \
@@ -30,7 +30,7 @@ RUN mkdir -p $HOME/src && \
     git fetch origin ${ODS_CI_GITREF} && git checkout FETCH_HEAD && \
     chmod -R 777 $HOME/src
 
-# Use a specific destination file name in case the url dow download name changes
+# Use a specific destination file name in case the url download name changes
 ADD ${OC_CLI_URL} $HOME/peak/oc-cli.tar.gz
 RUN tar -C /usr/local/bin -xvf $HOME/peak/oc-cli.tar.gz && \
     chmod +x /usr/local/bin/oc
@@ -53,7 +53,7 @@ RUN mkdir -p $HOME/peak/operator-tests/trustyai-explainability/ &&\
     cp -r $HOME/src/trustyai-explainability/tests/resources/ $HOME/peak/operator-tests/trustyai-explainability/resources &&\
     cp $HOME/src/trustyai-explainability/tests/util $HOME/peak/operator-tests/trustyai-explainability &&\
     cp -r $HOME/src/trustyai-explainability/tests/basictests $HOME/peak/operator-tests/trustyai-explainability/basictests &&\
-    cp -r $HOME/src/trustyai-explainability/tests/setup/odh-core.yaml $HOME/kfdef/ &&\
+    cp -r $HOME/src/trustyai-explainability/tests/setup/odh-*.yaml $HOME/kfdef/ &&\
     cp -r $HOME/src/trustyai-explainability/tests/setup/*setup $HOME/peak/ &&\
     cp -r $HOME/src/trustyai-explainability/tests/scripts/installandtest.sh $HOME/peak/
 
