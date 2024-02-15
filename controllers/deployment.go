@@ -36,6 +36,7 @@ type DeploymentConfig struct {
 	VolumeMountName          string
 	PVCClaimName             string
 	CustomCertificatesBundle CustomCertificatesBundle
+	Version                  string
 }
 
 // createDeploymentObject returns a Deployment for the TrustyAI Service instance
@@ -64,6 +65,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		VolumeMountName:          volumeMountName,
 		PVCClaimName:             pvcName,
 		CustomCertificatesBundle: caBunble,
+		Version:                  Version,
 	}
 
 	var deployment *appsv1.Deployment
