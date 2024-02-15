@@ -68,17 +68,6 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;delete
 
-// getCommonLabels returns the service's common labels
-func getCommonLabels(serviceName string) map[string]string {
-	return map[string]string{
-		"app":                        serviceName,
-		"app.kubernetes.io/name":     serviceName,
-		"app.kubernetes.io/instance": serviceName,
-		"app.kubernetes.io/part-of":  componentName,
-		"app.kubernetes.io/version":  "0.1.0",
-	}
-}
-
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

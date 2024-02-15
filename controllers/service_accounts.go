@@ -64,7 +64,7 @@ func (r *TrustyAIServiceReconciler) createServiceAccount(ctx context.Context, in
 				"app.kubernetes.io/name":     serviceAccountName,
 				"app.kubernetes.io/instance": instance.Name,
 				"app.kubernetes.io/part-of":  componentName,
-				"app.kubernetes.io/version":  "0.1.0",
+				"app.kubernetes.io/version":  Version,
 			},
 		},
 	}

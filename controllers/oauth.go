@@ -22,6 +22,7 @@ type OAuthConfig struct {
 
 type ServiceTLSConfig struct {
 	Instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+	Version  string
 }
 
 // generateTrustyAIOAuthService defines the desired OAuth service object
@@ -29,6 +30,7 @@ func generateTrustyAIOAuthService(ctx context.Context, instance *trustyaiopendat
 
 	serviceTLSConfig := ServiceTLSConfig{
 		Instance: instance,
+		Version:  Version,
 	}
 
 	var serviceTLS *corev1.Service

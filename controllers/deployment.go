@@ -27,6 +27,7 @@ type DeploymentConfig struct {
 	Schedule        string
 	VolumeMountName string
 	PVCClaimName    string
+	Version         string
 }
 
 // createDeploymentObject returns a Deployment for the TrustyAI Service instance
@@ -54,6 +55,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		Schedule:        strconv.Itoa(batchSize),
 		VolumeMountName: volumeMountName,
 		PVCClaimName:    pvcName,
+		Version:         Version,
 	}
 
 	var deployment *appsv1.Deployment

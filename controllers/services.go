@@ -17,6 +17,7 @@ const (
 type ServiceConfig struct {
 	Name      string
 	Namespace string
+	Version   string
 }
 
 func (r *TrustyAIServiceReconciler) reconcileService(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*corev1.Service, error) {
@@ -24,6 +25,7 @@ func (r *TrustyAIServiceReconciler) reconcileService(ctx context.Context, cr *tr
 	serviceConfig := ServiceConfig{
 		Name:      cr.Name,
 		Namespace: cr.Namespace,
+		Version:   Version,
 	}
 
 	var service *corev1.Service
