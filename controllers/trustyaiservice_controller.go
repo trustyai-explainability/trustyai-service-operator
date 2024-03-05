@@ -93,9 +93,8 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if containsString(instance.Finalizers, finalizerName) {
 			// The finalizer is present, so we handle external dependency deletion
 			if err := r.deleteExternalDependency(req.Name, instance, req.Namespace, ctx); err != nil {
-				// If fail to delete the external dependency here, return with error
-				// so that it can be retried
-				return RequeueWithErrorMessage(ctx, err, "Failed to delete external dependencies.")
+				// Log the error instead of returning it, so we proceed to remove the finalizer without blocking
+				log.FromContext(ctx).Error(err, "Failed to delete external dependencies, but proceeding with finalizer removal.")
 			}
 
 			// Remove the finalizer from the list and update it.

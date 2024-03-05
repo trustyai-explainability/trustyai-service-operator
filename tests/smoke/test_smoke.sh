@@ -15,6 +15,17 @@ SERVICE_NAME_2="trustyai-service-tls"
 kubectl create namespace "$NAMESPACE"
 kubectl apply -f "$CRD_PATH" -n "$NAMESPACE"
 
+log_success() {
+    local message=$1
+    echo "✅ $message"
+}
+
+log_failure() {
+    local message=$1
+    echo "❌ $message"
+    exit 1
+}
+
 # Function to check resource existence
 check_resource() {
     local resource_type=$1
@@ -22,10 +33,9 @@ check_resource() {
     local namespace=$3
 
     if ! kubectl get "$resource_type" -n "$namespace" | grep -q "$resource_name"; then
-        echo "❌ Failed to find $resource_type: $resource_name in namespace $namespace"
-        exit 1
+        log_failure "Failed to find $resource_type: $resource_name in namespace $namespace"
     else
-        echo "✅ $resource_type: $resource_name found in namespace $namespace"
+        log_success "$resource_type: $resource_name found in namespace $namespace"
     fi
 }
 
@@ -37,5 +47,15 @@ check_resource service "$SERVICE_NAME_2" "$NAMESPACE"
 
 # Check for the PVC creation
 check_resource pvc "$PVC_NAME" "$NAMESPACE"
+
+kubectl delete namespace "$NAMESPACE"
+
+sleep 10
+
+if kubectl get namespace "$NAMESPACE" &> /dev/null; then
+    log_failure "Namespace $NAMESPACE was not deleted successfully"
+else
+    log_success "Namespace $NAMESPACE has been deleted successfully"
+fi
 
 echo "All tests passed successfully."
