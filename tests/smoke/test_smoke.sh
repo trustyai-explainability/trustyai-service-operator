@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the namespace
-NAMESPACE=test-1
+NAMESPACE="test-1"
 
 # Define the path to the CRD
 CRD_PATH="./tests/smoke/manifests/trustyai-cr.yaml"
@@ -12,7 +12,8 @@ SERVICE_NAME_1="trustyai-service"
 SERVICE_NAME_2="trustyai-service-tls"
 
 # Apply the CRD
-kubectl apply -f "$CRD_PATH"
+kubectl create namespace "$NAMESPACE"
+kubectl apply -f "$CRD_PATH" -n "$NAMESPACE"
 
 # Function to check resource existence
 check_resource() {
