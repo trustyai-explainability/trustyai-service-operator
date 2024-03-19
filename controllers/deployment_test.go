@@ -84,7 +84,7 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(deployment.Labels["app.kubernetes.io/name"]).Should(Equal(defaultServiceName))
 			Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(defaultServiceName))
 			Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
-			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal(Version))
 
 			Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
 			Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
@@ -122,8 +122,8 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(oauthService.Labels["app"]).Should(Equal(instance.Name))
 			Expect(oauthService.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
 			Expect(oauthService.Labels["app.kubernetes.io/name"]).Should(Equal(instance.Name))
-			Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal("trustyai"))
-			Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+			Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
+			Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal(Version))
 			Expect(oauthService.Labels["trustyai-service-name"]).Should(Equal(instance.Name))
 
 		})
@@ -167,7 +167,7 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(deployment.Labels["app.kubernetes.io/name"]).Should(Equal(defaultServiceName))
 			Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(defaultServiceName))
 			Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
-			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal(Version))
 
 			Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
 			Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal(serviceImage))
@@ -205,8 +205,8 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(oauthService.Labels["app"]).Should(Equal(instance.Name))
 			Expect(oauthService.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
 			Expect(oauthService.Labels["app.kubernetes.io/name"]).Should(Equal(instance.Name))
-			Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal("trustyai"))
-			Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+			Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
+			Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal(Version))
 			Expect(oauthService.Labels["trustyai-service-name"]).Should(Equal(instance.Name))
 
 		})
@@ -343,38 +343,19 @@ var _ = Describe("TrustyAI operator", func() {
 
 			Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(instance.Name + "-proxy"))
 
-			foundTrustedCAVolume := false
-			for _, volume := range deployment.Spec.Template.Spec.Volumes {
-				if volume.Name == caBundleName && volume.ConfigMap != nil && volume.ConfigMap.Name == caBundleName {
-					foundTrustedCAVolume = true
-					Expect(volume.ConfigMap.Items).To(ContainElement(corev1.KeyToPath{
-						Key:  "ca-bundle.crt",
-						Path: "tls-ca-bundle.pem",
-					}))
-				}
-			}
-			Expect(foundTrustedCAVolume).To(BeTrue(), caBundleName+" volume not found")
+			foundCustomCertificatesBundleVolumeMount := false
 
-			foundTrustedCAVolumeMount := false
+			customCertificatesBundleMountPath := "/etc/ssl/certs/ca-bundle.crt"
 			for _, container := range deployment.Spec.Template.Spec.Containers {
 				for _, volumeMount := range container.VolumeMounts {
-					if volumeMount.Name == caBundleName && volumeMount.MountPath == "/etc/pki/ca-trust/extracted/pem" {
-						foundTrustedCAVolumeMount = true
-					}
-
-					if container.Name == "oauth-proxy" {
-						foundOpenshiftCAArg := false
-						for _, arg := range container.Args {
-							if arg == "--openshift-ca=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem" {
-								foundOpenshiftCAArg = true
-							}
-						}
-						Expect(foundOpenshiftCAArg).To(BeTrue(), "oauth-proxy container missing --openshift-ca argument")
+					if volumeMount.Name == caBundleName && volumeMount.MountPath == customCertificatesBundleMountPath {
+						foundCustomCertificatesBundleVolumeMount = true
 					}
 				}
 			}
-			Expect(foundTrustedCAVolumeMount).To(BeTrue(), caBundleName+"trusted-ca volume mount not found in any container")
-			Expect(k8sClient.Delete(ctx, caBundleConfigMap)).To(Succeed(), "failed to delete custom CA bundle ConfigMap")
+			Expect(foundCustomCertificatesBundleVolumeMount).To(BeTrue(), caBundleName+" volume mount not found in any container")
+
+			Expect(k8sClient.Delete(ctx, caBundleConfigMap)).To(Succeed(), "failed to delete custom certificates bundle ConfigMap")
 
 		})
 	})
@@ -463,7 +444,7 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(deployment.Labels["app.kubernetes.io/name"]).Should(Equal(defaultServiceName))
 			Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(defaultServiceName))
 			Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
-			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+			Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal(Version))
 
 			WaitFor(func() error {
 				err := reconciler.reconcileOAuthService(ctx, instance, caBundle)
@@ -482,8 +463,8 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(oauthService.Labels["app"]).Should(Equal(instance.Name))
 			Expect(oauthService.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
 			Expect(oauthService.Labels["app.kubernetes.io/name"]).Should(Equal(instance.Name))
-			Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal("trustyai"))
-			Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+			Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
+			Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal(Version))
 			Expect(oauthService.Labels["trustyai-service-name"]).Should(Equal(instance.Name))
 
 		})
@@ -546,7 +527,7 @@ var _ = Describe("TrustyAI operator", func() {
 				Expect(deployment.Labels["app.kubernetes.io/name"]).Should(Equal(defaultServiceName))
 				Expect(deployment.Labels["app.kubernetes.io/instance"]).Should(Equal(defaultServiceName))
 				Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
-				Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+				Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal(Version))
 
 				Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
 				Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
@@ -569,8 +550,8 @@ var _ = Describe("TrustyAI operator", func() {
 				Expect(oauthService.Labels["app"]).Should(Equal(instance.Name))
 				Expect(oauthService.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
 				Expect(oauthService.Labels["app.kubernetes.io/name"]).Should(Equal(instance.Name))
-				Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal("trustyai"))
-				Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal("0.1.0"))
+				Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
+				Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal(Version))
 				Expect(oauthService.Labels["trustyai-service-name"]).Should(Equal(instance.Name))
 
 			}

@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/instance: {{ .Instance.Name }}
     app.kubernetes.io/name: {{ .Instance.Name }}
     app.kubernetes.io/part-of: trustyai
-    app.kubernetes.io/version: 0.1.0
+    app.kubernetes.io/version: {{ .Version }}
 spec:
   replicas: 1
   selector:
@@ -19,7 +19,7 @@ spec:
       app.kubernetes.io/instance: {{ .Instance.Name }}
       app.kubernetes.io/name: {{ .Instance.Name }}
       app.kubernetes.io/part-of: trustyai
-      app.kubernetes.io/version: 0.1.0
+      app.kubernetes.io/version: {{ .Version }}
   template:
     metadata:
       labels:
@@ -27,7 +27,7 @@ spec:
         app.kubernetes.io/instance: {{ .Instance.Name }}
         app.kubernetes.io/name: {{ .Instance.Name }}
         app.kubernetes.io/part-of: trustyai
-        app.kubernetes.io/version: 0.1.0
+        app.kubernetes.io/version: {{ .Version }}
       annotations:
         prometheus.io/path: /q/metrics
         prometheus.io/scheme: http
@@ -93,26 +93,26 @@ spec:
               containerPort: 8443
               protocol: TCP
           volumeMounts:
-            - name: {{ .Instance.Name }}-tls
-              mountPath: /etc/tls/private
-            {{ if .CustomCertificatesBundle.IsDefined }}
+          {{ if .CustomCertificatesBundle.IsDefined }}
             - name: {{ .CustomCertificatesBundle.VolumeName }}
               readOnly: true
-              mountPath: /etc/pki/ca-trust/extracted/pem
-            {{ end }}
+              mountPath: /etc/ssl/certs/ca-bundle.crt
+              subPath: ca-bundle.crt
+              {{ end }}
+            - name: {{ .Instance.Name }}-tls
+              mountPath: /etc/tls/private
           image: {{ .OAuthImage }}
           args:
             - '--cookie-secret=SECRET'
             - '--https-address=:8443'
             - '--email-domain=*'
             - '--openshift-service-account={{ .Instance.Name }}-proxy'
-            - '--provider=openshift'
             {{ if .CustomCertificatesBundle.IsDefined }}
-            - '--openshift-ca=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem'
-            {{ else }}
+            - '--openshift-ca=/etc/ssl/certs/ca-bundle.crt'
+            {{ end }}
+            - '--provider=openshift'
             - '--tls-cert=/etc/tls/private/tls.crt'
             - '--tls-key=/etc/tls/private/tls.key'
-            {{ end}}
             - '--upstream=http://localhost:8080'
             - '--skip-auth-regex=''(^/apis/v1beta1/healthz)'''
             - >-
@@ -122,10 +122,6 @@ spec:
               "pods", "verb": "get"}}
       serviceAccount: {{ .Instance.Name }}-proxy
       volumes:
-        - name: {{ .Instance.Name}}-tls
-          secret:
-            secretName: {{ .Instance.Name }}-tls
-            defaultMode: 420
         - name: volume
           persistentVolumeClaim:
             claimName: {{ .PVCClaimName }}
@@ -133,8 +129,9 @@ spec:
         - name: {{ .CustomCertificatesBundle.VolumeName}}
           configMap:
             name: {{ .CustomCertificatesBundle.ConfigMapName }}
-            items:
-              - key: ca-bundle.crt
-                path: tls-ca-bundle.pem
             defaultMode: 420
         {{ end }}
+        - name: {{ .Instance.Name}}-tls
+          secret:
+            secretName: {{ .Instance.Name }}-tls
+            defaultMode: 420

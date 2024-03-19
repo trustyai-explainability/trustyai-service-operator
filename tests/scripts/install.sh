@@ -28,19 +28,19 @@ else
   done
 fi
 
-popd
-## Grabbing and applying the patch in the PR we are testing
-pushd ~/src/${REPO_NAME}
-if [ -z "$PULL_NUMBER" ]; then
-  echo "No pull number, assuming nightly run"
-else
-  if [ $REPO_OWNER == "trustyai-explainability" ]; then
-    curl -O -L https://github.com/${REPO_OWNER}/${REPO_NAME}/pull/${PULL_NUMBER}.patch
-    echo "Applying followng patch:"
-    cat ${PULL_NUMBER}.patch > ${ARTIFACT_DIR}/github-pr-${PULL_NUMBER}.patch
-    git apply ${PULL_NUMBER}.patch
-  fi
-fi
+#popd
+### Grabbing and applying the patch in the PR we are testing
+#pushd ~/src/${REPO_NAME}
+#if [ -z "$PULL_NUMBER" ]; then
+#  echo "No pull number, assuming nightly run"
+#else
+#  if [ $REPO_OWNER == "trustyai-explainability" ]; then
+#    curl -O -L https://github.com/${REPO_OWNER}/${REPO_NAME}/pull/${PULL_NUMBER}.patch
+#    echo "Applying followng patch:"
+#    cat ${PULL_NUMBER}.patch > ${ARTIFACT_DIR}/github-pr-${PULL_NUMBER}.patch
+#    git apply ${PULL_NUMBER}.patch
+#  fi
+#fi
 
 popd
 ## Point manifests repo uri in the KFDEF to the manifests in the PR
@@ -51,7 +51,8 @@ if [ -z "$PULL_NUMBER" ] || [ $REPO_OWNER != "trustyai-explainability" ] || [ $R
   sed -i "s#trustyaiRepoPlaceholder#https://github.com/trustyai-explainability/trustyai-service-operator/tarball/main#" ./${DSC_FILENAME}
 else
   echo "Setting TrustyAI devflags to use PR image"
-  sed -i "s#trustyaiRepoPlaceholder#https://github.com/trustyai-explainability/trustyai-serivce-operator-ci/tarball/operator-${BRANCH_SHA}#" ./${DSC_FILENAME}
+  BRANCH_SHA=$(curl  https://api.github.com/repos/trustyai-explainability/trustyai-service-operator/pulls/${PULL_NUMBER} | jq ".head.sha"  | tr -d '"')
+  sed -i "s#trustyaiRepoPlaceholder#https://api.github.com/repos/trustyai-explainability/trustyai-service-operator-ci/tarball/operator-${BRANCH_SHA}#" ./${DSC_FILENAME}
 fi
 
 if [ -z "${OPENSHIFT_TESTUSER_NAME}" ] || [ -z "${OPENSHIFT_TESTUSER_PASS}" ]; then
