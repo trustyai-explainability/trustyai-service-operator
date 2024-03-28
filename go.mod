@@ -3,7 +3,7 @@ module github.com/trustyai-explainability/trustyai-service-operator
 go 1.19
 
 require (
-	github.com/kserve/kserve v0.11.0
+	github.com/kserve/kserve v0.11.2
 	github.com/onsi/ginkgo/v2 v2.11.0
 	github.com/onsi/gomega v1.27.10
 	github.com/openshift/api v0.0.0-20200713203337-b2494ecb17dd
