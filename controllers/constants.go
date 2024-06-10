@@ -12,7 +12,14 @@ const (
 	modelMeshLabelKey    = "modelmesh-service"
 	modelMeshLabelValue  = "modelmesh-serving"
 	volumeMountName      = "volume"
-	defaultRequeueDelay  = time.Minute
+	defaultRequeueDelay  = 30 * time.Second
+	dbCredentialsSuffix  = "-db-credentials"
+)
+
+// Allowed storage formats
+const (
+	STORAGE_PVC      = "PVC"
+	STORAGE_DATABASE = "DATABASE"
 )
 
 // Configuration constants

@@ -136,19 +136,31 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return RequeueWithDelayMessage(ctx, time.Minute, "Not all replicas are ready, requeue the reconcile request")
 	}
 
-	// Ensure PVC
-	err = r.ensurePVC(ctx, instance)
-	if err != nil {
-		// PVC not found condition
-		log.FromContext(ctx).Error(err, "Error creating PVC storage.")
-		_, updateErr := r.updateStatus(ctx, instance, UpdatePVCNotAvailable)
-		if updateErr != nil {
-			return RequeueWithErrorMessage(ctx, err, "Failed to update status")
+	if instance.Spec.Storage.IsStoragePVC() {
+		// Ensure PVC
+		err = r.ensurePVC(ctx, instance)
+		if err != nil {
+			// PVC not found condition
+			log.FromContext(ctx).Error(err, "Error creating PVC storage.")
+			_, updateErr := r.updateStatus(ctx, instance, UpdatePVCNotAvailable)
+			if updateErr != nil {
+				return RequeueWithErrorMessage(ctx, err, "Failed to update status")
+			}
+
+			// If there was an error finding the PV, requeue the request
+			return RequeueWithErrorMessage(ctx, err, "Could not find requested PersistentVolumeClaim.")
+
 		}
-
-		// If there was an error finding the PV, requeue the request
-		return RequeueWithErrorMessage(ctx, err, "Could not find requested PersistentVolumeClaim.")
-
+	} else if instance.Spec.Storage.IsStorageDatabase() {
+		// Get database configuration
+		secret, err := r.findDatabaseSecret(ctx, instance)
+		if err != nil {
+			return RequeueWithErrorMessage(ctx, err, "Service configured to use database storage but no database configuration found.")
+		}
+		err = r.validateDatabaseSecret(secret)
+		if err != nil {
+			return RequeueWithErrorMessage(ctx, err, "Database configuration contains errors.")
+		}
 	}
 
 	// Ensure Deployment object
