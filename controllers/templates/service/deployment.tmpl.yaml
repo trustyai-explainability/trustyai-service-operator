@@ -83,9 +83,6 @@ spec:
               value: "jdbc:mysql://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"
             - name: SERVICE_DATA_FORMAT
               value: "HIBERNATE"
-              # TODO: Set default value
-            - name: QUARKUS_DATASOURCE_GENERATION
-              value: "create"
             {{ end }}
             - name: SERVICE_METRICS_SCHEDULE
               value: {{ .Instance.Spec.Metrics.Schedule }}
