@@ -34,14 +34,17 @@ type TrustyAIService struct {
 }
 
 type StorageSpec struct {
-	Format string `json:"format"`
-	Folder string `json:"folder"`
-	Size   string `json:"size"`
+	// Format only supports "PVC" or "DATABASE" values
+	// +kubebuilder:validation:Enum=PVC;DATABASE
+	Format                 string `json:"format"`
+	Folder                 string `json:"folder,omitempty"`
+	Size                   string `json:"size,omitempty"`
+	DatabaseConfigurations string `json:"databaseConfigurations,omitempty"`
 }
 
 type DataSpec struct {
-	Filename string `json:"filename"`
-	Format   string `json:"format"`
+	Filename string `json:"filename,omitempty"`
+	Format   string `json:"format,omitempty"`
 }
 
 type MetricsSpec struct {
@@ -55,7 +58,7 @@ type TrustyAIServiceSpec struct {
 	// +optional
 	Replicas *int32      `json:"replicas"`
 	Storage  StorageSpec `json:"storage"`
-	Data     DataSpec    `json:"data"`
+	Data     DataSpec    `json:"data,omitempty"`
 	Metrics  MetricsSpec `json:"metrics"`
 }
 
@@ -88,6 +91,30 @@ type TrustyAIServiceList struct {
 
 func init() {
 	SchemeBuilder.Register(&TrustyAIService{}, &TrustyAIServiceList{})
+}
+
+// IsDatabaseConfigurationsSet returns true if the DatabaseConfigurations field is set.
+func (s *StorageSpec) IsDatabaseConfigurationsSet() bool {
+	return s.DatabaseConfigurations != ""
+}
+
+// IsStoragePVC returns true if the storage is set to PVC.
+func (s *StorageSpec) IsStoragePVC() bool {
+	return s.Format == "PVC"
+}
+
+// IsStorageDatabase returns true if the storage is set to database.
+func (s *StorageSpec) IsStorageDatabase() bool {
+	return s.Format == "DATABASE"
+}
+
+// IsMigration returns true if the migration fields are set.
+func (t *TrustyAIService) IsMigration() bool {
+	if t.Spec.Storage.Format == "DATABASE" && t.Spec.Storage.Folder != "" && t.Spec.Data.Filename != "" {
+		return true
+	} else {
+		return false
+	}
 }
 
 // SetStatus sets the status of the TrustyAIService

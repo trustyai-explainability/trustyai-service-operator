@@ -60,7 +60,7 @@ var _ = Describe("Service Monitor Reconciliation", func() {
 		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
 		It("Should have correct values", func() {
 			namespace := "sm-test-namespace-1"
-			instance = createDefaultCR(namespace)
+			instance = createDefaultPVCCustomResource(namespace)
 
 			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace)
