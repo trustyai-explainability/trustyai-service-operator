@@ -12,7 +12,7 @@ const (
 	modelMeshLabelKey    = "modelmesh-service"
 	modelMeshLabelValue  = "modelmesh-serving"
 	volumeMountName      = "volume"
-	defaultRequeueDelay  = time.Minute
+	defaultRequeueDelay  = 10 * time.Second
 )
 
 // Configuration constants

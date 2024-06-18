@@ -51,6 +51,9 @@ spec:
             - name: SERVICE_BATCH_SIZE
               value: {{ .Schedule }}
           volumeMounts:
+            - name: {{ .Instance.Name }}-internal
+              readOnly: false
+              mountPath: /etc/tls/internal
             - name: {{ .VolumeMountName }}
               mountPath: {{ .Instance.Spec.Storage.Folder }}
               readOnly: false
@@ -134,4 +137,8 @@ spec:
         - name: {{ .Instance.Name}}-tls
           secret:
             secretName: {{ .Instance.Name }}-tls
+            defaultMode: 420
+        - name: {{ .Instance.Name}}-internal
+          secret:
+            secretName: {{ .Instance.Name }}-internal
             defaultMode: 420
