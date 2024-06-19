@@ -77,4 +77,16 @@ var _ = Describe("PVC Reconciliation", func() {
 		})
 	})
 
+	Context("when a migration CR is made", func() {
+		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+		It("Check all fields are correct", func() {
+			namespace := "pvc-test-namespace-3"
+			instance = createDefaultMigrationCustomResource(namespace)
+
+			Expect(instance.IsMigration()).To(BeTrue())
+			Expect(instance.Spec.Storage.IsStoragePVC()).To(BeFalse())
+			Expect(instance.Spec.Storage.IsStorageDatabase()).To(BeTrue())
+		})
+	})
+
 })

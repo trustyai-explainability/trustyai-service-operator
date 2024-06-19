@@ -587,6 +587,118 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(envVar.Value).To(Equal("jdbc:mysql://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"))
 
 		})
+
+		It("should set environment variables correctly in migration mode", func() {
+
+			namespace := "trusty-ns-a-4-migration"
+			instance = createDefaultMigrationCustomResource(namespace)
+			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			//printKubeObject(instance)
+			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
+
+			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
+			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
+			Expect(reconciler.ensureDeployment(ctx, instance, caBundle)).To(Succeed())
+
+			deployment := &appsv1.Deployment{}
+			namespacedName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+			Expect(k8sClient.Get(ctx, namespacedName, deployment)).Should(Succeed())
+
+			foundEnvVar := func(envVars []corev1.EnvVar, name string) *corev1.EnvVar {
+				for _, env := range envVars {
+					if env.Name == name {
+						return &env
+					}
+				}
+				return nil
+			}
+
+			var trustyaiServiceContainer *corev1.Container
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				if container.Name == "trustyai-service" {
+					trustyaiServiceContainer = &container
+					break
+				}
+			}
+
+			Expect(trustyaiServiceContainer).NotTo(BeNil(), "trustyai-service container not found")
+
+			// Checking the environment variables of the trustyai-service container
+			var envVar *corev1.EnvVar
+
+			//envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_BATCH_SIZE")
+			//Expect(envVar).To(BeNil(), "Env var SERVICE_BATCH_SIZE not found")
+			//Expect(envVar.Value).To(Equal("5000"))
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "STORAGE_DATA_FILENAME")
+			Expect(envVar).ToNot(BeNil())
+			Expect(envVar.Value).To(Equal("data.csv"))
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_STORAGE_FORMAT")
+			Expect(envVar).NotTo(BeNil(), "Env var SERVICE_STORAGE_FORMAT not found")
+			Expect(envVar.Value).To(Equal(STORAGE_DATABASE))
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "STORAGE_DATA_FOLDER")
+			Expect(envVar).ToNot(BeNil())
+			Expect(envVar.Value).To(Equal("/data"))
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_DATA_FORMAT")
+			Expect(envVar).ToNot(BeNil())
+			Expect(envVar.Value).To(Equal("CSV"))
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_METRICS_SCHEDULE")
+			Expect(envVar).NotTo(BeNil(), "Env var SERVICE_METRICS_SCHEDULE not found")
+			Expect(envVar.Value).To(Equal("5s"))
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "QUARKUS_HIBERNATE_ORM_ACTIVE")
+			Expect(envVar).NotTo(BeNil(), "Env var QUARKUS_HIBERNATE_ORM_ACTIVE not found")
+			Expect(envVar.Value).To(Equal("true"))
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "QUARKUS_DATASOURCE_DB_KIND")
+			Expect(envVar).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_DB_KIND not found")
+			Expect(envVar.ValueFrom).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_DB_KIND does not have ValueFrom set")
+			Expect(envVar.ValueFrom.SecretKeyRef).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_DB_KIND is not using SecretKeyRef")
+			Expect(envVar.ValueFrom.SecretKeyRef.Name).To(Equal(defaultDatabaseConfigurationName), "Secret name does not match")
+			Expect(envVar.ValueFrom.SecretKeyRef.Key).To(Equal("databaseKind"), "Secret key does not match")
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "QUARKUS_DATASOURCE_JDBC_MAX_SIZE")
+			Expect(envVar).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_JDBC_MAX_SIZE not found")
+			Expect(envVar.Value).To(Equal("16"))
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "QUARKUS_DATASOURCE_USERNAME")
+			Expect(envVar).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_USERNAME not found")
+			Expect(envVar.ValueFrom).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_USERNAME does not have ValueFrom set")
+			Expect(envVar.ValueFrom.SecretKeyRef).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_USERNAME is not using SecretKeyRef")
+			Expect(envVar.ValueFrom.SecretKeyRef.Name).To(Equal(defaultDatabaseConfigurationName), "Secret name does not match")
+			Expect(envVar.ValueFrom.SecretKeyRef.Key).To(Equal("databaseUsername"), "Secret key does not match")
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "QUARKUS_DATASOURCE_PASSWORD")
+			Expect(envVar).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_PASSWORD not found")
+			Expect(envVar.ValueFrom).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_PASSWORD does not have ValueFrom set")
+			Expect(envVar.ValueFrom.SecretKeyRef).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_PASSWORD is not using SecretKeyRef")
+			Expect(envVar.ValueFrom.SecretKeyRef.Name).To(Equal(defaultDatabaseConfigurationName), "Secret name does not match")
+			Expect(envVar.ValueFrom.SecretKeyRef.Key).To(Equal("databasePassword"), "Secret key does not match")
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "DATABASE_SERVICE")
+			Expect(envVar).NotTo(BeNil(), "Env var DATABASE_SERVICE not found")
+			Expect(envVar.ValueFrom).NotTo(BeNil(), "Env var DATABASE_SERVICE does not have ValueFrom set")
+			Expect(envVar.ValueFrom.SecretKeyRef).NotTo(BeNil(), "Env var DATABASE_SERVICE is not using SecretKeyRef")
+			Expect(envVar.ValueFrom.SecretKeyRef.Name).To(Equal(defaultDatabaseConfigurationName), "Secret name does not match")
+			Expect(envVar.ValueFrom.SecretKeyRef.Key).To(Equal("databaseService"), "Secret key does not match")
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "DATABASE_PORT")
+			Expect(envVar).NotTo(BeNil(), "Env var DATABASE_PORT not found")
+			Expect(envVar.ValueFrom).NotTo(BeNil(), "Env var DATABASE_PORT does not have ValueFrom set")
+			Expect(envVar.ValueFrom.SecretKeyRef).NotTo(BeNil(), "Env var DATABASE_PORT is not using SecretKeyRef")
+			Expect(envVar.ValueFrom.SecretKeyRef.Name).To(Equal(defaultDatabaseConfigurationName), "Secret name does not match")
+			Expect(envVar.ValueFrom.SecretKeyRef.Key).To(Equal("databasePort"), "Secret key does not match")
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "QUARKUS_DATASOURCE_JDBC_URL")
+			Expect(envVar).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_JDBC_URL not found")
+			Expect(envVar.Value).To(Equal("jdbc:mysql://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"))
+
+		})
+
 	})
 
 	Context("When deploying with no custom CA bundle ConfigMap", func() {
@@ -602,6 +714,12 @@ var _ = Describe("TrustyAI operator", func() {
 
 			namespace := "trusty-ns-a-7-db"
 			instance = createDefaultDBCustomResource(namespace)
+			setupAndTestDeploymentNoCustomCABundle(instance, namespace)
+		})
+		It("should use the correct service account and not include CustomCertificatesBundle in migration-mode", func() {
+
+			namespace := "trusty-ns-a-7-migration"
+			instance = createDefaultMigrationCustomResource(namespace)
 			setupAndTestDeploymentNoCustomCABundle(instance, namespace)
 		})
 
@@ -622,7 +740,12 @@ var _ = Describe("TrustyAI operator", func() {
 			instance = createDefaultDBCustomResource(namespace)
 			setupAndTestDeploymentCustomCABundle(instance, namespace)
 		})
+		It("should use the correct service account and include CustomCertificatesBundle in migration-mode", func() {
 
+			namespace := "trusty-ns-a-8-migration"
+			instance = createDefaultMigrationCustomResource(namespace)
+			setupAndTestDeploymentCustomCABundle(instance, namespace)
+		})
 	})
 
 	Context("When deploying with default settings without an InferenceService", func() {
@@ -639,6 +762,13 @@ var _ = Describe("TrustyAI operator", func() {
 
 			namespace := "trusty-ns-a-6-db"
 			instance = createDefaultDBCustomResource(namespace)
+			setupAndTestDeploymentServiceAccount(instance, namespace, "DATABASE")
+
+		})
+		It("should use the correct service account in migration-mode", func() {
+
+			namespace := "trusty-ns-a-6-migration"
+			instance = createDefaultMigrationCustomResource(namespace)
 			setupAndTestDeploymentServiceAccount(instance, namespace, "DATABASE")
 
 		})
@@ -672,6 +802,13 @@ var _ = Describe("TrustyAI operator", func() {
 
 			namespace := "trusty-ns-2-db"
 			instance := createDefaultDBCustomResource(namespace)
+			setupAndTestDeploymentInferenceService(instance, namespace, "DATABASE")
+
+		})
+		It("Sets up the InferenceService and links it to the TrustyAIService deployment in migration-mode", func() {
+
+			namespace := "trusty-ns-2-migration"
+			instance := createDefaultMigrationCustomResource(namespace)
 			setupAndTestDeploymentInferenceService(instance, namespace, "DATABASE")
 
 		})

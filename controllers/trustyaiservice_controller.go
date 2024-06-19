@@ -136,7 +136,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return RequeueWithDelayMessage(ctx, time.Minute, "Not all replicas are ready, requeue the reconcile request")
 	}
 
-	if instance.Spec.Storage.IsStoragePVC() {
+	if instance.Spec.Storage.IsStoragePVC() || instance.IsMigration() {
 		// Ensure PVC
 		err = r.ensurePVC(ctx, instance)
 		if err != nil {
@@ -151,7 +151,8 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			return RequeueWithErrorMessage(ctx, err, "Could not find requested PersistentVolumeClaim.")
 
 		}
-	} else if instance.Spec.Storage.IsStorageDatabase() {
+	}
+	if instance.Spec.Storage.IsStorageDatabase() {
 		// Get database configuration
 		secret, err := r.findDatabaseSecret(ctx, instance)
 		if err != nil {
@@ -247,6 +248,7 @@ func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&trustyaiopendatahubiov1alpha1.TrustyAIService{}).
+		Owns(&appsv1.Deployment{}).
 		Watches(&source.Kind{Type: &kservev1beta1.InferenceService{}}, &handler.EnqueueRequestForObject{}).
 		Watches(&source.Kind{Type: &kservev1alpha1.ServingRuntime{}}, &handler.EnqueueRequestForObject{}).
 		Complete(r)

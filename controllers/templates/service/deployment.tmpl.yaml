@@ -49,7 +49,16 @@ spec:
               value: {{ .Instance.Spec.Data.Format }}
             - name: QUARKUS_HIBERNATE_ORM_ACTIVE
               value: false
-            {{ else if eq .Instance.Spec.Storage.Format "DATABASE" }}
+            {{ end }}
+            {{ if .Instance.IsMigration }}
+            - name: STORAGE_DATA_FILENAME
+              value: {{ .Instance.Spec.Data.Filename }}
+            - name: STORAGE_DATA_FOLDER
+              value: {{ .Instance.Spec.Storage.Folder }}
+            - name: SERVICE_DATA_FORMAT
+              value: {{ .Instance.Spec.Data.Format }}
+            {{ end }}
+            {{ if eq .Instance.Spec.Storage.Format "DATABASE" }}
             - name: QUARKUS_HIBERNATE_ORM_ACTIVE
               value: true
             - name: QUARKUS_DATASOURCE_DB_KIND
@@ -83,6 +92,11 @@ spec:
               value: "jdbc:mysql://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"
             - name: SERVICE_DATA_FORMAT
               value: "HIBERNATE"
+            - name: QUARKUS_DATASOURCE_GENERATION
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Instance.Spec.Storage.DatabaseConfigurations }}
+                  key: databaseGeneration
             {{ end }}
             - name: SERVICE_METRICS_SCHEDULE
               value: {{ .Instance.Spec.Metrics.Schedule }}
@@ -168,7 +182,7 @@ spec:
               "pods", "verb": "get"}}
       serviceAccount: {{ .Instance.Name }}-proxy
       volumes:
-        {{ if eq .Instance.Spec.Storage.Format "PVC" }}
+        {{ if or (eq .Instance.Spec.Storage.Format "PVC") ( .Instance.IsMigration) }}
         - name: volume
           persistentVolumeClaim:
             claimName: {{ .PVCClaimName }}

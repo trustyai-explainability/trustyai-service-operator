@@ -50,7 +50,7 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 	var err error
 	status := AvailabilityStatus{}
 
-	if instance.Spec.Storage.IsStoragePVC() {
+	if instance.Spec.Storage.IsStoragePVC() || instance.IsMigration() {
 		// Check for PVC readiness
 		status.PVCReady, err = r.checkPVCReady(ctx, instance)
 		if err != nil || !status.PVCReady {
@@ -86,7 +86,7 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 				UpdateInferenceServiceNotPresent(saved)
 			}
 
-			if instance.Spec.Storage.IsStoragePVC() {
+			if instance.Spec.Storage.IsStoragePVC() || instance.IsMigration() {
 				UpdatePVCAvailable(saved)
 			}
 			UpdateRouteAvailable(saved)
@@ -106,7 +106,7 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 				UpdateInferenceServiceNotPresent(saved)
 			}
 
-			if instance.Spec.Storage.IsStoragePVC() {
+			if instance.Spec.Storage.IsStoragePVC() || instance.IsMigration() {
 				if status.PVCReady {
 					UpdatePVCAvailable(saved)
 				} else {

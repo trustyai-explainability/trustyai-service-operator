@@ -71,6 +71,12 @@ var _ = Describe("Route Reconciliation", func() {
 			instance = createDefaultDBCustomResource(namespace)
 			setupAndTestRouteCreation(instance, namespace)
 		})
+		It("Should create Route successfully in migration-mode", func() {
+			namespace := "route-test-namespace-1-migration"
+			instance = createDefaultMigrationCustomResource(namespace)
+			setupAndTestRouteCreation(instance, namespace)
+		})
+
 	})
 
 	Context("When Route exists and is the same", func() {
@@ -85,5 +91,11 @@ var _ = Describe("Route Reconciliation", func() {
 			instance = createDefaultDBCustomResource(namespace)
 			setupAndTestSameRouteCreation(instance, namespace)
 		})
+		It("Should not update Route in migration-mode", func() {
+			namespace := "route-test-namespace-2-migration"
+			instance = createDefaultMigrationCustomResource(namespace)
+			setupAndTestSameRouteCreation(instance, namespace)
+		})
+
 	})
 })

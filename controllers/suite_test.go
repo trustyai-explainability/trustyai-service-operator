@@ -134,6 +134,33 @@ func createDefaultDBCustomResource(namespaceCurrent string) *trustyaiopendatahub
 	return &service
 }
 
+// createDefaultMigrationCustomResource creates a TrustyAIService instance with default values and both PVC and DB backend
+func createDefaultMigrationCustomResource(namespaceCurrent string) *trustyaiopendatahubiov1alpha1.TrustyAIService {
+	service := trustyaiopendatahubiov1alpha1.TrustyAIService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      defaultServiceName,
+			Namespace: namespaceCurrent,
+			UID:       types.UID(uuid.New().String()),
+		},
+		Spec: trustyaiopendatahubiov1alpha1.TrustyAIServiceSpec{
+			Storage: trustyaiopendatahubiov1alpha1.StorageSpec{
+				Format:                 STORAGE_DATABASE,
+				DatabaseConfigurations: defaultDatabaseConfigurationName,
+				Folder:                 "/data",
+				Size:                   "1Gi",
+			},
+			Data: trustyaiopendatahubiov1alpha1.DataSpec{
+				Filename: "data.csv",
+				Format:   "CSV",
+			},
+			Metrics: trustyaiopendatahubiov1alpha1.MetricsSpec{
+				Schedule: "5s",
+			},
+		},
+	}
+	return &service
+}
+
 // createNamespace creates a new namespace
 func createNamespace(ctx context.Context, k8sClient client.Client, namespace string) error {
 	ns := &corev1.Namespace{
