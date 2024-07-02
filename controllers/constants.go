@@ -63,3 +63,5 @@ const (
 	EventReasonInferenceServiceConfigured = "InferenceServiceConfigured"
 	EventReasonServiceMonitorCreated      = "ServiceMonitorCreated"
 )
+
+const migrationAnnotationKey = "trustyai.opendatahub.io/db-migration"

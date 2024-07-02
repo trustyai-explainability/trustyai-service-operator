@@ -164,10 +164,27 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	// Ensure Deployment object
-	err = r.ensureDeployment(ctx, instance, caBundle)
-	if err != nil {
-		return RequeueWithError(err)
+	// Check for migration annotation
+	if _, ok := instance.Annotations[migrationAnnotationKey]; ok {
+		log.FromContext(ctx).Info("Found migration annotation. Migrating.")
+		err = r.ensureDeployment(ctx, instance, caBundle, true)
+		if err != nil {
+			return RequeueWithErrorMessage(ctx, err, "Failed to restart deployment during migration.")
+		}
+
+		// Optionally, remove the migration annotation after processing to avoid repeated restarts
+		delete(instance.Annotations, migrationAnnotationKey)
+		log.FromContext(ctx).Info("Deleting annotation")
+		if err := r.Update(ctx, instance); err != nil {
+			return RequeueWithErrorMessage(ctx, err, "Failed to remove migration annotation.")
+		}
+	} else {
+		// Ensure Deployment object
+		err = r.ensureDeployment(ctx, instance, caBundle, false)
+		log.FromContext(ctx).Info("No annotation found")
+		if err != nil {
+			return RequeueWithError(err)
+		}
 	}
 
 	// Fetch the TrustyAIService instance

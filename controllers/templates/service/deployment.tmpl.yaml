@@ -12,6 +12,11 @@ metadata:
     app.kubernetes.io/part-of: trustyai
     app.kubernetes.io/version: {{ .Version }}
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   replicas: 1
   selector:
     matchLabels:

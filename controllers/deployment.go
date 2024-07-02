@@ -2,9 +2,12 @@ package controllers
 
 import (
 	"context"
-	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/templates"
 	"reflect"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strconv"
+	"time"
+
+	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/templates"
 
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -117,7 +120,44 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 
 }
 
-func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, caBundle CustomCertificatesBundle) error {
+// updateDeployment returns a Deployment object with the same name/namespace as the cr
+func (r *TrustyAIServiceReconciler) updateDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, imageName string, caBundle CustomCertificatesBundle) error {
+
+	if !cr.Spec.Storage.IsDatabaseConfigurationsSet() {
+
+		pvcName := generatePVCName(cr)
+
+		pvc := &corev1.PersistentVolumeClaim{}
+		pvcerr := r.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: cr.Namespace}, pvc)
+		if pvcerr != nil {
+			log.FromContext(ctx).Error(pvcerr, "PVC not found")
+			return pvcerr
+		}
+	}
+
+	// We can now create the Deployment object.
+	deployment, err := r.createDeploymentObject(ctx, cr, imageName, caBundle)
+	if err != nil {
+		// Error creating the deployment resource object
+		return err
+	}
+
+	if err := ctrl.SetControllerReference(cr, deployment, r.Scheme); err != nil {
+		log.FromContext(ctx).Error(err, "Error setting TrustyAIService as owner of Deployment.")
+		return err
+	}
+	log.FromContext(ctx).Info("Updating Deployment.")
+	err = r.Update(ctx, deployment)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Error updating Deployment.")
+		return err
+	}
+	// Created successfully
+	return nil
+
+}
+
+func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, caBundle CustomCertificatesBundle, migration bool) error {
 
 	// Get image and tag from ConfigMap
 	// If there's a ConfigMap with custom images, it is only applied when the operator is first deployed
@@ -139,6 +179,12 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 		// Some other error occurred when trying to get the Deployment
 		return err
 	}
+	// Deployment exists, but we are migrating
+	if migration {
+		log.FromContext(ctx).Info("(from ensuredeplyment) Found migration annotation. Migrating.")
+		return r.updateDeployment(ctx, instance, image, caBundle)
+	}
+
 	// Deployment is ready and using the PVC
 	return nil
 }
@@ -163,4 +209,56 @@ func (r *TrustyAIServiceReconciler) checkDeploymentReady(ctx context.Context, in
 	}
 
 	return false, nil
+}
+
+func (r *TrustyAIServiceReconciler) scaleDeployment(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, replicas int32) error {
+	deployment := &appsv1.Deployment{}
+	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deployment)
+	if err != nil {
+		return err
+	}
+	deployment.Spec.Replicas = &replicas
+	return r.Update(ctx, deployment)
+}
+
+func (r *TrustyAIServiceReconciler) waitForTermination(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			podList := &corev1.PodList{}
+			opts := []client.ListOption{
+				client.InNamespace(instance.Name),
+				client.MatchingLabels{"app": instance.Name},
+			}
+			err := r.List(ctx, podList, opts...)
+			if err != nil {
+				return err
+			}
+			if len(podList.Items) == 0 {
+				return nil
+			}
+			time.Sleep(2 * time.Second)
+		}
+	}
+}
+
+func (r *TrustyAIServiceReconciler) redeployForMigration(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+	err := r.scaleDeployment(ctx, instance, 0)
+	if err != nil {
+		return err
+	}
+
+	err = r.waitForTermination(ctx, instance)
+	if err != nil {
+		return err
+	}
+
+	err = r.scaleDeployment(ctx, instance, 1)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

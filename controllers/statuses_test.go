@@ -104,7 +104,7 @@ var _ = Describe("Status and condition tests", func() {
 				return makePVCReady(ctx, k8sClient, instance)
 			}, "failed to bind PVC")
 			WaitFor(func() error {
-				return reconciler.ensureDeployment(ctx, instance, caBundle)
+				return reconciler.ensureDeployment(ctx, instance, caBundle, false)
 			}, "failed to create deployment")
 			WaitFor(func() error {
 				return makeDeploymentReady(ctx, k8sClient, instance)
@@ -168,7 +168,7 @@ var _ = Describe("Status and condition tests", func() {
 				return makeRouteReady(ctx, k8sClient, instance)
 			}, "failed to make route ready")
 			WaitFor(func() error {
-				return reconciler.ensureDeployment(ctx, instance, caBundle)
+				return reconciler.ensureDeployment(ctx, instance, caBundle, false)
 			}, "failed to create deployment")
 			WaitFor(func() error {
 				return makeDeploymentReady(ctx, k8sClient, instance)
@@ -238,7 +238,7 @@ var _ = Describe("Status and condition tests", func() {
 				return makePVCReady(ctx, k8sClient, instance)
 			}, "failed to bind PVC")
 			WaitFor(func() error {
-				return reconciler.ensureDeployment(ctx, instance, caBundle)
+				return reconciler.ensureDeployment(ctx, instance, caBundle, false)
 			}, "failed to create deployment")
 			WaitFor(func() error {
 				return makeDeploymentReady(ctx, k8sClient, instance)
@@ -313,7 +313,7 @@ var _ = Describe("Status and condition tests", func() {
 				return makePVCReady(ctx, k8sClient, instance)
 			}, "failed to bind PVC")
 			WaitFor(func() error {
-				return reconciler.ensureDeployment(ctx, instance, caBundle)
+				return reconciler.ensureDeployment(ctx, instance, caBundle, false)
 			}, "failed to create deployment")
 			WaitFor(func() error {
 				return makeDeploymentReady(ctx, k8sClient, instance)

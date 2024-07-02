@@ -33,7 +33,7 @@ func setupAndTestDeploymentDefault(instance *trustyaiopendatahubiov1alpha1.Trust
 
 	Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
 	Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
-	Expect(reconciler.ensureDeployment(ctx, instance, caBundle)).To(Succeed())
+	Expect(reconciler.ensureDeployment(ctx, instance, caBundle, false)).To(Succeed())
 
 	deployment := &appsv1.Deployment{}
 	err := k8sClient.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deployment)
@@ -106,7 +106,7 @@ func setupAndTestDeploymentConfigMap(instance *trustyaiopendatahubiov1alpha1.Tru
 	Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
 	Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
 	WaitFor(func() error {
-		return reconciler.ensureDeployment(ctx, instance, caBundle)
+		return reconciler.ensureDeployment(ctx, instance, caBundle, false)
 	}, "failed to reconcile deployment")
 
 	deployment := &appsv1.Deployment{}
@@ -174,7 +174,7 @@ func setupAndTestDeploymentNoCustomCABundle(instance *trustyaiopendatahubiov1alp
 	Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
 	Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
 	WaitFor(func() error {
-		return reconciler.ensureDeployment(ctx, instance, caBundle)
+		return reconciler.ensureDeployment(ctx, instance, caBundle, false)
 	}, "failed to create deployment")
 
 	deployment := &appsv1.Deployment{}
@@ -209,7 +209,7 @@ func setupAndTestDeploymentCustomCABundle(instance *trustyaiopendatahubiov1alpha
 	Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
 	Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
 	WaitFor(func() error {
-		return reconciler.ensureDeployment(ctx, instance, caBundle)
+		return reconciler.ensureDeployment(ctx, instance, caBundle, false)
 	}, "failed to create deployment")
 
 	deployment := &appsv1.Deployment{}
@@ -244,7 +244,7 @@ func setupAndTestDeploymentServiceAccount(instance *trustyaiopendatahubiov1alpha
 	}
 	Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
 	WaitFor(func() error {
-		return reconciler.ensureDeployment(ctx, instance, caBundle)
+		return reconciler.ensureDeployment(ctx, instance, caBundle, false)
 	}, "failed to create deployment")
 
 	deployment := &appsv1.Deployment{}
@@ -265,7 +265,7 @@ func setupAndTestDeploymentInferenceService(instance *trustyaiopendatahubiov1alp
 		return createTestPVC(ctx, k8sClient, instance)
 	}, "failed to create PVC")
 	WaitFor(func() error {
-		return reconciler.ensureDeployment(ctx, instance, caBundle)
+		return reconciler.ensureDeployment(ctx, instance, caBundle, false)
 	}, "failed to create deployment")
 
 	// Creating the InferenceService
@@ -397,7 +397,7 @@ var _ = Describe("TrustyAI operator", func() {
 
 			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
 			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
-			Expect(reconciler.ensureDeployment(ctx, instance, caBundle)).To(Succeed())
+			Expect(reconciler.ensureDeployment(ctx, instance, caBundle, false)).To(Succeed())
 
 			deployment := &appsv1.Deployment{}
 			namespacedName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
@@ -488,7 +488,7 @@ var _ = Describe("TrustyAI operator", func() {
 
 			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
 			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
-			Expect(reconciler.ensureDeployment(ctx, instance, caBundle)).To(Succeed())
+			Expect(reconciler.ensureDeployment(ctx, instance, caBundle, false)).To(Succeed())
 
 			deployment := &appsv1.Deployment{}
 			namespacedName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
@@ -598,7 +598,7 @@ var _ = Describe("TrustyAI operator", func() {
 
 			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
 			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
-			Expect(reconciler.ensureDeployment(ctx, instance, caBundle)).To(Succeed())
+			Expect(reconciler.ensureDeployment(ctx, instance, caBundle, false)).To(Succeed())
 
 			deployment := &appsv1.Deployment{}
 			namespacedName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
@@ -852,7 +852,7 @@ var _ = Describe("TrustyAI operator", func() {
 					return createTestPVC(ctx, k8sClient, instance)
 				}, "failed to create PVC")
 				WaitFor(func() error {
-					return reconciler.ensureDeployment(ctx, instance, caBundle)
+					return reconciler.ensureDeployment(ctx, instance, caBundle, false)
 				}, "failed to create deployment")
 				//Expect(k8sClient.Create(ctx, instance)).Should(Succeed())
 				deployment := &appsv1.Deployment{}
