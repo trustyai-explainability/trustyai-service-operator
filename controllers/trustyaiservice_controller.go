@@ -168,8 +168,10 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if _, ok := instance.Annotations[migrationAnnotationKey]; ok {
 		log.FromContext(ctx).Info("Found migration annotation. Migrating.")
 		err = r.ensureDeployment(ctx, instance, caBundle, true)
+		//err = r.redeployForMigration(ctx, instance)
+
 		if err != nil {
-			return RequeueWithErrorMessage(ctx, err, "Failed to restart deployment during migration.")
+			return RequeueWithErrorMessage(ctx, err, "Retrying to restart deployment during migration.")
 		}
 
 		// Optionally, remove the migration annotation after processing to avoid repeated restarts

@@ -355,11 +355,20 @@ var _ = Describe("TrustyAI operator", func() {
 			instance = createDefaultPVCCustomResource(namespace)
 			setupAndTestDeploymentDefault(instance, namespace)
 		})
-		It("Creates a deployment and a service with the default configuration in DB-mode", func() {
+		It("Creates a deployment and a service with the default configuration in DB-mode (mysql)", func() {
 			namespace := "trusty-ns-a-1-db"
 			instance = createDefaultDBCustomResource(namespace)
 			WaitFor(func() error {
-				secret := createDatabaseConfiguration(namespace, defaultDatabaseConfigurationName)
+				secret := createDatabaseConfiguration(namespace, defaultDatabaseConfigurationName, "mysql")
+				return k8sClient.Create(ctx, secret)
+			}, "failed to create ConfigMap")
+			setupAndTestDeploymentDefault(instance, namespace)
+		})
+		It("Creates a deployment and a service with the default configuration in DB-mode (mariadb)", func() {
+			namespace := "trusty-ns-a-1-db"
+			instance = createDefaultDBCustomResource(namespace)
+			WaitFor(func() error {
+				secret := createDatabaseConfiguration(namespace, defaultDatabaseConfigurationName, "mariadb")
 				return k8sClient.Create(ctx, secret)
 			}, "failed to create ConfigMap")
 			setupAndTestDeploymentDefault(instance, namespace)
@@ -483,7 +492,6 @@ var _ = Describe("TrustyAI operator", func() {
 			namespace := "trusty-ns-a-4-db"
 			instance = createDefaultDBCustomResource(namespace)
 			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
-			//printKubeObject(instance)
 			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
 			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
@@ -493,8 +501,6 @@ var _ = Describe("TrustyAI operator", func() {
 			deployment := &appsv1.Deployment{}
 			namespacedName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
 			Expect(k8sClient.Get(ctx, namespacedName, deployment)).Should(Succeed())
-
-			//printKubeObject(deployment)
 
 			foundEnvVar := func(envVars []corev1.EnvVar, name string) *corev1.EnvVar {
 				for _, env := range envVars {
@@ -517,10 +523,6 @@ var _ = Describe("TrustyAI operator", func() {
 
 			// Checking the environment variables of the trustyai-service container
 			var envVar *corev1.EnvVar
-
-			//envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_BATCH_SIZE")
-			//Expect(envVar).To(BeNil(), "Env var SERVICE_BATCH_SIZE not found")
-			//Expect(envVar.Value).To(Equal("5000"))
 
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "STORAGE_DATA_FILENAME")
 			Expect(envVar).To(BeNil())
@@ -584,7 +586,7 @@ var _ = Describe("TrustyAI operator", func() {
 
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "QUARKUS_DATASOURCE_JDBC_URL")
 			Expect(envVar).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_JDBC_URL not found")
-			Expect(envVar.Value).To(Equal("jdbc:mysql://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"))
+			Expect(envVar.Value).To(Equal("jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"))
 
 		})
 
@@ -695,7 +697,7 @@ var _ = Describe("TrustyAI operator", func() {
 
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "QUARKUS_DATASOURCE_JDBC_URL")
 			Expect(envVar).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_JDBC_URL not found")
-			Expect(envVar.Value).To(Equal("jdbc:mysql://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"))
+			Expect(envVar.Value).To(Equal("jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"))
 
 		})
 

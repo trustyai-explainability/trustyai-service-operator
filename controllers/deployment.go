@@ -181,7 +181,7 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 	}
 	// Deployment exists, but we are migrating
 	if migration {
-		log.FromContext(ctx).Info("(from ensuredeplyment) Found migration annotation. Migrating.")
+		log.FromContext(ctx).Info("Found migration annotation. Migrating.")
 		return r.updateDeployment(ctx, instance, image, caBundle)
 	}
 
@@ -245,16 +245,19 @@ func (r *TrustyAIServiceReconciler) waitForTermination(ctx context.Context, inst
 }
 
 func (r *TrustyAIServiceReconciler) redeployForMigration(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+	log.FromContext(ctx).Info("Scaling down to zero replicas")
 	err := r.scaleDeployment(ctx, instance, 0)
 	if err != nil {
 		return err
 	}
 
+	log.FromContext(ctx).Info("Waiting for deployment to scale down to zero replicas")
 	err = r.waitForTermination(ctx, instance)
 	if err != nil {
 		return err
 	}
 
+	log.FromContext(ctx).Info("Scaling up")
 	err = r.scaleDeployment(ctx, instance, 1)
 	if err != nil {
 		return err

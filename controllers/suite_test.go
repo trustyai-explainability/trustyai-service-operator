@@ -215,9 +215,9 @@ func createSecret(namespace string, secretName string, data map[string]string) *
 	}
 }
 
-func createDatabaseConfiguration(namespace string, name string) *corev1.Secret {
+func createDatabaseConfiguration(namespace string, name string, dbKind string) *corev1.Secret {
 	return createSecret(namespace, name, map[string]string{
-		"databaseKind":     "mysql",
+		"databaseKind":     dbKind,
 		"databaseUsername": "foo",
 		"databasePassword": "bar",
 		"databaseService":  "mariadb-service",

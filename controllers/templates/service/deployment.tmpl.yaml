@@ -94,7 +94,7 @@ spec:
                   name: {{ .Instance.Spec.Storage.DatabaseConfigurations }}
                   key: databasePort
             - name: QUARKUS_DATASOURCE_JDBC_URL
-              value: "jdbc:mysql://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"
+              value: "jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"
             - name: SERVICE_DATA_FORMAT
               value: "HIBERNATE"
             - name: QUARKUS_DATASOURCE_GENERATION
