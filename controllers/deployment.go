@@ -2,12 +2,9 @@ package controllers
 
 import (
 	"context"
-	"reflect"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"strconv"
-	"time"
-
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/templates"
+	"reflect"
+	"strconv"
 
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -209,59 +206,4 @@ func (r *TrustyAIServiceReconciler) checkDeploymentReady(ctx context.Context, in
 	}
 
 	return false, nil
-}
-
-func (r *TrustyAIServiceReconciler) scaleDeployment(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, replicas int32) error {
-	deployment := &appsv1.Deployment{}
-	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deployment)
-	if err != nil {
-		return err
-	}
-	deployment.Spec.Replicas = &replicas
-	return r.Update(ctx, deployment)
-}
-
-func (r *TrustyAIServiceReconciler) waitForTermination(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			podList := &corev1.PodList{}
-			opts := []client.ListOption{
-				client.InNamespace(instance.Name),
-				client.MatchingLabels{"app": instance.Name},
-			}
-			err := r.List(ctx, podList, opts...)
-			if err != nil {
-				return err
-			}
-			if len(podList.Items) == 0 {
-				return nil
-			}
-			time.Sleep(2 * time.Second)
-		}
-	}
-}
-
-func (r *TrustyAIServiceReconciler) redeployForMigration(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
-	log.FromContext(ctx).Info("Scaling down to zero replicas")
-	err := r.scaleDeployment(ctx, instance, 0)
-	if err != nil {
-		return err
-	}
-
-	log.FromContext(ctx).Info("Waiting for deployment to scale down to zero replicas")
-	err = r.waitForTermination(ctx, instance)
-	if err != nil {
-		return err
-	}
-
-	log.FromContext(ctx).Info("Scaling up")
-	err = r.scaleDeployment(ctx, instance, 1)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
