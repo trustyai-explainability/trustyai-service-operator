@@ -12,7 +12,14 @@ const (
 	modelMeshLabelKey    = "modelmesh-service"
 	modelMeshLabelValue  = "modelmesh-serving"
 	volumeMountName      = "volume"
-	defaultRequeueDelay  = 10 * time.Second
+	defaultRequeueDelay  = 30 * time.Second
+	dbCredentialsSuffix  = "-db-credentials"
+)
+
+// Allowed storage formats
+const (
+	STORAGE_PVC      = "PVC"
+	STORAGE_DATABASE = "DATABASE"
 )
 
 // Configuration constants
@@ -56,3 +63,5 @@ const (
 	EventReasonInferenceServiceConfigured = "InferenceServiceConfigured"
 	EventReasonServiceMonitorCreated      = "ServiceMonitorCreated"
 )
+
+const migrationAnnotationKey = "trustyai.opendatahub.io/db-migration"

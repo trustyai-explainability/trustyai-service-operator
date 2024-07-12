@@ -31,7 +31,7 @@ var _ = Describe("PVC Reconciliation", func() {
 		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
 		It("should create a new PVC and emit an event", func() {
 			namespace := "pvc-test-namespace-1"
-			instance = createDefaultCR(namespace)
+			instance = createDefaultPVCCustomResource(namespace)
 			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace)
 			}, "failed to create namespace")
@@ -54,7 +54,7 @@ var _ = Describe("PVC Reconciliation", func() {
 		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
 		It("should not attempt to create the PVC", func() {
 			namespace := "pvc-test-namespace-2"
-			instance = createDefaultCR(namespace)
+			instance = createDefaultPVCCustomResource(namespace)
 			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace)
 			}, "failed to create namespace")
@@ -74,6 +74,18 @@ var _ = Describe("PVC Reconciliation", func() {
 
 			// Check no event related for PVC creation
 			Consistently(recorder.Events).ShouldNot(Receive(ContainSubstring("Created PVC")))
+		})
+	})
+
+	Context("when a migration CR is made", func() {
+		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+		It("Check all fields are correct", func() {
+			namespace := "pvc-test-namespace-3"
+			instance = createDefaultMigrationCustomResource(namespace)
+
+			Expect(instance.IsMigration()).To(BeTrue())
+			Expect(instance.Spec.Storage.IsStoragePVC()).To(BeFalse())
+			Expect(instance.Spec.Storage.IsStorageDatabase()).To(BeTrue())
 		})
 	})
 

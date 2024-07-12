@@ -136,25 +136,57 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return RequeueWithDelayMessage(ctx, time.Minute, "Not all replicas are ready, requeue the reconcile request")
 	}
 
-	// Ensure PVC
-	err = r.ensurePVC(ctx, instance)
-	if err != nil {
-		// PVC not found condition
-		log.FromContext(ctx).Error(err, "Error creating PVC storage.")
-		_, updateErr := r.updateStatus(ctx, instance, UpdatePVCNotAvailable)
-		if updateErr != nil {
-			return RequeueWithErrorMessage(ctx, err, "Failed to update status")
+	if instance.Spec.Storage.IsStoragePVC() || instance.IsMigration() {
+		// Ensure PVC
+		err = r.ensurePVC(ctx, instance)
+		if err != nil {
+			// PVC not found condition
+			log.FromContext(ctx).Error(err, "Error creating PVC storage.")
+			_, updateErr := r.updateStatus(ctx, instance, UpdatePVCNotAvailable)
+			if updateErr != nil {
+				return RequeueWithErrorMessage(ctx, err, "Failed to update status")
+			}
+
+			// If there was an error finding the PV, requeue the request
+			return RequeueWithErrorMessage(ctx, err, "Could not find requested PersistentVolumeClaim.")
+
 		}
-
-		// If there was an error finding the PV, requeue the request
-		return RequeueWithErrorMessage(ctx, err, "Could not find requested PersistentVolumeClaim.")
-
+	}
+	if instance.Spec.Storage.IsStorageDatabase() {
+		// Get database configuration
+		secret, err := r.findDatabaseSecret(ctx, instance)
+		if err != nil {
+			return RequeueWithErrorMessage(ctx, err, "Service configured to use database storage but no database configuration found.")
+		}
+		err = r.validateDatabaseSecret(secret)
+		if err != nil {
+			return RequeueWithErrorMessage(ctx, err, "Database configuration contains errors.")
+		}
 	}
 
-	// Ensure Deployment object
-	err = r.ensureDeployment(ctx, instance, caBundle)
-	if err != nil {
-		return RequeueWithError(err)
+	// Check for migration annotation
+	if _, ok := instance.Annotations[migrationAnnotationKey]; ok {
+		log.FromContext(ctx).Info("Found migration annotation. Migrating.")
+		err = r.ensureDeployment(ctx, instance, caBundle, true)
+		//err = r.redeployForMigration(ctx, instance)
+
+		if err != nil {
+			return RequeueWithErrorMessage(ctx, err, "Retrying to restart deployment during migration.")
+		}
+
+		// Remove the migration annotation after processing to avoid restarts
+		delete(instance.Annotations, migrationAnnotationKey)
+		log.FromContext(ctx).Info("Deleting annotation")
+		if err := r.Update(ctx, instance); err != nil {
+			return RequeueWithErrorMessage(ctx, err, "Failed to remove migration annotation.")
+		}
+	} else {
+		// Ensure Deployment object
+		err = r.ensureDeployment(ctx, instance, caBundle, false)
+		log.FromContext(ctx).Info("No annotation found")
+		if err != nil {
+			return RequeueWithError(err)
+		}
 	}
 
 	// Fetch the TrustyAIService instance
@@ -235,6 +267,7 @@ func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&trustyaiopendatahubiov1alpha1.TrustyAIService{}).
+		Owns(&appsv1.Deployment{}).
 		Watches(&source.Kind{Type: &kservev1beta1.InferenceService{}}, &handler.EnqueueRequestForObject{}).
 		Watches(&source.Kind{Type: &kservev1alpha1.ServingRuntime{}}, &handler.EnqueueRequestForObject{}).
 		Complete(r)

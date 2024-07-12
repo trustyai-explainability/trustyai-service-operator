@@ -26,7 +26,7 @@ var _ = Describe("Service Accounts", func() {
 		It("Should create SAs, CRBs successfully", func() {
 
 			namespace1 := "sa-test-namespace-1"
-			instance1 := createDefaultCR(namespace1)
+			instance1 := createDefaultPVCCustomResource(namespace1)
 
 			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace1)
@@ -36,7 +36,7 @@ var _ = Describe("Service Accounts", func() {
 
 			namespace2 := "sa-test-namespace-2"
 
-			instance2 := createDefaultCR(namespace2)
+			instance2 := createDefaultPVCCustomResource(namespace2)
 
 			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace2)

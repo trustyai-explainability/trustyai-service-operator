@@ -100,6 +100,7 @@ func (r *TrustyAIServiceReconciler) checkRouteReady(ctx context.Context, cr *tru
 
 	err := r.Client.Get(ctx, types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, existingRoute)
 	if err != nil {
+		log.FromContext(ctx).Info("Unable to find the Route")
 		if errors.IsNotFound(err) {
 			return false, nil
 		}

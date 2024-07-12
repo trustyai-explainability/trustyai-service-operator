@@ -41,9 +41,6 @@ spec:
                     type: string
                   format:
                     type: string
-                required:
-                - filename
-                - format
                 type: object
               metrics:
                 properties:
@@ -60,19 +57,22 @@ spec:
                 type: integer
               storage:
                 properties:
+                  databaseConfigurations:
+                    type: string
                   folder:
                     type: string
                   format:
+                    description: Format only supports "PVC" or "DATABASE" values
+                    enum:
+                    - PVC
+                    - DATABASE
                     type: string
                   size:
                     type: string
                 required:
-                - folder
                 - format
-                - size
                 type: object
             required:
-            - data
             - metrics
             - storage
             type: object

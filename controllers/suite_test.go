@@ -65,8 +65,9 @@ var (
 )
 
 const (
-	defaultServiceName = "example-trustyai-service"
-	operatorNamespace  = "system"
+	defaultServiceName               = "example-trustyai-service"
+	defaultDatabaseConfigurationName = defaultServiceName + "-db-credentials"
+	operatorNamespace                = "system"
 )
 
 const (
@@ -86,8 +87,8 @@ func WaitFor(operation func() error, errorMsg string) {
 	Eventually(operation, defaultTimeout, defaultPolling).Should(Succeed(), errorMsg)
 }
 
-// createDefaultCR creates a TrustyAIService instance with default values
-func createDefaultCR(namespaceCurrent string) *trustyaiopendatahubiov1alpha1.TrustyAIService {
+// createDefaultPVCCustomResource creates a TrustyAIService instance with default values and PVC backend
+func createDefaultPVCCustomResource(namespaceCurrent string) *trustyaiopendatahubiov1alpha1.TrustyAIService {
 	service := trustyaiopendatahubiov1alpha1.TrustyAIService{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      defaultServiceName,
@@ -96,9 +97,57 @@ func createDefaultCR(namespaceCurrent string) *trustyaiopendatahubiov1alpha1.Tru
 		},
 		Spec: trustyaiopendatahubiov1alpha1.TrustyAIServiceSpec{
 			Storage: trustyaiopendatahubiov1alpha1.StorageSpec{
-				Format: "PVC",
+				Format: STORAGE_PVC,
 				Folder: "/data",
 				Size:   "1Gi",
+			},
+			Data: trustyaiopendatahubiov1alpha1.DataSpec{
+				Filename: "data.csv",
+				Format:   "CSV",
+			},
+			Metrics: trustyaiopendatahubiov1alpha1.MetricsSpec{
+				Schedule: "5s",
+			},
+		},
+	}
+	return &service
+}
+
+// createDefaultDBCustomResource creates a TrustyAIService instance with default values and DB backend
+func createDefaultDBCustomResource(namespaceCurrent string) *trustyaiopendatahubiov1alpha1.TrustyAIService {
+	service := trustyaiopendatahubiov1alpha1.TrustyAIService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      defaultServiceName,
+			Namespace: namespaceCurrent,
+			UID:       types.UID(uuid.New().String()),
+		},
+		Spec: trustyaiopendatahubiov1alpha1.TrustyAIServiceSpec{
+			Storage: trustyaiopendatahubiov1alpha1.StorageSpec{
+				Format:                 STORAGE_DATABASE,
+				DatabaseConfigurations: defaultDatabaseConfigurationName,
+			},
+			Metrics: trustyaiopendatahubiov1alpha1.MetricsSpec{
+				Schedule: "5s",
+			},
+		},
+	}
+	return &service
+}
+
+// createDefaultMigrationCustomResource creates a TrustyAIService instance with default values and both PVC and DB backend
+func createDefaultMigrationCustomResource(namespaceCurrent string) *trustyaiopendatahubiov1alpha1.TrustyAIService {
+	service := trustyaiopendatahubiov1alpha1.TrustyAIService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      defaultServiceName,
+			Namespace: namespaceCurrent,
+			UID:       types.UID(uuid.New().String()),
+		},
+		Spec: trustyaiopendatahubiov1alpha1.TrustyAIServiceSpec{
+			Storage: trustyaiopendatahubiov1alpha1.StorageSpec{
+				Format:                 STORAGE_DATABASE,
+				DatabaseConfigurations: defaultDatabaseConfigurationName,
+				Folder:                 "/data",
+				Size:                   "1Gi",
 			},
 			Data: trustyaiopendatahubiov1alpha1.DataSpec{
 				Filename: "data.csv",
@@ -146,6 +195,34 @@ func createConfigMap(namespace string, oauthImage string, trustyaiServiceImage s
 			configMapServiceImageKey:    trustyaiServiceImage,
 		},
 	}
+}
+
+// createSecret creates a secret in the specified namespace
+func createSecret(namespace string, secretName string, data map[string]string) *corev1.Secret {
+	// Convert the data map values from string to byte array
+	byteData := make(map[string][]byte)
+	for key, value := range data {
+		byteData[key] = []byte(value)
+	}
+
+	// Define the Secret with the necessary data
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: namespace,
+		},
+		Data: byteData,
+	}
+}
+
+func createDatabaseConfiguration(namespace string, name string, dbKind string) *corev1.Secret {
+	return createSecret(namespace, name, map[string]string{
+		"databaseKind":     dbKind,
+		"databaseUsername": "foo",
+		"databasePassword": "bar",
+		"databaseService":  "mariadb-service",
+		"databasePort":     "3306",
+	})
 }
 
 // createTrustedCABundleConfigMap creates a ConfigMap in the specified namespace
