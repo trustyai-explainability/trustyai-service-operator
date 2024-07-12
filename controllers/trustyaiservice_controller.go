@@ -174,7 +174,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			return RequeueWithErrorMessage(ctx, err, "Retrying to restart deployment during migration.")
 		}
 
-		// Optionally, remove the migration annotation after processing to avoid repeated restarts
+		// Remove the migration annotation after processing to avoid restarts
 		delete(instance.Annotations, migrationAnnotationKey)
 		log.FromContext(ctx).Info("Deleting annotation")
 		if err := r.Update(ctx, instance); err != nil {
