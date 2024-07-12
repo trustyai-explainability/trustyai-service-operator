@@ -113,11 +113,11 @@ spec:
             - name: STORAGE_MIGRATION_CONFIG_FROM_FILENAME
               value: {{ .Instance.Spec.Data.Filename }}
             {{ end }}
-          {{ if or (eq .Instance.Spec.Storage.Format "PVC") (.Instance.IsMigration) }}
           volumeMounts:
             - name: {{ .Instance.Name }}-internal
               readOnly: false
               mountPath: /etc/tls/internal
+            {{ if or (eq .Instance.Spec.Storage.Format "PVC") (.Instance.IsMigration) }}
             - name: {{ .VolumeMountName }}
               mountPath: {{ .Instance.Spec.Storage.Folder }}
               readOnly: false
