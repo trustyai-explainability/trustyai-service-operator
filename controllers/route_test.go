@@ -11,6 +11,42 @@ import (
 	"k8s.io/client-go/tools/record"
 )
 
+func setupAndTestRouteCreation(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, namespace string) {
+	WaitFor(func() error {
+		return createNamespace(ctx, k8sClient, namespace)
+	}, "failed to create namespace")
+
+	err := reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
+	Expect(err).ToNot(HaveOccurred())
+
+	route := &routev1.Route{}
+	err = reconciler.Client.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, route)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(route).ToNot(BeNil())
+	Expect(route.Spec.To.Name).To(Equal(instance.Name + "-tls"))
+
+}
+
+func setupAndTestSameRouteCreation(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, namespace string) {
+	WaitFor(func() error {
+		return createNamespace(ctx, k8sClient, namespace)
+	}, "failed to create namespace")
+
+	// Create a Route with the expected spec
+	existingRoute, err := reconciler.createRouteObject(ctx, instance)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(reconciler.Client.Create(ctx, existingRoute)).To(Succeed())
+
+	err = reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Fetch the Route
+	route := &routev1.Route{}
+	err = reconciler.Client.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, route)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(route.Spec).To(Equal(existingRoute.Spec))
+}
+
 var _ = Describe("Route Reconciliation", func() {
 
 	BeforeEach(func() {
@@ -25,47 +61,41 @@ var _ = Describe("Route Reconciliation", func() {
 
 	Context("When Route does not exist", func() {
 		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
-		It("Should create Route successfully", func() {
-			namespace := "route-test-namespace-1"
-			instance = createDefaultCR(namespace)
-
-			WaitFor(func() error {
-				return createNamespace(ctx, k8sClient, namespace)
-			}, "failed to create namespace")
-
-			err := reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
-			Expect(err).ToNot(HaveOccurred())
-
-			route := &routev1.Route{}
-			err = reconciler.Client.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, route)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(route).ToNot(BeNil())
-			Expect(route.Spec.To.Name).To(Equal(instance.Name + "-tls"))
+		It("Should create Route successfully in PVC-mode", func() {
+			namespace := "route-test-namespace-1-pvc"
+			instance = createDefaultPVCCustomResource(namespace)
+			setupAndTestRouteCreation(instance, namespace)
 		})
+		It("Should create Route successfully in DB-mode", func() {
+			namespace := "route-test-namespace-1-db"
+			instance = createDefaultDBCustomResource(namespace)
+			setupAndTestRouteCreation(instance, namespace)
+		})
+		It("Should create Route successfully in migration-mode", func() {
+			namespace := "route-test-namespace-1-migration"
+			instance = createDefaultMigrationCustomResource(namespace)
+			setupAndTestRouteCreation(instance, namespace)
+		})
+
 	})
 
 	Context("When Route exists and is the same", func() {
 		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
-		It("Should not update Route", func() {
-			namespace := "route-test-namespace-2"
-			instance = createDefaultCR(namespace)
-			WaitFor(func() error {
-				return createNamespace(ctx, k8sClient, namespace)
-			}, "failed to create namespace")
-
-			// Create a Route with the expected spec
-			existingRoute, err := reconciler.createRouteObject(ctx, instance)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(reconciler.Client.Create(ctx, existingRoute)).To(Succeed())
-
-			err = reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Fetch the Route
-			route := &routev1.Route{}
-			err = reconciler.Client.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, route)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(route.Spec).To(Equal(existingRoute.Spec))
+		It("Should not update Route in PVC-mode", func() {
+			namespace := "route-test-namespace-2-pvc"
+			instance = createDefaultPVCCustomResource(namespace)
+			setupAndTestSameRouteCreation(instance, namespace)
 		})
+		It("Should not update Route in DB-mode", func() {
+			namespace := "route-test-namespace-2-db"
+			instance = createDefaultDBCustomResource(namespace)
+			setupAndTestSameRouteCreation(instance, namespace)
+		})
+		It("Should not update Route in migration-mode", func() {
+			namespace := "route-test-namespace-2-migration"
+			instance = createDefaultMigrationCustomResource(namespace)
+			setupAndTestSameRouteCreation(instance, namespace)
+		})
+
 	})
 })

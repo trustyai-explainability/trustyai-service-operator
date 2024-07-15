@@ -12,6 +12,11 @@ metadata:
     app.kubernetes.io/part-of: trustyai
     app.kubernetes.io/version: {{ .Version }}
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   replicas: 1
   selector:
     matchLabels:
@@ -38,25 +43,85 @@ spec:
         - name: trustyai-service
           image: {{ .ServiceImage }}
           env:
-            - name: STORAGE_DATA_FILENAME
-              value: {{ .Instance.Spec.Data.Filename }}
             - name: SERVICE_STORAGE_FORMAT
               value: {{ .Instance.Spec.Storage.Format }}
+            {{ if eq .Instance.Spec.Storage.Format "PVC" }}
+            - name: STORAGE_DATA_FILENAME
+              value: {{ .Instance.Spec.Data.Filename }}
             - name: STORAGE_DATA_FOLDER
               value: {{ .Instance.Spec.Storage.Folder }}
             - name: SERVICE_DATA_FORMAT
               value: {{ .Instance.Spec.Data.Format }}
+            - name: QUARKUS_HIBERNATE_ORM_ACTIVE
+              value: false
+            {{ end }}
+            {{ if .Instance.IsMigration }}
+            - name: STORAGE_DATA_FILENAME
+              value: {{ .Instance.Spec.Data.Filename }}
+            - name: STORAGE_DATA_FOLDER
+              value: {{ .Instance.Spec.Storage.Folder }}
+            - name: SERVICE_DATA_FORMAT
+              value: {{ .Instance.Spec.Data.Format }}
+            {{ end }}
+            {{ if eq .Instance.Spec.Storage.Format "DATABASE" }}
+            - name: QUARKUS_HIBERNATE_ORM_ACTIVE
+              value: true
+            - name: QUARKUS_DATASOURCE_DB_KIND
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Instance.Spec.Storage.DatabaseConfigurations }}
+                  key: databaseKind
+            - name: QUARKUS_DATASOURCE_JDBC_MAX_SIZE
+              value: 16
+            - name: QUARKUS_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Instance.Spec.Storage.DatabaseConfigurations }}
+                  key: databaseUsername
+            - name: QUARKUS_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Instance.Spec.Storage.DatabaseConfigurations }}
+                  key: databasePassword
+            - name: DATABASE_SERVICE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Instance.Spec.Storage.DatabaseConfigurations }}
+                  key: databaseService
+            - name: DATABASE_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Instance.Spec.Storage.DatabaseConfigurations }}
+                  key: databasePort
+            - name: QUARKUS_DATASOURCE_JDBC_URL
+              value: "jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"
+            - name: SERVICE_DATA_FORMAT
+              value: "HIBERNATE"
+            - name: QUARKUS_DATASOURCE_GENERATION
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Instance.Spec.Storage.DatabaseConfigurations }}
+                  key: databaseGeneration
+            {{ end }}
             - name: SERVICE_METRICS_SCHEDULE
               value: {{ .Instance.Spec.Metrics.Schedule }}
             - name: SERVICE_BATCH_SIZE
-              value: {{ .Schedule }}
+              value: {{ .BatchSize }}
+            {{ if .Instance.IsMigration }}
+            - name: STORAGE_MIGRATION_CONFIG_FROM_FOLDER
+              value: {{ .Instance.Spec.Storage.Folder }}
+            - name: STORAGE_MIGRATION_CONFIG_FROM_FILENAME
+              value: {{ .Instance.Spec.Data.Filename }}
+            {{ end }}
           volumeMounts:
             - name: {{ .Instance.Name }}-internal
               readOnly: false
               mountPath: /etc/tls/internal
+            {{ if or (eq .Instance.Spec.Storage.Format "PVC") (.Instance.IsMigration) }}
             - name: {{ .VolumeMountName }}
               mountPath: {{ .Instance.Spec.Storage.Folder }}
               readOnly: false
+          {{ end }}
         - resources:
             limits:
               cpu: 100m
@@ -125,9 +190,11 @@ spec:
               "pods", "verb": "get"}}
       serviceAccount: {{ .Instance.Name }}-proxy
       volumes:
+        {{ if or (eq .Instance.Spec.Storage.Format "PVC") ( .Instance.IsMigration) }}
         - name: volume
           persistentVolumeClaim:
             claimName: {{ .PVCClaimName }}
+        {{ end }}
         {{ if .CustomCertificatesBundle.IsDefined }}
         - name: {{ .CustomCertificatesBundle.VolumeName}}
           configMap:

@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/retry"
@@ -10,12 +11,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// IsAllReady checks if all the necessary readiness fields are true.
-func (rs *AvailabilityStatus) IsAllReady() bool {
-	return rs.PVCReady && rs.DeploymentReady && rs.RouteReady
+// IsAllReady checks if all the necessary readiness fields are true for the specific mode
+func (rs *AvailabilityStatus) IsAllReady(mode string) bool {
+	return (rs.PVCReady && rs.DeploymentReady && rs.RouteReady && mode == STORAGE_PVC) || (rs.DeploymentReady && rs.RouteReady && mode == STORAGE_DATABASE)
 }
 
-// AvailabilityStatus holds the readiness status of various resources.
+// AvailabilityStatus has the readiness status of various resources.
 type AvailabilityStatus struct {
 	PVCReady              bool
 	DeploymentReady       bool
@@ -44,37 +45,39 @@ func (r *TrustyAIServiceReconciler) updateStatus(ctx context.Context, original *
 	return saved, err
 }
 
-// reconcileStatuses checks the readiness status of PVC, Deployment, Route and Inference Services
+// reconcileStatuses checks the readiness status of required resources
 func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (ctrl.Result, error) {
 	var err error
 	status := AvailabilityStatus{}
 
-	// Check for PVC readiness
-	status.PVCReady, err = r.checkPVCReady(ctx, instance)
-	if err != nil || !status.PVCReady {
-		// PVC not ready, requeue
-		return Requeue()
+	if instance.Spec.Storage.IsStoragePVC() || instance.IsMigration() {
+		// Check for PVC readiness
+		status.PVCReady, err = r.checkPVCReady(ctx, instance)
+		if err != nil || !status.PVCReady {
+			// PVC not ready, requeue
+			return RequeueWithDelayMessage(ctx, defaultRequeueDelay, "PVC not ready")
+		}
 	}
 
 	// Check for deployment readiness
 	status.DeploymentReady, err = r.checkDeploymentReady(ctx, instance)
 	if err != nil || !status.DeploymentReady {
 		// Deployment not ready, requeue
-		return Requeue()
+		return RequeueWithDelayMessage(ctx, defaultRequeueDelay, "Deployment not ready")
 	}
 
 	// Check for route readiness
 	status.RouteReady, err = r.checkRouteReady(ctx, instance)
 	if err != nil || !status.RouteReady {
 		// Route not ready, requeue
-		return Requeue()
+		return RequeueWithDelayMessage(ctx, defaultRequeueDelay, "Route not ready")
 	}
 
 	// Check if InferenceServices present
 	status.InferenceServiceReady, err = r.checkInferenceServicesPresent(ctx, instance.Namespace)
 
 	// All checks passed, resources are ready
-	if status.IsAllReady() {
+	if status.IsAllReady(instance.Spec.Storage.Format) {
 		_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
 
 			if status.InferenceServiceReady {
@@ -83,7 +86,9 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 				UpdateInferenceServiceNotPresent(saved)
 			}
 
-			UpdatePVCAvailable(saved)
+			if instance.Spec.Storage.IsStoragePVC() || instance.IsMigration() {
+				UpdatePVCAvailable(saved)
+			}
 			UpdateRouteAvailable(saved)
 			UpdateTrustyAIServiceAvailable(saved)
 			saved.Status.Phase = "Ready"
@@ -101,11 +106,14 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 				UpdateInferenceServiceNotPresent(saved)
 			}
 
-			if status.PVCReady {
-				UpdatePVCAvailable(saved)
-			} else {
-				UpdatePVCNotAvailable(saved)
+			if instance.Spec.Storage.IsStoragePVC() || instance.IsMigration() {
+				if status.PVCReady {
+					UpdatePVCAvailable(saved)
+				} else {
+					UpdatePVCNotAvailable(saved)
+				}
 			}
+
 			if status.RouteReady {
 				UpdateRouteAvailable(saved)
 			} else {
