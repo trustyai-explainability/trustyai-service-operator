@@ -1,0 +1,41 @@
+// Copyright 2024.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+option go_package = "github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes/api/v1beta1";
+
+enum ResponseCode {
+    OK    = 0;
+    ERROR = 1;
+}
+
+// the JobState, Reason, message, and optional Results
+message JobStatus {
+    string job_name         = 1;
+    string job_namespace    = 2;
+    string state            = 3;
+    string reason           = 4;
+    string status_message   = 5;
+    optional string results = 6;
+}
+
+message Response {
+    ResponseCode code = 1;
+    string message    = 2;
+}
+
+service LMEvalJobUpdateService {
+  rpc UpdateStatus(JobStatus) returns (Response);
+}

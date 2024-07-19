@@ -4,7 +4,7 @@
 # More info: https://book.kubebuilder.io/reference/project-config.html
 domain: opendatahub.io
 layout:
-- go.kubebuilder.io/v3
+- go.kubebuilder.io/v4
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
@@ -18,6 +18,19 @@ resources:
   domain: opendatahub.io
   group: trustyai
   kind: TrustyAIService
-  path: github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1
+  path: github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: opendatahub.io
+  group: trustyai
+  kind: LMEvalJob
+  path: github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1
+  version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
 version: "3"

@@ -1,0 +1,163 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.1
+  creationTimestamp: null
+  name: lmevaljobs.trustyai.opendatahub.io
+spec:
+  group: trustyai.opendatahub.io
+  names:
+    kind: LMEvalJob
+    listKind: LMEvalJobList
+    plural: lmevaljobs
+    singular: lmevaljob
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: LMEvalJob is the Schema for the lmevaljobs API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: LMEvalJobSpec defines the desired state of LMEvalJob
+            properties:
+              envSecrets:
+                description: Assign secrets to the environment variables
+                items:
+                  properties:
+                    env:
+                      description: Environment's name
+                      type: string
+                    secret:
+                      description: The secret is from a plain text
+                      type: string
+                    secretRef:
+                      description: The secret is from a secret object
+                      properties:
+                        key:
+                          description: The key of the secret to select from.  Must
+                            be a valid secret key.
+                          type: string
+                        name:
+                          description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            TODO: Add other useful fields. apiVersion, kind, uid?'
+                          type: string
+                        optional:
+                          description: Specify whether the Secret or its key must
+                            be defined
+                          type: boolean
+                      required:
+                      - key
+                      type: object
+                      x-kubernetes-map-type: atomic
+                  required:
+                  - env
+                  type: object
+                type: array
+              genArgs:
+                description: Map to `--gen_kwargs` parameter for the underlying library.
+                items:
+                  properties:
+                    name:
+                      type: string
+                    value:
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              limit:
+                description: Accepts an integer, or a float between 0.0 and 1.0 .
+                  If passed, will limit the number of documents to evaluate to the
+                  first X documents (if an integer) per task or first X% of documents
+                  per task
+                type: string
+              logSamples:
+                description: If this flag is passed, then the model's outputs, and
+                  the text fed into the model, will be saved at per-document granularity
+                type: boolean
+              model:
+                description: Model name
+                type: string
+              modelArgs:
+                description: Args for the model
+                items:
+                  properties:
+                    name:
+                      type: string
+                    value:
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              numFewShot:
+                description: Sets the number of few-shot examples to place in context
+                type: integer
+              tasks:
+                description: Evaluation tasks
+                items:
+                  type: string
+                type: array
+            required:
+            - model
+            - tasks
+            type: object
+          status:
+            description: LMEvalJobStatus defines the observed state of LMEvalJob
+            properties:
+              completeTime:
+                description: Information when the job's state changes to Complete.
+                format: date-time
+                type: string
+              lastScheduleTime:
+                description: Information when was the last time the job was successfully
+                  scheduled.
+                format: date-time
+                type: string
+              message:
+                description: Message about the current/final status
+                type: string
+              podName:
+                description: The name of the Pod that runs the evaluation job
+                type: string
+              reason:
+                description: Final result of the job
+                enum:
+                - NoReason
+                - Succeeded
+                - Failed
+                - Cancelled
+                type: string
+              results:
+                description: Evaluation results
+                type: string
+              state:
+                description: State of the job
+                enum:
+                - New
+                - Scheduled
+                - Running
+                - Complete
+                - Cancelled
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
