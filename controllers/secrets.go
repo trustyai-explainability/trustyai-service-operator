@@ -6,6 +6,7 @@ import (
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -57,4 +58,21 @@ func (r *TrustyAIServiceReconciler) validateDatabaseSecret(secret *corev1.Secret
 		}
 	}
 	return nil
+}
+
+// TLSExists checks if a TLS secret exists in a specific namespace with a specific name
+func (r *TrustyAIServiceReconciler) TLSExists(ctx context.Context, namespace, secretName string) (bool, error) {
+	secret := &corev1.Secret{}
+	err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get secret %s in namespace %s: %w", secretName, namespace, err)
+	}
+
+	if secret.Type == corev1.SecretTypeTLS {
+		return true, nil
+	}
+	return false, nil
 }
