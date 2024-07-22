@@ -3,9 +3,40 @@ package controllers
 import (
 	"context"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+const (
+	tlsMountPath = "/etc/trustyai/tls"
+)
+
+// TLSCertVolumes holds the volume and volume mount for the TLS certificates
+type TLSCertVolumes struct {
+	volume      corev1.Volume
+	volumeMount corev1.VolumeMount
+}
+
+// createFor creates the required volumes and volume mount for the TLS certificates for a specific Kubernetes secret
+func (cert *TLSCertVolumes) createFor(instance *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+	volume := corev1.Volume{
+		Name: instance.Name + "-internal",
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: instance.Name + "-internal",
+			},
+		},
+	}
+
+	volumeMount := corev1.VolumeMount{
+		Name:      instance.Name + "-internal",
+		MountPath: tlsMountPath,
+		ReadOnly:  true,
+	}
+	cert.volume = volume
+	cert.volumeMount = volumeMount
+}
 
 func (r *TrustyAIServiceReconciler) GetCustomCertificatesBundle(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) CustomCertificatesBundle {
 
