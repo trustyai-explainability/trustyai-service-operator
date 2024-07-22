@@ -2,9 +2,10 @@ package controllers
 
 import (
 	"context"
+	"os"
+
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"os"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -63,5 +64,5 @@ func (r *TrustyAIServiceReconciler) GetDeploymentsByLabel(ctx context.Context, n
 
 // generateServiceURL generates an internal URL for a TrustyAI service
 func generateServiceURL(crName string, namespace string) string {
-	return "http://" + crName + "." + namespace + ".svc.cluster.local"
+	return "http://" + crName + "." + namespace + ".svc"
 }

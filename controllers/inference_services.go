@@ -13,6 +13,10 @@ import (
 )
 
 func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, deployments []appsv1.Deployment, envVarName string, url string, remove bool) (bool, error) {
+	// Create volume and volume mount for this intance's TLS secrets
+	certVolumes := TLSCertVolumes{}
+	certVolumes.createFor(instance)
+
 	// Loop over the Deployments
 	for _, deployment := range deployments {
 
@@ -23,8 +27,31 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 			return false, nil
 		}
 
+		// If the secret volume doesn't exist, add it
+		volumeExists := false
+		for _, vol := range deployment.Spec.Template.Spec.Volumes {
+			if vol.Name == instance.Name+"-internal" {
+				volumeExists = true
+				break
+			}
+		}
+		if !volumeExists {
+			deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, certVolumes.volume)
+		}
+
 		// Loop over all containers in the Deployment's Pod template
 		for i := range deployment.Spec.Template.Spec.Containers {
+			mountExists := false
+			for _, mount := range deployment.Spec.Template.Spec.Containers[i].VolumeMounts {
+				if mount.Name == instance.Name+"-internal" {
+					mountExists = true
+					break
+				}
+			}
+			if !mountExists {
+				deployment.Spec.Template.Spec.Containers[i].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[i].VolumeMounts, certVolumes.volumeMount)
+			}
+
 			// Store the original environment variable list
 			// Get the existing env var
 			var envVar *corev1.EnvVar
@@ -50,14 +77,17 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 			} else if envVar != nil {
 				// If the env var exists and already contains the value, don't do anything
 				existingValues := strings.Split(envVar.Value, " ")
+				valueExists := false
 				for _, v := range existingValues {
 					if v == url {
-						continue
+						valueExists = true
+						break
 					}
 				}
 
-				// Modify the existing env var based on the remove flag and current value
-				envVar.Value = generateEnvVarValue(envVar.Value, url, remove)
+				if !valueExists {
+					envVar.Value = generateEnvVarValue(envVar.Value, url, remove)
+				}
 			}
 
 			// Only update the deployment if the var value has to change, or we are removing it
@@ -69,6 +99,32 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 				}
 				r.eventModelMeshConfigured(instance)
 				log.FromContext(ctx).Info("Updating Deployment " + deployment.Name + ", container spec " + deployment.Spec.Template.Spec.Containers[i].Name + ", env var " + envVarName + " to " + url)
+			}
+
+			// Check TLS environment variable on ModelMesh
+			if deployment.Spec.Template.Spec.Containers[i].Name == mmContainerName {
+				tlsKeyCertPathEnvValue := tlsMountPath + "/tls.crt"
+				tlsKeyCertPathExists := false
+				for _, envVar := range deployment.Spec.Template.Spec.Containers[i].Env {
+					if envVar.Name == tlsKeyCertPathName {
+						tlsKeyCertPathExists = true
+						break
+					}
+				}
+
+				// Doesn't exist, so we can add
+				if !tlsKeyCertPathExists {
+					deployment.Spec.Template.Spec.Containers[i].Env = append(deployment.Spec.Template.Spec.Containers[i].Env, corev1.EnvVar{
+						Name:  tlsKeyCertPathName,
+						Value: tlsKeyCertPathEnvValue,
+					})
+
+					if err := r.Update(ctx, &deployment); err != nil {
+						log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
+						return false, err
+					}
+					log.FromContext(ctx).Info("Added environment variable " + tlsKeyCertPathName + " to deployment " + deployment.Name + " for container " + mmContainerName)
+				}
 			}
 		}
 	}
