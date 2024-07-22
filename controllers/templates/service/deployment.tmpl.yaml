@@ -93,8 +93,13 @@ spec:
                 secretKeyRef:
                   name: {{ .Instance.Spec.Storage.DatabaseConfigurations }}
                   key: databasePort
+            - name: DATABASE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Instance.Spec.Storage.DatabaseConfigurations }}
+                  key: databaseName
             - name: QUARKUS_DATASOURCE_JDBC_URL
-              value: "jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"
+              value: "jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/${DATABASE_NAME}"
             - name: SERVICE_DATA_FORMAT
               value: "HIBERNATE"
             - name: QUARKUS_DATASOURCE_GENERATION
