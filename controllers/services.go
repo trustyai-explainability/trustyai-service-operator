@@ -28,6 +28,11 @@ func (r *TrustyAIServiceReconciler) reconcileService(ctx context.Context, cr *tr
 	if err != nil {
 		return nil, err
 	}
+	if exists {
+		log.FromContext(ctx).Info("Serving certificates " + cr.Name + "-internal already exist. Not creating new ones.")
+	} else {
+		log.FromContext(ctx).Info("Serving certificates " + cr.Name + "-internal not found. Creating.")
+	}
 
 	serviceConfig := ServiceConfig{
 		Name:                  cr.Name,
