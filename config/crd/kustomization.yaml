@@ -1,5 +1,6 @@
 resources:
   - bases/trustyai.opendatahub.io_trustyaiservices.yaml
+  - bases/trustyai.opendatahub.io_lmevaljobs.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

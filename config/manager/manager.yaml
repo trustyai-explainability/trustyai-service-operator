@@ -32,6 +32,8 @@ spec:
             - /manager
           args:
             - --leader-elect
+            - --eanble-services
+            - TAS
           image: $(trustyaiOperatorImage)
           name: manager
           securityContext:

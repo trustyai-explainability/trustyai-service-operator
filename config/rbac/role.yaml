@@ -201,6 +201,32 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - lmevaljobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - lmevaljobs/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - lmevaljobs/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
   - trustyaiservices
   verbs:
   - create
