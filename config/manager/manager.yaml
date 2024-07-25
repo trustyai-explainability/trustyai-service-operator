@@ -32,7 +32,7 @@ spec:
             - /manager
           args:
             - --leader-elect
-            - --eanble-services
+            - --enable-services
             - TAS
           image: $(trustyaiOperatorImage)
           name: manager
