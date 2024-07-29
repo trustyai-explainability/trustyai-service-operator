@@ -14,14 +14,44 @@ if ! [ -z "${SKIP_OPERATOR_INSTALL}" ]; then
     ./setup.sh -t ~/peak/operatorsetup 2>&1
 else
   echo "Installing operator from community marketplace"
+
+  start_t=$(date +%s) 2>&1
+  ready=false 2>&1
+  while ! $ready; do
+    CATALOG_SOURCES=$(oc get catalogsources -n openshift-marketplace 2> /dev/null | grep 'community-operators')
+    if [ ! -z "${CATALOG_SOURCES}" ]; then
+      echo $CATALOG_SOURCES
+      ready=true 2>&1
+    else
+      sleep 10
+    fi
+    if [ $(($(date +%s)-start_t)) -gt 300 ]; then
+      echo "Marketplace pods never started"
+      exit 1
+    fi
+  done
+
+    start_t=$(date +%s) 2>&1
+    ready=false 2>&1
+    while ! $ready; do
+      MANIFESTS=$(oc get packagemanifests -n openshift-marketplace 2> /dev/null | grep 'opendatahub')
+      echo $MANIFESTS
+      if [ ! -z "${MANIFESTS}" ]; then
+        echo $MANIFESTS
+        ready=true 2>&1
+      else
+        sleep 10
+      fi
+      if [ $(($(date +%s)-start_t)) -gt 900 ]; then
+        echo "Package manifests never downloaded"
+        exit 1
+      fi
+    done
+
   while [[ $retry -gt 0 ]]; do
+    ./setup.sh -o ~/peak/operatorsetup\
 
-    # patch bug in peak setup script
-    sed -i "s/path=\"{.status.channels.*/ | jq '.status.channels | .[0].currentCSVDesc.installModes | map(select(.type == \"AllNamespaces\")) | .[0].supported')/" setup.sh
-    sed -i "s/csource=.*/echo \$3; csource=\$3/" setup.sh
-    sed -i 's/installop \$.*/installop \${vals[0]} \${vals[1]} \${vals[3]}/' setup.sh
-
-    ./setup.sh -o ~/peak/operatorsetup
+    # approve installplans
     if [ $? -eq 0 ]; then
       retry=-1
     else
@@ -31,11 +61,16 @@ else
     fi
     retry=$(( retry - 1))
 
+    sleep 30
+    echo "Approving Install Plans, if needed"
+    oc patch installplan $(oc get installplan -n openshift-operators | grep $ODH_VERSION | awk '{print $1}') -n openshift-operators --type merge --patch '{"spec":{"approved":true}}' || true
+    oc patch installplan $(oc get installplan -n openshift-operators | grep authorino | awk '{print $1}') -n openshift-operators --type merge --patch '{"spec":{"approved":true}}' || true
+
     finished=false 2>&1
     start_t=$(date +%s) 2>&1
     echo "Verifying installation of ODH operator"
     while ! $finished; do
-        if [ ! -z "$(oc get pods -n openshift-operators | grep 'opendatahub-operator-controller-manager' | grep '1/1')" ]; then
+        if [ ! -z "$(oc get pods -n openshift-operators  | grep 'opendatahub-operator-controller-manager' | grep '1/1')" ]; then
           finished=true 2>&1
         else
           sleep 10
@@ -49,20 +84,6 @@ else
 
   done
 fi
-
-#popd
-### Grabbing and applying the patch in the PR we are testing
-#pushd ~/src/${REPO_NAME}
-#if [ -z "$PULL_NUMBER" ]; then
-#  echo "No pull number, assuming nightly run"
-#else
-#  if [ $REPO_OWNER == "trustyai-explainability" ]; then
-#    curl -O -L https://github.com/${REPO_OWNER}/${REPO_NAME}/pull/${PULL_NUMBER}.patch
-#    echo "Applying followng patch:"
-#    cat ${PULL_NUMBER}.patch > ${ARTIFACT_DIR}/github-pr-${PULL_NUMBER}.patch
-#    git apply ${PULL_NUMBER}.patch
-#  fi
-#fi
 
 popd
 ## Point manifests repo uri in the KFDEF to the manifests in the PR
