@@ -21,6 +21,11 @@ RUN dnf install -y jq bc git go-toolset python3.11 python3.11-devel python3.11-p
 RUN curl -L https://github.com/mikefarah/yq/releases/download/v4.25.1/yq_linux_amd64 -o /usr/bin/yq &&\
     chmod +x /usr/bin/yq
 
+RUN mkdir -p $HOME/src && \
+    cd $HOME/src && \
+    git clone --depth=1 --branch ${BRANCH} https://github.com/${ORG}/trustyai-explainability && \
+    chmod -R 777 $HOME/src
+
 # Use a specific destination file name in case the url download name changes
 ADD ${OC_CLI_URL} $HOME/peak/oc-cli.tar.gz
 RUN tar -C /usr/local/bin -xvf $HOME/peak/oc-cli.tar.gz && \
