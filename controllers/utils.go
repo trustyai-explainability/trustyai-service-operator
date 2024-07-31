@@ -62,7 +62,12 @@ func (r *TrustyAIServiceReconciler) GetDeploymentsByLabel(ctx context.Context, n
 	return deployments.Items, nil
 }
 
-// generateServiceURL generates an internal URL for a TrustyAI service
-func generateServiceURL(crName string, namespace string) string {
+// generateTLSServiceURL generates an internal URL for a TLS-enabled TrustyAI service
+func generateTLSServiceURL(crName string, namespace string) string {
+	return "https://" + crName + "." + namespace + ".svc"
+}
+
+// generateNonTLSServiceURL generates an internal URL for a TrustyAI service
+func generateNonTLSServiceURL(crName string, namespace string) string {
 	return "http://" + crName + "." + namespace + ".svc"
 }
