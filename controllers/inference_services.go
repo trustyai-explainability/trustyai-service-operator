@@ -199,6 +199,12 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 		return false, err
 	}
 
+	kServeServerlessEnabled, err := r.getKServeServerlessConfig(ctx)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Could not read KServeServerless configuration. Defaulting to disabled")
+		kServeServerlessEnabled = false
+	}
+
 	if len(inferenceServices.Items) == 0 {
 		return true, nil
 	}
@@ -220,10 +226,12 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 				continue
 			}
 		}
-		err := r.patchKServe(ctx, instance, infService, namespace, crName, remove)
-		if err != nil {
-			log.FromContext(ctx).Error(err, "could not patch InferenceLogger for KServe deployment")
-			return false, err
+		if kServeServerlessEnabled {
+			err := r.patchKServe(ctx, instance, infService, namespace, crName, remove)
+			if err != nil {
+				log.FromContext(ctx).Error(err, "could not patch InferenceLogger for KServe deployment")
+				return false, err
+			}
 		}
 	}
 	return true, nil
