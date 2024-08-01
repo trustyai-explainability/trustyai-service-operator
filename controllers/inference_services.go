@@ -147,7 +147,7 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsByLabelForDeployments(ctx contex
 	}
 
 	// Build the payload processor endpoint
-	url := generateServiceURL(crName, namespace) + "/consumer/kserve/v2"
+	url := generateTLSServiceURL(crName, namespace) + "/consumer/kserve/v2"
 
 	// Patch environment variables for the Deployments
 	if shouldContinue, err := r.patchEnvVarsForDeployments(ctx, instance, deployments, envVarName, url, remove); err != nil {
@@ -240,7 +240,7 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 // patchKServe adds a TrustyAI service as an InferenceLogger to a KServe InferenceService
 func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, infService kservev1beta1.InferenceService, namespace string, crName string, remove bool) error {
 
-	url := generateServiceURL(crName, namespace)
+	url := generateNonTLSServiceURL(crName, namespace)
 
 	if remove {
 		if infService.Spec.Predictor.Logger == nil || *infService.Spec.Predictor.Logger.URL != url {
