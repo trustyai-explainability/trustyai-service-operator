@@ -10,34 +10,42 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// getSecret retrieves a secret if it exists, returns an error if not
+func (r *TrustyAIServiceReconciler) getSecret(ctx context.Context, name, namespace string) (*corev1.Secret, error) {
+	secret := &corev1.Secret{}
+	err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, secret)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, fmt.Errorf("secret %s not found in namespace %s: %w", name, namespace, err)
+		}
+		return nil, fmt.Errorf("failed to get secret %s in namespace %s: %w", name, namespace, err)
+	}
+	return secret, nil
+}
+
 // findDatabaseSecret finds the DB configuration secret named (specified or default) in the same namespace as the CR
 func (r *TrustyAIServiceReconciler) findDatabaseSecret(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (*corev1.Secret, error) {
 
 	databaseConfigurationsName := instance.Spec.Storage.DatabaseConfigurations
 	defaultDatabaseConfigurationsName := instance.Name + dbCredentialsSuffix
 
-	secret := &corev1.Secret{}
-
 	if databaseConfigurationsName != "" {
-		secret := &corev1.Secret{}
-		err := r.Get(ctx, client.ObjectKey{Name: databaseConfigurationsName, Namespace: instance.Namespace}, secret)
-		if err == nil {
-			return secret, nil
+		secret, err := r.getSecret(ctx, databaseConfigurationsName, instance.Namespace)
+		if err != nil {
+			return nil, err
 		}
-		if !errors.IsNotFound(err) {
-			return nil, fmt.Errorf("failed to get secret %s in namespace %s: %w", databaseConfigurationsName, instance.Namespace, err)
+		if secret != nil {
+			return secret, nil
 		}
 	} else {
 		// If specified not found, try the default
-
-		err := r.Get(ctx, client.ObjectKey{Name: defaultDatabaseConfigurationsName, Namespace: instance.Namespace}, secret)
-		if err == nil {
+		secret, err := r.getSecret(ctx, defaultDatabaseConfigurationsName, instance.Namespace)
+		if err != nil {
+			return nil, err
+		}
+		if secret != nil {
 			return secret, nil
 		}
-		if !errors.IsNotFound(err) {
-			return nil, fmt.Errorf("failed to get secret %s in namespace %s: %w", defaultDatabaseConfigurationsName, instance.Namespace, err)
-		}
-
 	}
 
 	return nil, fmt.Errorf("neither secret %s nor %s found in namespace %s", databaseConfigurationsName, defaultDatabaseConfigurationsName, instance.Namespace)
