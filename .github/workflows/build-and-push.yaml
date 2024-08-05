@@ -56,6 +56,7 @@ jobs:
           echo "GITHUB.HEAD_REF: ${{ github.head_ref }}"
           echo "SHA: ${{ github.event.pull_request.head.sha }}"
           echo "MAIN IMAGE AT: ${{ vars.QUAY_RELEASE_REPO }}:latest"
+          echo "LMES DRIVER IMAGE AT: ${{ vars.QUAY_RELEASE_LMES_DRIVER_REPO }}:latest"
           echo "CI IMAGE AT: quay.io/trustyai/trustyai-service-operator-ci:${{ github.event.pull_request.head.sha }}"
       #
       # Set environments depending on context
@@ -64,27 +65,34 @@ jobs:
         run: |
           echo "TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
           echo "IMAGE_NAME=quay.io/trustyai/trustyai-service-operator-ci" >> $GITHUB_ENV
+          echo "DRIVER_IMAGE_NAME=quay.io/trustyai/ta-lmes-driver-ci" >> $GITHUB_ENV
       - name: Set main-branch environment
         if:  env.BUILD_CONTEXT == 'main'
         run: |
           echo "TAG=latest" >> $GITHUB_ENV
           echo "IMAGE_NAME=${{ vars.QUAY_RELEASE_REPO }}" >> $GITHUB_ENV
+          echo "DRIVER_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_DRIVER_REPO }}" >> $GITHUB_ENV
       - name: Set tag environment
         if: env.BUILD_CONTEXT == 'tag'
         run: |
           echo "TAG=${{ github.ref_name }}" >> $GITHUB_ENV
           echo "IMAGE_NAME=${{ vars.QUAY_RELEASE_REPO }}" >> $GITHUB_ENV
+          echo "DRIVER_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_DRIVER_REPO }}" >> $GITHUB_ENV
 
-       # Run docker commands
+      # Run docker commands
       - name: Put expiry date on CI-tagged image
         if:  env.BUILD_CONTEXT == 'ci'
         run: sed -i 's#summary="odh-trustyai-service-operator\"#summary="odh-trustyai-service-operator" \\ \n      quay.expires-after=7d#' Dockerfile
       - name: Log in to Quay
         run: docker login -u ${{ secrets.QUAY_ROBOT_USERNAME }} -p ${{ secrets.QUAY_ROBOT_SECRET }} quay.io
-      - name: Build image
+      - name: Build main image
         run: docker build -t ${{ env.IMAGE_NAME }}:$TAG .
-      - name: Push to Quay CI repo
+      - name: Push main image to Quay
         run: docker push ${{ env.IMAGE_NAME }}:$TAG
+      - name: Build LMES driver image
+        run: docker build -f Dockerfile.driver -t ${{ env.DRIVER_IMAGE_NAME }}:$TAG .
+      - name: Push LMES driver image to Quay
+        run: docker push ${{ env.DRIVER_IMAGE_NAME }}:$TAG
 
       # Create CI Manifests
       - name: Set up manifests for CI
@@ -124,6 +132,8 @@ jobs:
             PR image build and manifest generation completed successfully!
 
             📦 [PR image](https://quay.io/trustyai/trustyai-service-operator-ci:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/trustyai-service-operator-ci:${{ github.event.pull_request.head.sha }}`
+
+            📦 [Driver image](https://quay.io/trustyai/ta-lmes-driver:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/ta-lmes-driver:${{ github.event.pull_request.head.sha }}`
 
             🗂️ [CI manifests](https://github.com/trustyai-explainability/trustyai-service-operator-ci/tree/operator-${{ env.TAG }})
 
