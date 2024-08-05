@@ -15,6 +15,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+const (
+	DEPLOYMENT_MODE_MODELMESH  = "ModelMesh"
+	DEPLOYMENT_MODE_RAW        = "RawDeployment"
+	DEPLOYMENT_MODE_SERVERLESS = "Serverless"
+)
+
 // GetDeploymentsByLabel returns a list of Deployments that match a label key-value pair
 func (r *TrustyAIServiceReconciler) GetDeploymentsByLabel(ctx context.Context, namespace string, labelKey string, labelValue string) ([]appsv1.Deployment, error) {
 	// Prepare a DeploymentList object
@@ -213,23 +219,37 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 		return false, err
 	}
 
+	kServeServerlessEnabled, err := r.getKServeServerlessConfig(ctx)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Could not read KServeServerless configuration. Defaulting to disabled")
+		kServeServerlessEnabled = false
+	}
+
 	if len(inferenceServices.Items) == 0 {
 		return true, nil
 	}
 
 	for _, infService := range inferenceServices.Items {
 		annotations := infService.GetAnnotations()
-		// Check the annotation "serving.kserve.io/deploymentMode: ModelMesh"
-		if val, ok := annotations["serving.kserve.io/deploymentMode"]; ok && val == "ModelMesh" {
-			shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, instance, namespace, labelKey, labelValue, envVarName, crName, remove)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "Could not patch environment variables for ModelMesh deployments.")
-				return shouldContinue, err
+
+		// Check the annotation "serving.kserve.io/deploymentMode"
+		if val, ok := annotations["serving.kserve.io/deploymentMode"]; ok {
+			if val == DEPLOYMENT_MODE_RAW {
+				log.FromContext(ctx).Info("RawDeployment mode not supported by TrustyAI")
+				continue
+			} else if val == DEPLOYMENT_MODE_MODELMESH {
+				shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, instance, namespace, labelKey, labelValue, envVarName, crName, remove)
+				if err != nil {
+					log.FromContext(ctx).Error(err, "could not patch environment variables for ModelMesh deployments")
+					return shouldContinue, err
+				}
+				continue
 			}
-		} else {
+		}
+		if kServeServerlessEnabled {
 			err := r.patchKServe(ctx, instance, infService, namespace, crName, remove)
 			if err != nil {
-				log.FromContext(ctx).Error(err, "Could not path InferenceLogger for KServe deployment.")
+				log.FromContext(ctx).Error(err, "could not patch InferenceLogger for KServe deployment")
 				return false, err
 			}
 		}
