@@ -38,6 +38,7 @@ type DeploymentConfig struct {
 	CustomCertificatesBundle CustomCertificatesBundle
 	Version                  string
 	BatchSize                int
+	UseDBTLSCerts            bool
 }
 
 // createDeploymentObject returns a Deployment for the TrustyAI Service instance
@@ -68,6 +69,20 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		CustomCertificatesBundle: caBunble,
 		Version:                  Version,
 		BatchSize:                batchSize,
+	}
+
+	if instance.Spec.Storage.IsStorageDatabase() {
+		_, err := r.getSecret(ctx, instance.Name+"-db-tls", instance.Namespace)
+		if err != nil {
+			deploymentConfig.UseDBTLSCerts = false
+			log.FromContext(ctx).Error(err, "Using insecure database connection. Certificates "+instance.Name+"-db-tls not found")
+		} else {
+			deploymentConfig.UseDBTLSCerts = true
+			log.FromContext(ctx).Info("Using secure database connection with certificates " + instance.Name + "-db-tls")
+		}
+	} else {
+		deploymentConfig.UseDBTLSCerts = false
+		log.FromContext(ctx).Info("No need to check database secrets. Using PVC-mode.")
 	}
 
 	var deployment *appsv1.Deployment

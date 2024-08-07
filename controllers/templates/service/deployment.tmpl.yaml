@@ -15,8 +15,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+      maxUnavailable: 1
+      maxSurge: 0
   replicas: 1
   selector:
     matchLabels:
@@ -99,7 +99,11 @@ spec:
                   name: {{ .Instance.Spec.Storage.DatabaseConfigurations }}
                   key: databaseName
             - name: QUARKUS_DATASOURCE_JDBC_URL
-              value: "jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/${DATABASE_NAME}"
+            {{ if .UseDBTLSCerts }}
+              value: "jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database?sslMode=verify-ca&serverSslCert=/etc/tls/db/tls.crt"
+            {{ else }}
+              value: "jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"
+            {{ end }}
             - name: SERVICE_DATA_FORMAT
               value: "HIBERNATE"
             - name: QUARKUS_DATASOURCE_GENERATION
@@ -126,7 +130,12 @@ spec:
             - name: {{ .VolumeMountName }}
               mountPath: {{ .Instance.Spec.Storage.Folder }}
               readOnly: false
-          {{ end }}
+            {{ end }}
+            {{ if .UseDBTLSCerts }}
+            - name: db-tls-certs
+              mountPath: /etc/tls/db
+              readOnly: true
+            {{ end }}
         - resources:
             limits:
               cpu: 100m
@@ -214,3 +223,9 @@ spec:
           secret:
             secretName: {{ .Instance.Name }}-internal
             defaultMode: 420
+        {{ if .UseDBTLSCerts }}
+        - name: db-tls-certs
+          secret:
+            secretName: {{ .Instance.Name }}-db-tls
+            defaultMode: 420
+        {{ end }}
