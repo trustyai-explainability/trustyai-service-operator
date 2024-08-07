@@ -48,3 +48,10 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.kServeServerless
+  - name: tls
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.tls

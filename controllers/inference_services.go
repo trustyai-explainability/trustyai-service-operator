@@ -146,8 +146,19 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsByLabelForDeployments(ctx contex
 		return false, err
 	}
 
+	tlsEnabled, err := r.getTLSConfig(ctx)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Could not read TLS configuration. Defaulting to enabled")
+		tlsEnabled = true
+	}
+
 	// Build the payload processor endpoint
-	url := generateTLSServiceURL(crName, namespace) + "/consumer/kserve/v2"
+	var url string
+	if tlsEnabled {
+		url = generateTLSServiceURL(crName, namespace) + "/consumer/kserve/v2"
+	} else {
+		url = generateNonTLSServiceURL(crName, namespace) + "/consumer/kserve/v2"
+	}
 
 	// Patch environment variables for the Deployments
 	if shouldContinue, err := r.patchEnvVarsForDeployments(ctx, instance, deployments, envVarName, url, remove); err != nil {

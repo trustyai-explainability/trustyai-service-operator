@@ -30,6 +30,7 @@ const (
 	configMapOAuthProxyImageKey  = "oauthProxyImage"
 	configMapServiceImageKey     = "trustyaiServiceImage"
 	configMapkServeServerlessKey = "kServeServerless"
+	configMapTLSKey              = "tls"
 )
 
 // OAuth constants
