@@ -359,7 +359,7 @@ var _ = Describe("TrustyAI operator", func() {
 			namespace := "trusty-ns-a-1-db"
 			instance = createDefaultDBCustomResource(namespace)
 			WaitFor(func() error {
-				secret := createDatabaseConfiguration(namespace, defaultDatabaseConfigurationName, "mysql")
+				secret := createDatabaseConfiguration(namespace, defaultDatabaseConfigurationName, "mysql", "trustyai_service")
 				return k8sClient.Create(ctx, secret)
 			}, "failed to create ConfigMap")
 			setupAndTestDeploymentDefault(instance, namespace)
@@ -368,7 +368,7 @@ var _ = Describe("TrustyAI operator", func() {
 			namespace := "trusty-ns-a-1-db"
 			instance = createDefaultDBCustomResource(namespace)
 			WaitFor(func() error {
-				secret := createDatabaseConfiguration(namespace, defaultDatabaseConfigurationName, "mariadb")
+				secret := createDatabaseConfiguration(namespace, defaultDatabaseConfigurationName, "mariadb", "trustyai_service")
 				return k8sClient.Create(ctx, secret)
 			}, "failed to create ConfigMap")
 			setupAndTestDeploymentDefault(instance, namespace)
@@ -584,9 +584,16 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(envVar.ValueFrom.SecretKeyRef.Name).To(Equal(defaultDatabaseConfigurationName), "Secret name does not match")
 			Expect(envVar.ValueFrom.SecretKeyRef.Key).To(Equal("databasePort"), "Secret key does not match")
 
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "DATABASE_NAME")
+			Expect(envVar).NotTo(BeNil(), "Env var DATABASE_NAME not found")
+			Expect(envVar.ValueFrom).NotTo(BeNil(), "Env var DATABASE_NAME does not have ValueFrom set")
+			Expect(envVar.ValueFrom.SecretKeyRef).NotTo(BeNil(), "Env var DATABASE_NAME is not using SecretKeyRef")
+			Expect(envVar.ValueFrom.SecretKeyRef.Name).To(Equal(defaultDatabaseConfigurationName), "Secret name does not match")
+			Expect(envVar.ValueFrom.SecretKeyRef.Key).To(Equal("databaseName"), "Secret key does not match")
+
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "QUARKUS_DATASOURCE_JDBC_URL")
 			Expect(envVar).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_JDBC_URL not found")
-			Expect(envVar.Value).To(Equal("jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"))
+			Expect(envVar.Value).To(Equal("jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/${DATABASE_NAME}"))
 
 		})
 
@@ -695,9 +702,16 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(envVar.ValueFrom.SecretKeyRef.Name).To(Equal(defaultDatabaseConfigurationName), "Secret name does not match")
 			Expect(envVar.ValueFrom.SecretKeyRef.Key).To(Equal("databasePort"), "Secret key does not match")
 
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "DATABASE_NAME")
+			Expect(envVar).NotTo(BeNil(), "Env var DATABASE_NAME not found")
+			Expect(envVar.ValueFrom).NotTo(BeNil(), "Env var DATABASE_NAME does not have ValueFrom set")
+			Expect(envVar.ValueFrom.SecretKeyRef).NotTo(BeNil(), "Env var DATABASE_NAME is not using SecretKeyRef")
+			Expect(envVar.ValueFrom.SecretKeyRef.Name).To(Equal(defaultDatabaseConfigurationName), "Secret name does not match")
+			Expect(envVar.ValueFrom.SecretKeyRef.Key).To(Equal("databaseName"), "Secret key does not match")
+
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "QUARKUS_DATASOURCE_JDBC_URL")
 			Expect(envVar).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_JDBC_URL not found")
-			Expect(envVar.Value).To(Equal("jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"))
+			Expect(envVar.Value).To(Equal("jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/${DATABASE_NAME}"))
 
 		})
 

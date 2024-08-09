@@ -53,7 +53,14 @@ func (r *TrustyAIServiceReconciler) findDatabaseSecret(ctx context.Context, inst
 // validateDatabaseSecret validates the DB configuration secret
 func (r *TrustyAIServiceReconciler) validateDatabaseSecret(secret *corev1.Secret) error {
 
-	mandatoryKeys := []string{"databaseKind", "databaseUsername", "databasePassword", "databaseService", "databasePort"}
+	mandatoryKeys := []string{
+		"databaseKind",
+		"databaseUsername",
+		"databasePassword",
+		"databaseService",
+		"databasePort",
+		"databaseName",
+	}
 
 	for _, key := range mandatoryKeys {
 		value, exists := secret.Data[key]

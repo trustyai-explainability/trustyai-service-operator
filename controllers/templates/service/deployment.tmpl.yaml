@@ -93,11 +93,16 @@ spec:
                 secretKeyRef:
                   name: {{ .Instance.Spec.Storage.DatabaseConfigurations }}
                   key: databasePort
+            - name: DATABASE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Instance.Spec.Storage.DatabaseConfigurations }}
+                  key: databaseName
             - name: QUARKUS_DATASOURCE_JDBC_URL
             {{ if .UseDBTLSCerts }}
-              value: "jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database?sslMode=verify-ca&serverSslCert=/etc/tls/db/tls.crt"
+              value: "jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/${DATABASE_NAME}?sslMode=verify-ca&serverSslCert=/etc/tls/db/tls.crt"
             {{ else }}
-              value: "jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/trustyai_database"
+              value: "jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/${DATABASE_NAME}"
             {{ end }}
             - name: SERVICE_DATA_FORMAT
               value: "HIBERNATE"
