@@ -41,7 +41,12 @@ func GetNamespace() (string, error) {
 	return string(ns), nil
 }
 
-// generateServiceURL generates an internal URL for a TrustyAI service
-func GenerateServiceURL(crName string, namespace string) string {
-	return "http://" + crName + "." + namespace + ".svc.cluster.local"
+// generateTLSServiceURL generates an internal URL for a TLS-enabled TrustyAI service
+func GenerateTLSServiceURL(crName string, namespace string) string {
+	return "https://" + crName + "." + namespace + ".svc"
+}
+
+// generateNonTLSServiceURL generates an internal URL for a TrustyAI service
+func GenerateNonTLSServiceURL(crName string, namespace string) string {
+	return "http://" + crName + "." + namespace + ".svc"
 }

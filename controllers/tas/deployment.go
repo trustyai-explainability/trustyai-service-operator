@@ -70,6 +70,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		PVCClaimName:             pvcName,
 		CustomCertificatesBundle: caBunble,
 		Version:                  constants.Version,
+		BatchSize:                batchSize,
 	}
 
 	if instance.Spec.Storage.IsStorageDatabase() {
