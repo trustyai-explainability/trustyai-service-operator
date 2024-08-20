@@ -25,12 +25,14 @@ BUILD_TOOL?=podman
 NO_CACHE?=false
 LOCAL?=false
 TEARDOWN?=false
+PLATFORM?=linux/amd64
+
 
 all: test
 test: build run clean
 
 build:
-	${BUILD_TOOL} build -t $(IMAGE) --build-arg ORG=$(GIT_ORG) --build-arg BRANCH=$(GIT_BRANCH) --build-arg ODS_CI_REPO=$(ODS_CI_REPO) --build-arg ODS_CI_GITREF=$(ODS_CI_GITREF) --build-arg OC_CLI_URL=$(OC_CLI_URL) .
+	${BUILD_TOOL} build -t $(IMAGE) --build-arg ORG=$(GIT_ORG) --build-arg BRANCH=$(GIT_BRANCH) --build-arg ODS_CI_REPO=$(ODS_CI_REPO) --build-arg ODS_CI_GITREF=$(ODS_CI_GITREF) --build-arg OC_CLI_URL=$(OC_CLI_URL) --platform=$(PLATFORM) .  --progress=plain
 run:
 	# Confirm that we have a directory for storing any screenshots from selenium tests
 	mkdir -p ${LOCAL_ARTIFACT_DIR}/screenshots
