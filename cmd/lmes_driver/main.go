@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -36,13 +37,14 @@ const (
 )
 
 var (
-	copy         = flag.String("copy", "", "copy this binary to specified destination path")
-	jobNameSpace = flag.String("job-namespace", "", "Job's namespace ")
-	jobName      = flag.String("job-name", "", "Job's name")
-	grpcService  = flag.String("grpc-service", "", "grpc service name")
-	grpcPort     = flag.Int("grpc-port", 8082, "grpc port")
-	outputPath   = flag.String("output-path", OutputPath, "output path")
-	driverLog    = ctrl.Log.WithName("driver")
+	copy           = flag.String("copy", "", "copy this binary to specified destination path")
+	jobNameSpace   = flag.String("job-namespace", "", "Job's namespace ")
+	jobName        = flag.String("job-name", "", "Job's name")
+	grpcService    = flag.String("grpc-service", "", "grpc service name")
+	grpcPort       = flag.Int("grpc-port", 8082, "grpc port")
+	outputPath     = flag.String("output-path", OutputPath, "output path")
+	reportInterval = flag.Duration("report-interval", time.Second*10, "specify the druation interval to report the progress")
+	driverLog      = ctrl.Log.WithName("driver")
 )
 
 func main() {
@@ -75,14 +77,15 @@ func main() {
 	}
 
 	driverOpt := driver.DriverOption{
-		Context:      ctx,
-		JobNamespace: *jobNameSpace,
-		JobName:      *jobName,
-		OutputPath:   *outputPath,
-		GrpcService:  *grpcService,
-		GrpcPort:     *grpcPort,
-		Logger:       driverLog,
-		Args:         args,
+		Context:        ctx,
+		JobNamespace:   *jobNameSpace,
+		JobName:        *jobName,
+		OutputPath:     *outputPath,
+		GrpcService:    *grpcService,
+		GrpcPort:       *grpcPort,
+		Logger:         driverLog,
+		Args:           args,
+		ReportInterval: *reportInterval,
 	}
 
 	driver, err := driver.NewDriver(&driverOpt)
