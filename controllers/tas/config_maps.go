@@ -55,7 +55,7 @@ func (r *TrustyAIServiceReconciler) getKServeServerlessConfig(ctx context.Contex
 		// Define the key for the ConfigMap
 		configMapKey := types.NamespacedName{
 			Namespace: r.Namespace,
-			Name:      constants.ConfigMap,
+			Name:      imageConfigMap,
 		}
 
 		// Create an empty ConfigMap object
