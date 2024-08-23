@@ -84,6 +84,44 @@ func (r *TrustyAIServiceReconciler) getKServeServerlessConfig(ctx context.Contex
 	}
 }
 
+// getTLSConfig checks the tls value in a ConfigMap in the operator's namespace
+func (r *TrustyAIServiceReconciler) getTLSConfig(ctx context.Context) (bool, error) {
+
+	if r.Namespace != "" {
+		// Define the key for the ConfigMap
+		configMapKey := types.NamespacedName{
+			Namespace: r.Namespace,
+			Name:      imageConfigMap,
+		}
+
+		// Create an empty ConfigMap object
+		var cm corev1.ConfigMap
+
+		// Try to get the ConfigMap
+		if err := r.Get(ctx, configMapKey, &cm); err != nil {
+			if errors.IsNotFound(err) {
+				// ConfigMap not found, return false as the default behavior
+				return false, nil
+			}
+			// Other error occurred when trying to fetch the ConfigMap
+			return false, fmt.Errorf("error reading configmap %s", configMapKey)
+		}
+
+		// ConfigMap is found, extract the tls value
+		tls, ok := cm.Data[configMapTLSKey]
+
+		if !ok || tls != "enabled" {
+			// Key is missing or its value is not "enabled", return false
+			return false, nil
+		}
+
+		// tls is "enabled"
+		return true, nil
+	} else {
+		return false, nil
+	}
+}
+
 // getConfigMapNamesWithLabel retrieves the names of ConfigMaps that have the specified label
 func (r *TrustyAIServiceReconciler) getConfigMapNamesWithLabel(ctx context.Context, namespace string, labelSelector client.MatchingLabels) ([]string, error) {
 	configMapList := &corev1.ConfigMapList{}
