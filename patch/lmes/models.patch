@@ -1,0 +1,12 @@
+diff --git a/lm_eval/models/__init__.py b/lm_eval/models/__init__.py
+index 698c912f..f523d46d 100644
+--- a/lm_eval/models/__init__.py
++++ b/lm_eval/models/__init__.py
+@@ -11,6 +11,7 @@ from . import (
+     optimum_lm,
+     textsynth,
+     vllm_causallms,
++    bam,
+ )
+ 
+ 
