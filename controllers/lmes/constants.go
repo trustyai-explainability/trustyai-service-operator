@@ -23,26 +23,29 @@ import (
 )
 
 const (
-	DriverPath                 = "/bin/driver"
-	DestDriverPath             = "/opt/app-root/src/bin/driver"
-	PodImageKey                = "lmes-pod-image"
-	DriverImageKey             = "lmes-driver-image"
-	PodCheckingIntervalKey     = "lmes-pod-checking-interval"
-	ImagePullPolicyKey         = "lmes-image-pull-policy"
-	GrpcPortKey                = "lmes-grpc-port"
-	GrpcServiceKey             = "lmes-grpc-service"
-	GrpcServerSecretKey        = "lmes-grpc-server-secret"
-	GrpcClientSecretKey        = "lmes-grpc-client-secret"
-	GrpcServerCertEnv          = "GRPC_SERVER_CERT"
-	GrpcServerKeyEnv           = "GRPC_SERVER_KEY"
-	GrpcClientCaEnv            = "GRPC_CLIENT_CA"
-	DefaultPodImage            = "quay.io/yhwang/lm-eval-aas-flask:test"
-	DefaultDriverImage         = "quay.io/yhwang/lm-eval-aas-driver:test"
-	DefaultPodCheckingInterval = time.Second * 10
-	DefaultImagePullPolicy     = corev1.PullAlways
-	DefaultGrpcPort            = 8082
-	DefaultGrpcService         = "lm-eval-grpc"
-	DefaultGrpcServerSecret    = "grpc-server-cert"
-	DefaultGrpcClientSecret    = "grpc-client-cert"
-	ServiceName                = "LMES"
+	DriverPath              = "/bin/driver"
+	DestDriverPath          = "/opt/app-root/src/bin/driver"
+	PodImageKey             = "lmes-pod-image"
+	DriverImageKey          = "lmes-driver-image"
+	PodCheckingIntervalKey  = "lmes-pod-checking-interval"
+	ImagePullPolicyKey      = "lmes-image-pull-policy"
+	GrpcPortKey             = "lmes-grpc-port"
+	GrpcServiceKey          = "lmes-grpc-service"
+	GrpcServerSecretKey     = "lmes-grpc-server-secret"
+	GrpcClientSecretKey     = "lmes-grpc-client-secret"
+	DriverReportIntervalKey = "driver-report-interval"
+	GrpcServerCertEnv       = "GRPC_SERVER_CERT"
+	GrpcServerKeyEnv        = "GRPC_SERVER_KEY"
+	GrpcClientCaEnv         = "GRPC_CLIENT_CA"
+	// FIXME: move these images to quay.io/trustyai
+	DefaultPodImage             = "quay.io/yhwang/ta-lmes-job:latest"
+	DefaultDriverImage          = "quay.io/yhwang/ta-lmes-driver:latest"
+	DefaultPodCheckingInterval  = time.Second * 10
+	DefaultDriverReportInterval = time.Second * 10
+	DefaultImagePullPolicy      = corev1.PullAlways
+	DefaultGrpcPort             = 8082
+	DefaultGrpcService          = "lm-eval-grpc"
+	DefaultGrpcServerSecret     = "grpc-server-cert"
+	DefaultGrpcClientSecret     = "grpc-client-cert"
+	ServiceName                 = "LMES"
 )

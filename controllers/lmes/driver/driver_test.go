@@ -23,6 +23,7 @@ import (
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes/api/v1beta1"
@@ -35,6 +36,17 @@ import (
 var (
 	driverLog = ctrl.Log.WithName("driver-test")
 )
+
+func TestMain(m *testing.M) {
+	opts := zap.Options{
+		Development: true,
+	}
+	opts.BindFlags(flag.CommandLine)
+
+	flag.Parse()
+	log.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	m.Run()
+}
 
 type DummyUpdateServer struct {
 	v1beta1.UnimplementedLMEvalJobUpdateServiceServer
@@ -54,14 +66,6 @@ func Test_Driver(t *testing.T) {
 	assert.Nil(t, err)
 	go server.Serve(lis)
 
-	opts := zap.Options{
-		Development: true,
-	}
-	opts.BindFlags(flag.CommandLine)
-
-	flag.Parse()
-	log.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-
 	driver, err := NewDriver(&DriverOption{
 		Context:      context.Background(),
 		JobNamespace: "fms-lm-eval-service-system",
@@ -70,11 +74,59 @@ func Test_Driver(t *testing.T) {
 		GrpcPort:     8082,
 		OutputPath:   ".",
 		Logger:       driverLog,
-		Args:         []string{"--", "sh", "-ec", "echo tttttttttttttttttttt"},
+		Args:         []string{"sh", "-ec", "echo tttttttttttttttttttt"},
 	})
 	assert.Nil(t, err)
 
 	assert.Nil(t, driver.Run())
+
+	server.Stop()
+	assert.Nil(t, os.Remove("./stderr.log"))
+	assert.Nil(t, os.Remove("./stdout.log"))
+}
+
+type ProgressUpdateServer struct {
+	v1beta1.UnimplementedLMEvalJobUpdateServiceServer
+	progressMsgs []string
+}
+
+func (s *ProgressUpdateServer) UpdateStatus(_ context.Context, status *v1beta1.JobStatus) (*v1beta1.Response, error) {
+	if status.StatusMessage != "" {
+		s.progressMsgs = append(s.progressMsgs, status.StatusMessage)
+	}
+	return &v1beta1.Response{
+		Code:    v1beta1.ResponseCode_OK,
+		Message: "updated the job status successfully",
+	}, nil
+}
+
+func Test_ProgressUpdate(t *testing.T) {
+	server := grpc.NewServer()
+	progresssServer := ProgressUpdateServer{}
+	v1beta1.RegisterLMEvalJobUpdateServiceServer(server, &progresssServer)
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", 8082))
+	assert.Nil(t, err)
+	go server.Serve(lis)
+
+	driver, err := NewDriver(&DriverOption{
+		Context:        context.Background(),
+		JobNamespace:   "fms-lm-eval-service-system",
+		JobName:        "evaljob-sample",
+		GrpcService:    "localhost",
+		GrpcPort:       8082,
+		OutputPath:     ".",
+		Logger:         driverLog,
+		Args:           []string{"sh", "-ec", "echo 'testing progress: 100%|' >&2; sleep 10"},
+		ReportInterval: time.Second * 5,
+	})
+	assert.Nil(t, err)
+
+	assert.Nil(t, driver.Run())
+	assert.Equal(t, []string{
+		"update status from the driver: running",
+		"testing progress: 100%",
+		"update status from the driver: completed",
+	}, progresssServer.progressMsgs)
 
 	server.Stop()
 	assert.Nil(t, os.Remove("./stderr.log"))

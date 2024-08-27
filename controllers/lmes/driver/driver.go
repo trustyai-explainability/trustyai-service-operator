@@ -27,7 +27,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
+	"sync"
 	"time"
+	"unicode"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/viper"
@@ -42,13 +46,15 @@ import (
 )
 
 var (
-	scheme = runtime.NewScheme()
+	scheme             = runtime.NewScheme()
+	progressMegPattern = regexp.MustCompile(`^(.*?:\s*?\d*?%)\|`)
 )
 
 const (
-	GrpcClientKeyEnv  = "GRPC_CLIENT_KEY"
-	GrpcClientCertEnv = "GRPC_CLIENT_CERT"
-	GrpcServerCaEnv   = "GRPC_SERVER_CA"
+	GrpcClientKeyEnv            = "GRPC_CLIENT_KEY"
+	GrpcClientCertEnv           = "GRPC_CLIENT_CERT"
+	GrpcServerCaEnv             = "GRPC_SERVER_CA"
+	DefaultDriverReportInterval = time.Second * 10
 )
 
 func init() {
@@ -57,14 +63,15 @@ func init() {
 }
 
 type DriverOption struct {
-	Context      context.Context
-	JobNamespace string
-	JobName      string
-	GrpcService  string
-	GrpcPort     int
-	OutputPath   string
-	Logger       logr.Logger
-	Args         []string
+	Context        context.Context
+	JobNamespace   string
+	JobName        string
+	GrpcService    string
+	GrpcPort       int
+	OutputPath     string
+	Logger         logr.Logger
+	Args           []string
+	ReportInterval time.Duration
 }
 
 type Driver interface {
@@ -73,9 +80,11 @@ type Driver interface {
 }
 
 type driverImpl struct {
-	client   v1beta1.LMEvalJobUpdateServiceClient
-	grpcConn *grpc.ClientConn
-	Option   *DriverOption
+	client          v1beta1.LMEvalJobUpdateServiceClient
+	grpcConn        *grpc.ClientConn
+	Option          *DriverOption
+	lastReportTime  time.Time
+	lastProgressMsg string
 }
 
 func NewDriver(opt *DriverOption) (Driver, error) {
@@ -83,6 +92,9 @@ func NewDriver(opt *DriverOption) (Driver, error) {
 		return nil, nil
 	}
 
+	if opt.ReportInterval == 0 {
+		opt.ReportInterval = DefaultDriverReportInterval
+	}
 	if opt.Context == nil {
 		return nil, fmt.Errorf("context is nil")
 	}
@@ -105,7 +117,9 @@ func NewDriver(opt *DriverOption) (Driver, error) {
 
 // Run implements Driver.
 func (d *driverImpl) Run() error {
-	if err := d.updateStatus(lmesv1alpha1.RunningJobState); err != nil {
+	if err := d.updateStatus(lmesv1alpha1.RunningJobState,
+		"update status from the driver: running"); err != nil {
+
 		return err
 	}
 	execErr := d.exec()
@@ -203,7 +217,13 @@ func (d *driverImpl) exec() error {
 	if err != nil {
 		return err
 	}
-	berr := bufio.NewWriter(stderr)
+
+	// have a pipe to check the output and report progress
+	// lm-eval's outputs are in the stderr
+	pr, pw := io.Pipe()
+	mwriter := io.MultiWriter(stderr, pw)
+	berr := bufio.NewWriter(mwriter)
+	scanner := bufio.NewScanner(pr)
 
 	executor := exec.Command(d.Option.Args[0], args...)
 	stdin, err := executor.StdinPipe()
@@ -213,7 +233,7 @@ func (d *driverImpl) exec() error {
 	executor.Stdout = bout
 	executor.Stderr = berr
 
-	defer func() {
+	var freeRes = func() {
 		stdin.Close()
 		bout.Flush()
 		stdout.Sync()
@@ -221,14 +241,35 @@ func (d *driverImpl) exec() error {
 		berr.Flush()
 		stderr.Sync()
 		stderr.Close()
-	}()
+		pr.Close()
+	}
 
 	// temporally fix the trust_remote_code issue
 	io.WriteString(stdin, "y\n")
-	return executor.Run()
+	if err = executor.Start(); err != nil {
+		freeRes()
+		return err
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		for scanner.Scan() {
+			msg := scanner.Text()
+			if err = d.reportProgress(msg); err != nil {
+				d.Option.Logger.Error(err, "report progress failed")
+			}
+		}
+		wg.Done()
+	}()
+
+	err = executor.Wait()
+	freeRes()
+	wg.Wait()
+	return err
 }
 
-func (d *driverImpl) updateStatus(state lmesv1alpha1.JobState) error {
+func (d *driverImpl) updateStatus(state lmesv1alpha1.JobState, msg string) error {
 	ctx, cancel := context.WithTimeout(d.Option.Context, time.Second*10)
 	defer cancel()
 
@@ -237,11 +278,12 @@ func (d *driverImpl) updateStatus(state lmesv1alpha1.JobState) error {
 		JobNamespace:  d.Option.JobNamespace,
 		State:         string(state),
 		Reason:        string(lmesv1alpha1.NoReason),
-		StatusMessage: "update status from the driver: running",
+		StatusMessage: msg,
 	})
 
 	if r != nil && err == nil {
 		d.Option.Logger.Info(fmt.Sprintf("UpdateStatus done: %s", r.Message))
+		d.lastReportTime = time.Now()
 	}
 
 	return err
@@ -308,4 +350,32 @@ func (d *driverImpl) getResults() (string, error) {
 	}
 
 	return results, nil
+}
+
+func (d *driverImpl) reportProgress(msg string) error {
+	msg = strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		// replace control chars to new line
+		if unicode.IsControl(r) {
+			return 10
+		}
+		return -1
+	}, msg)
+
+	// get multiple lines and only use the last one
+	msglist := strings.Split(msg, "\n")
+
+	if matches := progressMegPattern.FindStringSubmatch(msglist[len(msglist)-1]); len(matches) == 2 {
+		if matches[1] != d.lastProgressMsg {
+			d.lastProgressMsg = strings.Trim(matches[1], " \r")
+		}
+	}
+	if time.Since(d.lastReportTime) >= d.Option.ReportInterval {
+		if err := d.updateStatus(lmesv1alpha1.RunningJobState, d.lastProgressMsg); err != nil {
+			return err
+		}
+	}
+	return nil
 }

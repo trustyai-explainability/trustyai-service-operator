@@ -57,14 +57,15 @@ var (
 	}
 
 	optionKeys = map[string]string{
-		"PodImage":            PodImageKey,
-		"DriverImage":         DriverImageKey,
-		"PodCheckingInterval": PodCheckingIntervalKey,
-		"ImagePullPolicy":     ImagePullPolicyKey,
-		"GrpcPort":            GrpcPortKey,
-		"GrpcService":         GrpcServiceKey,
-		"GrpcServerSecret":    GrpcServerSecretKey,
-		"GrpcClientSecret":    GrpcClientSecretKey,
+		"PodImage":             PodImageKey,
+		"DriverImage":          DriverImageKey,
+		"PodCheckingInterval":  PodCheckingIntervalKey,
+		"ImagePullPolicy":      ImagePullPolicyKey,
+		"GrpcPort":             GrpcPortKey,
+		"GrpcService":          GrpcServiceKey,
+		"GrpcServerSecret":     GrpcServerSecretKey,
+		"GrpcClientSecret":     GrpcClientSecretKey,
+		"DriverReportInterval": DriverReportIntervalKey,
 	}
 )
 
@@ -87,15 +88,16 @@ type LMEvalJobReconciler struct {
 }
 
 type ServiceOptions struct {
-	PodImage            string
-	DriverImage         string
-	PodCheckingInterval time.Duration
-	ImagePullPolicy     corev1.PullPolicy
-	GrpcPort            int
-	GrpcService         string
-	GrpcServerSecret    string
-	GrpcClientSecret    string
-	grpcTLSMode         TLSMode
+	PodImage             string
+	DriverImage          string
+	DriverReportInterval time.Duration
+	PodCheckingInterval  time.Duration
+	ImagePullPolicy      corev1.PullPolicy
+	GrpcPort             int
+	GrpcService          string
+	GrpcServerSecret     string
+	GrpcClientSecret     string
+	grpcTLSMode          TLSMode
 }
 
 func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) error {
@@ -245,7 +247,7 @@ func (r *LMEvalJobReconciler) checkSecrets(ctx context.Context) error {
 	return nil
 }
 
-func (r *LMEvalJobReconciler) updateStatus(ctx context.Context, newStatus *backendv1beta1.JobStatus) error {
+func (r *LMEvalJobReconciler) updateStatus(ctx context.Context, newStatus *backendv1beta1.JobStatus) (err error) {
 	log := log.FromContext(ctx)
 
 	if strings.Trim(newStatus.GetJobName(), " ") == "" ||
@@ -255,7 +257,7 @@ func (r *LMEvalJobReconciler) updateStatus(ctx context.Context, newStatus *backe
 	}
 
 	job := &lmesv1alpha1.LMEvalJob{}
-	if err := r.Get(ctx, types.NamespacedName{
+	if err = r.Get(ctx, types.NamespacedName{
 		Namespace: newStatus.JobNamespace,
 		Name:      newStatus.JobName,
 	}, job); err != nil {
@@ -263,18 +265,23 @@ func (r *LMEvalJobReconciler) updateStatus(ctx context.Context, newStatus *backe
 		return err
 	}
 
-	job.Status.State = lmesv1alpha1.JobState(newStatus.GetState())
-	job.Status.Reason = lmesv1alpha1.Reason(newStatus.GetReason())
+	newJobStatus := job.Status.DeepCopy()
+	newJobStatus.State = lmesv1alpha1.JobState(newStatus.GetState())
+	newJobStatus.Reason = lmesv1alpha1.Reason(newStatus.GetReason())
+
 	if newStatus.GetStatusMessage() != "" {
-		job.Status.Message = newStatus.GetStatusMessage()
+		newJobStatus.Message = newStatus.GetStatusMessage()
 	}
 	if newStatus.Results != nil {
-		job.Status.Results = newStatus.GetResults()
+		newJobStatus.Results = newStatus.GetResults()
 	}
 
-	err := r.Status().Update(ctx, job)
-	if err != nil {
-		log.Error(err, "failed to update status")
+	if !reflect.DeepEqual(job.Status, newJobStatus) {
+		job.Status = *newJobStatus
+		err = r.Status().Update(ctx, job)
+		if err != nil {
+			log.Error(err, "failed to update status")
+		}
 	}
 	return err
 }
@@ -282,14 +289,15 @@ func (r *LMEvalJobReconciler) updateStatus(ctx context.Context, newStatus *backe
 func (r *LMEvalJobReconciler) constructOptionsFromConfigMap(
 	ctx context.Context, configmap *corev1.ConfigMap) error {
 	r.options = &ServiceOptions{
-		DriverImage:         DefaultDriverImage,
-		PodImage:            DefaultPodImage,
-		PodCheckingInterval: DefaultPodCheckingInterval,
-		ImagePullPolicy:     DefaultImagePullPolicy,
-		GrpcPort:            DefaultGrpcPort,
-		GrpcService:         DefaultGrpcService,
-		GrpcServerSecret:    DefaultGrpcServerSecret,
-		GrpcClientSecret:    DefaultGrpcClientSecret,
+		DriverImage:          DefaultDriverImage,
+		PodImage:             DefaultPodImage,
+		DriverReportInterval: driver.DefaultDriverReportInterval,
+		PodCheckingInterval:  DefaultPodCheckingInterval,
+		ImagePullPolicy:      DefaultImagePullPolicy,
+		GrpcPort:             DefaultGrpcPort,
+		GrpcService:          DefaultGrpcService,
+		GrpcServerSecret:     DefaultGrpcServerSecret,
+		GrpcClientSecret:     DefaultGrpcClientSecret,
 	}
 
 	log := log.FromContext(ctx)
@@ -665,7 +673,8 @@ func generateArgs(job *lmesv1alpha1.LMEvalJob) []string {
 	}
 
 	cmds := make([]string, 0, 10)
-	cmds = append(cmds, "python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output")
+	// FIXME: use CPU for now
+	cmds = append(cmds, "python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--device", "cpu")
 	// --model
 	cmds = append(cmds, "--model", job.Spec.Model)
 	// --model_args
@@ -706,6 +715,7 @@ func (r *LMEvalJobReconciler) generateCmd(job *lmesv1alpha1.LMEvalJob) []string 
 		"--grpc-service", fmt.Sprintf("%s.%s.svc", r.options.GrpcService, r.Namespace),
 		"--grpc-port", strconv.Itoa(r.options.GrpcPort),
 		"--output-path", "/opt/app-root/src/output",
+		"--report-interval", r.options.DriverReportInterval.String(),
 		"--",
 	}
 }
