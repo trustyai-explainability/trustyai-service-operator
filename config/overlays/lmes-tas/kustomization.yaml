@@ -17,3 +17,6 @@ replacements:
           name: config
         fieldPaths:
           - .data.lmes-grpc-service
+
+patchesStrategicMerge:
+  - lmes-tas-patch.yaml
