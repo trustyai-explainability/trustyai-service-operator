@@ -13,60 +13,13 @@ import (
 )
 
 const (
-	centralServiceMonitorTemplatePath = "service/service-monitor-central.tmpl.yaml"
-	localServiceMonitorTemplatePath   = "service/service-monitor-local.tmpl.yaml"
+	localServiceMonitorTemplatePath = "service/service-monitor-local.tmpl.yaml"
 )
 
 type ServiceMonitorConfig struct {
 	Namespace     string
 	ComponentName string
 	ServiceName   string
-}
-
-// createCentralServiceMonitorObject generates the ServiceMonitor spec for central ServiceMonitor
-func createCentralServiceMonitorObject(ctx context.Context, deploymentNamespace string) (*monitoringv1.ServiceMonitor, error) {
-
-	config := ServiceMonitorConfig{
-		Namespace:     deploymentNamespace,
-		ComponentName: componentName,
-		ServiceName:   serviceMonitorName,
-	}
-
-	var serviceMonitor *monitoringv1.ServiceMonitor
-	serviceMonitor, err := templateParser.ParseResource[monitoringv1.ServiceMonitor](centralServiceMonitorTemplatePath, config, reflect.TypeOf(&monitoringv1.ServiceMonitor{}))
-	if err != nil {
-		log.FromContext(ctx).Error(err, "Error parsing the central ServiceMonitor template")
-		return nil, err
-	}
-
-	return serviceMonitor, nil
-}
-
-// ensureCentralServiceMonitor ensures that the central ServiceMonitor is created
-func (r *TrustyAIServiceReconciler) ensureCentralServiceMonitor(ctx context.Context) error {
-	serviceMonitor, err := createCentralServiceMonitorObject(ctx, r.Namespace)
-	if err != nil {
-		return err
-	}
-
-	// Check if this ServiceMonitor already exists
-	found := &monitoringv1.ServiceMonitor{}
-	err = r.Get(ctx, types.NamespacedName{Name: serviceMonitor.Name, Namespace: serviceMonitor.Namespace}, found)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			log.FromContext(ctx).Info("Creating a new central ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
-			err = r.Create(ctx, serviceMonitor)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "Failed to create central ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
-				return err
-			}
-		} else {
-			log.FromContext(ctx).Error(err, "Failed to get central ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
-			return err
-		}
-	}
-
-	return nil
 }
 
 // createLocalServiceMonitorObject generates the ServiceMonitor spec for a local ServiceMonitor

@@ -217,12 +217,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	// Central Service Monitor
-	err = r.ensureCentralServiceMonitor(ctx)
-	if err != nil {
-		return RequeueWithError(err)
-	}
-
 	// Create route
 	// TODO: Change argument order
 	err = r.ReconcileRoute(instance, ctx)

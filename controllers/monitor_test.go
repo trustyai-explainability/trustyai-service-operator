@@ -24,38 +24,6 @@ var _ = Describe("Service Monitor Reconciliation", func() {
 		ctx = context.Background()
 	})
 
-	Context("When creating a central ServiceMonitor", func() {
-
-		It("Should have correct values", func() {
-
-			err := reconciler.ensureCentralServiceMonitor(ctx)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Define the ServiceMonitor object and fetch from the cluster
-			serviceMonitor := &monitoringv1.ServiceMonitor{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: serviceMonitorName, Namespace: reconciler.Namespace}, serviceMonitor)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(serviceMonitor.ObjectMeta.Name).To(Equal(serviceMonitorName))
-			Expect(serviceMonitor.ObjectMeta.Namespace).To(Equal(reconciler.Namespace))
-			Expect(serviceMonitor.Labels["modelmesh-service"]).To(Equal("modelmesh-serving"))
-
-			Expect(serviceMonitor.Spec.Selector.MatchLabels["app.kubernetes.io/part-of"]).To(Equal(componentName))
-
-			Expect(serviceMonitor.Spec.NamespaceSelector.Any).To(BeTrue())
-
-			Expect(serviceMonitor.Spec.Endpoints).To(HaveLen(1))
-			endpoint := serviceMonitor.Spec.Endpoints[0]
-			Expect(endpoint.BearerTokenSecret.Key).To(Equal(""))
-			Expect(endpoint.HonorLabels).To(BeTrue())
-
-			Expect(endpoint.Path).To(Equal("/q/metrics"))
-			Expect(endpoint.Scheme).To(Equal("http"))
-			Expect(endpoint.Params["match[]"]).To(ConsistOf("{__name__= \"trustyai_spd\"}", "{__name__= \"trustyai_dir\"}"))
-
-		})
-	})
-
 	Context("When creating a local ServiceMonitor", func() {
 		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
 		It("Should have correct values", func() {
