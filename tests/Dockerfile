@@ -1,11 +1,7 @@
 FROM registry.access.redhat.com/ubi8:8.10-1020
-
 ARG ORG=trustyai-explainability
 ARG BRANCH=main
 ARG ODS_CI_REPO=https://github.com/red-hat-data-services/ods-ci
-# This git reference should always reference a stable commit from ods-ci that supports ODH
-# This hash corresponds to a March 24th, 2023 commit
-ARG ODS_CI_GITREF=a8cf770b37caa4ef7ce6596acc8bdd6866cc7772
 ARG OC_CLI_URL=https://mirror.openshift.com/pub/openshift-v4/amd64/clients/ocp/4.14.33/openshift-client-linux.tar.gz
 
 ENV HOME /root
@@ -36,18 +32,19 @@ COPY Pipfile Pipfile.lock $HOME/peak/
 ## Grab CI scripts from single-source-of-truth
 RUN mkdir -p $HOME/peak/operator-tests/trustyai-explainability/ &&\
     mkdir $HOME/kfdef/ &&\
-    cp -r $HOME/src/trustyai-explainability/tests/resources/ $HOME/peak/operator-tests/trustyai-explainability/resources &&\
-    cp $HOME/src/trustyai-explainability/tests/util $HOME/peak/operator-tests/trustyai-explainability &&\
-    cp -r $HOME/src/trustyai-explainability/tests/basictests $HOME/peak/operator-tests/trustyai-explainability/basictests &&\
     cp -r $HOME/src/trustyai-explainability/tests/setup/odh-*.yaml $HOME/kfdef/ &&\
     cp -r $HOME/src/trustyai-explainability/tests/setup/*setup $HOME/peak/ &&\
     cp -r $HOME/src/trustyai-explainability/tests/scripts/installandtest.sh $HOME/peak/
 
+# Install poetry to support the exeuction of trustyai-tests
+RUN curl -sSL https://install.python-poetry.org | python3 -
+ENV PATH="${PATH}:$HOME/.local/bin"
+RUN cd $HOME/peak && \
+    git clone https://github.com/trustyai-explainability/trustyai-tests.git && \
+    cd trustyai-tests && \
+    poetry install
+
 COPY scripts/install.sh $HOME/peak/
-#COPY resources $HOME/peak/operator-tests/trustyai-explainability/resources
-#COPY util $HOME/peak/operator-tests/trustyai-explainability
-#COPY setup/odh-core.yaml $HOME/kfdef/
-#COPY basictests $HOME/peak/operator-tests/trustyai-explainability/basictests
 
 RUN chmod -R 777 $HOME/kfdef && \
     mkdir -p $HOME/.kube && \
