@@ -146,4 +146,12 @@ jobs:
             📦 [LMES job image](https://quay.io/trustyai/ta-lmes-job:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/ta-lmes-job:${{ github.event.pull_request.head.sha }}`
 
             🗂️ [CI manifests](https://github.com/trustyai-explainability/trustyai-service-operator-ci/tree/operator-${{ env.TAG }})
+            
+            ```
+            devFlags:
+              manifests:
+                - contextDir: config
+                  sourcePath: ''
+                  uri: https://api.github.com/repos/trustyai-explainability/trustyai-service-operator-ci/tarball/operator-${{ env.TAG }}
+            ```
 
