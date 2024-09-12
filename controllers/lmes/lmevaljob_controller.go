@@ -66,6 +66,8 @@ var (
 		"GrpcServerSecret":     GrpcServerSecretKey,
 		"GrpcClientSecret":     GrpcClientSecretKey,
 		"DriverReportInterval": DriverReportIntervalKey,
+		"DefaultBatchSize":     DefaultBatchSizeKey,
+		"MaxBatchSize":         MaxBatchSizeKey,
 	}
 )
 
@@ -97,6 +99,8 @@ type ServiceOptions struct {
 	GrpcService          string
 	GrpcServerSecret     string
 	GrpcClientSecret     string
+	MaxBatchSize         int
+	DefaultBatchSize     int
 	grpcTLSMode          TLSMode
 }
 
@@ -298,6 +302,8 @@ func (r *LMEvalJobReconciler) constructOptionsFromConfigMap(
 		GrpcService:          DefaultGrpcService,
 		GrpcServerSecret:     DefaultGrpcServerSecret,
 		GrpcClientSecret:     DefaultGrpcClientSecret,
+		MaxBatchSize:         DefaultMaxBatchSize,
+		DefaultBatchSize:     DefaultBatchSize,
 	}
 
 	log := log.FromContext(ctx)
@@ -318,10 +324,10 @@ func (r *LMEvalJobReconciler) constructOptionsFromConfigMap(
 			case "string":
 				frv.SetString(v)
 			case "int":
-				var grpcPort int
-				grpcPort, err = strconv.Atoi(v)
+				var intVal int
+				intVal, err = strconv.Atoi(v)
 				if err == nil {
-					frv.SetInt(int64(grpcPort))
+					frv.SetInt(int64(intVal))
 				}
 			case "Duration":
 				var d time.Duration
@@ -397,7 +403,7 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 
 	// construct a new pod and create a pod for the job
 	currentTime := v1.Now()
-	pod := r.createPod(job)
+	pod := r.createPod(job, log)
 	if err := r.Create(ctx, pod, &client.CreateOptions{}); err != nil {
 		// Failed to create the pod. Mark the status as complete with failed
 		job.Status.State = lmesv1alpha1.CompleteJobState
@@ -562,7 +568,7 @@ func (r *LMEvalJobReconciler) handleCancel(ctx context.Context, log logr.Logger,
 	return ctrl.Result{}, err
 }
 
-func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob) *corev1.Pod {
+func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob, log logr.Logger) *corev1.Pod {
 	var allowPrivilegeEscalation = false
 	var runAsNonRootUser = true
 	var ownerRefController = true
@@ -641,7 +647,7 @@ func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob) *corev1.Pod
 					ImagePullPolicy: r.options.ImagePullPolicy,
 					Env:             envVars,
 					Command:         r.generateCmd(job),
-					Args:            generateArgs(job),
+					Args:            r.generateArgs(job, log),
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						RunAsUser:                &runAsUser,
@@ -667,7 +673,7 @@ func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob) *corev1.Pod
 	return &pod
 }
 
-func generateArgs(job *lmesv1alpha1.LMEvalJob) []string {
+func (r *LMEvalJobReconciler) generateArgs(job *lmesv1alpha1.LMEvalJob, log logr.Logger) []string {
 	if job == nil {
 		return nil
 	}
@@ -699,6 +705,17 @@ func generateArgs(job *lmesv1alpha1.LMEvalJob) []string {
 	if job.Spec.LogSamples != nil && *job.Spec.LogSamples {
 		cmds = append(cmds, "--log_samples")
 	}
+	// --batch_size
+	var batchSize = r.options.DefaultBatchSize
+	if job.Spec.BatchSize != nil && *job.Spec.BatchSize > 0 {
+		batchSize = *job.Spec.BatchSize
+	}
+	// This could be done in the webhook if it's enabled.
+	if batchSize > r.options.MaxBatchSize {
+		batchSize = r.options.MaxBatchSize
+		log.Info("batchSize is greater than max-batch-size of the controller's configuration, use the max-batch-size instead")
+	}
+	cmds = append(cmds, "--batch_size", fmt.Sprintf("%d", batchSize))
 
 	return []string{"sh", "-ec", strings.Join(cmds, " ")}
 }

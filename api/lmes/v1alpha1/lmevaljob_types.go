@@ -110,6 +110,9 @@ type LMEvalJobSpec struct {
 	EnvSecrets []EnvSecret `json:"envSecrets,omitempty"`
 	// Use secrets as files
 	FileSecrets []FileSecret `json:"fileSecrets,omitempty"`
+	// Batch size for the evaluation. This is used by the models that run and are loaded
+	// locally and not apply for the commercial APIs.
+	BatchSize *int `json:"batchSize,omitempty"`
 }
 
 // LMEvalJobStatus defines the observed state of LMEvalJob

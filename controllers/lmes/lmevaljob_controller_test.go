@@ -17,12 +17,14 @@ limitations under the License.
 package lmes
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var (
@@ -34,6 +36,7 @@ var (
 )
 
 func Test_SimplePod(t *testing.T) {
+	log := log.FromContext(context.Background())
 	lmevalRec := LMEvalJobReconciler{
 		Namespace: "test",
 		options: &ServiceOptions{
@@ -115,7 +118,7 @@ func Test_SimplePod(t *testing.T) {
 					ImagePullPolicy: lmevalRec.options.ImagePullPolicy,
 					Env:             []corev1.EnvVar{},
 					Command:         lmevalRec.generateCmd(job),
-					Args:            generateArgs(job),
+					Args:            lmevalRec.generateArgs(job, log),
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						RunAsUser:                &runAsUser,
@@ -150,12 +153,13 @@ func Test_SimplePod(t *testing.T) {
 		},
 	}
 
-	newPod := lmevalRec.createPod(job)
+	newPod := lmevalRec.createPod(job, log)
 
 	assert.Equal(t, expect, newPod)
 }
 
 func Test_GrpcMTlsPod(t *testing.T) {
+	log := log.FromContext(context.Background())
 	lmevalRec := LMEvalJobReconciler{
 		Namespace: "test",
 		options: &ServiceOptions{
@@ -253,7 +257,7 @@ func Test_GrpcMTlsPod(t *testing.T) {
 						},
 					},
 					Command: lmevalRec.generateCmd(job),
-					Args:    generateArgs(job),
+					Args:    lmevalRec.generateArgs(job, log),
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						RunAsUser:                &runAsUser,
@@ -319,12 +323,13 @@ func Test_GrpcMTlsPod(t *testing.T) {
 		},
 	}
 
-	newPod := lmevalRec.createPod(job)
+	newPod := lmevalRec.createPod(job, log)
 
 	assert.Equal(t, expect, newPod)
 }
 
 func Test_EnvSecretsPod(t *testing.T) {
+	log := log.FromContext(context.Background())
 	lmevalRec := LMEvalJobReconciler{
 		Namespace: "test",
 		options: &ServiceOptions{
@@ -444,7 +449,7 @@ func Test_EnvSecretsPod(t *testing.T) {
 						},
 					},
 					Command: lmevalRec.generateCmd(job),
-					Args:    generateArgs(job),
+					Args:    lmevalRec.generateArgs(job, log),
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						RunAsUser:                &runAsUser,
@@ -510,12 +515,13 @@ func Test_EnvSecretsPod(t *testing.T) {
 		},
 	}
 
-	newPod := lmevalRec.createPod(job)
+	newPod := lmevalRec.createPod(job, log)
 	// maybe only verify the envs: Containers[0].Env
 	assert.Equal(t, expect, newPod)
 }
 
 func Test_FileSecretsPod(t *testing.T) {
+	log := log.FromContext(context.Background())
 	lmevalRec := LMEvalJobReconciler{
 		Namespace: "test",
 		options: &ServiceOptions{
@@ -627,7 +633,7 @@ func Test_FileSecretsPod(t *testing.T) {
 						},
 					},
 					Command: lmevalRec.generateCmd(job),
-					Args:    generateArgs(job),
+					Args:    lmevalRec.generateArgs(job, log),
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						RunAsUser:                &runAsUser,
@@ -712,7 +718,64 @@ func Test_FileSecretsPod(t *testing.T) {
 		},
 	}
 
-	newPod := lmevalRec.createPod(job)
+	newPod := lmevalRec.createPod(job, log)
 	// maybe only verify the envs: Containers[0].Env
 	assert.Equal(t, expect, newPod)
+}
+
+func Test_GenerateArgBatchSize(t *testing.T) {
+	log := log.FromContext(context.Background())
+	lmevalRec := LMEvalJobReconciler{
+		Namespace: "test",
+		options: &ServiceOptions{
+			PodImage:         "podimage:latest",
+			DriverImage:      "driver:latest",
+			ImagePullPolicy:  corev1.PullAlways,
+			GrpcPort:         8088,
+			GrpcService:      "grpc-service",
+			grpcTLSMode:      TLSMode_None,
+			MaxBatchSize:     24,
+			DefaultBatchSize: 8,
+		},
+	}
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			Tasks: []string{"task1", "task2"},
+		},
+	}
+
+	// no batchSize in the job, use default batchSize
+	assert.Equal(t, []string{
+		"sh", "-ec",
+		"python -m lm_eval --output_path /opt/app-root/src/output --device cpu --model test --model_args arg1=value1 --tasks task1,task2 --batch_size 8",
+	}, lmevalRec.generateArgs(job, log))
+
+	// exceed the max-batch-size, use max-batch-size
+	var biggerBatchSize = 30
+	job.Spec.BatchSize = &biggerBatchSize
+	assert.Equal(t, []string{
+		"sh", "-ec",
+		"python -m lm_eval --output_path /opt/app-root/src/output --device cpu --model test --model_args arg1=value1 --tasks task1,task2 --batch_size 24",
+	}, lmevalRec.generateArgs(job, log))
+
+	// normal batchSize
+	var normalBatchSize = 16
+	job.Spec.BatchSize = &normalBatchSize
+	assert.Equal(t, []string{
+		"sh", "-ec",
+		"python -m lm_eval --output_path /opt/app-root/src/output --device cpu --model test --model_args arg1=value1 --tasks task1,task2 --batch_size 16",
+	}, lmevalRec.generateArgs(job, log))
 }
