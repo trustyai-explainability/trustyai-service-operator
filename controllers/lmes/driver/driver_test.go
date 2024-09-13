@@ -132,3 +132,76 @@ func Test_ProgressUpdate(t *testing.T) {
 	assert.Nil(t, os.Remove("./stderr.log"))
 	assert.Nil(t, os.Remove("./stdout.log"))
 }
+
+func Test_DetectDeviceError(t *testing.T) {
+	server := grpc.NewServer()
+	progresssServer := ProgressUpdateServer{}
+	v1beta1.RegisterLMEvalJobUpdateServiceServer(server, &progresssServer)
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", 8082))
+	assert.Nil(t, err)
+	go server.Serve(lis)
+
+	driver, err := NewDriver(&DriverOption{
+		Context:        context.Background(),
+		JobNamespace:   "fms-lm-eval-service-system",
+		JobName:        "evaljob-sample",
+		GrpcService:    "localhost",
+		GrpcPort:       8082,
+		OutputPath:     ".",
+		DetectDevice:   true,
+		Logger:         driverLog,
+		Args:           []string{"sh", "-ec", "python -m lm_eval --output_path ./output --model test --model_args arg1=value1 --tasks task1,task2"},
+		ReportInterval: time.Second * 5,
+	})
+	assert.Nil(t, err)
+
+	assert.Nil(t, driver.Run())
+	assert.Equal(t, []string{
+		"update status from the driver: running",
+		"failed to detect available device(s): exit status 1",
+	}, progresssServer.progressMsgs)
+
+	server.Stop()
+
+	// the following files don't exist for this case
+	assert.NotNil(t, os.Remove("./stderr.log"))
+	assert.NotNil(t, os.Remove("./stdout.log"))
+}
+
+func Test_PatchDevice(t *testing.T) {
+	driverOpt := DriverOption{
+		Context:        context.Background(),
+		JobNamespace:   "fms-lm-eval-service-system",
+		JobName:        "evaljob-sample",
+		GrpcService:    "localhost",
+		GrpcPort:       8082,
+		OutputPath:     ".",
+		DetectDevice:   true,
+		Logger:         driverLog,
+		Args:           []string{"sh", "-ec", "python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2"},
+		ReportInterval: time.Second * 5,
+	}
+
+	// append `--device cuda`
+	patchDevice(driverOpt.Args, true)
+	assert.Equal(t,
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --device cuda",
+		driverOpt.Args[2],
+	)
+
+	// append `--device cpu`
+	driverOpt.Args = []string{"sh", "-ec", "python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2"}
+	patchDevice(driverOpt.Args, false)
+	assert.Equal(t,
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --device cpu",
+		driverOpt.Args[2],
+	)
+
+	// no change because `--device cpu` exists
+	driverOpt.Args = []string{"sh", "-ec", "python -m lm_eval --device cpu --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2"}
+	patchDevice(driverOpt.Args, true)
+	assert.Equal(t,
+		"python -m lm_eval --device cpu --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2",
+		driverOpt.Args[2],
+	)
+}

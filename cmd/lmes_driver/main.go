@@ -43,6 +43,7 @@ var (
 	grpcService    = flag.String("grpc-service", "", "grpc service name")
 	grpcPort       = flag.Int("grpc-port", 8082, "grpc port")
 	outputPath     = flag.String("output-path", OutputPath, "output path")
+	detectDevice   = flag.Bool("detect-device", true, "detect available device(s), CUDA or CPU")
 	reportInterval = flag.Duration("report-interval", time.Second*10, "specify the druation interval to report the progress")
 	driverLog      = ctrl.Log.WithName("driver")
 )
@@ -83,6 +84,7 @@ func main() {
 		OutputPath:     *outputPath,
 		GrpcService:    *grpcService,
 		GrpcPort:       *grpcPort,
+		DetectDevice:   *detectDevice,
 		Logger:         driverLog,
 		Args:           args,
 		ReportInterval: *reportInterval,
