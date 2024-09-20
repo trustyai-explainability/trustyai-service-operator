@@ -69,6 +69,7 @@ type DriverOption struct {
 	GrpcService    string
 	GrpcPort       int
 	OutputPath     string
+	DetectDevice   bool
 	Logger         logr.Logger
 	Args           []string
 	ReportInterval time.Duration
@@ -200,7 +201,59 @@ func getGRPCClientConn(option *DriverOption) (clientConn *grpc.ClientConn, err e
 	return
 }
 
+func (d *driverImpl) detectDevice() error {
+	if d == nil || !d.Option.DetectDevice {
+		return nil
+	}
+
+	// assuming python and torch python package are available.
+	// use torch python API to detect CUDA's availability
+	out, err := exec.Command(
+		"python",
+		"-c",
+		"import torch; print('=={}:{}=='.format(torch.cuda.is_available(), torch.cuda.device_count()));",
+	).Output()
+	if err != nil {
+		return fmt.Errorf("failed to detect available device(s): %v", err)
+	}
+
+	re := regexp.MustCompile(`(?m)^==(True|False):(\d+?)==$`)
+	matches := re.FindStringSubmatch(string(out))
+	if matches == nil {
+		return fmt.Errorf("failed to find the matched output")
+	}
+
+	patchDevice(d.Option.Args, matches[1] == "True")
+
+	return nil
+}
+
+func patchDevice(args []string, hasCuda bool) {
+	var device = "cpu"
+	if hasCuda {
+		device = "cuda"
+	}
+	// patch the python command in the Option.Arg by adding the `--device cuda` option
+	// find the string with the `python -m lm_eval` prefix. usually it should be the last one
+	for idx, arg := range args {
+		if strings.HasPrefix(arg, "python -m lm_eval") {
+			if !strings.Contains(arg, "--device") {
+				args[idx] = fmt.Sprintf("%s --device %s", arg, device)
+			}
+			break
+		}
+	}
+}
+
 func (d *driverImpl) exec() error {
+
+	// Detect available devices if needed
+	if err := d.detectDevice(); err != nil {
+		return err
+	}
+
+	fmt.Printf("%q\n", d.Option.Args)
+
 	// Run user program.
 	var args []string
 	if len(d.Option.Args) > 1 {

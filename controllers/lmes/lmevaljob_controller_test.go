@@ -760,7 +760,7 @@ func Test_GenerateArgBatchSize(t *testing.T) {
 	// no batchSize in the job, use default batchSize
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --device cpu --model test --model_args arg1=value1 --tasks task1,task2 --batch_size 8",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --batch_size 8",
 	}, lmevalRec.generateArgs(job, log))
 
 	// exceed the max-batch-size, use max-batch-size
@@ -768,7 +768,7 @@ func Test_GenerateArgBatchSize(t *testing.T) {
 	job.Spec.BatchSize = &biggerBatchSize
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --device cpu --model test --model_args arg1=value1 --tasks task1,task2 --batch_size 24",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --batch_size 24",
 	}, lmevalRec.generateArgs(job, log))
 
 	// normal batchSize
@@ -776,6 +776,6 @@ func Test_GenerateArgBatchSize(t *testing.T) {
 	job.Spec.BatchSize = &normalBatchSize
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --device cpu --model test --model_args arg1=value1 --tasks task1,task2 --batch_size 16",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --batch_size 16",
 	}, lmevalRec.generateArgs(job, log))
 }

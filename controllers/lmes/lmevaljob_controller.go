@@ -68,6 +68,7 @@ var (
 		"DriverReportInterval": DriverReportIntervalKey,
 		"DefaultBatchSize":     DefaultBatchSizeKey,
 		"MaxBatchSize":         MaxBatchSizeKey,
+		"DetectDevice":         DetectDeviceKey,
 	}
 )
 
@@ -101,6 +102,7 @@ type ServiceOptions struct {
 	GrpcClientSecret     string
 	MaxBatchSize         int
 	DefaultBatchSize     int
+	DetectDevice         bool
 	grpcTLSMode          TLSMode
 }
 
@@ -303,6 +305,7 @@ func (r *LMEvalJobReconciler) constructOptionsFromConfigMap(
 		GrpcServerSecret:     DefaultGrpcServerSecret,
 		GrpcClientSecret:     DefaultGrpcClientSecret,
 		MaxBatchSize:         DefaultMaxBatchSize,
+		DetectDevice:         DefaultDetectDevice,
 		DefaultBatchSize:     DefaultBatchSize,
 	}
 
@@ -679,8 +682,7 @@ func (r *LMEvalJobReconciler) generateArgs(job *lmesv1alpha1.LMEvalJob, log logr
 	}
 
 	cmds := make([]string, 0, 10)
-	// FIXME: use CPU for now
-	cmds = append(cmds, "python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--device", "cpu")
+	cmds = append(cmds, "python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output")
 	// --model
 	cmds = append(cmds, "--model", job.Spec.Model)
 	// --model_args
@@ -732,6 +734,7 @@ func (r *LMEvalJobReconciler) generateCmd(job *lmesv1alpha1.LMEvalJob) []string 
 		"--grpc-service", fmt.Sprintf("%s.%s.svc", r.options.GrpcService, r.Namespace),
 		"--grpc-port", strconv.Itoa(r.options.GrpcPort),
 		"--output-path", "/opt/app-root/src/output",
+		"--detect-device", fmt.Sprintf("%t", r.options.DetectDevice),
 		"--report-interval", r.options.DriverReportInterval.String(),
 		"--",
 	}

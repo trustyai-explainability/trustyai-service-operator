@@ -35,6 +35,7 @@ const (
 	GrpcClientSecretKey     = "lmes-grpc-client-secret"
 	MaxBatchSizeKey         = "lmes-max-batch-size"
 	DefaultBatchSizeKey     = "lmes-default-batch-size"
+	DetectDeviceKey         = "lmes-detect-device"
 	DriverReportIntervalKey = "driver-report-interval"
 	GrpcServerCertEnv       = "GRPC_SERVER_CERT"
 	GrpcServerKeyEnv        = "GRPC_SERVER_KEY"
@@ -51,5 +52,6 @@ const (
 	DefaultGrpcClientSecret     = "grpc-client-cert"
 	DefaultMaxBatchSize         = 24
 	DefaultBatchSize            = 8
+	DefaultDetectDevice         = true
 	ServiceName                 = "LMES"
 )
