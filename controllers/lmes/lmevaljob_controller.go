@@ -326,6 +326,13 @@ func (r *LMEvalJobReconciler) constructOptionsFromConfigMap(
 			switch frv.Type().Name() {
 			case "string":
 				frv.SetString(v)
+			case "bool":
+				val, err := strconv.ParseBool(v)
+				if err != nil {
+					val = DefaultDetectDevice
+					msgs = append(msgs, fmt.Sprintf("invalid setting for %v: %v, use default setting instead", optionKeys[fname], val))
+				}
+				frv.SetBool(val)
 			case "int":
 				var intVal int
 				intVal, err = strconv.Atoi(v)
@@ -690,7 +697,9 @@ func (r *LMEvalJobReconciler) generateArgs(job *lmesv1alpha1.LMEvalJob, log logr
 		cmds = append(cmds, "--model_args", argsToString(job.Spec.ModelArgs))
 	}
 	// --tasks
-	cmds = append(cmds, "--tasks", strings.Join(job.Spec.Tasks, ","))
+	cmds = append(cmds, "--tasks", strings.Join(concatTasks(job.Spec.TaskList), ","))
+	// --include
+	cmds = append(cmds, "--include_path", driver.DefaultTaskRecipesPath)
 	// --num_fewshot
 	if job.Spec.NumFewShot != nil {
 		cmds = append(cmds, "--num_fewshot", fmt.Sprintf("%d", *job.Spec.NumFewShot))
@@ -722,22 +731,42 @@ func (r *LMEvalJobReconciler) generateArgs(job *lmesv1alpha1.LMEvalJob, log logr
 	return []string{"sh", "-ec", strings.Join(cmds, " ")}
 }
 
+func concatTasks(tasks lmesv1alpha1.TaskList) []string {
+	if len(tasks.TaskRecipes) == 0 {
+		return tasks.TaskNames
+	}
+	recipesName := make([]string, len(tasks.TaskRecipes))
+	for i := range tasks.TaskRecipes {
+		// assign internal userd task name
+		recipesName[i] = fmt.Sprintf("%s_%d", driver.TaskRecipe_Prefix, i)
+	}
+	return append(tasks.TaskNames, recipesName...)
+}
+
 func (r *LMEvalJobReconciler) generateCmd(job *lmesv1alpha1.LMEvalJob) []string {
 	if job == nil {
 		return nil
 	}
-
-	return []string{
+	cmds := []string{
 		DestDriverPath,
 		"--job-namespace", job.Namespace,
 		"--job-name", job.Name,
 		"--grpc-service", fmt.Sprintf("%s.%s.svc", r.options.GrpcService, r.Namespace),
 		"--grpc-port", strconv.Itoa(r.options.GrpcPort),
 		"--output-path", "/opt/app-root/src/output",
-		"--detect-device", fmt.Sprintf("%t", r.options.DetectDevice),
 		"--report-interval", r.options.DriverReportInterval.String(),
-		"--",
 	}
+
+	if r.options.DetectDevice {
+		cmds = append(cmds, "--detect-device")
+	}
+
+	for _, recipe := range job.Spec.TaskList.TaskRecipes {
+		cmds = append(cmds, "--task-recipe", recipe.String())
+	}
+
+	cmds = append(cmds, "--")
+	return cmds
 }
 
 func argsToString(args []lmesv1alpha1.Arg) string {

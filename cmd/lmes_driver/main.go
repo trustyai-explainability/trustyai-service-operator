@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -36,17 +37,34 @@ const (
 	OutputPath = "/opt/app-root/src/output"
 )
 
+type taskRecipeArg []string
+
+func (t *taskRecipeArg) Set(value string) error {
+	*t = append(*t, value)
+	return nil
+}
+
+func (t *taskRecipeArg) String() string {
+	// supposedly, use ":" as the separator for task recipe should be safe
+	return strings.Join(*t, ":")
+}
+
 var (
+	taskRecipes    taskRecipeArg
 	copy           = flag.String("copy", "", "copy this binary to specified destination path")
 	jobNameSpace   = flag.String("job-namespace", "", "Job's namespace ")
 	jobName        = flag.String("job-name", "", "Job's name")
 	grpcService    = flag.String("grpc-service", "", "grpc service name")
 	grpcPort       = flag.Int("grpc-port", 8082, "grpc port")
 	outputPath     = flag.String("output-path", OutputPath, "output path")
-	detectDevice   = flag.Bool("detect-device", true, "detect available device(s), CUDA or CPU")
+	detectDevice   = flag.Bool("detect-device", false, "detect available device(s), CUDA or CPU")
 	reportInterval = flag.Duration("report-interval", time.Second*10, "specify the druation interval to report the progress")
 	driverLog      = ctrl.Log.WithName("driver")
 )
+
+func init() {
+	flag.Var(&taskRecipes, "task-recipe", "task recipe")
+}
 
 func main() {
 	opts := zap.Options{
@@ -86,6 +104,7 @@ func main() {
 		GrpcPort:       *grpcPort,
 		DetectDevice:   *detectDevice,
 		Logger:         driverLog,
+		TaskRecipes:    taskRecipes,
 		Args:           args,
 		ReportInterval: *reportInterval,
 	}

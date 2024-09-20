@@ -205,3 +205,88 @@ func Test_PatchDevice(t *testing.T) {
 		driverOpt.Args[2],
 	)
 }
+
+func Test_TaskRecipes(t *testing.T) {
+	server := grpc.NewServer()
+	progresssServer := ProgressUpdateServer{}
+	v1beta1.RegisterLMEvalJobUpdateServiceServer(server, &progresssServer)
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", 8082))
+	assert.Nil(t, err)
+	go server.Serve(lis)
+
+	driver, err := NewDriver(&DriverOption{
+		Context:         context.Background(),
+		JobNamespace:    "fms-lm-eval-service-system",
+		JobName:         "evaljob-sample",
+		GrpcService:     "localhost",
+		GrpcPort:        8082,
+		OutputPath:      ".",
+		Logger:          driverLog,
+		TaskRecipesPath: "./",
+		TaskRecipes: []string{
+			"card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+			"card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		},
+		Args:           []string{"sh", "-ec", "echo 'testing progress: 100%|' >&2; sleep 10"},
+		ReportInterval: time.Second * 5,
+	})
+	assert.Nil(t, err)
+
+	assert.Nil(t, driver.Run())
+	assert.Equal(t, []string{
+		"update status from the driver: running",
+		"testing progress: 100%",
+		"update status from the driver: completed",
+	}, progresssServer.progressMsgs)
+
+	server.Stop()
+
+	tr0, err := os.ReadFile("./tr_0.yaml")
+	assert.Nil(t, err)
+	assert.Equal(t,
+		"task: tr_0\ninclude: unitxt\nrecipe: card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		string(tr0),
+	)
+	tr1, err := os.ReadFile("./tr_1.yaml")
+	assert.Nil(t, err)
+	assert.Equal(t,
+		"task: tr_1\ninclude: unitxt\nrecipe: card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		string(tr1),
+	)
+	assert.Nil(t, os.Remove("./stderr.log"))
+	assert.Nil(t, os.Remove("./stdout.log"))
+	assert.Nil(t, os.Remove("./tr_0.yaml"))
+	assert.Nil(t, os.Remove("./tr_1.yaml"))
+}
+
+func Test_ProgramError(t *testing.T) {
+	server := grpc.NewServer()
+	progresssServer := ProgressUpdateServer{}
+	v1beta1.RegisterLMEvalJobUpdateServiceServer(server, &progresssServer)
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", 8082))
+	assert.Nil(t, err)
+	go server.Serve(lis)
+
+	driver, err := NewDriver(&DriverOption{
+		Context:        context.Background(),
+		JobNamespace:   "fms-lm-eval-service-system",
+		JobName:        "evaljob-sample",
+		GrpcService:    "localhost",
+		GrpcPort:       8082,
+		OutputPath:     ".",
+		Logger:         driverLog,
+		Args:           []string{"sh", "-ec", "exit 1"},
+		ReportInterval: time.Second * 5,
+	})
+	assert.Nil(t, err)
+
+	assert.Nil(t, driver.Run())
+	assert.Equal(t, []string{
+		"update status from the driver: running",
+		"exit status 1",
+	}, progresssServer.progressMsgs)
+
+	server.Stop()
+	assert.Nil(t, os.Remove("./stderr.log"))
+	assert.Nil(t, os.Remove("./stdout.log"))
+}
