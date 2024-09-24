@@ -17,6 +17,9 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"fmt"
+	"strings"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -78,6 +81,65 @@ type FileSecret struct {
 	MountPath string `json:"mountPath"`
 }
 
+// Use a task recipe to form a custom task. It maps to the Unitxt Recipe
+// Find details of the Unitxt Recipe here:
+// https://www.unitxt.ai/en/latest/unitxt.standard.html#unitxt.standard.StandardRecipe
+type TaskRecipe struct {
+	// The Unitxt dataset card
+	Card string `json:"card"`
+	// The Unitxt template
+	Template string `json:"template"`
+	// The Unitxt Task
+	// +optional
+	Task *string `json:"task,omitempty"`
+	// Metrics
+	// +optional
+	Metrics []string `json:"metrics,omitempty"`
+	// The Unitxt format
+	// +optional
+	Format *string `json:"format,omitempty"`
+	// A limit number of records to load
+	// +optional
+	LoaderLimit *int `json:"loaderLimit,omitempty"`
+	// Number of fewshot
+	// +optional
+	NumDemos *int `json:"numDemos,omitempty"`
+	// The pool size for the fewshot
+	// +optional
+	DemosPoolSize *int `json:"demosPoolSize,omitempty"`
+}
+
+type TaskList struct {
+	// TaskNames from lm-eval's task list
+	TaskNames []string `json:"taskNames,omitempty"`
+	// Task Recipes specifically for Unitxt
+	TaskRecipes []TaskRecipe `json:"taskRecipes,omitempty"`
+}
+
+func (t *TaskRecipe) String() string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("card=%s,template=%s", t.Card, t.Template))
+	if t.Task != nil {
+		b.WriteString(fmt.Sprintf(",task=%s", *t.Task))
+	}
+	if len(t.Metrics) > 0 {
+		b.WriteString(fmt.Sprintf(",metrics=[%s]", strings.Join(t.Metrics, ",")))
+	}
+	if t.Format != nil {
+		b.WriteString(fmt.Sprintf(",format=%s", *t.Format))
+	}
+	if t.LoaderLimit != nil {
+		b.WriteString(fmt.Sprintf(",loader_limit=%d", *t.LoaderLimit))
+	}
+	if t.NumDemos != nil {
+		b.WriteString(fmt.Sprintf(",num_demos=%d", *t.NumDemos))
+	}
+	if t.DemosPoolSize != nil {
+		b.WriteString(fmt.Sprintf(",demos_pool_size=%d", *t.DemosPoolSize))
+	}
+	return b.String()
+}
+
 // LMEvalJobSpec defines the desired state of LMEvalJob
 type LMEvalJobSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -88,8 +150,8 @@ type LMEvalJobSpec struct {
 	// Args for the model
 	// +optional
 	ModelArgs []Arg `json:"modelArgs,omitempty"`
-	// Evaluation tasks
-	Tasks []string `json:"tasks"`
+	// Evaluation task list
+	TaskList TaskList `json:"taskList"`
 	// Sets the number of few-shot examples to place in context
 	// +optional
 	NumFewShot *int `json:"numFewShot,omitempty"`
@@ -144,7 +206,7 @@ type LMEvalJobStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-
+// +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.status.state`
 // LMEvalJob is the Schema for the lmevaljobs API
 type LMEvalJob struct {
 	metav1.TypeMeta   `json:",inline"`

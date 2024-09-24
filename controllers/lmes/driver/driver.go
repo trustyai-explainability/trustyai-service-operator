@@ -55,6 +55,8 @@ const (
 	GrpcClientCertEnv           = "GRPC_CLIENT_CERT"
 	GrpcServerCaEnv             = "GRPC_SERVER_CA"
 	DefaultDriverReportInterval = time.Second * 10
+	DefaultTaskRecipesPath      = "/opt/app-root/src/my_tasks"
+	TaskRecipe_Prefix           = "tr"
 )
 
 func init() {
@@ -63,16 +65,18 @@ func init() {
 }
 
 type DriverOption struct {
-	Context        context.Context
-	JobNamespace   string
-	JobName        string
-	GrpcService    string
-	GrpcPort       int
-	OutputPath     string
-	DetectDevice   bool
-	Logger         logr.Logger
-	Args           []string
-	ReportInterval time.Duration
+	Context         context.Context
+	JobNamespace    string
+	JobName         string
+	GrpcService     string
+	GrpcPort        int
+	OutputPath      string
+	DetectDevice    bool
+	TaskRecipesPath string
+	TaskRecipes     []string
+	Logger          logr.Logger
+	Args            []string
+	ReportInterval  time.Duration
 }
 
 type Driver interface {
@@ -104,6 +108,9 @@ func NewDriver(opt *DriverOption) (Driver, error) {
 		return nil, fmt.Errorf("JobNamespace or JobName is empty")
 	}
 
+	if opt.TaskRecipesPath == "" {
+		opt.TaskRecipesPath = DefaultTaskRecipesPath
+	}
 	conn, err := getGRPCClientConn(opt)
 	if err != nil {
 		return nil, err
@@ -123,6 +130,7 @@ func (d *driverImpl) Run() error {
 
 		return err
 	}
+
 	execErr := d.exec()
 
 	// dump stderr and stdout to the console
@@ -246,13 +254,15 @@ func patchDevice(args []string, hasCuda bool) {
 }
 
 func (d *driverImpl) exec() error {
+	// create Unitxt task recipes
+	if err := d.createTaskRecipes(); err != nil {
+		return fmt.Errorf("failed to create task recipes: %v", err)
+	}
 
 	// Detect available devices if needed
 	if err := d.detectDevice(); err != nil {
 		return err
 	}
-
-	fmt.Printf("%q\n", d.Option.Args)
 
 	// Run user program.
 	var args []string
@@ -285,6 +295,9 @@ func (d *driverImpl) exec() error {
 	}
 	executor.Stdout = bout
 	executor.Stderr = berr
+	executor.Env = append(os.Environ(),
+		"UNITXT_ALLOW_UNVERIFIED_CODE=True",
+	)
 
 	var freeRes = func() {
 		stdin.Close()
@@ -379,17 +392,13 @@ func (d *driverImpl) updateCompleteStatus(err error) error {
 
 func (d *driverImpl) getResults() (string, error) {
 	var results string
-	pattern := filepath.Join(d.Option.OutputPath, "result*.json")
+	pattern := "*result*.json"
 	if err := filepath.WalkDir(d.Option.OutputPath, func(path string, dir fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		// only output directory
-		if path != d.Option.OutputPath && dir != nil && dir.IsDir() {
-			return fs.SkipDir
-		}
 
-		if matched, _ := filepath.Match(pattern, path); matched {
+		if matched, _ := filepath.Match(pattern, filepath.Base(path)); matched {
 			bytes, err := os.ReadFile(path)
 			if err != nil {
 				d.Option.Logger.Error(err, "failed to retrieve the results")
@@ -427,6 +436,24 @@ func (d *driverImpl) reportProgress(msg string) error {
 	}
 	if time.Since(d.lastReportTime) >= d.Option.ReportInterval {
 		if err := d.updateStatus(lmesv1alpha1.RunningJobState, d.lastProgressMsg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *driverImpl) createTaskRecipes() error {
+	for i, taskRecipe := range d.Option.TaskRecipes {
+		err := os.WriteFile(
+			filepath.Join(d.Option.TaskRecipesPath, fmt.Sprintf("%s_%d.yaml", TaskRecipe_Prefix, i)),
+			[]byte(fmt.Sprintf(
+				"task: %s\ninclude: unitxt\nrecipe: %s",
+				fmt.Sprintf("%s_%d", TaskRecipe_Prefix, i),
+				taskRecipe,
+			)),
+			0666,
+		)
+		if err != nil {
 			return err
 		}
 	}

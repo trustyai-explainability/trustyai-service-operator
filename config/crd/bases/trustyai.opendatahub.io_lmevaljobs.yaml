@@ -15,7 +15,11 @@ spec:
     singular: lmevaljob
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.state
+      name: State
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: LMEvalJob is the Schema for the lmevaljobs API
@@ -187,14 +191,56 @@ spec:
               numFewShot:
                 description: Sets the number of few-shot examples to place in context
                 type: integer
-              tasks:
-                description: Evaluation tasks
-                items:
-                  type: string
-                type: array
+              taskList:
+                description: Evaluation task list
+                properties:
+                  taskNames:
+                    description: TaskNames from lm-eval's task list
+                    items:
+                      type: string
+                    type: array
+                  taskRecipes:
+                    description: Task Recipes specifically for Unitxt
+                    items:
+                      description: 'Use a task recipe to form a custom task. It maps
+                        to the Unitxt Recipe Find details of the Unitxt Recipe here:
+                        https://www.unitxt.ai/en/latest/unitxt.standard.html#unitxt.standard.StandardRecipe'
+                      properties:
+                        card:
+                          description: The Unitxt dataset card
+                          type: string
+                        demosPoolSize:
+                          description: The pool size for the fewshot
+                          type: integer
+                        format:
+                          description: The Unitxt format
+                          type: string
+                        loaderLimit:
+                          description: A limit number of records to load
+                          type: integer
+                        metrics:
+                          description: Metrics
+                          items:
+                            type: string
+                          type: array
+                        numDemos:
+                          description: Number of fewshot
+                          type: integer
+                        task:
+                          description: The Unitxt Task
+                          type: string
+                        template:
+                          description: The Unitxt template
+                          type: string
+                      required:
+                      - card
+                      - template
+                      type: object
+                    type: array
+                type: object
             required:
             - model
-            - tasks
+            - taskList
             type: object
           status:
             description: LMEvalJobStatus defines the observed state of LMEvalJob

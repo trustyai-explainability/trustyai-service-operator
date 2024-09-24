@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes/driver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -62,7 +63,9 @@ func Test_SimplePod(t *testing.T) {
 			ModelArgs: []lmesv1alpha1.Arg{
 				{Name: "arg1", Value: "value1"},
 			},
-			Tasks: []string{"task1", "task2"},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
 		},
 	}
 
@@ -188,7 +191,9 @@ func Test_GrpcMTlsPod(t *testing.T) {
 			ModelArgs: []lmesv1alpha1.Arg{
 				{Name: "arg1", Value: "value1"},
 			},
-			Tasks: []string{"task1", "task2"},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
 		},
 	}
 
@@ -358,7 +363,9 @@ func Test_EnvSecretsPod(t *testing.T) {
 			ModelArgs: []lmesv1alpha1.Arg{
 				{Name: "arg1", Value: "value1"},
 			},
-			Tasks: []string{"task1", "task2"},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
 			EnvSecrets: []lmesv1alpha1.EnvSecret{
 				{
 					Env: "my_env",
@@ -550,7 +557,9 @@ func Test_FileSecretsPod(t *testing.T) {
 			ModelArgs: []lmesv1alpha1.Arg{
 				{Name: "arg1", Value: "value1"},
 			},
-			Tasks: []string{"task1", "task2"},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
 			FileSecrets: []lmesv1alpha1.FileSecret{
 				{
 					MountPath: "the_path",
@@ -753,14 +762,16 @@ func Test_GenerateArgBatchSize(t *testing.T) {
 			ModelArgs: []lmesv1alpha1.Arg{
 				{Name: "arg1", Value: "value1"},
 			},
-			Tasks: []string{"task1", "task2"},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
 		},
 	}
 
 	// no batchSize in the job, use default batchSize
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --batch_size 8",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size 8",
 	}, lmevalRec.generateArgs(job, log))
 
 	// exceed the max-batch-size, use max-batch-size
@@ -768,7 +779,7 @@ func Test_GenerateArgBatchSize(t *testing.T) {
 	job.Spec.BatchSize = &biggerBatchSize
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --batch_size 24",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size 24",
 	}, lmevalRec.generateArgs(job, log))
 
 	// normal batchSize
@@ -776,6 +787,116 @@ func Test_GenerateArgBatchSize(t *testing.T) {
 	job.Spec.BatchSize = &normalBatchSize
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --batch_size 16",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size 16",
 	}, lmevalRec.generateArgs(job, log))
+}
+
+func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
+	log := log.FromContext(context.Background())
+	lmevalRec := LMEvalJobReconciler{
+		Namespace: "test",
+		options: &ServiceOptions{
+			PodImage:         "podimage:latest",
+			DriverImage:      "driver:latest",
+			ImagePullPolicy:  corev1.PullAlways,
+			GrpcPort:         8088,
+			GrpcService:      "grpc-service",
+			grpcTLSMode:      TLSMode_None,
+			DefaultBatchSize: DefaultBatchSize,
+			MaxBatchSize:     DefaultMaxBatchSize,
+		},
+	}
+	var format = "unitxt.format"
+	var numDemos = 5
+	var demosPoolSize = 10
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+				TaskRecipes: []lmesv1alpha1.TaskRecipe{
+					{
+						Card:          "unitxt.card1",
+						Template:      "unitxt.template",
+						Format:        &format,
+						Metrics:       []string{"unitxt.metric1", "unitxt.metric2"},
+						NumDemos:      &numDemos,
+						DemosPoolSize: &demosPoolSize,
+					},
+				},
+			},
+		},
+	}
+
+	// one TaskRecipe
+	assert.Equal(t, []string{
+		"sh", "-ec",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0 --include_path /opt/app-root/src/my_tasks --batch_size 8",
+	}, lmevalRec.generateArgs(job, log))
+
+	assert.Equal(t, []string{
+		"/opt/app-root/src/bin/driver",
+		"--job-namespace", "default",
+		"--job-name", "test",
+		"--grpc-service", "grpc-service.test.svc",
+		"--grpc-port", "8088",
+		"--output-path", "/opt/app-root/src/output",
+		"--report-interval", "0s",
+		"--task-recipe", "card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--",
+	}, lmevalRec.generateCmd(job))
+
+	job.Spec.TaskList.TaskRecipes = append(job.Spec.TaskList.TaskRecipes,
+		lmesv1alpha1.TaskRecipe{
+			Card:          "unitxt.card2",
+			Template:      "unitxt.template2",
+			Format:        &format,
+			Metrics:       []string{"unitxt.metric3", "unitxt.metric4"},
+			NumDemos:      &numDemos,
+			DemosPoolSize: &demosPoolSize,
+		},
+	)
+
+	// two task recipes
+	// one TaskRecipe
+	assert.Equal(t, []string{
+		"sh", "-ec",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0,tr_1 --include_path /opt/app-root/src/my_tasks --batch_size 8",
+	}, lmevalRec.generateArgs(job, log))
+
+	assert.Equal(t, []string{
+		"/opt/app-root/src/bin/driver",
+		"--job-namespace", "default",
+		"--job-name", "test",
+		"--grpc-service", "grpc-service.test.svc",
+		"--grpc-port", "8088",
+		"--output-path", "/opt/app-root/src/output",
+		"--report-interval", "0s",
+		"--task-recipe", "card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--task-recipe", "card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--",
+	}, lmevalRec.generateCmd(job))
+}
+
+func Test_ConcatTasks(t *testing.T) {
+	tasks := concatTasks(lmesv1alpha1.TaskList{
+		TaskNames: []string{"task1", "task2"},
+		TaskRecipes: []lmesv1alpha1.TaskRecipe{
+			{Template: "template3", Card: "format3"},
+		},
+	})
+
+	assert.Equal(t, []string{"task1", "task2", driver.TaskRecipe_Prefix + "_0"}, tasks)
 }
