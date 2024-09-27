@@ -25,6 +25,7 @@ import (
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -156,10 +157,28 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// Get database configuration
 		secret, err := r.findDatabaseSecret(ctx, instance)
 		if err != nil {
+			_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+				UpdateDBCredentialsNotFound(saved)
+				UpdateTrustyAIServiceNotAvailable(saved)
+				saved.Status.Phase = PhaseNotReady
+				saved.Status.Ready = v1.ConditionFalse
+			})
+			if updateErr != nil {
+				return RequeueWithErrorMessage(ctx, err, "Failed to update status")
+			}
 			return RequeueWithErrorMessage(ctx, err, "Service configured to use database storage but no database configuration found.")
 		}
 		err = r.validateDatabaseSecret(secret)
 		if err != nil {
+			_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+				UpdateDBCredentialsError(saved)
+				UpdateTrustyAIServiceNotAvailable(saved)
+				saved.Status.Phase = PhaseNotReady
+				saved.Status.Ready = v1.ConditionFalse
+			})
+			if updateErr != nil {
+				return RequeueWithErrorMessage(ctx, err, "Failed to update status")
+			}
 			return RequeueWithErrorMessage(ctx, err, "Database configuration contains errors.")
 		}
 	}

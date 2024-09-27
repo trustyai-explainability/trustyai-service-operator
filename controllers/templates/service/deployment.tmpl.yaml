@@ -42,6 +42,26 @@ spec:
       containers:
         - name: trustyai-service
           image: {{ .ServiceImage }}
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
           env:
             - name: SERVICE_STORAGE_FORMAT
               value: {{ .Instance.Spec.Storage.Format }}
