@@ -35,7 +35,7 @@ func setupAndTestStatusNoComponent(instance *trustyaiopendatahubiov1alpha1.Trust
 	// Call the reconcileStatuses function
 	_, _ = reconciler.reconcileStatuses(ctx, instance)
 
-	readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, "Ready", corev1.ConditionTrue, true)
+	readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 	Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
 	if readyCondition != nil {
 		Expect(statusMatch).To(Equal(corev1.ConditionFalse), "Ready condition should be true")
@@ -127,7 +127,7 @@ var _ = Describe("Status and condition tests", func() {
 				}, instance)
 			}, "failed to get updated instance")
 
-			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, "Ready", corev1.ConditionTrue, true)
+			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 			Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
 			if readyCondition != nil {
 				Expect(statusMatch).To(Equal(corev1.ConditionTrue), "Ready condition should be true")
@@ -191,7 +191,7 @@ var _ = Describe("Status and condition tests", func() {
 				}, instance)
 			}, "failed to get updated instance")
 
-			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, "Ready", corev1.ConditionTrue, true)
+			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 			Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
 			if readyCondition != nil {
 				Expect(statusMatch).To(Equal(corev1.ConditionTrue), "Ready condition should be true")
@@ -260,8 +260,7 @@ var _ = Describe("Status and condition tests", func() {
 					Namespace: instance.Namespace,
 				}, instance)
 			}, "failed to get updated instance")
-
-			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, "Ready", corev1.ConditionTrue, true)
+			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 			Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
 			if readyCondition != nil {
 				Expect(statusMatch).To(Equal(corev1.ConditionTrue), "Ready condition should be true")
@@ -344,7 +343,7 @@ var _ = Describe("Status and condition tests", func() {
 				}, instance)
 			}, "failed to get updated instance")
 
-			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, "Ready", corev1.ConditionTrue, true)
+			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 			Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
 			if readyCondition != nil {
 				Expect(statusMatch).To(Equal(corev1.ConditionTrue), "Ready condition should be true")
