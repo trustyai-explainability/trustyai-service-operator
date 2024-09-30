@@ -20,10 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"path/filepath"
 	"testing"
 	"time"
+
+	rbacv1 "k8s.io/api/rbac/v1"
 
 	"github.com/google/uuid"
 	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
@@ -358,14 +359,75 @@ func makeDeploymentReady(ctx context.Context, k8sClient client.Client, instance 
 			Reason:  "DeploymentReady",
 			Message: "The deployment is ready",
 		},
+		{
+			Type:    appsv1.DeploymentProgressing,
+			Status:  corev1.ConditionTrue,
+			Reason:  "NewReplicaSetAvailable",
+			Message: "ReplicaSet is progressing",
+		},
 	}
 
 	if deployment.Spec.Replicas != nil {
-		deployment.Status.ReadyReplicas = 1
-		deployment.Status.Replicas = 1
+		deployment.Status.ReadyReplicas = *deployment.Spec.Replicas
+		deployment.Status.Replicas = *deployment.Spec.Replicas
+		deployment.Status.AvailableReplicas = *deployment.Spec.Replicas
 	}
 
-	return k8sClient.Update(ctx, deployment)
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name + "-pod",
+			Namespace: instance.Namespace,
+			Labels:    deployment.Spec.Selector.MatchLabels,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "trustyai-service",
+					Image: "quay.io/trustyai/trustyai-service:latest",
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: 8080,
+						},
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{
+				{
+					Type:   corev1.PodReady,
+					Status: corev1.ConditionTrue,
+				},
+				{
+					Type:   corev1.ContainersReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name: "trustyai-service",
+					State: corev1.ContainerState{
+						Running: &corev1.ContainerStateRunning{
+							StartedAt: metav1.Now(),
+						},
+					},
+					Ready:        true,
+					RestartCount: 0,
+				},
+			},
+		},
+	}
+
+	if err := k8sClient.Create(ctx, pod); err != nil {
+		return err
+	}
+
+	if err := k8sClient.Status().Update(ctx, deployment); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func makeRouteReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
