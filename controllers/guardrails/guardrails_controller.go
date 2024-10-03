@@ -39,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/docker/docker/api/types/volume"
 	"github.com/go-logr/logr"
 	"github.com/spf13/viper"
 	guardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/guardrails/v1alpha1"
@@ -46,9 +47,7 @@ import (
 
 var (
 	optionKeys = map[string]string{
-		"PodImage":             PodImageKey,
 		"OrchestratorImage":    OrchestratorImageKey,
-		"PodCheckingInterval":  PodCheckingIntervalKey,
 		"ImagePullPolicy":      ImagePullPolicyKey,
 		"GrpcPort":             GrpcPortKey,
 		"GrpcService":          GrpcServiceKey,
@@ -58,6 +57,12 @@ var (
 )
 
 type TLSMode int
+
+const (
+	TLSMode_None TLSMode = 0
+	TLSMode_TLS  TLSMode = 1
+	TLSMode_mTLS TLSMode = 2
+)
 
 // GuardrailsService reconciles a GuardrailsService object
 type GuardrailsServiceReconciler struct {
@@ -70,9 +75,7 @@ type GuardrailsServiceReconciler struct {
 }
 
 type ServiceOptions struct {
-	OrchestratorImage    string
 	PodImage             string
-	PodCheckingInterval  time.Duration
 	ImagePullPolicy      corev1.PullPolicy
 	GrpcPort             int
 	GrpcService          string
@@ -232,12 +235,11 @@ func (r *GuardrailsServiceReconciler) updateStatus(ctx context.Context, newStatu
 	return err
 }
 
+
 func (r *GuardrailsServiceReconciler) constructOptionsFromConfigMap(
 	ctx context.Context, configmap *corev1.ConfigMap) error {
 	r.options = &ServiceOptions{
-		OrchestratorImage:	  DefualtOrchestratorImage,
-		PodImage:             DefaultPodImage,
-		PodCheckingInterval:  DefaultPodCheckingInterval,
+		PodImage:	  DefualtPodImage,
 		ImagePullPolicy:      DefaultImagePullPolicy,
 		GrpcPort:             DefaultGrpcPort,
 		GrpcService:          DefaultGrpcService,
@@ -247,47 +249,6 @@ func (r *GuardrailsServiceReconciler) constructOptionsFromConfigMap(
 	log := log.FromContext(ctx)
 	rv := reflect.ValueOf(r.options).Elem()
 	var msgs []string
-
-	for idx, cap := 0, rv.NumField(); idx < cap; idx++ {
-		frv := rv.Field(idx)
-		fname := rv.Type().Field(idx).Name
-		configKey, ok := optionKeys[fname]
-		if !ok {
-			continue
-		}
-
-		if v, found := configmap.Data[configKey]; found {
-			var err error
-			switch frv.Type().Name() {
-			case "string":
-				frv.SetString(v)
-			case "int":
-				var intVal int
-				intVal, err = strconv.Atoi(v)
-				if err == nil {
-					frv.SetInt(int64(intVal))
-				}
-			case "Duration":
-				var d time.Duration
-				d, err = time.ParseDuration(v)
-				if err == nil {
-					frv.Set(reflect.ValueOf(d))
-				}
-			case "PullPolicy":
-				if p, found := pullPolicyMap[corev1.PullPolicy(v)]; found {
-					frv.Set(reflect.ValueOf(p))
-				} else {
-					err = fmt.Errorf("invalid PullPolicy")
-				}
-			default:
-				return fmt.Errorf("can not handle the config %v, type: %v", optionKeys[fname], frv.Type().Name())
-			}
-
-			if err != nil {
-				msgs = append(msgs, fmt.Sprintf("invalid setting for %v: %v, use default setting instead", optionKeys[fname], v))
-			}
-		}
-	}
 
 	if len(msgs) > 0 {
 		log.Error(fmt.Errorf("some settings in the configmap are invalid"), strings.Join(msgs, "\n"))
@@ -434,9 +395,10 @@ func (r *GuardrailsServiceReconciler) deletePod(ctx context.Context, service *gu
 			Namespace: job.Namespace,
 			OwnerReferences: []v1.OwnerReference{
 				{
-					APIVersion: job.APIVersion,
-					Kind:       job.Kind,
-					Name:       job.Name,
+					APIVersion: service.APIVersion,
+					Kind:       service.Kind,
+					Name:       service.Name,
+					Controller:
 				},
 			},
 		},
@@ -476,27 +438,36 @@ func (r *&GuardrailsServiceReconciler) createPod(service * guardrailsv1alpha1.Gu
 	var runAsNonRootUser = true
 	var ownerRefController = true
 	var runAsUser int64 = 1001030000
-
+	var privileged = false
+	var runAsNonRoot = true
+	var ReadOnlyRootFilesystem = true
 	var envVars = generateEnvs(service.Spec.EnvSecrets)
 
 	var volumeMounts = []corev1.VolumeMount{
 		{
-			Name:      "shared",
-			MountPath: "/opt/app-root/src/bin",
+			Name: "fms-orchestr8-config-nlp",
+			MountPath: "/config/config.yaml",
+			SubPath: "config.yaml",
 		},
+		// is it the kube-api-access vol mount required ?
 	}
 
-	var volumes []corev1.Volume{
+	var volumes = []corev1.Volume{
 		{
-			Name: "shared", VolumeSource: corev1.VolumeSource{
+			Name: "fms-orchestr8-config-nlp", VolumeSource: corev1.VolumeSource{
 				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
 		},
+		// is it the kube-api-access vol required ?
 	}
-	// compose the Pod CR
+
+	envVars, volumes, volumeMounts = r.patch4GrpcTLS(ennVars, volumes, volumeMounts, r.options.grpcTLSMode)
+	volumes, volumeMounts = patch4FileSecrets(volumes, volumeMounts, service.Spec.FileSecrets)
+
+	// Compose the Pod CR
 	pod := corev1.Pod{
 		TypeMeta: v1.TypeMeta{
-			Kind:       "Pod",
+			Kind: "Pod",
 			APIVersion: "v1",
 		},
 		ObjectMeta: v1.ObjectMeta{
@@ -509,48 +480,29 @@ func (r *&GuardrailsServiceReconciler) createPod(service * guardrailsv1alpha1.Gu
 					Name: service.Name,
 					Controller: &ownerRefController,
 					UID: service.UID,
-				},
+
+				}
 			},
 			Labels: map[string]string{
-				"app.kubernetes.io/name": "guardrails-service",
+				"app": "fmstack-nlp",
+				"component": "fms-orchestr8-nlp",
+				"deployment": "fms-orchestr8-nlp",
+
 			},
 		},
-		Spec: core1.PodSpec{
-			InitContainers: []corev1.Container{
-				{
-					Name: "orchestrator",
-					Image: r.options.OrchestratorImage,
-					ImagePullPolicy: r.options.ImagePullPolicy,
-					Command: []string{OrchestratorPath, "--copy", DestOrchestrator},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						RunAsUser: &runAsUser,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
-					Volume: []corev1.VolumeMount{
-						{
-							Name: "shared",
-							MountPath: "opt/app-root/src/bin",
-						},
-					},
-				},
-			},
-
+		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
 				{
-					Name: "main",
+					Name: "fms-orchestr8-nlp",
 					Image: r.options.PodImage,
 					ImagePullPolicy: r.options.ImagePullPolicy,
 					Env: envVars,
-					Command: r.generateCmd(service),
-					Args: r.generateArgs(service, log),
+					Command: "-/app/bin/fms-guardrails-orchestr8",
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						RunAsUser: &runAsUser,
+						RunAsUser:                &runAsUser,
+						Privileged: &privileged,
+						ReadOnlyRootFilesystem: &readOnlyFileSystem,
 						Capabilities: &corev1.Capabilities{
 							Drop: []corev1.Capability{
 								"ALL",
@@ -561,70 +513,16 @@ func (r *&GuardrailsServiceReconciler) createPod(service * guardrailsv1alpha1.Gu
 				},
 			},
 			SecurityContext: &corev1.PodSecurityContext{
-				RunAsNonRoot: &runAsNonRootUser,
+				RunAsNonRoot: &runAsNonRoot,
 				SeccompProfile: &corev1.SeccompProfile{
 					Type: corev1.SeccompProfileTypeRuntimeDefault,
 				},
 			},
 			Volumes: volumes,
-			RestartPolicy: corev1.RestartPolicyNever,
-		},
+			RestartPolicy: corev1.RestartPolicyAlways,
+		}
 	}
 	return &pod
-}
-
-func (r *GuardrailsServiceReconciler) generateArgs(service *guardrailsv1alpha1, log logr.Logger) []string {
-	if service == nil {
-		return nil
-	}
-
-	cmds := make([]string, 0, 10)
-
-	// --generator
-	cmds = append(cmds, "--generator", service.Spec.Generator)
-	// --model_args
-	cmds = append(cmds, "--generator_args", service.Spec.GeneratorArgs)
-
-	// --chunker
-	cmds = append(cmds, "--chunker", service.Spec.Chunker)
-	// --chunker_args
-	// eg. en_regex:
-	//     type: sentence
-	//     service:
-	// 			hostname: localhost
-	// 			port: 8085
-	//  		tls: caikit
-	cmds = append(cmds, "--chunker_args", service.Spec.ChunkerArgs)
-
-	// --detector
-	cmds = append(cmds, "--detector", service.Spec.Detector)
-	// --detector_args
-	// eg. hap-en:
-	//     service:
-	// 			hostname: localhost
-	// 			port: 8085
-	// 			tls: detector
-	// 		chunker_id: en_regex
-	//  	default_threshold: 0.5
-	if service.Spec.DetectorArgs != nil {
-		cmds = append(cmds, "--detector_args", argsToString(service.Spec.DetectorArgs))
-	}
-
-	return []string{"sh", "-ec", strings.Join(cmds, " ")}
-}
-
-func (r *GuardrailsServiceReconciler) generateCmd(service *guardrailsv1alpha1.GuardrailsService) []string {
-	if service == nil {
-		return nil
-	}
-	return []string{
-		"--service-namespace", service.Namespace,
-		"--service-name", service.Name,
-		"--grpc-service", fmt.Sprintf("%s.%s.svc", r.options.GrpcService, r.Namespace),
-		"--grpc-port", strconv.Itoa(r.options.GrpcPort),
-		"--output-path", "/opt/app-root/src/output",
-		"--",
-	}
 }
 
 func argsToString(args []guardrailsv1alpha1.Arg) string {
@@ -666,57 +564,64 @@ func (r *GuardrailsServiceReconciler) patch4GrpcTLS(
 
 	var secretMode int32 = 420
 
-	envVars = append(
-		corev1.EnvVar{
-			Name:  driver.GrpcClientKeyEnv,
-			Value: "/tmp/k8s-grpc-client/certs/tls.key",
-		},
-		corev1.EnvVar{
-			Name:  driver.GrpcClientCertEnv,
-			Value: "/tmp/k8s-grpc-client/certs/tls.crt",
-		},
-		corev1.EnvVar{
-			Name:  driver.GrpcServerCaEnv,
-			Value: "/tmp/k8s-grpc-server/certs/ca.crt",
-		},
-	)
-
-	volumeMounts = append(volumeMounts,
-		corev1.VolumeMount{
-			Name:      "client-cert",
-			MountPath: "/tmp/k8s-grpc-client/certs",
-			ReadOnly:  true,
-		},
-		corev1.VolumeMount{
-			Name:      "server-cert",
-			MountPath: "/tmp/k8s-grpc-server/certs",
-			ReadOnly:  true,
-		},
-	)
-
-	volumes = append(volumes,
-		corev1.Volume{
-			Name: "client-cert",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName:  r.options.GrpcClientSecret,
-					DefaultMode: &secretMode,
-				},
+	if tlsMode == TLSMode_mTLS {
+		envVars = append(
+			corev1.EnvVar{
+				Name:  driver.GrpcClientKeyEnv,
+				Value: "/tmp/k8s-grpc-client/certs/tls.key",
 			},
-		},
-		corev1.Volume{
-			Name: "server-cert",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName:  r.options.GrpcServerSecret,
-					DefaultMode: &secretMode,
-					Items: []corev1.KeyToPath{
-						{Key: "ca.crt", Path: "ca.crt"},
+			corev1.EnvVar{
+				Name:  driver.GrpcClientCertEnv,
+				Value: "/tmp/k8s-grpc-client/certs/tls.crt",
+			},
+			corev1.EnvVar{
+				Name:  driver.GrpcServerCaEnv,
+				Value: "/tmp/k8s-grpc-server/certs/ca.crt",
+			},
+		)
+
+		volumeMounts = append(volumeMounts,
+			corev1.VolumeMount{
+				Name:      "client-cert",
+				MountPath: "/tmp/k8s-grpc-client/certs",
+				ReadOnly:  true,
+			},
+			corev1.VolumeMount{
+				Name:      "server-cert",
+				MountPath: "/tmp/k8s-grpc-server/certs",
+				ReadOnly:  true,
+			},
+		)
+
+		volumes = append(volumes,
+			corev1.Volume{
+				Name: "client-cert",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName:  r.options.GrpcClientSecret,
+						DefaultMode: &secretMode,
 					},
 				},
 			},
-		},
-	)
+			corev1.Volume{
+				Name: "server-cert",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName:  r.options.GrpcServerSecret,
+						DefaultMode: &secretMode,
+						Items: []corev1.KeyToPath{
+							{Key: "ca.crt", Path: "ca.crt"},
+						},
+					},
+				},
+			},
+		)
+	} else if tlsMode == TLSMode {
+		envVars = append(envVars,
+			corev1.Volume
+		)
+	}
+
 	return envVars, volumes, volumeMounts
 }
 
