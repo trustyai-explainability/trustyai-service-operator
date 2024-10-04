@@ -19,6 +19,7 @@ package lmes
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strconv"
@@ -29,6 +30,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -70,6 +72,9 @@ var (
 		"MaxBatchSize":         MaxBatchSizeKey,
 		"DetectDevice":         DetectDeviceKey,
 	}
+
+	labelFilterPrefixes      = []string{}
+	annotationFilterPrefixes = []string{}
 )
 
 type TLSMode int
@@ -411,6 +416,20 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 		return ctrl.Result{}, nil
 	}
 
+	// Validate the custom card if exists
+	// FIXME: Move the validation to the webhook once we enable it.
+	if err := r.validateCustomCard(job, log); err != nil {
+		// custom card validation failed
+		job.Status.State = lmesv1alpha1.CompleteJobState
+		job.Status.Reason = lmesv1alpha1.FailedReason
+		job.Status.Message = err.Error()
+		if err := r.Status().Update(ctx, job); err != nil {
+			log.Error(err, "unable to update LMEvalJob status for custom card validation error")
+		}
+		log.Error(err, "Contain invalid custom card in the LMEvalJob", "name", job.Name)
+		return ctrl.Result{}, err
+	}
+
 	// construct a new pod and create a pod for the job
 	currentTime := v1.Now()
 	pod := r.createPod(job, log)
@@ -578,13 +597,37 @@ func (r *LMEvalJobReconciler) handleCancel(ctx context.Context, log logr.Logger,
 	return ctrl.Result{}, err
 }
 
+func (r *LMEvalJobReconciler) validateCustomCard(job *lmesv1alpha1.LMEvalJob, log logr.Logger) error {
+	if job.Spec.TaskList.TaskRecipes == nil {
+		return nil
+	}
+
+	for _, taskRecipe := range job.Spec.TaskList.TaskRecipes {
+		if taskRecipe.Card.Custom != "" {
+			var card map[string]interface{}
+			if err := json.Unmarshal([]byte(taskRecipe.Card.Custom), &card); err != nil {
+				log.Error(err, "failed to parse the custom card")
+				return fmt.Errorf("custom card is not a valid JSON string, %s", err.Error())
+			}
+			// at least the custom card shall define its loader
+			if _, ok := card["loader"]; !ok {
+				missKeyError := fmt.Errorf("no loader definition in the custom card")
+				log.Error(missKeyError, "failed to parse the custom card")
+				return missKeyError
+			}
+		}
+	}
+
+	return nil
+}
+
 func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob, log logr.Logger) *corev1.Pod {
 	var allowPrivilegeEscalation = false
 	var runAsNonRootUser = true
 	var ownerRefController = true
 	var runAsUser int64 = 1001030000
 
-	var envVars = generateEnvs(job.Spec.EnvSecrets)
+	var envVars = job.Spec.Pod.GetContainer().GetEnv()
 
 	var volumeMounts = []corev1.VolumeMount{
 		{
@@ -602,7 +645,11 @@ func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob, log logr.Lo
 	}
 
 	envVars, volumes, volumeMounts = r.patch4GrpcTLS(envVars, volumes, volumeMounts, r.options.grpcTLSMode)
-	volumes, volumeMounts = patch4FileSecrets(volumes, volumeMounts, job.Spec.FileSecrets)
+	volumes = append(volumes, job.Spec.Pod.GetVolumes()...)
+	volumeMounts = append(volumeMounts, job.Spec.Pod.GetContainer().GetVolumMounts()...)
+	labels := getPodLabels(job.Labels, log)
+	annotations := getAnnotations(job.Annotations, log)
+	resources := getResources(job.Spec.Pod.GetContainer().GetResources())
 
 	// Then compose the Pod CR
 	pod := corev1.Pod{
@@ -622,9 +669,8 @@ func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob, log logr.Lo
 					UID:        job.UID,
 				},
 			},
-			Labels: map[string]string{
-				"app.kubernetes.io/name": "lm-eval-service",
-			},
+			Labels:      labels,
+			Annotations: annotations,
 		},
 		Spec: corev1.PodSpec{
 			InitContainers: []corev1.Container{
@@ -668,6 +714,7 @@ func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob, log logr.Lo
 						},
 					},
 					VolumeMounts: volumeMounts,
+					Resources:    *resources,
 				},
 			},
 			SecurityContext: &corev1.PodSecurityContext{
@@ -681,6 +728,50 @@ func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob, log logr.Lo
 		},
 	}
 	return &pod
+}
+
+func getPodLabels(src map[string]string, log logr.Logger) map[string]string {
+	labels := map[string]string{
+		"app.kubernetes.io/name": "ta-lmes",
+	}
+	mergeMapWithFilters(labels, src, labelFilterPrefixes, log)
+	return labels
+}
+
+func getAnnotations(annotations map[string]string, log logr.Logger) map[string]string {
+	if len(annotations) == 0 {
+		return nil
+	}
+	dest := map[string]string{}
+	mergeMapWithFilters(dest, annotations, annotationFilterPrefixes, log)
+	return dest
+}
+
+func getResources(resources *corev1.ResourceRequirements) *corev1.ResourceRequirements {
+	if resources == nil {
+		return &corev1.ResourceRequirements{}
+	}
+	return resources
+}
+
+// Merge the map based on the filters. If the names in the `src` map contains any prefixes
+// in the prefixFilters list, those KV will be discarded, otherwise, KV will be merge into
+// `dest` map.
+func mergeMapWithFilters(dest, src map[string]string, prefixFitlers []string, log logr.Logger) {
+	if len(prefixFitlers) == 0 {
+		// Fast path if the labelFilterPrefix is empty.
+		maps.Copy(dest, src)
+	} else {
+		for k, v := range src {
+			if slices.ContainsFunc(prefixFitlers, func(prefix string) bool {
+				return strings.HasPrefix(k, prefix)
+			}) {
+				log.Info("the label is not propagated to the pod", k, v)
+			} else {
+				dest[k] = v
+			}
+		}
+	}
 }
 
 func (r *LMEvalJobReconciler) generateArgs(job *lmesv1alpha1.LMEvalJob, log logr.Logger) []string {
@@ -738,7 +829,7 @@ func concatTasks(tasks lmesv1alpha1.TaskList) []string {
 	recipesName := make([]string, len(tasks.TaskRecipes))
 	for i := range tasks.TaskRecipes {
 		// assign internal userd task name
-		recipesName[i] = fmt.Sprintf("%s_%d", driver.TaskRecipe_Prefix, i)
+		recipesName[i] = fmt.Sprintf("%s_%d", driver.TaskRecipePrefix, i)
 	}
 	return append(tasks.TaskNames, recipesName...)
 }
@@ -761,8 +852,20 @@ func (r *LMEvalJobReconciler) generateCmd(job *lmesv1alpha1.LMEvalJob) []string 
 		cmds = append(cmds, "--detect-device")
 	}
 
+	cr_idx := 0
 	for _, recipe := range job.Spec.TaskList.TaskRecipes {
-		cmds = append(cmds, "--task-recipe", recipe.String())
+		if recipe.Card.Name != "" {
+			// built-in card, regular recipe
+			cmds = append(cmds, "--task-recipe", recipe.String())
+		} else if recipe.Card.Custom != "" {
+			// custom card, need to inject --custom-card arg as well
+			dupRecipe := recipe.DeepCopy()
+			// the format of a custom card's name: custom_<index>
+			dupRecipe.Card.Name = fmt.Sprintf("cards.%s_%d", driver.CustomCardPrefix, cr_idx)
+			cmds = append(cmds, "--task-recipe", dupRecipe.String())
+			cmds = append(cmds, "--custom-card", dupRecipe.Card.Custom)
+			cr_idx++
+		}
 	}
 
 	cmds = append(cmds, "--")
@@ -778,27 +881,6 @@ func argsToString(args []lmesv1alpha1.Arg) string {
 		equalForms = append(equalForms, fmt.Sprintf("%s=%s", arg.Name, arg.Value))
 	}
 	return strings.Join(equalForms, ",")
-}
-
-func generateEnvs(secrets []lmesv1alpha1.EnvSecret) []corev1.EnvVar {
-	var envs = []corev1.EnvVar{}
-	for _, secret := range secrets {
-		if secret.Secret != nil {
-			envs = append(envs, corev1.EnvVar{
-				Name:  secret.Env,
-				Value: *secret.Secret,
-			})
-		} else if secret.SecretRef != nil {
-			envs = append(envs, corev1.EnvVar{
-				Name: secret.Env,
-				ValueFrom: &corev1.EnvVarSource{
-					SecretKeyRef: secret.SecretRef,
-				},
-			})
-		}
-	}
-
-	return envs
 }
 
 func (r *LMEvalJobReconciler) patch4GrpcTLS(
@@ -893,27 +975,4 @@ func (r *LMEvalJobReconciler) patch4GrpcTLS(
 	}
 
 	return envVars, volumes, volumeMounts
-}
-
-func patch4FileSecrets(
-	volumes []corev1.Volume,
-	volumeMounts []corev1.VolumeMount,
-	secrets []lmesv1alpha1.FileSecret) ([]corev1.Volume, []corev1.VolumeMount) {
-
-	var counter = 1
-	for _, secret := range secrets {
-		volumes = append(volumes, corev1.Volume{
-			Name: fmt.Sprintf("secVol%d", counter),
-			VolumeSource: corev1.VolumeSource{
-				Secret: &secret.SecretRef,
-			},
-		})
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      fmt.Sprintf("secVol%d", counter),
-			MountPath: secret.MountPath,
-			ReadOnly:  true,
-		})
-		counter++
-	}
-	return volumes, volumeMounts
 }

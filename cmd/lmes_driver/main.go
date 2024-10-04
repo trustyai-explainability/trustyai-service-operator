@@ -37,20 +37,21 @@ const (
 	OutputPath = "/opt/app-root/src/output"
 )
 
-type taskRecipeArg []string
+type strArrayArg []string
 
-func (t *taskRecipeArg) Set(value string) error {
+func (t *strArrayArg) Set(value string) error {
 	*t = append(*t, value)
 	return nil
 }
 
-func (t *taskRecipeArg) String() string {
+func (t *strArrayArg) String() string {
 	// supposedly, use ":" as the separator for task recipe should be safe
 	return strings.Join(*t, ":")
 }
 
 var (
-	taskRecipes    taskRecipeArg
+	taskRecipes    strArrayArg
+	customCards    strArrayArg
 	copy           = flag.String("copy", "", "copy this binary to specified destination path")
 	jobNameSpace   = flag.String("job-namespace", "", "Job's namespace ")
 	jobName        = flag.String("job-name", "", "Job's name")
@@ -64,6 +65,7 @@ var (
 
 func init() {
 	flag.Var(&taskRecipes, "task-recipe", "task recipe")
+	flag.Var(&customCards, "custom-card", "A JSON string represents a custom card")
 }
 
 func main() {
@@ -105,6 +107,7 @@ func main() {
 		DetectDevice:   *detectDevice,
 		Logger:         driverLog,
 		TaskRecipes:    taskRecipes,
+		CustomCards:    customCards,
 		Args:           args,
 		ReportInterval: *reportInterval,
 	}

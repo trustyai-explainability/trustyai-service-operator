@@ -8,6 +8,7 @@ WORKDIR /opt/app-root/src
 RUN mkdir /opt/app-root/src/hf_home && chmod g+rwx /opt/app-root/src/hf_home
 RUN mkdir /opt/app-root/src/output && chmod g+rwx /opt/app-root/src/output
 RUN mkdir /opt/app-root/src/my_tasks && chmod g+rwx /opt/app-root/src/my_tasks
+RUN mkdir -p /opt/app-root/src/my_catalogs/cards && chmod -R g+rwx /opt/app-root/src/my_catalogs
 RUN mkdir /opt/app-root/src/.cache
 ENV PATH="/opt/app-root/bin:/opt/app-root/src/.local/bin/:/opt/app-root/src/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
@@ -23,6 +24,7 @@ RUN python -c 'from lm_eval.tasks.unitxt import task; import os.path; print("cla
 
 ENV PYTHONPATH=/opt/app-root/src/.local/lib/python3.11/site-packages:/opt/app-root/src/lm-evaluation-harness:/opt/app-root/src:/opt/app-root/src/server
 ENV HF_HOME=/opt/app-root/src/hf_home
+ENV UNITXT_ARTIFACTORIES=/opt/app-root/src/my_catalogs
 
 CMD ["/opt/app-root/bin/python"]
 

@@ -63,22 +63,15 @@ type Arg struct {
 	Value string `json:"value,omitempty"`
 }
 
-type EnvSecret struct {
-	// Environment's name
-	Env string `json:"env"`
-	// The secret is from a secret object
+type Card struct {
+	// Unitxt card's ID
 	// +optional
-	SecretRef *corev1.SecretKeySelector `json:"secretRef,omitempty"`
-	// The secret is from a plain text
+	Name string `json:"name,omitempty"`
+	// A JSON string for a custom unitxt card which contains the custom dataset.
+	// Use the documentation here: https://www.unitxt.ai/en/latest/docs/adding_dataset.html#adding-to-the-catalog
+	// to compose a custom card, store it as a JSON file, and use the JSON content as the value here.
 	// +optional
-	Secret *string `json:"secret,omitempty"`
-}
-
-type FileSecret struct {
-	// The secret object
-	SecretRef corev1.SecretVolumeSource `json:"secretRef,omitempty"`
-	// The path to mount the secret
-	MountPath string `json:"mountPath"`
+	Custom string `json:"custom,omitempty"`
 }
 
 // Use a task recipe to form a custom task. It maps to the Unitxt Recipe
@@ -86,7 +79,7 @@ type FileSecret struct {
 // https://www.unitxt.ai/en/latest/unitxt.standard.html#unitxt.standard.StandardRecipe
 type TaskRecipe struct {
 	// The Unitxt dataset card
-	Card string `json:"card"`
+	Card Card `json:"card"`
 	// The Unitxt template
 	Template string `json:"template"`
 	// The Unitxt Task
@@ -118,7 +111,7 @@ type TaskList struct {
 
 func (t *TaskRecipe) String() string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("card=%s,template=%s", t.Card, t.Template))
+	b.WriteString(fmt.Sprintf("card=%s,template=%s", t.Card.Name, t.Template))
 	if t.Task != nil {
 		b.WriteString(fmt.Sprintf(",task=%s", *t.Task))
 	}
@@ -138,6 +131,76 @@ func (t *TaskRecipe) String() string {
 		b.WriteString(fmt.Sprintf(",demos_pool_size=%d", *t.DemosPoolSize))
 	}
 	return b.String()
+}
+
+type LMEvalContainer struct {
+	// Define Env information for the main container
+	// +optional
+	Env []corev1.EnvVar `json:"env,omitempty"`
+	// Define the volume mount information
+	// +optional
+	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
+	// Compute Resources required by this container.
+	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+}
+
+// The following Getter-ish functions avoid nil pointer panic
+func (c *LMEvalContainer) GetEnv() []corev1.EnvVar {
+	if c == nil {
+		return nil
+	}
+	return c.Env
+}
+
+func (c *LMEvalContainer) GetVolumMounts() []corev1.VolumeMount {
+	if c == nil {
+		return nil
+	}
+	return c.VolumeMounts
+}
+
+func (c *LMEvalContainer) GetResources() *corev1.ResourceRequirements {
+	if c == nil {
+		return nil
+	}
+	return c.Resources
+}
+
+type LMEvalPodSpec struct {
+	// Extra container data for the lm-eval container
+	// +optional
+	Container *LMEvalContainer `json:"container,omitempty"`
+	// Specify the volumes information for the lm-eval and sidecar containers
+	// +optional
+	Volumes []corev1.Volume `json:"volumes,omitempty"`
+	// Specify extra containers for the lm-eval job
+	// FIXME: aggregate the sidecar containers into the pod
+	// +optional
+	SideCars []corev1.Container `json:"sideCars,omitempty"`
+}
+
+// The following Getter-ish functions avoid nil pointer panic
+func (p *LMEvalPodSpec) GetContainer() *LMEvalContainer {
+	if p == nil {
+		return nil
+	}
+	return p.Container
+}
+
+func (p *LMEvalPodSpec) GetVolumes() []corev1.Volume {
+	if p == nil {
+		return nil
+	}
+	return p.Volumes
+}
+
+func (p *LMEvalPodSpec) GetSideCards() []corev1.Container {
+	if p == nil {
+		return nil
+	}
+	return p.SideCars
 }
 
 // LMEvalJobSpec defines the desired state of LMEvalJob
@@ -167,14 +230,12 @@ type LMEvalJobSpec struct {
 	// model, will be saved at per-document granularity
 	// +optional
 	LogSamples *bool `json:"logSamples,omitempty"`
-	// Assign secrets to the environment variables
-	// +optional
-	EnvSecrets []EnvSecret `json:"envSecrets,omitempty"`
-	// Use secrets as files
-	FileSecrets []FileSecret `json:"fileSecrets,omitempty"`
 	// Batch size for the evaluation. This is used by the models that run and are loaded
 	// locally and not apply for the commercial APIs.
 	BatchSize *int `json:"batchSize,omitempty"`
+	// Specify extra information for the lm-eval job's pod
+	// +optional
+	Pod *LMEvalPodSpec `json:"pod,omitempty"`
 }
 
 // LMEvalJobStatus defines the observed state of LMEvalJob
