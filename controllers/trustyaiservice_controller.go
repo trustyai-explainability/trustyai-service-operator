@@ -127,6 +127,22 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return RequeueWithError(err)
 	}
 
+	// Retrieve the KServe logger configuration and create the ConfigMap if needed
+	loggerConfig, err := r.getKServeLoggerConfig(ctx)
+	if err != nil {
+		// If the configuration is not present, simply log it
+		log.FromContext(ctx).Error(err, "Could not read KServe logger configuration")
+	}
+
+	// If the KServe Logger CA bundle is defined, and correctly specified, create it
+	if loggerConfig != nil && (loggerConfig.CaBundle != nil || loggerConfig.CaCertFile != nil) {
+		err := r.createOrUpdateLoggerCaConfigMap(ctx, instance.Namespace, loggerConfig)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "Could not create or update KServe logger TLS ConfigMap")
+			return RequeueWithError(err)
+		}
+	}
+
 	// CR found, add or update the URL
 	// Call the function to patch environment variables for Deployments that match the label
 	shouldContinue, err := r.handleInferenceServices(ctx, instance, req.Namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, req.Name, false)
