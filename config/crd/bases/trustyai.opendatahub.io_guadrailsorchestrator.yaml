@@ -5,20 +5,20 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.11.1
   creationTimestamp: null
-  name: guardrailjobs.trustyai.opendatahub.io
+  name: guardrailsorchestrator.trustyai.opendatahub.io
 spec:
   group: trustyai.opendatahub.io
   names:
-    kind: GuardrailJob
-    listkind: GuardrailJobList
-    plural: guardrailsjobs
-    singular: guardrailsjob
+    kind: GuardrailOrchestrator
+    listkind: GuardrailsOrchestratorList
+    plural: guardrailsorchestrator
+    singular: guardrailsorchestrator
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: GuardrailsJob is the Schema for the guardrailjobs API
+        description: GuardrailsOrchestrator is the Schema for the guardrailorchestrator API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -33,73 +33,137 @@ spec:
           metadata:
             type: object
           spec:
-            description: 'GuardrailsJobSpec defines the desired state of GuardrailsJob'
+            description: 'GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator'
             properties:
-              textInput:
-                description: Text input
-                type: string
-              chunker:
-                description: Chunker name
-                type: string
-                # items:
-                #   properties:
-                #     modelID:
-                #       description: The chunker model id
-                #
-              detector:
-                description: Detector name
-                type: string
-              model:
-                description: Model name
+              generation:
+                description: Text generation model name
+                type: object
+                properties:
+                  provider:
+                    type: string
+                    enum:
+                      - nlp
+                      - tgis
+                    pattern: ^(nlp|tgis)$
+                    service:
+                      type: object
+                      properties:
+                        hostname:
+                          type: string
+                        port:
+                          type: integer
+                        tls:
+                          type: string
+              chunkers:
+                description: Chunker model
+                type: object
+                properties:
+                  type:
+                    description: Chunker type
+                    type: string
+                  service:
+                    description:
+                    properties:
+                      hostname:
+                        description: The hostname
+                        type: string
+                      port:
+                        description: The port
+                        type: string
+                    type: object
+              detectors:
+                description: Dectector models(s)
+                type: object
+                properties:
+                  name: Detector model name
+                  service:
+                    properties:
+                      hostname:
+                        type: string
+                      port:
+                        type: string
+                    required:
+                      - hostname
+                      - port
+                    type: object
+                  chunker_id:
+                    description: Chunker name
+                    default: sentence_chunker
+                    type: string
+                  default_threshold:
+                    description: Threshold for detection
+                    default: 0.5
+                    type: number
+              tls:
+                description:
+                type: object
+                properties:
+                  cert_path:
+                    type: string
+                  key_path:
+                    type: sting
+                  client_ca_cert_path:
+                    type: string
+                required:
+                  - cert_path
+                  - key_path
+            replicas:
+              description: Number of replicas
+              type: integer
+              format: int32
+            required:
+              - detectors
+              - replicas
+              - tls
+            type: object
+          status:
+            description: GuardrailsOrchestratorStatus defines the observed state of GuardrailsOrchestrator
+              conditions:
+                items:
+                  description: Condition represents possible conditions of a GuardrailsOrchestratorStatus
+                  properties:
+                    lastTransitionTime:
+                      description: The last time the condition transitioned from one status to another.
+                      format: date-time
+                      type: string
+                    message:
+                      description: Message about the current/final status
+                      type: string
+                    reason:
+                      description: Final result of the orchestrator
+                      enum:
+                      - NoReason
+                      - Succeeded
+                      - Failed
+                      - Cancelled
+                      type: string
+                    status:
+                      description: State of the orchestrator
+                      enum:
+                      - New
+                      - Scheduled
+                      - Running
+                      - Complete
+                      - Cancelled
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  type: object
+                type: array
+              replicas:
+                format: int32
+                type: integer
+              url:
                 type: string
             required:
-            - textInput
-            # - orchestrator
-            - chunker
-            - detector
-            - model
-          status:
-            description: GuardrailsJobStatus defines the observed state of GuardrailsJob
-            properties:
-              completeTime:
-                description: Information when the job's state changes to Complete.
-                format: date-time
-                type: string
-              lastScheduleTime:
-                description: Information when was the last time the job was successfully
-                  scheduled.
-                format: date-time
-                type: string
-              message:
-                description: Message about the current/final status
-                type: string
-              podName:
-                description: The name of the Pod that runs the evaluation job
-                type: string
-              reason:
-                description: Final result of the job
-                enum:
-                - NoReason
-                - Succeeded
-                - Failed
-                - Cancelled
-                type:
-                  string
-              results:
-                description: Evaluation results
-                type: string
-              state:
-                description: State of the job
-                enum:
-                - New
-                - Scheduled
-                - Running
-                - Complete
-                - Cancelled
-                type: string
-            type: object
+            - conditions
+            - replicas
+            - url
           type: object
-      served: true
-      storage: true
-      subresources:
-        status: {}
+    served: true
+    storage: true
+    subresources:
+      status: {}
