@@ -2,13 +2,16 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  creationTimestamp: null
   name: manager-role
 rules:
 - apiGroups:
   - ""
   resources:
   - configmaps
+  - persistentvolumeclaims
+  - pods
+  - secrets
+  - services
   verbs:
   - create
   - delete
@@ -25,6 +28,7 @@ rules:
   - create
   - patch
   - update
+  - watch
 - apiGroups:
   - ""
   resources:
@@ -50,14 +54,20 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - secrets
+  - pods/exec
   verbs:
   - create
   - delete
   - get
   - list
-  - patch
-  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumes
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - ""
@@ -105,9 +115,18 @@ rules:
   - get
   - update
 - apiGroups:
-  - ""
+  - kueue.x-k8s.io
   resources:
-  - persistentvolumeclaims
+  - resourceflavors
+  - workloadpriorityclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - workloads
   verbs:
   - create
   - delete
@@ -117,25 +136,19 @@ rules:
   - update
   - watch
 - apiGroups:
-  - ""
+  - kueue.x-k8s.io
   resources:
-  - persistentvolumes
+  - workloads/finalizers
   verbs:
-  - get
-  - list
-  - watch
+  - update
 - apiGroups:
-  - ""
+  - kueue.x-k8s.io
   resources:
-  - services
+  - workloads/status
   verbs:
-  - create
-  - delete
   - get
-  - list
   - patch
   - update
-  - watch
 - apiGroups:
   - monitoring.coreos.com
   resources:
@@ -166,6 +179,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - scheduling.k8s.io
+  resources:
+  - priorityclasses
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - serving.kserve.io
@@ -212,31 +233,6 @@ rules:
   - trustyai.opendatahub.io
   resources:
   - lmevaljobs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - trustyai.opendatahub.io
-  resources:
-  - lmevaljobs/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - trustyai.opendatahub.io
-  resources:
-  - lmevaljobs/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - trustyai.opendatahub.io
-  resources:
   - trustyaiservices
   verbs:
   - create
@@ -249,12 +245,14 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - lmevaljobs/finalizers
   - trustyaiservices/finalizers
   verbs:
   - update
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - lmevaljobs/status
   - trustyaiservices/status
   verbs:
   - get
