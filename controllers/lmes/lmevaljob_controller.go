@@ -42,7 +42,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/viper"
@@ -109,6 +108,7 @@ type ServiceOptions struct {
 	DefaultBatchSize     int
 	DetectDevice         bool
 	grpcTLSMode          TLSMode
+	EnableKueue          bool
 }
 
 func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) error {
@@ -220,11 +220,8 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			},
 		})).
 		Watches(
-			&source.Kind{Type: &corev1.Pod{}},
-			&handler.EnqueueRequestForOwner{
-				OwnerType:    &lmesv1alpha1.LMEvalJob{},
-				IsController: true,
-			},
+			&corev1.Pod{},
+			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetClient().RESTMapper(), &lmesv1alpha1.LMEvalJob{}, handler.OnlyControllerOwner()),
 			builder.WithPredicates(predicate.Funcs{
 				// drop all events except deletion
 				CreateFunc: func(event.CreateEvent) bool {
@@ -312,6 +309,7 @@ func (r *LMEvalJobReconciler) constructOptionsFromConfigMap(
 		MaxBatchSize:         DefaultMaxBatchSize,
 		DetectDevice:         DefaultDetectDevice,
 		DefaultBatchSize:     DefaultBatchSize,
+		EnableKueue:          EnableKueue,
 	}
 
 	log := log.FromContext(ctx)
