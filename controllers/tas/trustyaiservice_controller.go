@@ -36,7 +36,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 var ErrPVCNotReady = goerrors.New("PVC is not ready")
@@ -301,7 +300,7 @@ func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&trustyaiopendatahubiov1alpha1.TrustyAIService{}).
 		Owns(&appsv1.Deployment{}).
-		Watches(&source.Kind{Type: &kservev1beta1.InferenceService{}}, &handler.EnqueueRequestForObject{}).
-		Watches(&source.Kind{Type: &kservev1alpha1.ServingRuntime{}}, &handler.EnqueueRequestForObject{}).
+		Watches(&kservev1beta1.InferenceService{}, &handler.EnqueueRequestForObject{}).
+		Watches(&kservev1alpha1.ServingRuntime{}, &handler.EnqueueRequestForObject{}).
 		Complete(r)
 }

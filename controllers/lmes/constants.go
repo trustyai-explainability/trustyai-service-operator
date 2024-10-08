@@ -40,4 +40,5 @@ const (
 	DefaultBatchSize           = 8
 	DefaultDetectDevice        = true
 	ServiceName                = "LMES"
+	EnableKueue                = false
 )

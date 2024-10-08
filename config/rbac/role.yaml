@@ -28,6 +28,7 @@ rules:
   - create
   - patch
   - update
+  - watch
 - apiGroups:
   - ""
   resources:
@@ -100,6 +101,41 @@ rules:
   - get
   - update
 - apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - resourceflavors
+  - workloadpriorityclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - workloads
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - workloads/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - workloads/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - monitoring.coreos.com
   resources:
   - servicemonitors
@@ -142,6 +178,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - scheduling.k8s.io
+  resources:
+  - priorityclasses
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - serving.kserve.io
