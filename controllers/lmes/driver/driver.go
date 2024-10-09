@@ -56,7 +56,9 @@ const (
 	GrpcServerCaEnv             = "GRPC_SERVER_CA"
 	DefaultDriverReportInterval = time.Second * 10
 	DefaultTaskRecipesPath      = "/opt/app-root/src/my_tasks"
-	TaskRecipe_Prefix           = "tr"
+	DefaultCatalogPath          = "/opt/app-root/src/my_catalogs"
+	TaskRecipePrefix            = "tr"
+	CustomCardPrefix            = "custom"
 )
 
 func init() {
@@ -74,6 +76,8 @@ type DriverOption struct {
 	DetectDevice    bool
 	TaskRecipesPath string
 	TaskRecipes     []string
+	CatalogPath     string
+	CustomCards     []string
 	Logger          logr.Logger
 	Args            []string
 	ReportInterval  time.Duration
@@ -111,6 +115,11 @@ func NewDriver(opt *DriverOption) (Driver, error) {
 	if opt.TaskRecipesPath == "" {
 		opt.TaskRecipesPath = DefaultTaskRecipesPath
 	}
+
+	if opt.CatalogPath == "" {
+		opt.CatalogPath = DefaultCatalogPath
+	}
+
 	conn, err := getGRPCClientConn(opt)
 	if err != nil {
 		return nil, err
@@ -259,6 +268,10 @@ func (d *driverImpl) exec() error {
 		return fmt.Errorf("failed to create task recipes: %v", err)
 	}
 
+	if err := d.createCustomCards(); err != nil {
+		return fmt.Errorf("failed to create custom cards: %v", err)
+	}
+
 	// Detect available devices if needed
 	if err := d.detectDevice(); err != nil {
 		return err
@@ -312,7 +325,7 @@ func (d *driverImpl) exec() error {
 
 	// temporally fix the trust_remote_code issue
 	io.WriteString(stdin, "y\n")
-	if err = executor.Start(); err != nil {
+	if err := executor.Start(); err != nil {
 		freeRes()
 		return err
 	}
@@ -322,17 +335,17 @@ func (d *driverImpl) exec() error {
 	go func() {
 		for scanner.Scan() {
 			msg := scanner.Text()
-			if err = d.reportProgress(msg); err != nil {
+			if err := d.reportProgress(msg); err != nil {
 				d.Option.Logger.Error(err, "report progress failed")
 			}
 		}
 		wg.Done()
 	}()
 
-	err = executor.Wait()
+	finalError := executor.Wait()
 	freeRes()
 	wg.Wait()
-	return err
+	return finalError
 }
 
 func (d *driverImpl) updateStatus(state lmesv1alpha1.JobState, msg string) error {
@@ -445,12 +458,26 @@ func (d *driverImpl) reportProgress(msg string) error {
 func (d *driverImpl) createTaskRecipes() error {
 	for i, taskRecipe := range d.Option.TaskRecipes {
 		err := os.WriteFile(
-			filepath.Join(d.Option.TaskRecipesPath, fmt.Sprintf("%s_%d.yaml", TaskRecipe_Prefix, i)),
+			filepath.Join(d.Option.TaskRecipesPath, fmt.Sprintf("%s_%d.yaml", TaskRecipePrefix, i)),
 			[]byte(fmt.Sprintf(
 				"task: %s\ninclude: unitxt\nrecipe: %s",
-				fmt.Sprintf("%s_%d", TaskRecipe_Prefix, i),
+				fmt.Sprintf("%s_%d", TaskRecipePrefix, i),
 				taskRecipe,
 			)),
+			0666,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *driverImpl) createCustomCards() error {
+	for i, customCard := range d.Option.CustomCards {
+		err := os.WriteFile(
+			filepath.Join(d.Option.CatalogPath, "cards", fmt.Sprintf("%s_%d.json", CustomCardPrefix, i)),
+			[]byte(customCard),
 			0666,
 		)
 		if err != nil {

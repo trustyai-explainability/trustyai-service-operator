@@ -60,7 +60,7 @@ func Test_ArgParsing(t *testing.T) {
 	assert.Equal(t, "/opt/app-root/src/output", *outputPath)
 	assert.Equal(t, true, *detectDevice)
 	assert.Equal(t, time.Second*10, *reportInterval)
-	assert.Equal(t, taskRecipeArg{
+	assert.Equal(t, strArrayArg{
 		"card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		"card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
 	}, taskRecipes)

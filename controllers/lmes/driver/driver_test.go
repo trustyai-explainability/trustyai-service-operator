@@ -116,7 +116,7 @@ func Test_ProgressUpdate(t *testing.T) {
 		GrpcPort:       8082,
 		OutputPath:     ".",
 		Logger:         driverLog,
-		Args:           []string{"sh", "-ec", "echo 'testing progress: 100%|' >&2; sleep 10"},
+		Args:           []string{"sh", "-ec", "echo 'testing progress: 100%|' >&2; sleep 6"},
 		ReportInterval: time.Second * 5,
 	})
 	assert.Nil(t, err)
@@ -227,7 +227,7 @@ func Test_TaskRecipes(t *testing.T) {
 			"card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 			"card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		},
-		Args:           []string{"sh", "-ec", "echo 'testing progress: 100%|' >&2; sleep 10"},
+		Args:           []string{"sh", "-ec", "echo 'testing progress: 100%|' >&2; sleep 6"},
 		ReportInterval: time.Second * 5,
 	})
 	assert.Nil(t, err)
@@ -257,6 +257,65 @@ func Test_TaskRecipes(t *testing.T) {
 	assert.Nil(t, os.Remove("./stdout.log"))
 	assert.Nil(t, os.Remove("./tr_0.yaml"))
 	assert.Nil(t, os.Remove("./tr_1.yaml"))
+}
+
+func Test_CustomCards(t *testing.T) {
+	server := grpc.NewServer()
+	progresssServer := ProgressUpdateServer{}
+	v1beta1.RegisterLMEvalJobUpdateServiceServer(server, &progresssServer)
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", 8082))
+	assert.Nil(t, err)
+	go server.Serve(lis)
+
+	driver, err := NewDriver(&DriverOption{
+		Context:         context.Background(),
+		JobNamespace:    "fms-lm-eval-service-system",
+		JobName:         "evaljob-sample",
+		GrpcService:     "localhost",
+		GrpcPort:        8082,
+		OutputPath:      ".",
+		Logger:          driverLog,
+		TaskRecipesPath: "./",
+		CatalogPath:     "./",
+		TaskRecipes: []string{
+			"card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		},
+		CustomCards: []string{
+			`{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "deutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		},
+		Args:           []string{"sh", "-ec", "echo 'testing progress: 100%|' >&2; sleep 6"},
+		ReportInterval: time.Second * 5,
+	})
+	assert.Nil(t, err)
+
+	os.Mkdir("cards", 0750)
+
+	assert.Nil(t, driver.Run())
+	assert.Equal(t, []string{
+		"update status from the driver: running",
+		"testing progress: 100%",
+		"update status from the driver: completed",
+	}, progresssServer.progressMsgs)
+
+	server.Stop()
+
+	tr0, err := os.ReadFile("./tr_0.yaml")
+	assert.Nil(t, err)
+	assert.Equal(t,
+		"task: tr_0\ninclude: unitxt\nrecipe: card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		string(tr0),
+	)
+	custom0, err := os.ReadFile("./cards/custom_0.json")
+	assert.Nil(t, err)
+	assert.Equal(t,
+		`{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "deutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		string(custom0),
+	)
+	assert.Nil(t, os.Remove("./stderr.log"))
+	assert.Nil(t, os.Remove("./stdout.log"))
+	assert.Nil(t, os.Remove("./tr_0.yaml"))
+	assert.Nil(t, os.Remove("./cards/custom_0.json"))
+	assert.Nil(t, os.Remove("./cards"))
 }
 
 func Test_ProgramError(t *testing.T) {
