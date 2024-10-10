@@ -275,10 +275,26 @@ func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *t
 	// Only if the Istio sidecar annotation is set
 	annotations := infService.GetAnnotations()
 	if inject, exists := annotations["sidecar.istio.io/inject"]; exists && inject == "true" {
-		err := r.ensureDestinationRule(ctx, instance)
+
+		// Check if DestinationRule CRD is present. If there's an error, don't proceed and return the error
+		exists, err := r.isDestinationRuleCRDPresent(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to ensure DestinationRule: %v", err)
+			log.FromContext(ctx).Error(err, "Error verifying DestinationRule CRD is present")
+			return err
 		}
+
+		// Try to create the DestinationRule, since CRD exists
+		if exists {
+			err := r.ensureDestinationRule(ctx, instance)
+			if err != nil {
+				return fmt.Errorf("failed to ensure DestinationRule: %v", err)
+			}
+		} else {
+			// DestinationRule CRD does not exist. Do not attempt to create it and log error
+			err := fmt.Errorf("the DestinationRule CRD is not present in this cluster")
+			log.FromContext(ctx).Error(err, "InferenceService has service mesh annotation but DestinationRule CRD not found")
+		}
+
 	}
 
 	// Update the InferenceService
