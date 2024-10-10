@@ -4,19 +4,5 @@ kind: Kustomization
 resources:
   - ../../base
 
-replacements:
-  - source:
-      kind: Service
-      version: v1
-      name: lmes-grpc
-      fieldPath: .metadata.name
-    targets:
-      - select:
-          kind: ConfigMap
-          version: v1
-          name: config
-        fieldPaths:
-          - .data.lmes-grpc-service
-
 patchesStrategicMerge:
   - lmes-only-patch.yaml

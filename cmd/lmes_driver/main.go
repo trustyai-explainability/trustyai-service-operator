@@ -18,12 +18,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"strings"
-	"time"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -50,17 +50,14 @@ func (t *strArrayArg) String() string {
 }
 
 var (
-	taskRecipes    strArrayArg
-	customCards    strArrayArg
-	copy           = flag.String("copy", "", "copy this binary to specified destination path")
-	jobNameSpace   = flag.String("job-namespace", "", "Job's namespace ")
-	jobName        = flag.String("job-name", "", "Job's name")
-	grpcService    = flag.String("grpc-service", "", "grpc service name")
-	grpcPort       = flag.Int("grpc-port", 8082, "grpc port")
-	outputPath     = flag.String("output-path", OutputPath, "output path")
-	detectDevice   = flag.Bool("detect-device", false, "detect available device(s), CUDA or CPU")
-	reportInterval = flag.Duration("report-interval", time.Second*10, "specify the druation interval to report the progress")
-	driverLog      = ctrl.Log.WithName("driver")
+	taskRecipes  strArrayArg
+	customCards  strArrayArg
+	copy         = flag.String("copy", "", "copy this binary to specified destination path")
+	getStatus    = flag.Bool("get-status", false, "Get current status")
+	shutdown     = flag.Bool("shutdown", false, "Shutdown the driver")
+	outputPath   = flag.String("output-path", OutputPath, "output path")
+	detectDevice = flag.Bool("detect-device", false, "detect available device(s), CUDA or CPU")
+	driverLog    = ctrl.Log.WithName("driver")
 )
 
 func init() {
@@ -83,12 +80,22 @@ func main() {
 
 	if *copy != "" {
 		// copy exec to destination
-		if err := CopyExec(*copy); err != nil {
+		if err := copyExec(*copy); err != nil {
 			driverLog.Error(err, "failed to copy  binary")
 			os.Exit(1)
 			return
 		}
 		os.Exit(0)
+		return
+	}
+
+	if *getStatus {
+		getStatusOrDie(ctx)
+		return
+	}
+
+	if *shutdown {
+		shutdownOrDie(ctx)
 		return
 	}
 
@@ -98,23 +105,18 @@ func main() {
 	}
 
 	driverOpt := driver.DriverOption{
-		Context:        ctx,
-		JobNamespace:   *jobNameSpace,
-		JobName:        *jobName,
-		OutputPath:     *outputPath,
-		GrpcService:    *grpcService,
-		GrpcPort:       *grpcPort,
-		DetectDevice:   *detectDevice,
-		Logger:         driverLog,
-		TaskRecipes:    taskRecipes,
-		CustomCards:    customCards,
-		Args:           args,
-		ReportInterval: *reportInterval,
+		Context:      ctx,
+		OutputPath:   *outputPath,
+		DetectDevice: *detectDevice,
+		Logger:       driverLog,
+		TaskRecipes:  taskRecipes,
+		CustomCards:  customCards,
+		Args:         args,
 	}
 
 	driver, err := driver.NewDriver(&driverOpt)
 	if err != nil {
-		driverLog.Error(err, "Driver.Run failed")
+		driverLog.Error(err, "Driver.NewDriver failed")
 		os.Exit(1)
 	}
 
@@ -123,11 +125,10 @@ func main() {
 		driverLog.Error(err, "Driver.Run failed")
 		exitCode = 1
 	}
-	driver.Cleanup()
 	os.Exit(exitCode)
 }
 
-func CopyExec(destination string) (err error) {
+func copyExec(destination string) (err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("copy this binary to %s: %w", destination, err)
@@ -160,4 +161,54 @@ func findThisBinary() (string, error) {
 		return "", fmt.Errorf("failed to file executable: %w", err)
 	}
 	return bin, nil
+}
+
+func getStatusOrDie(ctx context.Context) {
+	driver, err := driver.NewDriver(&driver.DriverOption{
+		Context:      ctx,
+		OutputPath:   *outputPath,
+		DetectDevice: *detectDevice,
+		Logger:       driverLog,
+	})
+
+	if err != nil {
+		driverLog.Error(err, "failed to initialize the driver")
+		os.Exit(1)
+	}
+
+	status, err := driver.GetStatus()
+	if err != nil {
+		driverLog.Error(err, "failed to get status", "error", err.Error())
+		os.Exit(1)
+	}
+
+	b, err := json.Marshal(status)
+	if err != nil {
+		driverLog.Error(err, "json serialization failed", "error", err.Error())
+		os.Exit(1)
+	}
+
+	fmt.Print(string(b))
+	os.Exit(0)
+}
+
+func shutdownOrDie(ctx context.Context) {
+	driver, err := driver.NewDriver(&driver.DriverOption{
+		Context:      ctx,
+		OutputPath:   *outputPath,
+		DetectDevice: *detectDevice,
+		Logger:       driverLog,
+	})
+
+	if err != nil {
+		driverLog.Error(err, "failed to initialize the driver")
+		os.Exit(1)
+	}
+
+	err = driver.Shutdown()
+	if err != nil {
+		driverLog.Error(err, "failed to shutdown", "error", err.Error())
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
