@@ -28,7 +28,7 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // Represent a job's status
-// +kubebuilder:validation:Enum=New;Scheduled;Running;Complete;Cancelled
+// +kubebuilder:validation:Enum=New;Scheduled;Running;Complete;Cancelled;Suspended
 type JobState string
 
 const (
@@ -42,6 +42,8 @@ const (
 	CompleteJobState JobState = "Complete"
 	// The job is cancelled
 	CancelledJobState JobState = "Cancelled"
+	// The job is suspended
+	SuspendedJobState JobState = "Suspended"
 )
 
 // +kubebuilder:validation:Enum=NoReason;Succeeded;Failed;Cancelled
@@ -236,6 +238,9 @@ type LMEvalJobSpec struct {
 	// Specify extra information for the lm-eval job's pod
 	// +optional
 	Pod *LMEvalPodSpec `json:"pod,omitempty"`
+	// Suspend keeps the job but without pods. This is intended to be used by the Kueue integration
+	// +optional
+	Suspend bool `json:"suspend,omitempty"`
 }
 
 // LMEvalJobStatus defines the observed state of LMEvalJob

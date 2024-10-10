@@ -168,6 +168,10 @@ func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		job.Status.State = lmesv1alpha1.NewJobState
 	}
 
+	if job.Spec.Suspend {
+		return r.handleSuspend(ctx, log, job)
+	}
+
 	// Handle the job based on its state
 	switch job.Status.State {
 	case lmesv1alpha1.NewJobState:
@@ -185,6 +189,10 @@ func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return r.handleComplete(ctx, log, job)
 	case lmesv1alpha1.CancelledJobState:
 		return r.handleCancel(ctx, log, job)
+	case lmesv1alpha1.SuspendedJobState:
+		if !job.Spec.Suspend {
+			return r.handleResume(ctx, log, job)
+		}
 	}
 
 	return ctrl.Result{}, nil
@@ -547,6 +555,41 @@ func (r *LMEvalJobReconciler) handleCancel(ctx context.Context, log logr.Logger,
 			job.Name,
 			job.Namespace))
 	r.pullingJobs.remove(string(job.GetUID()))
+	return ctrl.Result{}, err
+}
+
+func (r *LMEvalJobReconciler) handleSuspend(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
+	defer r.pullingJobs.remove(string(job.GetUID()))
+	if job.Status.State != lmesv1alpha1.NewJobState {
+		log.Info("Suspend job")
+		if err := r.deleteJobPod(ctx, job); err != nil && client.IgnoreNotFound(err) != nil {
+			log.Error(err, "failed to delete pod for suspended job")
+			return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+		}
+	} else {
+		log.Info("Create job in suspend state.")
+	}
+	job.Status.State = lmesv1alpha1.SuspendedJobState
+	err := r.Status().Update(ctx, job)
+	if err != nil {
+		log.Error(err, "failed to update job status to suspended")
+	}
+
+	return ctrl.Result{}, err
+}
+
+func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
+	log.Info("Resume job")
+	pod := createPod(options, job, log)
+	if err := r.Create(ctx, pod); err != nil {
+		log.Error(err, "failed to create pod to resume job")
+		return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+	}
+	job.Status.State = lmesv1alpha1.ScheduledJobState
+	err := r.Status().Update(ctx, job)
+	if err != nil {
+		log.Error(err, "failed to update job status to scheduled")
+	}
 	return ctrl.Result{}, err
 }
 
