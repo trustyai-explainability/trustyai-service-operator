@@ -7,7 +7,7 @@ spec:
   host: {{ .Name }}.{{ .Namespace }}.svc.cluster.local
   trafficPolicy:
     portLevelSettings:
-        - port:
+      - port:
           number: 443
-          tls:
-            mode: SIMPLE
+        tls:
+          mode: SIMPLE
