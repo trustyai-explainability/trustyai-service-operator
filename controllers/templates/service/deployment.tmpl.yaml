@@ -122,6 +122,10 @@ spec:
             - name: STORAGE_MIGRATION_CONFIG_FROM_FILENAME
               value: {{ .Instance.Spec.Data.Filename }}
             {{ end }}
+            {{ if .CertName }}
+            - name: KSERVE_LOGGER_CA_CERT
+              value: {{ .CertName }}
+            {{ end }}
           volumeMounts:
             - name: {{ .Instance.Name }}-internal
               readOnly: false
@@ -134,6 +138,11 @@ spec:
             {{ if .UseDBTLSCerts }}
             - name: db-tls-certs
               mountPath: /etc/tls/db
+              readOnly: true
+            {{ end }}
+            {{ if .ConfigMapExists }}
+            - name: kserve-logger-tls-certs
+              mountPath: /etc/tls/kserve
               readOnly: true
             {{ end }}
         - resources:
@@ -228,4 +237,9 @@ spec:
           secret:
             secretName: {{ .Instance.Name }}-db-tls
             defaultMode: 420
+        {{ end }}
+        {{ if .ConfigMapExists }}
+        - name: kserve-logger-tls-certs
+          configMap:
+            name: {{ .ConfigMapName }}
         {{ end }}

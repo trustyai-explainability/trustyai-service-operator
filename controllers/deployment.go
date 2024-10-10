@@ -41,6 +41,9 @@ type DeploymentConfig struct {
 	Version                  string
 	BatchSize                int
 	UseDBTLSCerts            bool
+	ConfigMapExists          bool
+	ConfigMapName            string
+	CertName                 string
 }
 
 // createDeploymentObject returns a Deployment for the TrustyAI Service instance
@@ -61,6 +64,41 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		log.FromContext(ctx).Error(err, "Error getting OAuth image from ConfigMap. Using the default image value of "+defaultOAuthProxyImage)
 	}
 
+	// Initialize ConfigMapExists, ConfigMapName, and CertName
+	var configMapExists bool
+	var configMapName string
+	var certName string
+
+	// Get loggerConfig
+	loggerConfig, err := r.getKServeLoggerConfig(ctx)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Could not read logger configuration")
+		// Proceed without ConfigMap
+	}
+
+	if loggerConfig != nil && loggerConfig.CaBundle != nil {
+		configMapName = *loggerConfig.CaBundle
+		// Check if ConfigMap exists
+		configMap := &corev1.ConfigMap{}
+		err := r.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: instance.Namespace}, configMap)
+		if err != nil && errors.IsNotFound(err) {
+			// ConfigMap does not exist
+			configMapExists = false
+		} else if err != nil {
+			// Error occurred
+			log.FromContext(ctx).Error(err, "Error getting ConfigMap")
+			return nil, err
+		} else {
+			// ConfigMap exists
+			configMapExists = true
+			if loggerConfig.CaCertFile != nil {
+				certName = *loggerConfig.CaCertFile
+			}
+		}
+	} else {
+		configMapExists = false
+	}
+
 	deploymentConfig := DeploymentConfig{
 		Instance:                 instance,
 		ServiceImage:             serviceImage,
@@ -71,8 +109,10 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		CustomCertificatesBundle: caBunble,
 		Version:                  Version,
 		BatchSize:                batchSize,
+		ConfigMapExists:          configMapExists,
+		ConfigMapName:            configMapName,
+		CertName:                 certName,
 	}
-
 	if instance.Spec.Storage.IsStorageDatabase() {
 		_, err := r.getSecret(ctx, instance.Name+"-db-tls", instance.Namespace)
 		if err != nil {

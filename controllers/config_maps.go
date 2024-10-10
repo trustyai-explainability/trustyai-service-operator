@@ -2,12 +2,28 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+// KServe InferenceLogger config
+type LoggerConfig struct {
+	Image         string  `json:"image"`
+	MemoryRequest string  `json:"memoryRequest"`
+	MemoryLimit   string  `json:"memoryLimit"`
+	CpuRequest    string  `json:"cpuRequest"`
+	CpuLimit      string  `json:"cpuLimit"`
+	DefaultUrl    string  `json:"defaultUrl"`
+	CaBundle      *string `json:"caBundle,omitempty"`
+	CaCertFile    *string `json:"caCertFile,omitempty"`
+}
 
 // getImageFromConfigMap gets a custom image value from a ConfigMap in the operator's namespace
 func (r *TrustyAIServiceReconciler) getImageFromConfigMap(ctx context.Context, key string, defaultImage string) (string, error) {
@@ -100,4 +116,82 @@ func (r *TrustyAIServiceReconciler) getConfigMapNamesWithLabel(ctx context.Conte
 	}
 
 	return names, nil
+}
+
+func (r *TrustyAIServiceReconciler) getKServeLoggerConfig(ctx context.Context) (*LoggerConfig, error) {
+	if r.Namespace == "" {
+		return nil, nil
+	}
+
+	configMapKey := types.NamespacedName{
+		Namespace: r.Namespace,
+		Name:      "inferenceservice-config",
+	}
+
+	var cm corev1.ConfigMap
+
+	if err := r.Get(ctx, configMapKey, &cm); err != nil {
+		if errors.IsNotFound(err) {
+			// ConfigMap not found
+			return nil, nil
+		}
+		return nil, fmt.Errorf("error reading configmap %s: %v", configMapKey, err)
+	}
+
+	loggerData, ok := cm.Data["logger"]
+	if !ok {
+		log.FromContext(ctx).Info("No KServe logger key found in inferenceservice-config")
+		return nil, nil
+	}
+
+	var loggerConfig LoggerConfig
+	err := json.Unmarshal([]byte(loggerData), &loggerConfig)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing logger config: %v", err)
+	}
+
+	return &loggerConfig, nil
+}
+
+// createOrUpdateLoggerCaConfigMap creates or updates the KServe InferenceLogger CA bundle based on the KServe global configuration
+func (r *TrustyAIServiceReconciler) createOrUpdateLoggerCaConfigMap(ctx context.Context, namespace string, loggerConfig *LoggerConfig) error {
+	if loggerConfig.CaBundle == nil {
+		return fmt.Errorf("loggerConfig.CaBundle is nil")
+	}
+	configMapName := *loggerConfig.CaBundle
+
+	data := map[string]string{}
+	if loggerConfig.CaCertFile != nil {
+		data[*loggerConfig.CaCertFile] = ""
+	}
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMapName,
+			Namespace: namespace,
+			Annotations: map[string]string{
+				"service.beta.openshift.io/inject-cabundle":      "true",
+				"service.beta.openshift.io/inject-cabundle-name": *loggerConfig.CaCertFile,
+			},
+		},
+		Data: data,
+	}
+
+	existingCM := &corev1.ConfigMap{}
+	err := r.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: namespace}, existingCM)
+	if err != nil && errors.IsNotFound(err) {
+		if err := r.Create(ctx, cm); err != nil {
+			return fmt.Errorf("failed to create ConfigMap %s: %v", configMapName, err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("failed to get ConfigMap %s: %v", configMapName, err)
+	} else {
+		existingCM.Data = cm.Data
+		existingCM.Annotations = cm.Annotations
+		if err := r.Update(ctx, existingCM); err != nil {
+			return fmt.Errorf("failed to update ConfigMap %s: %v", configMapName, err)
+		}
+	}
+
+	return nil
 }
