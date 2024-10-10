@@ -147,6 +147,16 @@ func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		job.Status.State = lmesv1alpha1.NewJobState
 	}
 
+	if pod, _ := r.getPod(ctx, job); job.Spec.Suspend && pod == nil {
+		log.Info("Job is in suspend state.")
+		job.Status.State = lmesv1alpha1.SuspendedJobState
+		err := r.Status().Update(ctx, job)
+		if err != nil {
+			log.Error(err, "failed to update status")
+		}
+		return ctrl.Result{}, nil
+	}
+
 	// Handle the job based on its state
 	switch job.Status.State {
 	case lmesv1alpha1.NewJobState:
@@ -164,6 +174,11 @@ func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return r.handleComplete(ctx, log, job)
 	case lmesv1alpha1.CancelledJobState:
 		return r.handleCancel(ctx, log, job)
+	case lmesv1alpha1.SuspendedJobState:
+		if job.Spec.Suspend == false {
+			return r.handleResume(ctx, log, job)
+		}
+		return r.handleSuspend(ctx, log, job)
 	}
 
 	return ctrl.Result{}, nil
@@ -594,6 +609,35 @@ func (r *LMEvalJobReconciler) handleCancel(ctx context.Context, log logr.Logger,
 		fmt.Sprintf("The LMEvalJob %s in namespace %s has cancelled and changed its state to Complete",
 			job.Name,
 			job.Namespace))
+	return ctrl.Result{}, err
+}
+
+func (r *LMEvalJobReconciler) handleSuspend(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
+	log.Info("Job is suspended. Deleting pods.")
+	if err := r.deleteJobPod(ctx, job); err != nil && client.IgnoreNotFound(err) != nil {
+		log.Error(err, "failed to delete pod for suspended job")
+		return ctrl.Result{Requeue: true, RequeueAfter: r.options.PodCheckingInterval}, err
+	}
+	job.Status.State = lmesv1alpha1.SuspendedJobState
+	err := r.Status().Update(ctx, job)
+	if err != nil {
+		log.Error(err, "failed to update job status to suspended")
+	}
+	return ctrl.Result{}, err
+}
+
+func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
+	log.Info("Job is resuming. Creating pods")
+	pod := r.createPod(job, log)
+	if err := r.Create(ctx, pod); err != nil {
+		log.Error(err, "failed to create pod to resume job")
+		return ctrl.Result{Requeue: true, RequeueAfter: r.options.PodCheckingInterval}, err
+	}
+	job.Status.State = lmesv1alpha1.ScheduledJobState
+	err := r.Status().Update(ctx, job)
+	if err != nil {
+		log.Error(err, "failed to update job status to scheduled")
+	}
 	return ctrl.Result{}, err
 }
 
