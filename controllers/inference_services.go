@@ -3,13 +3,14 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"strings"
 )
 
 const (
@@ -269,6 +270,15 @@ func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *t
 
 		// Set the InferenceLogger to the InferenceService instance
 		infService.Spec.Predictor.Logger = &logger
+	}
+
+	// Only if the Istio sidecar annotation is set
+	annotations := infService.GetAnnotations()
+	if inject, exists := annotations["sidecar.istio.io/inject"]; exists && inject == "true" {
+		err := r.ensureDestinationRule(ctx, instance)
+		if err != nil {
+			return fmt.Errorf("failed to ensure DestinationRule: %v", err)
+		}
 	}
 
 	// Update the InferenceService
