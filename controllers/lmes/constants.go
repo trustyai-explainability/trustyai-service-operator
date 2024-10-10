@@ -23,34 +23,21 @@ import (
 )
 
 const (
-	DriverPath                  = "/bin/driver"
-	DestDriverPath              = "/opt/app-root/src/bin/driver"
-	PodImageKey                 = "lmes-pod-image"
-	DriverImageKey              = "lmes-driver-image"
-	PodCheckingIntervalKey      = "lmes-pod-checking-interval"
-	ImagePullPolicyKey          = "lmes-image-pull-policy"
-	GrpcPortKey                 = "lmes-grpc-port"
-	GrpcServiceKey              = "lmes-grpc-service"
-	GrpcServerSecretKey         = "lmes-grpc-server-secret"
-	GrpcClientSecretKey         = "lmes-grpc-client-secret"
-	MaxBatchSizeKey             = "lmes-max-batch-size"
-	DefaultBatchSizeKey         = "lmes-default-batch-size"
-	DetectDeviceKey             = "lmes-detect-device"
-	DriverReportIntervalKey     = "driver-report-interval"
-	GrpcServerCertEnv           = "GRPC_SERVER_CERT"
-	GrpcServerKeyEnv            = "GRPC_SERVER_KEY"
-	GrpcClientCaEnv             = "GRPC_CLIENT_CA"
-	DefaultPodImage             = "quay.io/trustyai/ta-lmes-job:latest"
-	DefaultDriverImage          = "quay.io/trustyai/ta-lmes-driver:latest"
-	DefaultPodCheckingInterval  = time.Second * 10
-	DefaultDriverReportInterval = time.Second * 10
-	DefaultImagePullPolicy      = corev1.PullAlways
-	DefaultGrpcPort             = 8082
-	DefaultGrpcService          = "lm-eval-grpc"
-	DefaultGrpcServerSecret     = "grpc-server-cert"
-	DefaultGrpcClientSecret     = "grpc-client-cert"
-	DefaultMaxBatchSize         = 24
-	DefaultBatchSize            = 8
-	DefaultDetectDevice         = true
-	ServiceName                 = "LMES"
+	DriverPath                 = "/bin/driver"
+	DestDriverPath             = "/opt/app-root/src/bin/driver"
+	PodImageKey                = "lmes-pod-image"
+	DriverImageKey             = "lmes-driver-image"
+	PodCheckingIntervalKey     = "lmes-pod-checking-interval"
+	ImagePullPolicyKey         = "lmes-image-pull-policy"
+	MaxBatchSizeKey            = "lmes-max-batch-size"
+	DefaultBatchSizeKey        = "lmes-default-batch-size"
+	DetectDeviceKey            = "lmes-detect-device"
+	DefaultPodImage            = "quay.io/trustyai/ta-lmes-job:latest"
+	DefaultDriverImage         = "quay.io/trustyai/ta-lmes-driver:latest"
+	DefaultPodCheckingInterval = time.Second * 10
+	DefaultImagePullPolicy     = corev1.PullAlways
+	DefaultMaxBatchSize        = 24
+	DefaultBatchSize           = 8
+	DefaultDetectDevice        = true
+	ServiceName                = "LMES"
 )

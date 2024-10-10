@@ -19,59 +19,41 @@ package driver
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
-	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 	"unicode"
 
 	"github.com/go-logr/logr"
-	"github.com/spf13/viper"
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes/api/v1beta1"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
-	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 )
 
 var (
-	scheme             = runtime.NewScheme()
 	progressMegPattern = regexp.MustCompile(`^(.*?:\s*?\d*?%)\|`)
 )
 
 const (
-	GrpcClientKeyEnv            = "GRPC_CLIENT_KEY"
-	GrpcClientCertEnv           = "GRPC_CLIENT_CERT"
-	GrpcServerCaEnv             = "GRPC_SERVER_CA"
-	DefaultDriverReportInterval = time.Second * 10
-	DefaultTaskRecipesPath      = "/opt/app-root/src/my_tasks"
-	DefaultCatalogPath          = "/opt/app-root/src/my_catalogs"
-	TaskRecipePrefix            = "tr"
-	CustomCardPrefix            = "custom"
+	// put the domain socket under /tmp. may move to emptydir to share across containers
+	socketPath             = "/tmp/ta-lmes-driver.sock"
+	DefaultTaskRecipesPath = "/opt/app-root/src/my_tasks"
+	DefaultCatalogPath     = "/opt/app-root/src/my_catalogs"
+	TaskRecipePrefix       = "tr"
+	CustomCardPrefix       = "custom"
+	ShutdownURI            = "/Shutdown"
+	GetStatusURI           = "/GetStatus"
 )
-
-func init() {
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(lmesv1alpha1.AddToScheme(scheme))
-}
 
 type DriverOption struct {
 	Context         context.Context
-	JobNamespace    string
-	JobName         string
-	GrpcService     string
-	GrpcPort        int
 	OutputPath      string
 	DetectDevice    bool
 	TaskRecipesPath string
@@ -80,20 +62,29 @@ type DriverOption struct {
 	CustomCards     []string
 	Logger          logr.Logger
 	Args            []string
-	ReportInterval  time.Duration
+	SocketPath      string
 }
 
 type Driver interface {
 	Run() error
-	Cleanup()
+	GetStatus() (*lmesv1alpha1.LMEvalJobStatus, error)
+	Shutdown() error
+}
+
+// the communication server that is used by the driverImpl to
+// send and recive messages using a domain socket
+type driverComm struct {
+	connection chan int
+	server     *http.Server
+	path       string
 }
 
 type driverImpl struct {
-	client          v1beta1.LMEvalJobUpdateServiceClient
-	grpcConn        *grpc.ClientConn
 	Option          *DriverOption
-	lastReportTime  time.Time
 	lastProgressMsg string
+	status          lmesv1alpha1.LMEvalJobStatus
+	err             error
+	comm            *driverComm
 }
 
 func NewDriver(opt *DriverOption) (Driver, error) {
@@ -101,15 +92,8 @@ func NewDriver(opt *DriverOption) (Driver, error) {
 		return nil, nil
 	}
 
-	if opt.ReportInterval == 0 {
-		opt.ReportInterval = DefaultDriverReportInterval
-	}
 	if opt.Context == nil {
 		return nil, fmt.Errorf("context is nil")
-	}
-
-	if opt.JobNamespace == "" || opt.JobName == "" {
-		return nil, fmt.Errorf("JobNamespace or JobName is empty")
 	}
 
 	if opt.TaskRecipesPath == "" {
@@ -120,24 +104,22 @@ func NewDriver(opt *DriverOption) (Driver, error) {
 		opt.CatalogPath = DefaultCatalogPath
 	}
 
-	conn, err := getGRPCClientConn(opt)
-	if err != nil {
-		return nil, err
+	if opt.SocketPath == "" {
+		opt.SocketPath = socketPath
 	}
 
 	return &driverImpl{
-		client:   v1beta1.NewLMEvalJobUpdateServiceClient(conn),
-		grpcConn: conn,
-		Option:   opt,
+		Option: opt,
 	}, nil
 }
 
 // Run implements Driver.
 func (d *driverImpl) Run() error {
-	if err := d.updateStatus(lmesv1alpha1.RunningJobState,
-		"update status from the driver: running"); err != nil {
+	d.updateStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, "initializing the evaluation job")
 
-		return err
+	if err := d.setupComm(); err != nil {
+		d.err = err
+		return d.err
 	}
 
 	execErr := d.exec()
@@ -151,71 +133,41 @@ func (d *driverImpl) Run() error {
 	toConsole(filepath.Join(d.Option.OutputPath, "stdout.log"))
 	toConsole(filepath.Join(d.Option.OutputPath, "stderr.log"))
 
-	return d.updateCompleteStatus(execErr)
+	d.updateCompleteStatus(execErr)
+
+	// wait for shutdown signal then properly clean up the resources
+	d.comm.wait4Sutdownload()
+	d.comm.close()
+	return d.err
 }
 
-func (d *driverImpl) Cleanup() {
-	if d != nil && d.grpcConn != nil {
-		d.grpcConn.Close()
+func (d *driverImpl) GetStatus() (*lmesv1alpha1.LMEvalJobStatus, error) {
+	client := createClient(d.Option.SocketPath)
+	resp, err := client.Get(fmt.Sprintf("http://unix%s", GetStatusURI))
+	if err != nil {
+		return nil, err
 	}
+	defer resp.Body.Close()
+	content, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var status lmesv1alpha1.LMEvalJobStatus
+	err = json.Unmarshal(content, &status)
+
+	return &status, err
 }
-
-func getGRPCClientConn(option *DriverOption) (clientConn *grpc.ClientConn, err error) {
-	// Set up a connection to the server.
-	if option.GrpcPort == 0 || option.GrpcService == "" {
-		return nil, fmt.Errorf("GrpcService or GrpcPort is not valid")
+func (d *driverImpl) Shutdown() error {
+	client := createClient(d.Option.SocketPath)
+	resp, err := client.Post(fmt.Sprintf("http://unix%s", ShutdownURI), "application/json", nil)
+	if err != nil {
+		return err
 	}
 
-	serverAddr := fmt.Sprintf("%s:%d", option.GrpcService, option.GrpcPort)
-
-	if viper.IsSet(GrpcServerCaEnv) {
-		serverCAPath := viper.GetString(GrpcServerCaEnv)
-
-		if viper.IsSet(GrpcClientCertEnv) && viper.IsSet(GrpcClientKeyEnv) {
-			// mTLS
-			certPath, keyPath := viper.GetString(GrpcClientCertEnv), viper.GetString(GrpcClientKeyEnv)
-			var cert tls.Certificate
-			cert, err = tls.LoadX509KeyPair(certPath, keyPath)
-			if err != nil {
-				return nil, err
-			}
-
-			ca := x509.NewCertPool()
-			var caBytes []byte
-			caBytes, err = os.ReadFile(serverCAPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read server CA %q: %v", serverCAPath, err)
-			}
-			if ok := ca.AppendCertsFromPEM(caBytes); !ok {
-				return nil, fmt.Errorf("failed to parse server CA %q", serverCAPath)
-			}
-
-			tlsConfig := &tls.Config{
-				ServerName:   serverAddr,
-				Certificates: []tls.Certificate{cert},
-				RootCAs:      ca,
-			}
-
-			clientConn, err = grpc.NewClient(serverAddr, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
-		} else {
-			// TLS
-			creds, err := credentials.NewClientTLSFromFile(serverCAPath, serverAddr)
-			if err != nil {
-				return nil, fmt.Errorf("failed to load server CA: %v", err)
-			}
-
-			clientConn, err = grpc.NewClient(serverAddr, grpc.WithTransportCredentials(creds))
-			if err != nil {
-				return nil, fmt.Errorf("failed to connect to GRPC server: %v", err)
-			}
-		}
-	} else {
-		clientConn, err = grpc.NewClient(
-			serverAddr,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-	}
-	return
+	defer resp.Body.Close()
+	_, err = io.ReadAll(resp.Body)
+	return err
 }
 
 func (d *driverImpl) detectDevice() error {
@@ -262,6 +214,75 @@ func patchDevice(args []string, hasCuda bool) {
 	}
 }
 
+// Create a domain socket and use HTTP protocal to handle communication
+func (d *driverImpl) setupComm() error {
+
+	serve := http.NewServeMux()
+	d.comm = &driverComm{
+		server:     &http.Server{Handler: serve},
+		connection: make(chan int),
+		path:       d.Option.SocketPath,
+	}
+
+	// handle the `GetStatus` API: return the complete lmesv1alpha1.LMEvalJobStatus
+	// or error if the JSON marshaling fails.
+	serve.HandleFunc(GetStatusURI, func(w http.ResponseWriter, _ *http.Request) {
+		status, err := json.Marshal(d.status)
+		if err == nil {
+			w.Write(status)
+		} else {
+			w.Write([]byte(fmt.Sprintf(`{"err": "%s"}`, err.Error())))
+		}
+	})
+
+	// handle the `Shutdown` API: tear down the communication server.
+	serve.HandleFunc(ShutdownURI, func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"msg": "ok"}`))
+		d.comm.notifyShutdownWait()
+	})
+
+	go func() {
+		d.comm.serve()
+	}()
+
+	return nil
+}
+
+func createClient(path string) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", path)
+			},
+		},
+	}
+}
+
+func (dc *driverComm) wait4Sutdownload() {
+	<-dc.connection
+}
+
+func (dc *driverComm) serve() error {
+	socket, err := net.Listen("unix", dc.path)
+	if err != nil {
+		return err
+	}
+
+	return dc.server.Serve(socket)
+}
+
+func (dc *driverComm) close() {
+	if dc.server != nil && dc.connection != nil {
+		dc.server.Shutdown(context.Background())
+		close(dc.connection)
+		os.Remove(dc.path)
+	}
+}
+
+func (dc *driverComm) notifyShutdownWait() {
+	dc.connection <- 1
+}
+
 func (d *driverImpl) exec() error {
 	// create Unitxt task recipes
 	if err := d.createTaskRecipes(); err != nil {
@@ -287,7 +308,6 @@ func (d *driverImpl) exec() error {
 	if err != nil {
 		return err
 	}
-	bout := bufio.NewWriter(stdout)
 
 	stderr, err := os.Create(filepath.Join(d.Option.OutputPath, "stderr.log"))
 	if err != nil {
@@ -298,7 +318,6 @@ func (d *driverImpl) exec() error {
 	// lm-eval's outputs are in the stderr
 	pr, pw := io.Pipe()
 	mwriter := io.MultiWriter(stderr, pw)
-	berr := bufio.NewWriter(mwriter)
 	scanner := bufio.NewScanner(pr)
 
 	executor := exec.Command(d.Option.Args[0], args...)
@@ -306,18 +325,16 @@ func (d *driverImpl) exec() error {
 	if err != nil {
 		return err
 	}
-	executor.Stdout = bout
-	executor.Stderr = berr
+	executor.Stdout = stdout
+	executor.Stderr = mwriter
 	executor.Env = append(os.Environ(),
 		"UNITXT_ALLOW_UNVERIFIED_CODE=True",
 	)
 
 	var freeRes = func() {
 		stdin.Close()
-		bout.Flush()
 		stdout.Sync()
 		stdout.Close()
-		berr.Flush()
 		stderr.Sync()
 		stderr.Close()
 		pr.Close()
@@ -335,9 +352,7 @@ func (d *driverImpl) exec() error {
 	go func() {
 		for scanner.Scan() {
 			msg := scanner.Text()
-			if err := d.reportProgress(msg); err != nil {
-				d.Option.Logger.Error(err, "report progress failed")
-			}
+			d.updateProgress(msg)
 		}
 		wg.Done()
 	}()
@@ -348,59 +363,30 @@ func (d *driverImpl) exec() error {
 	return finalError
 }
 
-func (d *driverImpl) updateStatus(state lmesv1alpha1.JobState, msg string) error {
-	ctx, cancel := context.WithTimeout(d.Option.Context, time.Second*10)
-	defer cancel()
+func (d *driverImpl) updateCompleteStatus(err error) {
+	d.status.State = lmesv1alpha1.CompleteJobState
+	d.status.Reason = lmesv1alpha1.SucceedReason
+	d.status.Message = "job completed"
 
-	r, err := d.client.UpdateStatus(ctx, &v1beta1.JobStatus{
-		JobName:       d.Option.JobName,
-		JobNamespace:  d.Option.JobNamespace,
-		State:         string(state),
-		Reason:        string(lmesv1alpha1.NoReason),
-		StatusMessage: msg,
-	})
-
-	if r != nil && err == nil {
-		d.Option.Logger.Info(fmt.Sprintf("UpdateStatus done: %s", r.Message))
-		d.lastReportTime = time.Now()
-	}
-
-	return err
-}
-
-func (d *driverImpl) updateCompleteStatus(err error) error {
-	ctx, cancel := context.WithTimeout(d.Option.Context, time.Second*10)
-	defer cancel()
-	newStatus := v1beta1.JobStatus{
-		JobName:       d.Option.JobName,
-		JobNamespace:  d.Option.JobNamespace,
-		State:         string(lmesv1alpha1.CompleteJobState),
-		Reason:        string(lmesv1alpha1.SucceedReason),
-		StatusMessage: "update status from the driver: completed",
-	}
-
-	var setErr = func(err error) {
-		newStatus.Reason = string(lmesv1alpha1.FailedReason)
-		newStatus.StatusMessage = err.Error()
+	if err == nil {
+		var results string
+		results, err = d.getResults()
+		d.status.Results = results
 	}
 
 	if err != nil {
-		setErr(err)
-	} else {
-		results, err := d.getResults()
-		if err != nil {
-			setErr(err)
-		} else {
-			newStatus.Results = &results
-		}
+		d.status.Reason = lmesv1alpha1.FailedReason
+		d.status.Message = err.Error()
+		d.err = err
 	}
 
-	r, err := d.client.UpdateStatus(ctx, &newStatus)
-	if r != nil && err == nil {
-		d.Option.Logger.Info(fmt.Sprintf("UpdateStatus with the results: %s", r.Message))
-	}
+	d.Option.Logger.Info("update status: job completed", "state", d.status)
+}
 
-	return err
+func (d *driverImpl) updateStatus(state lmesv1alpha1.JobState, reason lmesv1alpha1.Reason, msg string) {
+	d.status.State = state
+	d.status.Reason = reason
+	d.status.Message = msg
 }
 
 func (d *driverImpl) getResults() (string, error) {
@@ -427,7 +413,7 @@ func (d *driverImpl) getResults() (string, error) {
 	return results, nil
 }
 
-func (d *driverImpl) reportProgress(msg string) error {
+func (d *driverImpl) updateProgress(msg string) {
 	msg = strings.Map(func(r rune) rune {
 		if unicode.IsPrint(r) {
 			return r
@@ -445,14 +431,9 @@ func (d *driverImpl) reportProgress(msg string) error {
 	if matches := progressMegPattern.FindStringSubmatch(msglist[len(msglist)-1]); len(matches) == 2 {
 		if matches[1] != d.lastProgressMsg {
 			d.lastProgressMsg = strings.Trim(matches[1], " \r")
+			d.updateStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, d.lastProgressMsg)
 		}
 	}
-	if time.Since(d.lastReportTime) >= d.Option.ReportInterval {
-		if err := d.updateStatus(lmesv1alpha1.RunningJobState, d.lastProgressMsg); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (d *driverImpl) createTaskRecipes() error {
