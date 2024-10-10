@@ -87,7 +87,12 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 			UpdateRouteAvailable(saved)
 
 			if instance.Spec.Storage.IsStorageDatabase() || instance.IsMigration() {
-				UpdateDBAvailable(saved)
+				if status.DBReady {
+					UpdateDBAvailable(saved)
+				} else {
+					UpdateDBConnectionError(saved)
+					return
+				}
 			}
 
 			UpdateTrustyAIServiceAvailable(saved)

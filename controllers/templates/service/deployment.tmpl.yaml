@@ -122,6 +122,20 @@ spec:
             - name: STORAGE_MIGRATION_CONFIG_FROM_FILENAME
               value: {{ .Instance.Spec.Data.Filename }}
             {{ end }}
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
           volumeMounts:
             - name: {{ .Instance.Name }}-internal
               readOnly: false
