@@ -46,6 +46,7 @@ const (
 	StatusTypePVCAvailable             = "PVCAvailable"
 	StatusTypeRouteAvailable           = "RouteAvailable"
 	StatusTypeAvailable                = "Available"
+	StatusTypeDBAvailable              = "DBAvailable"
 )
 
 // Status reasons
@@ -58,6 +59,10 @@ const (
 	StatusReasonRouteFound                = "RouteFound"
 	StatusAvailable                       = "AllComponentsReady"
 	StatusNotAvailable                    = "NotAllComponentsReady"
+	StatusDBCredentialsNotFound           = "DBCredentialsNotFound"
+	StatusDBCredentialsError              = "DBCredentialsError"
+	StatusDBConnectionError               = "DBConnectionError"
+	StatusDBAvailable                     = "DBAvailable"
 )
 
 // Event reasons
@@ -65,6 +70,16 @@ const (
 	EventReasonPVCCreated                 = "PVCCreated"
 	EventReasonInferenceServiceConfigured = "InferenceServiceConfigured"
 	EventReasonServiceMonitorCreated      = "ServiceMonitorCreated"
+)
+
+const (
+	StateReasonCrashLoopBackOff = "CrashLoopBackOff"
+)
+
+// Phases
+const (
+	PhaseReady    = "Ready"
+	PhaseNotReady = "Not Ready"
 )
 
 const migrationAnnotationKey = "trustyai.opendatahub.io/db-migration"

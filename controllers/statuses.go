@@ -13,7 +13,8 @@ import (
 
 // IsAllReady checks if all the necessary readiness fields are true for the specific mode
 func (rs *AvailabilityStatus) IsAllReady(mode string) bool {
-	return (rs.PVCReady && rs.DeploymentReady && rs.RouteReady && mode == STORAGE_PVC) || (rs.DeploymentReady && rs.RouteReady && mode == STORAGE_DATABASE)
+	return (rs.PVCReady && rs.DeploymentReady && rs.RouteReady && mode == STORAGE_PVC) ||
+		(rs.DeploymentReady && rs.RouteReady && rs.DBReady && mode == STORAGE_DATABASE)
 }
 
 // AvailabilityStatus has the readiness status of various resources.
@@ -22,6 +23,7 @@ type AvailabilityStatus struct {
 	DeploymentReady       bool
 	RouteReady            bool
 	InferenceServiceReady bool
+	DBReady               bool
 }
 
 func (r *TrustyAIServiceReconciler) updateStatus(ctx context.Context, original *trustyaiopendatahubiov1alpha1.TrustyAIService, update func(saved *trustyaiopendatahubiov1alpha1.TrustyAIService),
@@ -53,25 +55,17 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 	if instance.Spec.Storage.IsStoragePVC() || instance.IsMigration() {
 		// Check for PVC readiness
 		status.PVCReady, err = r.checkPVCReady(ctx, instance)
-		if err != nil || !status.PVCReady {
-			// PVC not ready, requeue
-			return RequeueWithDelayMessage(ctx, defaultRequeueDelay, "PVC not ready")
-		}
 	}
 
 	// Check for deployment readiness
 	status.DeploymentReady, err = r.checkDeploymentReady(ctx, instance)
-	if err != nil || !status.DeploymentReady {
-		// Deployment not ready, requeue
-		return RequeueWithDelayMessage(ctx, defaultRequeueDelay, "Deployment not ready")
+
+	if instance.Spec.Storage.IsStorageDatabase() || instance.IsMigration() {
+		status.DBReady, _ = r.checkDatabaseAccessible(ctx, instance)
 	}
 
 	// Check for route readiness
 	status.RouteReady, err = r.checkRouteReady(ctx, instance)
-	if err != nil || !status.RouteReady {
-		// Route not ready, requeue
-		return RequeueWithDelayMessage(ctx, defaultRequeueDelay, "Route not ready")
-	}
 
 	// Check if InferenceServices present
 	status.InferenceServiceReady, err = r.checkInferenceServicesPresent(ctx, instance.Namespace)
@@ -89,9 +83,15 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 			if instance.Spec.Storage.IsStoragePVC() || instance.IsMigration() {
 				UpdatePVCAvailable(saved)
 			}
+
 			UpdateRouteAvailable(saved)
+
+			if instance.Spec.Storage.IsStorageDatabase() || instance.IsMigration() {
+				UpdateDBAvailable(saved)
+			}
+
 			UpdateTrustyAIServiceAvailable(saved)
-			saved.Status.Phase = "Ready"
+			saved.Status.Phase = PhaseReady
 			saved.Status.Ready = v1.ConditionTrue
 		})
 		if updateErr != nil {
@@ -114,13 +114,18 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 				}
 			}
 
+			if instance.Spec.Storage.IsStorageDatabase() || instance.IsMigration() {
+				UpdateDBConnectionError(saved)
+			}
+
 			if status.RouteReady {
 				UpdateRouteAvailable(saved)
 			} else {
 				UpdateRouteNotAvailable(saved)
 			}
+
 			UpdateTrustyAIServiceNotAvailable(saved)
-			saved.Status.Phase = "Ready"
+			saved.Status.Phase = PhaseNotReady
 			saved.Status.Ready = v1.ConditionFalse
 		})
 		if updateErr != nil {
@@ -143,7 +148,7 @@ func UpdateInferenceServicePresent(saved *trustyaiopendatahubiov1alpha1.TrustyAI
 
 func UpdatePVCNotAvailable(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
 	saved.SetStatus(StatusTypePVCAvailable, StatusReasonPVCNotFound, "PersistentVolumeClaim not found", v1.ConditionFalse)
-	saved.Status.Phase = "Not Ready"
+	saved.Status.Phase = PhaseNotReady
 	saved.Status.Ready = v1.ConditionFalse
 }
 
@@ -165,4 +170,28 @@ func UpdateTrustyAIServiceAvailable(saved *trustyaiopendatahubiov1alpha1.TrustyA
 
 func UpdateTrustyAIServiceNotAvailable(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
 	saved.SetStatus(StatusTypeAvailable, StatusNotAvailable, "Not all components available", v1.ConditionFalse)
+	saved.Status.Phase = PhaseNotReady
+	saved.Status.Ready = v1.ConditionFalse
+}
+
+func UpdateDBCredentialsNotFound(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+	saved.SetStatus(StatusTypeDBAvailable, StatusDBCredentialsNotFound, "Database credentials not found", v1.ConditionFalse)
+	saved.Status.Phase = PhaseNotReady
+	saved.Status.Ready = v1.ConditionFalse
+}
+
+func UpdateDBCredentialsError(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+	saved.SetStatus(StatusTypeDBAvailable, StatusDBCredentialsError, "Error with database credentials", v1.ConditionFalse)
+	saved.Status.Phase = PhaseNotReady
+	saved.Status.Ready = v1.ConditionFalse
+}
+
+func UpdateDBConnectionError(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+	saved.SetStatus(StatusTypeDBAvailable, StatusDBConnectionError, "Error connecting to database", v1.ConditionFalse)
+	saved.Status.Phase = PhaseNotReady
+	saved.Status.Ready = v1.ConditionFalse
+}
+
+func UpdateDBAvailable(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+	saved.SetStatus(StatusTypeDBAvailable, StatusDBAvailable, "Database available", v1.ConditionTrue)
 }
