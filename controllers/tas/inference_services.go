@@ -291,6 +291,15 @@ func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *t
 		infService.Spec.Predictor.Logger = &logger
 	}
 
+	// Only if the Istio sidecar annotation is set
+	annotations := infService.GetAnnotations()
+	if inject, exists := annotations["sidecar.istio.io/inject"]; exists && inject == "true" {
+		err := r.ensureDestinationRule(ctx, instance)
+		if err != nil {
+			return fmt.Errorf("failed to ensure DestinationRule: %v", err)
+		}
+	}
+
 	// Update the InferenceService
 	err := r.Update(ctx, &infService)
 	if err == nil {
