@@ -1,0 +1,13 @@
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: {{ .DestinationRuleName }}
+  namespace: {{ .Namespace }}
+spec:
+  host: {{ .Name }}.{{ .Namespace }}.svc.cluster.local
+  trafficPolicy:
+    portLevelSettings:
+        - port:
+          number: 443
+          tls:
+            mode: SIMPLE
