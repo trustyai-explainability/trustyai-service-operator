@@ -76,6 +76,11 @@ var (
 	annotationFilterPrefixes = []string{}
 )
 
+// Constants
+const (
+	jobUserId int64 = 1000840000
+)
+
 // maintain a list of key-time pair data.
 // provide a function to add the key and update the time
 // atomitcally and return a reconcile requeue event
@@ -662,7 +667,7 @@ func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob, log logr.Lo
 	var allowPrivilegeEscalation = false
 	var runAsNonRootUser = true
 	var ownerRefController = true
-	var runAsUser int64 = 1001030000
+	var runAsUser = jobUserId
 
 	var envVars = job.Spec.Pod.GetContainer().GetEnv()
 

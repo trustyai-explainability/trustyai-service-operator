@@ -30,10 +30,10 @@ import (
 )
 
 var (
-	isController                   = true
-	allowPrivilegeEscalation       = false
-	runAsNonRootUser               = true
-	runAsUser                int64 = 1001030000
+	isController             = true
+	allowPrivilegeEscalation = false
+	runAsNonRootUser         = true
+	runAsUser                = jobUserId
 )
 
 func Test_SimplePod(t *testing.T) {
