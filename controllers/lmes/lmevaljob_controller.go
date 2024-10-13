@@ -17,6 +17,7 @@ limitations under the License.
 package lmes
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"maps"
@@ -24,6 +25,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -31,7 +33,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/json"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/remotecommand"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -45,9 +51,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/go-logr/logr"
-	"github.com/spf13/viper"
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
-	backendv1beta1 "github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes/api/v1beta1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes/driver"
 )
 
@@ -59,72 +63,102 @@ var (
 	}
 
 	optionKeys = map[string]string{
-		"PodImage":             PodImageKey,
-		"DriverImage":          DriverImageKey,
-		"PodCheckingInterval":  PodCheckingIntervalKey,
-		"ImagePullPolicy":      ImagePullPolicyKey,
-		"GrpcPort":             GrpcPortKey,
-		"GrpcService":          GrpcServiceKey,
-		"GrpcServerSecret":     GrpcServerSecretKey,
-		"GrpcClientSecret":     GrpcClientSecretKey,
-		"DriverReportInterval": DriverReportIntervalKey,
-		"DefaultBatchSize":     DefaultBatchSizeKey,
-		"MaxBatchSize":         MaxBatchSizeKey,
-		"DetectDevice":         DetectDeviceKey,
+		"PodImage":            PodImageKey,
+		"DriverImage":         DriverImageKey,
+		"PodCheckingInterval": PodCheckingIntervalKey,
+		"ImagePullPolicy":     ImagePullPolicyKey,
+		"DefaultBatchSize":    DefaultBatchSizeKey,
+		"MaxBatchSize":        MaxBatchSizeKey,
+		"DetectDevice":        DetectDeviceKey,
 	}
 
 	labelFilterPrefixes      = []string{}
 	annotationFilterPrefixes = []string{}
 )
 
-type TLSMode int
-
-const (
-	TLSMode_None TLSMode = 0
-	TLSMode_TLS  TLSMode = 1
-	TLSMode_mTLS TLSMode = 2
-)
+// maintain a list of key-time pair data.
+// provide a function to add the key and update the time
+// atomitcally and return a reconcile requeue event
+// if needed.
+type syncedMap4Reconciler struct {
+	data  map[string]time.Time
+	mutex sync.Mutex
+}
 
 // LMEvalJobReconciler reconciles a LMEvalJob object
 type LMEvalJobReconciler struct {
 	client.Client
-	Scheme    *runtime.Scheme
-	Recorder  record.EventRecorder
-	ConfigMap string
-	Namespace string
-	options   *ServiceOptions
+	Scheme      *runtime.Scheme
+	Recorder    record.EventRecorder
+	ConfigMap   string
+	Namespace   string
+	options     *ServiceOptions
+	restConfig  *rest.Config
+	restClient  rest.Interface
+	pullingJobs *syncedMap4Reconciler
 }
 
 type ServiceOptions struct {
-	PodImage             string
-	DriverImage          string
-	DriverReportInterval time.Duration
-	PodCheckingInterval  time.Duration
-	ImagePullPolicy      corev1.PullPolicy
-	GrpcPort             int
-	GrpcService          string
-	GrpcServerSecret     string
-	GrpcClientSecret     string
-	MaxBatchSize         int
-	DefaultBatchSize     int
-	DetectDevice         bool
-	grpcTLSMode          TLSMode
+	PodImage            string
+	DriverImage         string
+	PodCheckingInterval time.Duration
+	ImagePullPolicy     corev1.PullPolicy
+	MaxBatchSize        int
+	DefaultBatchSize    int
+	DetectDevice        bool
 }
 
+// The registered function to set up LMES controller
 func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) error {
+	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		return err
+	}
+
 	return (&LMEvalJobReconciler{
-		ConfigMap: configmap,
-		Namespace: ns,
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		Recorder:  mgr.GetEventRecorderFor("lm-eval-service-controller"),
+		ConfigMap:   configmap,
+		Namespace:   ns,
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		Recorder:    mgr.GetEventRecorderFor("lm-eval-service-controller"),
+		restConfig:  mgr.GetConfig(),
+		restClient:  clientset.CoreV1().RESTClient(),
+		pullingJobs: newSyncedMap4Reconciler(),
 	}).SetupWithManager(mgr)
+}
+
+func newSyncedMap4Reconciler() *syncedMap4Reconciler {
+	return &syncedMap4Reconciler{data: make(map[string]time.Time)}
+}
+
+// check if the paired time of the key is passed. if yes, update the time and
+// return a requeue result. otherwise an empty result
+func (q *syncedMap4Reconciler) addOrUpdate(key string, after time.Duration) reconcile.Result {
+	q.mutex.Lock()
+	defer q.mutex.Unlock()
+
+	v, ok := q.data[key]
+	if ok && time.Now().Before(v) {
+		// no need to requeue since there is an existing one
+		return reconcile.Result{}
+	}
+	value := time.Now().Add(after)
+	q.data[key] = value
+	return reconcile.Result{Requeue: true, RequeueAfter: after}
+}
+
+// remove the key from the list
+func (q *syncedMap4Reconciler) remove(key string) {
+	q.mutex.Lock()
+	defer q.mutex.Unlock()
+	delete(q.data, key)
 }
 
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=lmevaljobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=lmevaljobs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=lmevaljobs/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups="",resources=pods/exec,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;watch;list
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;watch;list
 
@@ -192,19 +226,6 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return err
 		}
 
-		if err := r.checkSecrets(ctx); err != nil {
-			// if mTLS/TLS is not enable, then we are good. Otherwise error out
-			if viper.IsSet(GrpcServerCertEnv) ||
-				viper.IsSet(GrpcServerKeyEnv) ||
-				viper.IsSet(GrpcClientCaEnv) {
-				return fmt.Errorf("TLS or mTLS is enabled for GRPC server but secrets don't exist")
-			}
-		}
-
-		// ideally, this should be call in the main.go, but GRPC server depends on the
-		// constructOptionsFromConfigMap to get the settings.
-		go StartGrpcServer(ctx, r)
-
 		return nil
 	})); err != nil {
 		return err
@@ -241,54 +262,27 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *LMEvalJobReconciler) checkSecrets(ctx context.Context) error {
-
-	var isSecretExists = func(name string) bool {
-		var secret corev1.Secret
-		err := r.Get(ctx, types.NamespacedName{Namespace: r.Namespace, Name: name}, &secret)
-		return err == nil
+func (r *LMEvalJobReconciler) updateStatus(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) error {
+	stdin, _, err := r.remoteCommand(ctx, job, fmt.Sprintf("%s %s", DestDriverPath, "--get-status"))
+	if err != nil {
+		return err
 	}
-
-	if !isSecretExists(r.options.GrpcServerSecret) {
-		return fmt.Errorf("secret %s not found", r.options.GrpcServerSecret)
-	}
-	if !isSecretExists(r.options.GrpcClientSecret) {
-		return fmt.Errorf("secret %s not found", r.options.GrpcServerSecret)
-	}
-	return nil
-}
-
-func (r *LMEvalJobReconciler) updateStatus(ctx context.Context, newStatus *backendv1beta1.JobStatus) (err error) {
-	log := log.FromContext(ctx)
-
-	if strings.Trim(newStatus.GetJobName(), " ") == "" ||
-		strings.Trim(newStatus.GetJobNamespace(), " ") == "" {
-
-		return fmt.Errorf("JobName or JobNameSpace is empty")
-	}
-
-	job := &lmesv1alpha1.LMEvalJob{}
-	if err = r.Get(ctx, types.NamespacedName{
-		Namespace: newStatus.JobNamespace,
-		Name:      newStatus.JobName,
-	}, job); err != nil {
-		log.Info("unable to fetch LMEvalJob")
+	newStatus := lmesv1alpha1.LMEvalJobStatus{}
+	if err = json.Unmarshal(stdin, &newStatus); err != nil {
 		return err
 	}
 
-	newJobStatus := job.Status.DeepCopy()
-	newJobStatus.State = lmesv1alpha1.JobState(newStatus.GetState())
-	newJobStatus.Reason = lmesv1alpha1.Reason(newStatus.GetReason())
+	// driver only provides updates for these fields
+	if newStatus.State != job.Status.State ||
+		newStatus.Message != job.Status.Message ||
+		newStatus.Reason != job.Status.Reason ||
+		newStatus.Results != job.Status.Results {
 
-	if newStatus.GetStatusMessage() != "" {
-		newJobStatus.Message = newStatus.GetStatusMessage()
-	}
-	if newStatus.Results != nil {
-		newJobStatus.Results = newStatus.GetResults()
-	}
+		job.Status.State = newStatus.State
+		job.Status.Message = newStatus.Message
+		job.Status.Reason = newStatus.Reason
+		job.Status.Results = newStatus.Results
 
-	if !reflect.DeepEqual(job.Status, newJobStatus) {
-		job.Status = *newJobStatus
 		err = r.Status().Update(ctx, job)
 		if err != nil {
 			log.Error(err, "failed to update status")
@@ -297,21 +291,49 @@ func (r *LMEvalJobReconciler) updateStatus(ctx context.Context, newStatus *backe
 	return err
 }
 
+func (r *LMEvalJobReconciler) shutdownDriver(ctx context.Context, job *lmesv1alpha1.LMEvalJob) error {
+	_, _, err := r.remoteCommand(ctx, job, fmt.Sprintf("%s %s", DestDriverPath, "--shutdown"))
+	return err
+}
+
+func (r *LMEvalJobReconciler) remoteCommand(ctx context.Context, job *lmesv1alpha1.LMEvalJob, command string) ([]byte, []byte, error) {
+	request := r.restClient.Post().
+		Namespace(job.GetNamespace()).
+		Resource("pods").
+		Name(job.GetName()).
+		SubResource("exec").
+		VersionedParams(&corev1.PodExecOptions{
+			Command: []string{"/bin/sh", "-c", command},
+			Stdin:   false,
+			Stdout:  true,
+			Stderr:  true,
+		}, scheme.ParameterCodec)
+
+	outBuff := &bytes.Buffer{}
+	errBuf := &bytes.Buffer{}
+	exec, err := remotecommand.NewSPDYExecutor(r.restConfig, "POST", request.URL())
+	if err != nil {
+		return nil, nil, err
+	}
+	if err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdout: outBuff,
+		Stderr: errBuf,
+	}); err != nil {
+		return nil, nil, err
+	}
+	return outBuff.Bytes(), errBuf.Bytes(), nil
+}
+
 func (r *LMEvalJobReconciler) constructOptionsFromConfigMap(
 	ctx context.Context, configmap *corev1.ConfigMap) error {
 	r.options = &ServiceOptions{
-		DriverImage:          DefaultDriverImage,
-		PodImage:             DefaultPodImage,
-		DriverReportInterval: driver.DefaultDriverReportInterval,
-		PodCheckingInterval:  DefaultPodCheckingInterval,
-		ImagePullPolicy:      DefaultImagePullPolicy,
-		GrpcPort:             DefaultGrpcPort,
-		GrpcService:          DefaultGrpcService,
-		GrpcServerSecret:     DefaultGrpcServerSecret,
-		GrpcClientSecret:     DefaultGrpcClientSecret,
-		MaxBatchSize:         DefaultMaxBatchSize,
-		DetectDevice:         DefaultDetectDevice,
-		DefaultBatchSize:     DefaultBatchSize,
+		DriverImage:         DefaultDriverImage,
+		PodImage:            DefaultPodImage,
+		PodCheckingInterval: DefaultPodCheckingInterval,
+		ImagePullPolicy:     DefaultImagePullPolicy,
+		MaxBatchSize:        DefaultMaxBatchSize,
+		DetectDevice:        DefaultDetectDevice,
+		DefaultBatchSize:    DefaultBatchSize,
 	}
 
 	log := log.FromContext(ctx)
@@ -374,6 +396,8 @@ func (r *LMEvalJobReconciler) constructOptionsFromConfigMap(
 }
 
 func (r *LMEvalJobReconciler) handleDeletion(ctx context.Context, job *lmesv1alpha1.LMEvalJob, log logr.Logger) (reconcile.Result, error) {
+	defer r.pullingJobs.remove(string(job.GetUID()))
+
 	if controllerutil.ContainsFinalizer(job, lmesv1alpha1.FinalizerName) {
 		// delete the correspondling pod if needed
 		// remove our finalizer from the list and update it.
@@ -459,7 +483,7 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 			job.Namespace))
 	log.Info("Successfully create a Pod for the Job")
 	// Check the pod after the config interval
-	return ctrl.Result{Requeue: true, RequeueAfter: r.options.PodCheckingInterval}, nil
+	return r.pullingJobs.addOrUpdate(string(job.GetUID()), r.options.PodCheckingInterval), nil
 }
 
 func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
@@ -482,38 +506,31 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 		return ctrl.Result{}, err
 	}
 
-	if pod.Status.ContainerStatuses == nil {
-		// wait for the pod to initialize and run the containers
-		return ctrl.Result{Requeue: true, RequeueAfter: r.options.PodCheckingInterval}, nil
-	}
-
-	mainIndex := slices.IndexFunc(pod.Status.ContainerStatuses, func(s corev1.ContainerStatus) bool {
-		return s.Name == "main"
-	})
-
-	if mainIndex == -1 || pod.Status.ContainerStatuses[mainIndex].State.Terminated == nil {
-		// wait for the main container to finish
-		return ctrl.Result{Requeue: true, RequeueAfter: r.options.PodCheckingInterval}, nil
-	}
-
-	// main container finished. update status
-	job.Status.State = lmesv1alpha1.CompleteJobState
-	if pod.Status.ContainerStatuses[mainIndex].State.Terminated.ExitCode == 0 {
-		job.Status.Reason = lmesv1alpha1.SucceedReason
-	} else {
+	if mainIdx := getContainerByName(&pod.Status, "main"); mainIdx == -1 {
+		// waiting for the main container to be up
+		return r.pullingJobs.addOrUpdate(string(job.GetUID()), r.options.PodCheckingInterval), nil
+	} else if podFailed, msg := isContainerFailed(&pod.Status.ContainerStatuses[mainIdx]); podFailed {
+		job.Status.State = lmesv1alpha1.CompleteJobState
 		job.Status.Reason = lmesv1alpha1.FailedReason
-		job.Status.Message = pod.Status.ContainerStatuses[mainIndex].State.Terminated.Reason
+		job.Status.Message = msg
+		if err := r.Status().Update(ctx, job); err != nil {
+			log.Error(err, "unable to update LMEvalJob status for pod failure")
+		}
+		log.Info("detect an error on the job's pod. marked the job as done", "name", job.Name)
+		return ctrl.Result{}, err
+	} else if pod.Status.ContainerStatuses[mainIdx].State.Running == nil {
+		return r.pullingJobs.addOrUpdate(string(job.GetUID()), r.options.PodCheckingInterval), nil
 	}
 
-	err = r.Status().Update(ctx, job)
-	if err != nil {
-		log.Error(err, "unable to update LMEvalJob status", "state", job.Status.State)
+	// pull status from the driver
+	if err = r.updateStatus(ctx, log, job); err == nil && job.Status.State == lmesv1alpha1.CompleteJobState {
+		// the update will trigger another reconcile
+		return ctrl.Result{}, nil
 	}
-	r.Recorder.Event(job, "Normal", "PodCompleted",
-		fmt.Sprintf("The pod for the LMEvalJob %s in namespace %s has completed",
-			job.Name,
-			job.Namespace))
-	return ctrl.Result{}, err
+	if err != nil {
+		log.Error(err, "unable to retrieve the status from the job's pod. retry after the pulling interval")
+	}
+	return r.pullingJobs.addOrUpdate(string(job.GetUID()), r.options.PodCheckingInterval), nil
 }
 
 func (r *LMEvalJobReconciler) getPod(ctx context.Context, job *lmesv1alpha1.LMEvalJob) (*corev1.Pod, error) {
@@ -555,17 +572,36 @@ func (r *LMEvalJobReconciler) deleteJobPod(ctx context.Context, job *lmesv1alpha
 
 func (r *LMEvalJobReconciler) handleComplete(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
 	if job.Status.CompleteTime == nil {
+		// make sure the pod is in the complete state. if not, run the shutdown command
+		pod, err := r.getPod(ctx, job)
+		if err == nil {
+			if getRunningContainerByName(&pod.Status, "main") != -1 {
+				// send shutdown command if the main container is running
+				if err := r.shutdownDriver(ctx, job); err != nil {
+					log.Error(err, "failed to shutdown the job pod. retry after the pulling interval")
+					return r.pullingJobs.addOrUpdate(string(job.GetUID()), r.options.PodCheckingInterval), nil
+				}
+			}
+		} else {
+			// the pod is gone ??
+			log.Error(err, "LMEvalJob is marked as Complete but the pod is gone")
+		}
+
 		r.Recorder.Event(job, "Normal", "JobCompleted",
 			fmt.Sprintf("The LMEvalJob %s in namespace %s has completed",
 				job.Name,
 				job.Namespace))
-		// TODO: final wrap up/clean up
+
+		// record the CompleteTime
 		current := v1.Now()
 		job.Status.CompleteTime = &current
 		if err := r.Status().Update(ctx, job); err != nil {
 			log.Error(err, "failed to update status for completion")
 		}
 	}
+
+	// make sure to clean up the pullingJobs
+	r.pullingJobs.remove(string(job.GetUID()))
 	return ctrl.Result{}, nil
 }
 
@@ -582,7 +618,7 @@ func (r *LMEvalJobReconciler) handleCancel(ctx context.Context, log logr.Logger,
 		if err := r.deleteJobPod(ctx, job); err != nil {
 			// leave the state as is and retry again
 			log.Error(err, "failed to delete pod. scheduled a retry", "interval", r.options.PodCheckingInterval.String())
-			return ctrl.Result{Requeue: true, RequeueAfter: r.options.PodCheckingInterval}, err
+			return r.pullingJobs.addOrUpdate(string(job.GetUID()), r.options.PodCheckingInterval), err
 		}
 	}
 
@@ -594,6 +630,7 @@ func (r *LMEvalJobReconciler) handleCancel(ctx context.Context, log logr.Logger,
 		fmt.Sprintf("The LMEvalJob %s in namespace %s has cancelled and changed its state to Complete",
 			job.Name,
 			job.Namespace))
+	r.pullingJobs.remove(string(job.GetUID()))
 	return ctrl.Result{}, err
 }
 
@@ -644,7 +681,6 @@ func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob, log logr.Lo
 		},
 	}
 
-	envVars, volumes, volumeMounts = r.patch4GrpcTLS(envVars, volumes, volumeMounts, r.options.grpcTLSMode)
 	volumes = append(volumes, job.Spec.Pod.GetVolumes()...)
 	volumeMounts = append(volumeMounts, job.Spec.Pod.GetContainer().GetVolumMounts()...)
 	labels := getPodLabels(job.Labels, log)
@@ -840,12 +876,7 @@ func (r *LMEvalJobReconciler) generateCmd(job *lmesv1alpha1.LMEvalJob) []string 
 	}
 	cmds := []string{
 		DestDriverPath,
-		"--job-namespace", job.Namespace,
-		"--job-name", job.Name,
-		"--grpc-service", fmt.Sprintf("%s.%s.svc", r.options.GrpcService, r.Namespace),
-		"--grpc-port", strconv.Itoa(r.options.GrpcPort),
 		"--output-path", "/opt/app-root/src/output",
-		"--report-interval", r.options.DriverReportInterval.String(),
 	}
 
 	if r.options.DetectDevice {
@@ -883,96 +914,32 @@ func argsToString(args []lmesv1alpha1.Arg) string {
 	return strings.Join(equalForms, ",")
 }
 
-func (r *LMEvalJobReconciler) patch4GrpcTLS(
-	envVars []corev1.EnvVar,
-	volumes []corev1.Volume,
-	volumeMounts []corev1.VolumeMount,
-	tlsMode TLSMode) ([]corev1.EnvVar, []corev1.Volume, []corev1.VolumeMount) {
-
-	var secretMode int32 = 420
-
-	if tlsMode == TLSMode_mTLS {
-		envVars = append(envVars,
-			corev1.EnvVar{
-				Name:  driver.GrpcClientKeyEnv,
-				Value: "/tmp/k8s-grpc-client/certs/tls.key",
-			},
-			corev1.EnvVar{
-				Name:  driver.GrpcClientCertEnv,
-				Value: "/tmp/k8s-grpc-client/certs/tls.crt",
-			},
-			corev1.EnvVar{
-				Name:  driver.GrpcServerCaEnv,
-				Value: "/tmp/k8s-grpc-server/certs/ca.crt",
-			},
-		)
-
-		volumeMounts = append(volumeMounts,
-			corev1.VolumeMount{
-				Name:      "client-cert",
-				MountPath: "/tmp/k8s-grpc-client/certs",
-				ReadOnly:  true,
-			},
-			corev1.VolumeMount{
-				Name:      "server-cert",
-				MountPath: "/tmp/k8s-grpc-server/certs",
-				ReadOnly:  true,
-			},
-		)
-
-		volumes = append(volumes,
-			corev1.Volume{
-				Name: "client-cert",
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName:  r.options.GrpcClientSecret,
-						DefaultMode: &secretMode,
-					},
-				},
-			},
-			corev1.Volume{
-				Name: "server-cert",
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName:  r.options.GrpcServerSecret,
-						DefaultMode: &secretMode,
-						Items: []corev1.KeyToPath{
-							{Key: "ca.crt", Path: "ca.crt"},
-						},
-					},
-				},
-			},
-		)
-	} else if tlsMode == TLSMode_TLS {
-		envVars = append(envVars,
-			corev1.EnvVar{
-				Name:  driver.GrpcServerCaEnv,
-				Value: "/tmp/k8s-grpc-server/certs/ca.crt",
-			},
-		)
-
-		volumeMounts = append(volumeMounts,
-			corev1.VolumeMount{
-				Name:      "server-cert",
-				MountPath: "/tmp/k8s-grpc-server/certs",
-			},
-		)
-
-		volumes = append(volumes,
-			corev1.Volume{
-				Name: "server-cert",
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName:  r.options.GrpcServerSecret,
-						DefaultMode: &secretMode,
-						Items: []corev1.KeyToPath{
-							{Key: "ca.crt", Path: "ca.crt"},
-						},
-					},
-				},
-			},
-		)
+func isContainerFailed(status *corev1.ContainerStatus) (bool, string) {
+	if status.State.Waiting != nil &&
+		status.State.Waiting.Reason != "PodInitializing" {
+		return true, status.State.Waiting.Reason
 	}
+	if status.State.Terminated != nil &&
+		status.State.Terminated.Reason != "Complete" {
+		return true, status.State.Terminated.Reason
+	}
+	return false, ""
+}
 
-	return envVars, volumes, volumeMounts
+// return the index of the container which is in running state and with the specified name
+// otherwise return -1
+func getRunningContainerByName(status *corev1.PodStatus, name string) int {
+	if idx := getContainerByName(status, name); idx != -1 && status.ContainerStatuses[idx].State.Running != nil {
+		return idx
+	}
+	return -1
+}
+
+func getContainerByName(status *corev1.PodStatus, name string) int {
+	if status.ContainerStatuses == nil {
+		return -1
+	}
+	return slices.IndexFunc(status.ContainerStatuses, func(s corev1.ContainerStatus) bool {
+		return s.Name == name
+	})
 }
