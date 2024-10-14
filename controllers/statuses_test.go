@@ -323,7 +323,7 @@ var _ = Describe("Status and condition tests", func() {
 				return k8sClient.Create(ctx, inferenceService)
 			}, "failed to create InferenceService")
 
-			Expect(reconciler.patchKServe(ctx, instance, *inferenceService, namespace, instance.Name, false)).ToNot(HaveOccurred())
+			Expect(reconciler.patchKServe(ctx, instance, *inferenceService, namespace, instance.Name, false, false)).ToNot(HaveOccurred())
 
 			WaitFor(func() error {
 				return k8sClient.Create(ctx, instance)

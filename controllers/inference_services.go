@@ -9,6 +9,8 @@ import (
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -228,7 +230,33 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 			}
 		}
 		if kServeServerlessEnabled {
-			err := r.patchKServe(ctx, instance, infService, namespace, crName, remove)
+			loggerConfig, err := r.getKServeLoggerConfig(ctx)
+			if err != nil {
+				log.FromContext(ctx).Error(err, "Could not read logger configuration")
+				return false, err
+			}
+
+			useTLS := false
+
+			if loggerConfig != nil && loggerConfig.CaBundle != nil {
+				// Check if the ConfigMap exists
+				caConfigMap := &corev1.ConfigMap{}
+				err = r.Get(ctx, types.NamespacedName{Name: *loggerConfig.CaBundle, Namespace: instance.Namespace}, caConfigMap)
+				if err == nil {
+					useTLS = true
+				} else if errors.IsNotFound(err) {
+					useTLS = false
+					log.FromContext(ctx).Info("CA ConfigMap not found, proceeding without TLS")
+				} else {
+					log.FromContext(ctx).Error(err, "Error fetching CA ConfigMap")
+					return false, err
+				}
+			} else {
+				// If no CaBundle is specified, proceed without TLS
+				useTLS = false
+			}
+
+			err = r.patchKServe(ctx, instance, infService, namespace, crName, remove, useTLS)
 			if err != nil {
 				log.FromContext(ctx).Error(err, "could not patch InferenceLogger for KServe deployment")
 				return false, err
@@ -239,9 +267,14 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 }
 
 // patchKServe adds a TrustyAI service as an InferenceLogger to a KServe InferenceService
-func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, infService kservev1beta1.InferenceService, namespace string, crName string, remove bool) error {
+func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, infService kservev1beta1.InferenceService, namespace string, crName string, remove bool, useTLS bool) error {
 
-	url := generateNonTLSServiceURL(crName, namespace)
+	var url string
+	if useTLS {
+		url = generateTLSServiceURL(crName, namespace)
+	} else {
+		url = generateNonTLSServiceURL(crName, namespace)
+	}
 
 	if remove {
 		if infService.Spec.Predictor.Logger == nil || *infService.Spec.Predictor.Logger.URL != url {
