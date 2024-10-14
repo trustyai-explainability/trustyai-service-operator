@@ -30,10 +30,9 @@ import (
 )
 
 var (
-	isController                   = true
-	allowPrivilegeEscalation       = false
-	runAsNonRootUser               = true
-	runAsUser                int64 = 1001030000
+	isController             = true
+	allowPrivilegeEscalation = false
+	runAsNonRootUser         = true
 )
 
 func Test_SimplePod(t *testing.T) {
@@ -97,7 +96,6 @@ func Test_SimplePod(t *testing.T) {
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						RunAsUser:                &runAsUser,
 						Capabilities: &corev1.Capabilities{
 							Drop: []corev1.Capability{
 								"ALL",
@@ -121,7 +119,6 @@ func Test_SimplePod(t *testing.T) {
 					Args:            lmevalRec.generateArgs(job, log),
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						RunAsUser:                &runAsUser,
 						Capabilities: &corev1.Capabilities{
 							Drop: []corev1.Capability{
 								"ALL",
@@ -259,7 +256,6 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						RunAsUser:                &runAsUser,
 						Capabilities: &corev1.Capabilities{
 							Drop: []corev1.Capability{
 								"ALL",
@@ -283,7 +279,6 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 					Args:            lmevalRec.generateArgs(job, log),
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						RunAsUser:                &runAsUser,
 						Capabilities: &corev1.Capabilities{
 							Drop: []corev1.Capability{
 								"ALL",
@@ -430,7 +425,6 @@ func Test_EnvSecretsPod(t *testing.T) {
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						RunAsUser:                &runAsUser,
 						Capabilities: &corev1.Capabilities{
 							Drop: []corev1.Capability{
 								"ALL",
@@ -467,7 +461,6 @@ func Test_EnvSecretsPod(t *testing.T) {
 					Args:    lmevalRec.generateArgs(job, log),
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						RunAsUser:                &runAsUser,
 						Capabilities: &corev1.Capabilities{
 							Drop: []corev1.Capability{
 								"ALL",
@@ -592,7 +585,6 @@ func Test_FileSecretsPod(t *testing.T) {
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						RunAsUser:                &runAsUser,
 						Capabilities: &corev1.Capabilities{
 							Drop: []corev1.Capability{
 								"ALL",
@@ -616,7 +608,6 @@ func Test_FileSecretsPod(t *testing.T) {
 					Args:            lmevalRec.generateArgs(job, log),
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						RunAsUser:                &runAsUser,
 						Capabilities: &corev1.Capabilities{
 							Drop: []corev1.Capability{
 								"ALL",

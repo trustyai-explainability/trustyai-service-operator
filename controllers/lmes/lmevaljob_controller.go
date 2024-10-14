@@ -662,7 +662,6 @@ func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob, log logr.Lo
 	var allowPrivilegeEscalation = false
 	var runAsNonRootUser = true
 	var ownerRefController = true
-	var runAsUser int64 = 1001030000
 
 	var envVars = job.Spec.Pod.GetContainer().GetEnv()
 
@@ -717,7 +716,6 @@ func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob, log logr.Lo
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						RunAsUser:                &runAsUser,
 						Capabilities: &corev1.Capabilities{
 							Drop: []corev1.Capability{
 								"ALL",
@@ -742,7 +740,6 @@ func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob, log logr.Lo
 					Args:            r.generateArgs(job, log),
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						RunAsUser:                &runAsUser,
 						Capabilities: &corev1.Capabilities{
 							Drop: []corev1.Capability{
 								"ALL",
