@@ -33,6 +33,9 @@ type GuardrailsOrchestrator struct {
 	Status GuardrailsOrchestratorStatus `json:"status,omitempty"`
 }
 
+type TLSModeSetting struct {
+	Mode string `json:"mode,omitempy"`
+}
 type ServiceSpec struct {
 	Hostname string `json:"hostname"`
 	Port     string `json:"port"`
@@ -55,22 +58,8 @@ type DetectorsSpec struct {
 	DefaultThreshold float32     `json:"default_threshold"`
 }
 
-type EnvSecret struct {
-	// Environment's name
-	Env string `json:"env"`
-	// The secret is from a secret object
-	// +optional
-	SecretRef *corev1.SecretKeySelector `json:"secretRef,omitempty"`
-	// The secret is from a plain text
-	// +optional
-	Secret *string `json:"secret,omitempty"`
-}
-
-type FileSecret struct {
-	// The secret object
-	SecretRef corev1.SecretVolumeSource `json:"secretRef,omitempty"`
-	// The path to mount the secret
-	MountPath string `json:"mountPath"`
+type TLSMode struct {
+	Mode string `json:"tlsMode,omitempty"`
 }
 
 // GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator
@@ -87,10 +76,7 @@ type GuardrailsOrchestratorSpec struct {
 	// Detector name
 	Detectors string `json:"detector"`
 	// Number of replicas
-	Replicas   int32       `json:"replicas"`
-	EnvSecrets []EnvSecret `json:"envSecrets,omitempty"`
-	// Use secrets as files
-	FileSecrets []FileSecret `json:"fileSecrets,omitempty"`
+	Replicas int32 `json:"replicas"`
 }
 
 // GuardrailsOrchestratorStatus defines the observed state of GuardrailsOrchestrator
@@ -122,6 +108,18 @@ type GuardrailsOrchestratorList struct {
 
 func init() {
 	SchemeBuilder.Register(&GuardrailsOrchestrator{}, &GuardrailsOrchestratorList{})
+}
+
+func (t *TLSModeSetting) IsMTLS() bool {
+	return t.Mode == "mTLS"
+}
+
+func (t *TLSMode) IsTLS() bool {
+	return t.Mode == "TLS"
+}
+
+func (t *TLSMode) IsNone() bool {
+	return t.Mode == "None"
 }
 
 func (g *GuardrailsOrchestrator) SetStatus(condType, reason, message string, status corev1.ConditionStatus) {
