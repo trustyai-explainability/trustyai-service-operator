@@ -209,7 +209,6 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 			return err
 		}
-		var err error
 		if err := constructOptionsFromConfigMap(&log, &cm); err != nil {
 			return err
 		}
@@ -727,7 +726,7 @@ func mergeMapWithFilters(dest, src map[string]string, prefixFilters []string, lo
 	}
 }
 
-func generateArgs(options *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) []string {
+func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) []string {
 	if job == nil {
 		return nil
 	}
@@ -761,13 +760,13 @@ func generateArgs(options *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 		cmds = append(cmds, "--log_samples")
 	}
 	// --batch_size
-	var batchSize = options.DefaultBatchSize
+	var batchSize = svcOpts.DefaultBatchSize
 	if job.Spec.BatchSize != nil && *job.Spec.BatchSize > 0 {
 		batchSize = *job.Spec.BatchSize
 	}
 	// This could be done in the webhook if it's enabled.
-	if batchSize > options.MaxBatchSize {
-		batchSize = options.MaxBatchSize
+	if batchSize > svcOpts.MaxBatchSize {
+		batchSize = svcOpts.MaxBatchSize
 		log.Info("batchSize is greater than max-batch-size of the controller's configuration, use the max-batch-size instead")
 	}
 	cmds = append(cmds, "--batch_size", fmt.Sprintf("%d", batchSize))
