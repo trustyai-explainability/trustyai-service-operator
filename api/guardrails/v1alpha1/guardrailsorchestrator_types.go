@@ -24,40 +24,35 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// Represent a service's status
-// +kubebuilder:validation:Enum=New;Scheduled;Running;Complete;Cancelled
-type ServiceState string
+// GuardrailsOrchestrator is the Schema for the GuardrailsOrchestrator API
+type GuardrailsOrchestrator struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-const (
-	// The service is just created
-	NewServiceState ServiceState = "New"
-	// The service is scheduled and waiting for available resources to run it
-	ScheduledServiceState ServiceState = "Scheduled"
-	// The service is running
-	RunningServiceState ServiceState = "Running"
-	// The service is complete
-	CompleteServiceState ServiceState = "Complete"
-	// The service is cancelled
-	CancelledServiceState ServiceState = "Cancelled"
-)
+	Spec   GuardrailsOrchestratorSpec   `json:"spec,omitempty"`
+	Status GuardrailsOrchestratorStatus `json:"status,omitempty"`
+}
 
-// +kubebuilder:validation:Enum=NoReason;Succeeded;Failed;Cancelled
-type Reason string
+type ServiceSpec struct {
+	Hostname string `json:"hostname"`
+	Port     string `json:"port"`
+}
 
-const (
-	// Service is still running and no final result yet
-	NoReason Reason = "NoReason"
-	// Service finished successfully
-	SucceedReason Reason = "Succeeded"
-	// Service failed
-	FailedReason Reason = "Failed"
-	// Service is cancelled
-	CancelledReason Reason = "Cancelled"
-)
+type GenerationSpec struct {
+	Provider string `json:"provider,omitempty"`
+	Service  ServiceSpec
+}
 
-type Arg struct {
-	Name  string `json:"name"`
-	Value string `json:"value,omitempty"`
+type ChunkersSpec struct {
+	Type    string      `json:"type"`
+	Service ServiceSpec `json:"service"`
+}
+
+type DetectorsSpec struct {
+	Type             string      `json:"type"`
+	Service          ServiceSpec `json:"service"`
+	ChunkerID        string      `json:"chunker_id"`
+	DefaultThreshold float32     `json:"default_threshold"`
 }
 
 type EnvSecret struct {
@@ -78,78 +73,76 @@ type FileSecret struct {
 	MountPath string `json:"mountPath"`
 }
 
-// GuardrailsServiceSpec defines the desired state of GuardrailsService
-type GuardrailsServiceSpec struct {
+// GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator
+type GuardrailsOrchestratorSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Generator name
-	Generator string `json:"generator"`
+	// + Optional
+	Generator string `json:"generation"`
 	// Chunker name
 	// + Optional
-	Chunker string `json:"chunker"`
-	// Args for the chunker
-	// + optional
-	ChunkerArgs []Arg `json:"chunkerArgs,omitempty"`
+	Chunker string `json:"chunkers"`
 	// Detector name
-	Detector string `json:"detector"`
-	// Args for the detector
-	// +optional
-	DetectorArgs []Arg `json:"detectorArgs,omitempty"`
-	// Evaluation tasks
+	Detectors string `json:"detector"`
+	// Number of replicas
+	Replicas   int32       `json:"replicas"`
 	EnvSecrets []EnvSecret `json:"envSecrets,omitempty"`
 	// Use secrets as files
 	FileSecrets []FileSecret `json:"fileSecrets,omitempty"`
 }
 
-// GuardrailsServiceStatus defines the observed state of GuardrailsService
-type GuardrailsServiceStatus struct {
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// The name of the Pod that runs the evaluation Service
-	// +optional
-	PodName string `json:"podName,omitempty"`
-	// State of the Service
-	// +optional
-	State ServiceState `json:"state,omitempty"`
-	// Final result of the Service
-	// +optional
-	Reason Reason `json:"reason,omitempty"`
-	// Message about the current/final status
-	// +optional
-	Message string `json:"message,omitempty"`
-	// Information when was the last time the Service was successfully scheduled.
-	// +optional
-	LastScheduleTime *metav1.Time `json:"lastScheduleTime,omitempty"`
-	// Information when the Service's state changes to Complete.
-	// +optional
-	CompleteTime *metav1.Time `json:"completeTime,omitempty"`
-	// Evaluation results
-	// +optional
-	Results string `json:"results,omitempty"`
+// GuardrailsOrchestratorStatus defines the observed state of GuardrailsOrchestrator
+type GuardrailsOrchestratorStatus struct {
+	// Define your status fields here
+	Phase      string                 `json:"phase"`
+	Replicas   int32                  `json:"replicas"`
+	Conditions []Condition            `json:"conditions"`
+	Ready      corev1.ConditionStatus `json:"ready,omitempty"`
 }
 
-// +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
-
-// GuardrailsService is the Schema for the GuardrailsService API
-type GuardrailsService struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	Spec   GuardrailsServiceSpec   `json:"spec,omitempty"`
-	Status GuardrailsServiceStatus `json:"status,omitempty"`
+// Condition represents possible conditions of a GuardrailsOrchestratorStatus
+type Condition struct {
+	Type               string                 `json:"type"`
+	Status             corev1.ConditionStatus `json:"status"`
+	LastTransitionTime metav1.Time            `json:"lastTransitionTime"`
+	Reason             string                 `json:"reason"`
+	Message            string                 `json:"message"`
 }
 
 // +kubebuilder:object:root=true
 
-// GuardrailsServiceList contains a list of GuardrailsService
-type GuardrailsServiceList struct {
+// GuardrailsOrchestratorList contains a list of GuardrailsOrchestrator
+type GuardrailsOrchestratorList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []GuardrailsService `json:"items"`
+	Items           []GuardrailsOrchestrator `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&GuardrailsService{}, &GuardrailsServiceList{})
+	SchemeBuilder.Register(&GuardrailsOrchestrator{}, &GuardrailsOrchestratorList{})
+}
+
+func (g *GuardrailsOrchestrator) SetStatus(condType, reason, message string, status corev1.ConditionStatus) {
+	now := metav1.Now()
+	condition := Condition{
+		Type:               condType,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		LastTransitionTime: now,
+	}
+	// Replace or append condition
+	found := false
+	for i, cond := range g.Status.Conditions {
+		if cond.Type == condType {
+			g.Status.Conditions[i] = condition
+			found = true
+			break
+		}
+	}
+	if !found {
+		g.Status.Conditions = append(g.Status.Conditions, condition)
+	}
 }

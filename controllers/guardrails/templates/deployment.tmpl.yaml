@@ -1,0 +1,98 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  annotations:
+    configmap.reloader.stakater.com/reload: 'fms-orchestr8-config'
+  name: {{ .Orchestrator.Name }}
+  namespace: {{ .Orchestrator.Namespace }}
+  labels:
+    app: ...
+    component: {{ .Orchestrator.Name }}
+    deploy-name: {{ .Orchestrator.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ...
+      component: {{ .Orchestrator.Name }}
+      deploy-name: {{ .Orchestrator.Name }}
+  template:
+    metadata:
+      labels:
+        app:
+        component: {{ .Orchestrator.Name }}
+        deploy-name: {{ .Orchestrator.Name }}
+    spec:
+      containers:
+        name: {{ .Orchestrator.Name }}
+         - resources:
+            limits:
+              cpu: '1'
+              memory: 2Gi
+            requests:
+              cpu: '1'
+              memory: 2Gi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8034
+            scheme: HTTP
+          initialDelaySeconds: 5
+          timeoutSeconds: 1
+          periodSeconds: 20
+          successThreshold: 1
+          failureThreshold: 3
+        terminationMessagePath: /dev/termination-log
+        image: {{ .OrchestratorImage }}
+        command:
+          - /app/bin/fms-guardrails-orchestr8
+        env:
+          - name: ORCHESTRATOR_CONFIG
+            value: /config/config.yaml
+          - name: HTTP_PORT
+            value: '8033'
+        {{if eq .Orchestrator.Spec.TLS.Mode "mTLS" }}
+          - name: TLS_KEY_PATH
+            value: /tls/orch/server.key
+          - name: TLS_CERT_PATH
+            value: /tls/orch/server.crt
+          - name: TLS_CLIENT_CA_CERT_PATH
+            value: /tls/orch/ca.crt
+        {{ end }}
+          - name: RUST_BACKTRACE
+            value: full
+          - name: RUST_LOG
+            value: 'fms_guardrails_orchestr8=debug'
+        volumeMounts:
+          - name: fms-orchestr8-config-nlp # This refers to the configmap below
+            readOnly: true
+            mountPath: /config/config.yaml
+            subPath: config.yaml
+          - name: server-tls # This is for the caikit server for generation
+            readOnly: true
+            mountPath: /tls/server
+        securityContext:
+          capabilities:
+            drop:
+              - ALL
+          privileged: false
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          seccompProfile:
+            type: RuntimeDefault
+        ports:
+          - name: http
+            containerPort: 8033
+            protocol: TCP
+        imagePullPolicy: Always
+      volumes:
+        - name: fms-orchestr8-config-nlp
+          configMap:
+            name: fms-orchestr8-config-nlp
+            defaultMode: 420
+        # Add if statement to check if we are using caikit standalone as our server
+        - name: server-tls
+          secret:
+            secretName: {{ .Orchestrator.Name }}-tls
+            defaultMode: 256
