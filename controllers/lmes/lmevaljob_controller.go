@@ -210,7 +210,7 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return err
 		}
 		var err error
-		if err = constructOptionsFromConfigMap(&log, &cm); err != nil {
+		if err := constructOptionsFromConfigMap(&log, &cm); err != nil {
 			return err
 		}
 
