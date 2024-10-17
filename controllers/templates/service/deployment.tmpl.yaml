@@ -100,7 +100,7 @@ spec:
                   key: databaseName
             - name: QUARKUS_DATASOURCE_JDBC_URL
             {{ if .UseDBTLSCerts }}
-              value: "jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/${DATABASE_NAME}?sslMode=verify-ca&serverSslCert=/etc/tls/db/ca.crt"
+              value: "jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/${DATABASE_NAME}?requireSSL=true&sslMode=verify-ca&serverSslCert=/etc/tls/db/ca.crt"
             {{ else }}
               value: "jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/${DATABASE_NAME}"
             {{ end }}
