@@ -241,7 +241,7 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 // patchKServe adds a TrustyAI service as an InferenceLogger to a KServe InferenceService
 func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, infService kservev1beta1.InferenceService, namespace string, crName string, remove bool) error {
 
-	url := generateNonTLSServiceURL(crName, namespace)
+	url := generateKServeLoggerURL(crName, namespace)
 
 	if remove {
 		if infService.Spec.Predictor.Logger == nil || *infService.Spec.Predictor.Logger.URL != url {
