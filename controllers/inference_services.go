@@ -295,6 +295,25 @@ func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *t
 			log.FromContext(ctx).Error(err, "InferenceService has service mesh annotation but DestinationRule CRD not found")
 		}
 
+		// Check if VirtualService CRD is present. If there's an error, don't proceed and return the error
+		exists, err = r.isVirtualServiceCRDPresent(ctx)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "Error verifying VirtualService CRD is present")
+			return err
+		}
+
+		// Try to create the VirtualService, since CRD exists
+		if exists {
+			err := r.ensureVirtualService(ctx, instance)
+			if err != nil {
+				return fmt.Errorf("failed to ensure VirtualService: %v", err)
+			}
+		} else {
+			// VirtualService CRD does not exist. Do not attempt to create it and log error
+			err := fmt.Errorf("the VirtualService CRD is not present in this cluster")
+			log.FromContext(ctx).Error(err, "InferenceService has service mesh annotation but VirtualService CRD not found")
+		}
+
 	}
 
 	// Update the InferenceService
