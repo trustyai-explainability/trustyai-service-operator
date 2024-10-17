@@ -236,6 +236,8 @@ type LMEvalJobSpec struct {
 	// Specify extra information for the lm-eval job's pod
 	// +optional
 	Pod *LMEvalPodSpec `json:"pod,omitempty"`
+	// This is for Kueue integration. Kueue requires this value to be false initially.
+	Suspend bool `json:"suspend,omitempty"`
 }
 
 // LMEvalJobStatus defines the observed state of LMEvalJob
