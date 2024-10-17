@@ -9,7 +9,7 @@ RUN mkdir /opt/app-root/src/hf_home && chmod g+rwx /opt/app-root/src/hf_home
 RUN mkdir /opt/app-root/src/output && chmod g+rwx /opt/app-root/src/output
 RUN mkdir /opt/app-root/src/my_tasks && chmod g+rwx /opt/app-root/src/my_tasks
 RUN mkdir -p /opt/app-root/src/my_catalogs/cards && chmod -R g+rwx /opt/app-root/src/my_catalogs
-RUN mkdir /opt/app-root/src/.cache
+RUN mkdir -p /opt/app-root/src/.cache
 ENV PATH="/opt/app-root/bin:/opt/app-root/src/.local/bin/:/opt/app-root/src/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 RUN pip install --no-cache-dir --user --upgrade ibm-generative-ai[lm-eval]
