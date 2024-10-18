@@ -17,28 +17,26 @@ const (
 
 // Status types
 const (
-	// StatusTypeGenerationPresent = "GeneratorPresent"
-	// StatusTypeChunkerPresent    = "ChunkerPresent"
-	StatusTypeDetectorPresent = "DetectorPresent"
-	StatusTypeRouteAvailable  = "RouteAvailable"
-	StatusTypeAvailable       = "Available"
+	StatusTypeGenerationPresent = "GeneratorPresent"
+	StatusTypeDetectorPresent   = "DetectorPresent"
+	StatusTypeRouteAvailable    = "RouteAvailable"
+	StatusTypeAvailable         = "Available"
 )
 
 // Status reasons
 const (
-	// StatusReasonGenerationNotFound = "GeneratorNotFound"
-	// StatusReasonGenerationFound    = "GeneratorFound"
-	// StatusReasonChunkerNotFound    = "ChunkerNotFound"
-	// StatusReasonChunkerFound       = "ChunkerFound"
-	StatusReasonDetectorNotFound = "DetectorNotFound"
-	StatusReasonDetectorFound    = "DetectorFound"
-	StatusReasonRouteNotFound    = "RouteNotFound"
-	StatusReasonRouteFound       = "RouteFound"
-	StatusAvailable              = "AllComponentsReady"
-	StatusNotAvailable           = "NotAllComponentsReady"
+	StatusReasonGenerationNotFound = "GeneratorNotFound"
+	StatusReasonGenerationFound    = "GeneratorFound"
+	StatusReasonDetectorNotFound   = "DetectorNotFound"
+	StatusReasonDetectorFound      = "DetectorFound"
+	StatusReasonRouteNotFound      = "RouteNotFound"
+	StatusReasonRouteFound         = "RouteFound"
+	StatusAvailable                = "AllComponentsReady"
+	StatusNotAvailable             = "NotAllComponentsReady"
 )
 
 // Event reasons
 const (
-	EventReasonDetectorServiceConfigured = "DetectorServiceCreated"
+	EventReasonGenerationCreated = "GeneratorServiceCreated"
+	EventReasonDetectorCreated   = "DetectorServiceCreated"
 )

@@ -1,0 +1,153 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: fmsorchestr8nlps.apps.example.com
+spec:
+  group: apps.example.com
+  names:
+    kind: GuardrailOrchestrator
+    listkind: GuardrailsOrchestratorList
+    plural: guardrailsorchestrator
+    singular: guardrailsorchestrator
+  scope: Namespaced
+  versions:
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                replicas:
+                  type: integer
+                image:
+                  type: string
+                resources:
+                  type: object
+                  properties:
+                    limits:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                        memory:
+                          type: string
+                    requests:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                        memory:
+                          type: string
+                readinessProbe:
+                  type: object
+                  properties:
+                    httpGet:
+                      type: object
+                      properties:
+                        path:
+                          type: string
+                        port:
+                          type: integer
+                        scheme:
+                          type: string
+                    initialDelaySeconds:
+                      type: integer
+                    timeoutSeconds:
+                      type: integer
+                    periodSeconds:
+                      type: integer
+                    successThreshold:
+                      type: integer
+                    failureThreshold:
+                      type: integer
+                env:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      value:
+                        type: string
+                volumeMounts:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      mountPath:
+                        type: string
+                      subPath:
+                        type: string
+                      readOnly:
+                        type: boolean
+                volumes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      configMap:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          defaultMode:
+                            type: integer
+                      secret:
+                        type: object
+                        properties:
+                          secretName:
+                            type: string
+                          defaultMode:
+                            type: integer
+                          items:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                key:
+                                  type: string
+                                path:
+                                  type: string
+                securityContext:
+                  type: object
+                  properties:
+                    capabilities:
+                      type: object
+                      properties:
+                        drop:
+                          type: array
+                          items:
+                            type: string
+                    privileged:
+                      type: boolean
+                    runAsNonRoot:
+                      type: boolean
+                    readOnlyRootFilesystem:
+                      type: boolean
+                    allowPrivilegeEscalation:
+                      type: boolean
+                    seccompProfile:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                ports:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      containerPort:
+                        type: integer
+                      protocol:
+                        type: string
