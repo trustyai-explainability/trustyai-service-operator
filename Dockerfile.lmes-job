@@ -12,13 +12,10 @@ RUN mkdir -p /opt/app-root/src/my_catalogs/cards && chmod -R g+rwx /opt/app-root
 RUN mkdir /opt/app-root/src/.cache
 ENV PATH="/opt/app-root/bin:/opt/app-root/src/.local/bin/:/opt/app-root/src/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-RUN pip install --no-cache-dir --user --upgrade ibm-generative-ai[lm-eval]
-COPY --chown=1001:0 patch /opt/app-root/src/patch
 # Clone the Git repository, check out v0.4.4 and install the Python package
 RUN git clone https://github.com/opendatahub-io/lm-evaluation-harness.git && \
     cd lm-evaluation-harness &&  git checkout 543617fef9ba885e87f8db8930fbbff1d4e2ca49 && \
-    curl --output lm_eval/models/bam.py https://raw.githubusercontent.com/IBM/ibm-generative-ai/main/src/genai/extensions/lm_eval/model.py && \
-    git apply /opt/app-root/src/patch/lmes/models.patch && pip install --no-cache-dir --user -e .[api]
+    pip install --no-cache-dir --user -e .[api]
 
 RUN python -c 'from lm_eval.tasks.unitxt import task; import os.path; print("class: !function " + task.__file__.replace("task.py", "task.Unitxt"))' > ./my_tasks/unitxt
 
