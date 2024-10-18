@@ -111,6 +111,7 @@ rules:
   - networking.istio.io
   resources:
   - destinationrules
+  - virtualservices
   verbs:
   - create
   - delete
