@@ -21,9 +21,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -78,7 +76,7 @@ var (
 
 // maintain a list of key-time pair data.
 // provide a function to add the key and update the time
-// atomitcally and return a reconcile requeue event
+// atomically and return a reconcile requeue event
 // if needed.
 type syncedMap4Reconciler struct {
 	data  map[string]time.Time
@@ -92,20 +90,9 @@ type LMEvalJobReconciler struct {
 	Recorder    record.EventRecorder
 	ConfigMap   string
 	Namespace   string
-	options     *ServiceOptions
 	restConfig  *rest.Config
 	restClient  rest.Interface
 	pullingJobs *syncedMap4Reconciler
-}
-
-type ServiceOptions struct {
-	PodImage            string
-	DriverImage         string
-	PodCheckingInterval time.Duration
-	ImagePullPolicy     corev1.PullPolicy
-	MaxBatchSize        int
-	DefaultBatchSize    int
-	DetectDevice        bool
 }
 
 // The registered function to set up LMES controller
@@ -189,10 +176,10 @@ func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	case lmesv1alpha1.ScheduledJobState:
 		// the job's pod has been created and the driver hasn't updated the state yet
 		// let's check the pod status and detect pod failure if there is
-		// TODO: need a timeout/retry mechanism here to transite to other states
+		// TODO: need a timeout/retry mechanism here to transit to other states
 		return r.checkScheduledPod(ctx, log, job)
 	case lmesv1alpha1.RunningJobState:
-		// TODO: need a timeout/retry mechanism here to transite to other states
+		// TODO: need a timeout/retry mechanism here to transit to other states
 		return r.checkScheduledPod(ctx, log, job)
 	case lmesv1alpha1.CompleteJobState:
 		return r.handleComplete(ctx, log, job)
@@ -209,6 +196,7 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Add a runnable to retrieve the settings from the specified configmap
 	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
 		var cm corev1.ConfigMap
+		log := log.FromContext(ctx)
 		if err := r.Get(
 			ctx,
 			types.NamespacedName{Namespace: r.Namespace, Name: r.ConfigMap},
@@ -221,8 +209,7 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 			return err
 		}
-
-		if err := r.constructOptionsFromConfigMap(ctx, &cm); err != nil {
+		if err := constructOptionsFromConfigMap(&log, &cm); err != nil {
 			return err
 		}
 
@@ -324,82 +311,11 @@ func (r *LMEvalJobReconciler) remoteCommand(ctx context.Context, job *lmesv1alph
 	return outBuff.Bytes(), errBuf.Bytes(), nil
 }
 
-func (r *LMEvalJobReconciler) constructOptionsFromConfigMap(
-	ctx context.Context, configmap *corev1.ConfigMap) error {
-	r.options = &ServiceOptions{
-		DriverImage:         DefaultDriverImage,
-		PodImage:            DefaultPodImage,
-		PodCheckingInterval: DefaultPodCheckingInterval,
-		ImagePullPolicy:     DefaultImagePullPolicy,
-		MaxBatchSize:        DefaultMaxBatchSize,
-		DetectDevice:        DefaultDetectDevice,
-		DefaultBatchSize:    DefaultBatchSize,
-	}
-
-	log := log.FromContext(ctx)
-	rv := reflect.ValueOf(r.options).Elem()
-	var msgs []string
-
-	for idx, cap := 0, rv.NumField(); idx < cap; idx++ {
-		frv := rv.Field(idx)
-		fname := rv.Type().Field(idx).Name
-		configKey, ok := optionKeys[fname]
-		if !ok {
-			continue
-		}
-
-		if v, found := configmap.Data[configKey]; found {
-			var err error
-			switch frv.Type().Name() {
-			case "string":
-				frv.SetString(v)
-			case "bool":
-				val, err := strconv.ParseBool(v)
-				if err != nil {
-					val = DefaultDetectDevice
-					msgs = append(msgs, fmt.Sprintf("invalid setting for %v: %v, use default setting instead", optionKeys[fname], val))
-				}
-				frv.SetBool(val)
-			case "int":
-				var intVal int
-				intVal, err = strconv.Atoi(v)
-				if err == nil {
-					frv.SetInt(int64(intVal))
-				}
-			case "Duration":
-				var d time.Duration
-				d, err = time.ParseDuration(v)
-				if err == nil {
-					frv.Set(reflect.ValueOf(d))
-				}
-			case "PullPolicy":
-				if p, found := pullPolicyMap[corev1.PullPolicy(v)]; found {
-					frv.Set(reflect.ValueOf(p))
-				} else {
-					err = fmt.Errorf("invalid PullPolicy")
-				}
-			default:
-				return fmt.Errorf("can not handle the config %v, type: %v", optionKeys[fname], frv.Type().Name())
-			}
-
-			if err != nil {
-				msgs = append(msgs, fmt.Sprintf("invalid setting for %v: %v, use default setting instead", optionKeys[fname], v))
-			}
-		}
-	}
-
-	if len(msgs) > 0 {
-		log.Error(fmt.Errorf("some settings in the configmap are invalid"), strings.Join(msgs, "\n"))
-	}
-
-	return nil
-}
-
 func (r *LMEvalJobReconciler) handleDeletion(ctx context.Context, job *lmesv1alpha1.LMEvalJob, log logr.Logger) (reconcile.Result, error) {
 	defer r.pullingJobs.remove(string(job.GetUID()))
 
 	if controllerutil.ContainsFinalizer(job, lmesv1alpha1.FinalizerName) {
-		// delete the correspondling pod if needed
+		// delete the corresponding pod if needed
 		// remove our finalizer from the list and update it.
 		if job.Status.State != lmesv1alpha1.CompleteJobState ||
 			job.Status.Reason != lmesv1alpha1.CancelledReason {
@@ -436,7 +352,7 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 				job.Name,
 				job.Namespace))
 		// Since finalizers were updated. Need to fetch the new LMEvalJob
-		// End the current reconsile and get revisioned job in next reconsile
+		// End the current reconcile and get revisioned job in next reconcile
 		return ctrl.Result{}, nil
 	}
 
@@ -456,7 +372,7 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 
 	// construct a new pod and create a pod for the job
 	currentTime := v1.Now()
-	pod := r.createPod(job, log)
+	pod := createPod(options, job, log)
 	if err := r.Create(ctx, pod, &client.CreateOptions{}); err != nil {
 		// Failed to create the pod. Mark the status as complete with failed
 		job.Status.State = lmesv1alpha1.CompleteJobState
@@ -483,7 +399,7 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 			job.Namespace))
 	log.Info("Successfully create a Pod for the Job")
 	// Check the pod after the config interval
-	return r.pullingJobs.addOrUpdate(string(job.GetUID()), r.options.PodCheckingInterval), nil
+	return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
 }
 
 func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
@@ -498,7 +414,7 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 			log.Error(err, "unable to update LMEvalJob status", "state", job.Status.State)
 			return ctrl.Result{}, err
 		}
-		r.Recorder.Event(job, "Warning", "PodMising",
+		r.Recorder.Event(job, "Warning", "PodMissing",
 			fmt.Sprintf("the pod for the LMEvalJob %s in namespace %s is gone",
 				job.Name,
 				job.Namespace))
@@ -508,7 +424,7 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 
 	if mainIdx := getContainerByName(&pod.Status, "main"); mainIdx == -1 {
 		// waiting for the main container to be up
-		return r.pullingJobs.addOrUpdate(string(job.GetUID()), r.options.PodCheckingInterval), nil
+		return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
 	} else if podFailed, msg := isContainerFailed(&pod.Status.ContainerStatuses[mainIdx]); podFailed {
 		job.Status.State = lmesv1alpha1.CompleteJobState
 		job.Status.Reason = lmesv1alpha1.FailedReason
@@ -519,7 +435,7 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 		log.Info("detect an error on the job's pod. marked the job as done", "name", job.Name)
 		return ctrl.Result{}, err
 	} else if pod.Status.ContainerStatuses[mainIdx].State.Running == nil {
-		return r.pullingJobs.addOrUpdate(string(job.GetUID()), r.options.PodCheckingInterval), nil
+		return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
 	}
 
 	// pull status from the driver
@@ -530,7 +446,7 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 	if err != nil {
 		log.Error(err, "unable to retrieve the status from the job's pod. retry after the pulling interval")
 	}
-	return r.pullingJobs.addOrUpdate(string(job.GetUID()), r.options.PodCheckingInterval), nil
+	return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
 }
 
 func (r *LMEvalJobReconciler) getPod(ctx context.Context, job *lmesv1alpha1.LMEvalJob) (*corev1.Pod, error) {
@@ -579,7 +495,7 @@ func (r *LMEvalJobReconciler) handleComplete(ctx context.Context, log logr.Logge
 				// send shutdown command if the main container is running
 				if err := r.shutdownDriver(ctx, job); err != nil {
 					log.Error(err, "failed to shutdown the job pod. retry after the pulling interval")
-					return r.pullingJobs.addOrUpdate(string(job.GetUID()), r.options.PodCheckingInterval), nil
+					return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
 				}
 			}
 		} else {
@@ -617,8 +533,8 @@ func (r *LMEvalJobReconciler) handleCancel(ctx context.Context, log logr.Logger,
 		job.Status.Reason = lmesv1alpha1.CancelledReason
 		if err := r.deleteJobPod(ctx, job); err != nil {
 			// leave the state as is and retry again
-			log.Error(err, "failed to delete pod. scheduled a retry", "interval", r.options.PodCheckingInterval.String())
-			return r.pullingJobs.addOrUpdate(string(job.GetUID()), r.options.PodCheckingInterval), err
+			log.Error(err, "failed to delete pod. scheduled a retry", "interval", options.PodCheckingInterval.String())
+			return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), err
 		}
 	}
 
@@ -658,7 +574,7 @@ func (r *LMEvalJobReconciler) validateCustomCard(job *lmesv1alpha1.LMEvalJob, lo
 	return nil
 }
 
-func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob, log logr.Logger) *corev1.Pod {
+func createPod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) *corev1.Pod {
 	var allowPrivilegeEscalation = false
 	var runAsNonRootUser = true
 	var ownerRefController = true
@@ -711,8 +627,8 @@ func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob, log logr.Lo
 			InitContainers: []corev1.Container{
 				{
 					Name:            "driver",
-					Image:           r.options.DriverImage,
-					ImagePullPolicy: r.options.ImagePullPolicy,
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
@@ -733,11 +649,11 @@ func (r *LMEvalJobReconciler) createPod(job *lmesv1alpha1.LMEvalJob, log logr.Lo
 			Containers: []corev1.Container{
 				{
 					Name:            "main",
-					Image:           r.options.PodImage,
-					ImagePullPolicy: r.options.ImagePullPolicy,
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Env:             envVars,
-					Command:         r.generateCmd(job),
-					Args:            r.generateArgs(job, log),
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						Capabilities: &corev1.Capabilities{
@@ -790,13 +706,13 @@ func getResources(resources *corev1.ResourceRequirements) *corev1.ResourceRequir
 // Merge the map based on the filters. If the names in the `src` map contains any prefixes
 // in the prefixFilters list, those KV will be discarded, otherwise, KV will be merge into
 // `dest` map.
-func mergeMapWithFilters(dest, src map[string]string, prefixFitlers []string, log logr.Logger) {
-	if len(prefixFitlers) == 0 {
+func mergeMapWithFilters(dest, src map[string]string, prefixFilters []string, log logr.Logger) {
+	if len(prefixFilters) == 0 {
 		// Fast path if the labelFilterPrefix is empty.
 		maps.Copy(dest, src)
 	} else {
 		for k, v := range src {
-			if slices.ContainsFunc(prefixFitlers, func(prefix string) bool {
+			if slices.ContainsFunc(prefixFilters, func(prefix string) bool {
 				return strings.HasPrefix(k, prefix)
 			}) {
 				log.Info("the label is not propagated to the pod", k, v)
@@ -807,7 +723,7 @@ func mergeMapWithFilters(dest, src map[string]string, prefixFitlers []string, lo
 	}
 }
 
-func (r *LMEvalJobReconciler) generateArgs(job *lmesv1alpha1.LMEvalJob, log logr.Logger) []string {
+func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) []string {
 	if job == nil {
 		return nil
 	}
@@ -841,13 +757,13 @@ func (r *LMEvalJobReconciler) generateArgs(job *lmesv1alpha1.LMEvalJob, log logr
 		cmds = append(cmds, "--log_samples")
 	}
 	// --batch_size
-	var batchSize = r.options.DefaultBatchSize
+	var batchSize = svcOpts.DefaultBatchSize
 	if job.Spec.BatchSize != nil && *job.Spec.BatchSize > 0 {
 		batchSize = *job.Spec.BatchSize
 	}
 	// This could be done in the webhook if it's enabled.
-	if batchSize > r.options.MaxBatchSize {
-		batchSize = r.options.MaxBatchSize
+	if batchSize > svcOpts.MaxBatchSize {
+		batchSize = svcOpts.MaxBatchSize
 		log.Info("batchSize is greater than max-batch-size of the controller's configuration, use the max-batch-size instead")
 	}
 	cmds = append(cmds, "--batch_size", fmt.Sprintf("%d", batchSize))
@@ -861,13 +777,13 @@ func concatTasks(tasks lmesv1alpha1.TaskList) []string {
 	}
 	recipesName := make([]string, len(tasks.TaskRecipes))
 	for i := range tasks.TaskRecipes {
-		// assign internal userd task name
+		// assign internal used task name
 		recipesName[i] = fmt.Sprintf("%s_%d", driver.TaskRecipePrefix, i)
 	}
 	return append(tasks.TaskNames, recipesName...)
 }
 
-func (r *LMEvalJobReconciler) generateCmd(job *lmesv1alpha1.LMEvalJob) []string {
+func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string {
 	if job == nil {
 		return nil
 	}
@@ -876,7 +792,7 @@ func (r *LMEvalJobReconciler) generateCmd(job *lmesv1alpha1.LMEvalJob) []string 
 		"--output-path", "/opt/app-root/src/output",
 	}
 
-	if r.options.DetectDevice {
+	if svcOpts.DetectDevice {
 		cmds = append(cmds, "--detect-device")
 	}
 

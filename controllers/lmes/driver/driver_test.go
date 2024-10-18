@@ -54,7 +54,7 @@ func genRandomSocketPath() string {
 	return p
 }
 
-func runDirverAndWait4Complete(t *testing.T, driver Driver, returnError bool) (progressMsgs []string, results string) {
+func runDriverAndWait4Complete(t *testing.T, driver Driver, returnError bool) (progressMsgs []string, results string) {
 	go func() {
 		if returnError {
 			assert.NotNil(t, driver.Run())
@@ -88,7 +88,7 @@ func Test_Driver(t *testing.T) {
 	})
 	assert.Nil(t, err)
 
-	runDirverAndWait4Complete(t, driver, false)
+	runDriverAndWait4Complete(t, driver, false)
 
 	assert.Nil(t, driver.Shutdown())
 	assert.Nil(t, os.Remove("./stderr.log"))
@@ -105,7 +105,7 @@ func Test_Wait4Shutdown(t *testing.T) {
 	})
 	assert.Nil(t, err)
 
-	runDirverAndWait4Complete(t, driver, false)
+	runDriverAndWait4Complete(t, driver, false)
 
 	// can still get the status even the user program finishes
 	time.Sleep(time.Second * 3)
@@ -132,7 +132,7 @@ func Test_ProgressUpdate(t *testing.T) {
 	})
 	assert.Nil(t, err)
 
-	msgs, _ := runDirverAndWait4Complete(t, driver, false)
+	msgs, _ := runDriverAndWait4Complete(t, driver, false)
 
 	assert.Equal(t, []string{
 		"initializing the evaluation job",
@@ -156,7 +156,7 @@ func Test_DetectDeviceError(t *testing.T) {
 	})
 	assert.Nil(t, err)
 
-	msgs, _ := runDirverAndWait4Complete(t, driver, true)
+	msgs, _ := runDriverAndWait4Complete(t, driver, true)
 	assert.Equal(t, []string{
 		"failed to detect available device(s): exit status 1",
 	}, msgs)
@@ -216,7 +216,7 @@ func Test_TaskRecipes(t *testing.T) {
 	})
 	assert.Nil(t, err)
 
-	msgs, _ := runDirverAndWait4Complete(t, driver, false)
+	msgs, _ := runDriverAndWait4Complete(t, driver, false)
 
 	assert.Equal(t, []string{
 		"initializing the evaluation job",
@@ -264,7 +264,7 @@ func Test_CustomCards(t *testing.T) {
 
 	os.Mkdir("cards", 0750)
 
-	msgs, _ := runDirverAndWait4Complete(t, driver, false)
+	msgs, _ := runDriverAndWait4Complete(t, driver, false)
 
 	assert.Equal(t, []string{
 		"initializing the evaluation job",
@@ -303,7 +303,7 @@ func Test_ProgramError(t *testing.T) {
 	})
 	assert.Nil(t, err)
 
-	msgs, _ := runDirverAndWait4Complete(t, driver, true)
+	msgs, _ := runDriverAndWait4Complete(t, driver, true)
 
 	assert.Equal(t, []string{
 		"initializing the evaluation job",
