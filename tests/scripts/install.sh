@@ -1,9 +1,9 @@
 #!/bin/bash
 
-echo "Installing kfDef from test directory"
+echo "Installing DSC from test directory"
 DSC_FILENAME=odh-core-dsc.yaml
+HEADER="=============="
 
-set -x
 ## Install the opendatahub-operator
 pushd ~/peak
 retry=5
@@ -13,7 +13,9 @@ if ! [ -z "${SKIP_OPERATOR_INSTALL}" ]; then
     echo "Relying on odh operator installed by openshift-ci"
     ./setup.sh -t ~/peak/operatorsetup 2>&1
 else
-  echo "Installing operator from community marketplace"
+  echo
+  echo "$HEADER Verifying Cluster Readiness $HEADER"
+  echo -n "Waiting for catalog sources to appear..."
 
   start_t=$(date +%s) 2>&1
   ready=false 2>&1
@@ -26,28 +28,33 @@ else
       sleep 10
     fi
     if [ $(($(date +%s)-start_t)) -gt 300 ]; then
-      echo "Marketplace pods never started"
+      echo "ERROR: Marketplace pods never started"
       exit 1
     fi
   done
+  echo "[DONE]"
 
-    start_t=$(date +%s) 2>&1
-    ready=false 2>&1
-    while ! $ready; do
-      MANIFESTS=$(oc get packagemanifests -n openshift-marketplace 2> /dev/null | grep 'opendatahub')
+  echo -n "Waiting for ODH package manifests to download..."
+  start_t=$(date +%s) 2>&1
+  ready=false 2>&1
+  while ! $ready; do
+    MANIFESTS=$(oc get packagemanifests -n openshift-marketplace 2> /dev/null | grep 'opendatahub')
+    echo $MANIFESTS
+    if [ ! -z "${MANIFESTS}" ]; then
       echo $MANIFESTS
-      if [ ! -z "${MANIFESTS}" ]; then
-        echo $MANIFESTS
-        ready=true 2>&1
-      else
-        sleep 10
-      fi
-      if [ $(($(date +%s)-start_t)) -gt 900 ]; then
-        echo "Package manifests never downloaded"
-        exit 1
-      fi
-    done
+      ready=true 2>&1
+    else
+      sleep 10
+    fi
+    if [ $(($(date +%s)-start_t)) -gt 900 ]; then
+      echo "ERROR: Package manifests never downloaded"
+      exit 1
+    fi
+  done
+  echo "[DONE]"
 
+  echo
+  echo "$HEADER Starting Operator Installation $HEADER"
   while [[ $retry -gt 0 ]]; do
     ./setup.sh -o ~/peak/operatorsetup\
 
@@ -66,20 +73,25 @@ else
     oc patch installplan $(oc get installplan -n openshift-operators | grep $ODH_VERSION | awk '{print $1}') -n openshift-operators --type merge --patch '{"spec":{"approved":true}}' || true
     oc patch installplan $(oc get installplan -n openshift-operators | grep authorino | awk '{print $1}') -n openshift-operators --type merge --patch '{"spec":{"approved":true}}' || true
 
-    finished=false 2>&1
-    start_t=$(date +%s) 2>&1
-    echo "Verifying installation of ODH operator"
-    while ! $finished; do
-        if [ ! -z "$(oc get pods -n openshift-operators  | grep 'opendatahub-operator-controller-manager' | grep '1/1')" ]; then
-          finished=true 2>&1
-        else
-          sleep 10
-        fi
+    echo
+    echo "$HEADER Verifying Operator Installation $HEADER"
+    for operator in opendatahub-operator authorino-operator knative-operator knative-openshift istio-operator; do
+      echo -n "Checking $operator readiness..."
+      finished=false 2>&1
+      start_t=$(date +%s) 2>&1
+      while ! $finished; do
+          if [ ! -z "$(oc get pods -n openshift-operators  | grep $operator | grep '1/1')" ]; then
+            echo "[DONE]"
+            finished=true 2>&1
+          else
+            sleep 10
+          fi
 
-        if [ $(($(date +%s)-start_t)) -gt 300 ]; then
-          echo "ODH Operator installation timeout, existing test"
-          exit 1
-        fi
+          if [ $(($(date +%s)-start_t)) -gt 300 ]; then
+            echo "ERROR: $operator installation timeout, exiting test"
+            exit 1
+          fi
+      done
     done
 
   done
@@ -126,7 +138,8 @@ if ! [ -z "${SKIP_DSC_INSTALL}" ]; then
 else
 
 
-  echo "Creating the following DSC"
+  echo
+  echo "$HEADER Installing ODH DSC and DSCI $HEADER"
   cat ./${DSC_FILENAME} > ${ARTIFACT_DIR}/${DSC_FILENAME}
 
   start_t=$(date +%s) 2>&1
@@ -136,14 +149,14 @@ else
     oc apply -f ./${DSC_FILENAME}
     ready=$?
     if [ $(($(date +%s)-start_t)) -gt 300 ]; then
-        echo "ODH DSC Installation timeout"
+        echo "ERROR: ODH DSC Installation timeout"
         exit 1
     fi
     sleep 10
   done
 
   if [ "$ready" -ne 0 ]; then
-    echo "The installation failed"
+    echo "ERROR: The installation failed"
     exit $ready
   fi
 fi 
