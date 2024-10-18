@@ -74,13 +74,13 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	}
 
 	if instance.Spec.Storage.IsStorageDatabase() {
-		_, err := r.getSecret(ctx, instance.Name+"-db-tls", instance.Namespace)
+		_, err := r.getSecret(ctx, instance.Name+"-db-ca", instance.Namespace)
 		if err != nil {
 			deploymentConfig.UseDBTLSCerts = false
-			log.FromContext(ctx).Info("Using insecure database connection. Certificates " + instance.Name + "-db-tls not found")
+			log.FromContext(ctx).Info("Using insecure database connection. Certificates " + instance.Name + "-db-ca not found")
 		} else {
 			deploymentConfig.UseDBTLSCerts = true
-			log.FromContext(ctx).Info("Using secure database connection with certificates " + instance.Name + "-db-tls")
+			log.FromContext(ctx).Info("Using secure database connection with certificates " + instance.Name + "-db-ca")
 		}
 	} else {
 		deploymentConfig.UseDBTLSCerts = false
