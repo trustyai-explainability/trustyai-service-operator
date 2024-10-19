@@ -18,6 +18,7 @@ package lmes
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,14 +38,12 @@ var (
 
 func Test_SimplePod(t *testing.T) {
 	log := log.FromContext(context.Background())
-	lmevalRec := LMEvalJobReconciler{
-		Namespace: "test",
-		options: &ServiceOptions{
-			PodImage:        "podimage:latest",
-			DriverImage:     "driver:latest",
-			ImagePullPolicy: corev1.PullAlways,
-		},
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
 	}
+
 	var job = &lmesv1alpha1.LMEvalJob{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test",
@@ -91,8 +90,8 @@ func Test_SimplePod(t *testing.T) {
 			InitContainers: []corev1.Container{
 				{
 					Name:            "driver",
-					Image:           lmevalRec.options.DriverImage,
-					ImagePullPolicy: lmevalRec.options.ImagePullPolicy,
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
@@ -113,10 +112,10 @@ func Test_SimplePod(t *testing.T) {
 			Containers: []corev1.Container{
 				{
 					Name:            "main",
-					Image:           lmevalRec.options.PodImage,
-					ImagePullPolicy: lmevalRec.options.ImagePullPolicy,
-					Command:         lmevalRec.generateCmd(job),
-					Args:            lmevalRec.generateArgs(job, log),
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						Capabilities: &corev1.Capabilities{
@@ -150,20 +149,17 @@ func Test_SimplePod(t *testing.T) {
 		},
 	}
 
-	newPod := lmevalRec.createPod(job, log)
+	newPod := createPod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
 
 func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 	log := log.FromContext(context.Background())
-	lmevalRec := LMEvalJobReconciler{
-		Namespace: "test",
-		options: &ServiceOptions{
-			PodImage:        "podimage:latest",
-			DriverImage:     "driver:latest",
-			ImagePullPolicy: corev1.PullAlways,
-		},
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
 	}
 	var job = &lmesv1alpha1.LMEvalJob{
 		ObjectMeta: metav1.ObjectMeta{
@@ -207,7 +203,7 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 				},
 				Volumes: []corev1.Volume{
 					{
-						Name: "addtionalVolume",
+						Name: "additionalVolume",
 						VolumeSource: corev1.VolumeSource{
 							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 								ClaimName: "mypvc",
@@ -251,8 +247,8 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 			InitContainers: []corev1.Container{
 				{
 					Name:            "driver",
-					Image:           lmevalRec.options.DriverImage,
-					ImagePullPolicy: lmevalRec.options.ImagePullPolicy,
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
@@ -273,10 +269,10 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 			Containers: []corev1.Container{
 				{
 					Name:            "main",
-					Image:           lmevalRec.options.PodImage,
-					ImagePullPolicy: lmevalRec.options.ImagePullPolicy,
-					Command:         lmevalRec.generateCmd(job),
-					Args:            lmevalRec.generateArgs(job, log),
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						Capabilities: &corev1.Capabilities{
@@ -315,7 +311,7 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 					},
 				},
 				{
-					Name: "addtionalVolume",
+					Name: "additionalVolume",
 					VolumeSource: corev1.VolumeSource{
 						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 							ClaimName: "mypvc",
@@ -328,7 +324,7 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 		},
 	}
 
-	newPod := lmevalRec.createPod(job, log)
+	newPod := createPod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 
@@ -343,19 +339,16 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 		"custom/annotation1": "annotation1",
 	}
 
-	newPod = lmevalRec.createPod(job, log)
+	newPod = createPod(svcOpts, job, log)
 	assert.Equal(t, expect, newPod)
 }
 
 func Test_EnvSecretsPod(t *testing.T) {
 	log := log.FromContext(context.Background())
-	lmevalRec := LMEvalJobReconciler{
-		Namespace: "test",
-		options: &ServiceOptions{
-			PodImage:        "podimage:latest",
-			DriverImage:     "driver:latest",
-			ImagePullPolicy: corev1.PullAlways,
-		},
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
 	}
 	var job = &lmesv1alpha1.LMEvalJob{
 		ObjectMeta: metav1.ObjectMeta{
@@ -420,8 +413,8 @@ func Test_EnvSecretsPod(t *testing.T) {
 			InitContainers: []corev1.Container{
 				{
 					Name:            "driver",
-					Image:           lmevalRec.options.DriverImage,
-					ImagePullPolicy: lmevalRec.options.ImagePullPolicy,
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
@@ -442,8 +435,8 @@ func Test_EnvSecretsPod(t *testing.T) {
 			Containers: []corev1.Container{
 				{
 					Name:            "main",
-					Image:           lmevalRec.options.PodImage,
-					ImagePullPolicy: lmevalRec.options.ImagePullPolicy,
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Env: []corev1.EnvVar{
 						{
 							Name: "my_env",
@@ -457,8 +450,8 @@ func Test_EnvSecretsPod(t *testing.T) {
 							},
 						},
 					},
-					Command: lmevalRec.generateCmd(job),
-					Args:    lmevalRec.generateArgs(job, log),
+					Command: generateCmd(svcOpts, job),
+					Args:    generateArgs(svcOpts, job, log),
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						Capabilities: &corev1.Capabilities{
@@ -492,20 +485,17 @@ func Test_EnvSecretsPod(t *testing.T) {
 		},
 	}
 
-	newPod := lmevalRec.createPod(job, log)
+	newPod := createPod(svcOpts, job, log)
 	// maybe only verify the envs: Containers[0].Env
 	assert.Equal(t, expect, newPod)
 }
 
 func Test_FileSecretsPod(t *testing.T) {
 	log := log.FromContext(context.Background())
-	lmevalRec := LMEvalJobReconciler{
-		Namespace: "test",
-		options: &ServiceOptions{
-			PodImage:        "podimage:latest",
-			DriverImage:     "driver:latest",
-			ImagePullPolicy: corev1.PullAlways,
-		},
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
 	}
 	var job = &lmesv1alpha1.LMEvalJob{
 		ObjectMeta: metav1.ObjectMeta{
@@ -580,8 +570,8 @@ func Test_FileSecretsPod(t *testing.T) {
 			InitContainers: []corev1.Container{
 				{
 					Name:            "driver",
-					Image:           lmevalRec.options.DriverImage,
-					ImagePullPolicy: lmevalRec.options.ImagePullPolicy,
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
@@ -602,10 +592,10 @@ func Test_FileSecretsPod(t *testing.T) {
 			Containers: []corev1.Container{
 				{
 					Name:            "main",
-					Image:           lmevalRec.options.PodImage,
-					ImagePullPolicy: lmevalRec.options.ImagePullPolicy,
-					Command:         lmevalRec.generateCmd(job),
-					Args:            lmevalRec.generateArgs(job, log),
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						Capabilities: &corev1.Capabilities{
@@ -658,22 +648,19 @@ func Test_FileSecretsPod(t *testing.T) {
 		},
 	}
 
-	newPod := lmevalRec.createPod(job, log)
+	newPod := createPod(svcOpts, job, log)
 	// maybe only verify the envs: Containers[0].Env
 	assert.Equal(t, expect, newPod)
 }
 
 func Test_GenerateArgBatchSize(t *testing.T) {
 	log := log.FromContext(context.Background())
-	lmevalRec := LMEvalJobReconciler{
-		Namespace: "test",
-		options: &ServiceOptions{
-			PodImage:         "podimage:latest",
-			DriverImage:      "driver:latest",
-			ImagePullPolicy:  corev1.PullAlways,
-			MaxBatchSize:     24,
-			DefaultBatchSize: 8,
-		},
+	svcOpts := &serviceOptions{
+		PodImage:         "podimage:latest",
+		DriverImage:      "driver:latest",
+		ImagePullPolicy:  corev1.PullAlways,
+		MaxBatchSize:     20,
+		DefaultBatchSize: 4,
 	}
 	var job = &lmesv1alpha1.LMEvalJob{
 		ObjectMeta: metav1.ObjectMeta{
@@ -699,16 +686,16 @@ func Test_GenerateArgBatchSize(t *testing.T) {
 	// no batchSize in the job, use default batchSize
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size 8",
-	}, lmevalRec.generateArgs(job, log))
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + strconv.Itoa(svcOpts.DefaultBatchSize),
+	}, generateArgs(svcOpts, job, log))
 
 	// exceed the max-batch-size, use max-batch-size
 	var biggerBatchSize = 30
 	job.Spec.BatchSize = &biggerBatchSize
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size 24",
-	}, lmevalRec.generateArgs(job, log))
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + strconv.Itoa(svcOpts.MaxBatchSize),
+	}, generateArgs(svcOpts, job, log))
 
 	// normal batchSize
 	var normalBatchSize = 16
@@ -716,20 +703,17 @@ func Test_GenerateArgBatchSize(t *testing.T) {
 	assert.Equal(t, []string{
 		"sh", "-ec",
 		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size 16",
-	}, lmevalRec.generateArgs(job, log))
+	}, generateArgs(svcOpts, job, log))
 }
 
 func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 	log := log.FromContext(context.Background())
-	lmevalRec := LMEvalJobReconciler{
-		Namespace: "test",
-		options: &ServiceOptions{
-			PodImage:         "podimage:latest",
-			DriverImage:      "driver:latest",
-			ImagePullPolicy:  corev1.PullAlways,
-			DefaultBatchSize: DefaultBatchSize,
-			MaxBatchSize:     DefaultMaxBatchSize,
-		},
+	svcOpts := &serviceOptions{
+		PodImage:         "podimage:latest",
+		DriverImage:      "driver:latest",
+		ImagePullPolicy:  corev1.PullAlways,
+		MaxBatchSize:     options.MaxBatchSize,
+		DefaultBatchSize: options.DefaultBatchSize,
 	}
 	var format = "unitxt.format"
 	var numDemos = 5
@@ -769,14 +753,14 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 	assert.Equal(t, []string{
 		"sh", "-ec",
 		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0 --include_path /opt/app-root/src/my_tasks --batch_size 8",
-	}, lmevalRec.generateArgs(job, log))
+	}, generateArgs(svcOpts, job, log))
 
 	assert.Equal(t, []string{
 		"/opt/app-root/src/bin/driver",
 		"--output-path", "/opt/app-root/src/output",
 		"--task-recipe", "card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		"--",
-	}, lmevalRec.generateCmd(job))
+	}, generateCmd(svcOpts, job))
 
 	job.Spec.TaskList.TaskRecipes = append(job.Spec.TaskList.TaskRecipes,
 		lmesv1alpha1.TaskRecipe{
@@ -794,7 +778,7 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 	assert.Equal(t, []string{
 		"sh", "-ec",
 		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0,tr_1 --include_path /opt/app-root/src/my_tasks --batch_size 8",
-	}, lmevalRec.generateArgs(job, log))
+	}, generateArgs(svcOpts, job, log))
 
 	assert.Equal(t, []string{
 		"/opt/app-root/src/bin/driver",
@@ -802,20 +786,17 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 		"--task-recipe", "card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		"--task-recipe", "card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		"--",
-	}, lmevalRec.generateCmd(job))
+	}, generateCmd(svcOpts, job))
 }
 
 func Test_GenerateArgCmdCustomCard(t *testing.T) {
 	log := log.FromContext(context.Background())
-	lmevalRec := LMEvalJobReconciler{
-		Namespace: "test",
-		options: &ServiceOptions{
-			PodImage:         "podimage:latest",
-			DriverImage:      "driver:latest",
-			ImagePullPolicy:  corev1.PullAlways,
-			DefaultBatchSize: DefaultBatchSize,
-			MaxBatchSize:     DefaultMaxBatchSize,
-		},
+	svcOpts := &serviceOptions{
+		PodImage:         "podimage:latest",
+		DriverImage:      "driver:latest",
+		ImagePullPolicy:  corev1.PullAlways,
+		MaxBatchSize:     options.MaxBatchSize,
+		DefaultBatchSize: options.DefaultBatchSize,
 	}
 	var format = "unitxt.format"
 	var numDemos = 5
@@ -840,7 +821,7 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 				TaskRecipes: []lmesv1alpha1.TaskRecipe{
 					{
 						Card: lmesv1alpha1.Card{
-							Custom: `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "deutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+							Custom: `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 						},
 						Template:      "unitxt.template",
 						Format:        &format,
@@ -856,26 +837,21 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 	assert.Equal(t, []string{
 		"sh", "-ec",
 		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0 --include_path /opt/app-root/src/my_tasks --batch_size 8",
-	}, lmevalRec.generateArgs(job, log))
+	}, generateArgs(svcOpts, job, log))
 
 	assert.Equal(t, []string{
 		"/opt/app-root/src/bin/driver",
 		"--output-path", "/opt/app-root/src/output",
 		"--task-recipe", "card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
-		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "deutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		"--",
-	}, lmevalRec.generateCmd(job))
+	}, generateCmd(svcOpts, job))
 }
 
 func Test_CustomCardValidation(t *testing.T) {
 	log := log.FromContext(context.Background())
 	lmevalRec := LMEvalJobReconciler{
 		Namespace: "test",
-		options: &ServiceOptions{
-			PodImage:        "podimage:latest",
-			DriverImage:     "driver:latest",
-			ImagePullPolicy: corev1.PullAlways,
-		},
 	}
 	var job = &lmesv1alpha1.LMEvalJob{
 		ObjectMeta: metav1.ObjectMeta{
@@ -925,7 +901,7 @@ func Test_CustomCardValidation(t *testing.T) {
 					"__type__": "set",
 					"fields": {
 						"source_language": "english",
-						"target_language": "deutch"
+						"target_language": "dutch"
 					}
 				}
 			],
@@ -958,7 +934,7 @@ func Test_CustomCardValidation(t *testing.T) {
 					"__type__": "set",
 					"fields": {
 						"source_language": "english",
-						"target_language": "deutch"
+						"target_language": "dutch"
 					}
 				}
 			],
