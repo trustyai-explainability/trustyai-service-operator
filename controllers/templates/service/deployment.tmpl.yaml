@@ -43,6 +43,11 @@ spec:
         - name: trustyai-service
           image: {{ .ServiceImage }}
           env:
+            - name: KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
             - name: SERVICE_STORAGE_FORMAT
               value: {{ .Instance.Spec.Storage.Format }}
             {{ if eq .Instance.Spec.Storage.Format "PVC" }}
@@ -235,7 +240,7 @@ spec:
             defaultMode: 420
         - name: {{ .Instance.Name}}-internal
           secret:
-            secretName: {{ .Instance.Name }}-internal
+            secretName: trustyai-certificate
             defaultMode: 420
         {{ if .UseDBTLSCerts }}
         - name: db-ca-cert
