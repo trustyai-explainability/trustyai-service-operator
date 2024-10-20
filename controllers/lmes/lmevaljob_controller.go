@@ -187,7 +187,7 @@ func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		job.Status.State = lmesv1alpha1.NewJobState
 	}
 
-	if job.Spec.Suspend {
+	if job.Spec.Suspend && Job_mgr_enabled {
 		return r.handleSuspend(ctx, log, job)
 	}
 
@@ -416,7 +416,7 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 
 	// construct a new pod and create a pod for the job
 	currentTime := v1.Now()
-	pod := createPod(options, job, log)
+	pod := CreatePod(Options, job, log)
 	if err := r.Create(ctx, pod, &client.CreateOptions{}); err != nil {
 		// Failed to create the pod. Mark the status as complete with failed
 		job.Status.State = lmesv1alpha1.CompleteJobState
@@ -443,7 +443,7 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 			job.Namespace))
 	log.Info("Successfully create a Pod for the Job")
 	// Check the pod after the config interval
-	return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+	return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 }
 
 func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
@@ -468,7 +468,7 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 
 	if mainIdx := getContainerByName(&pod.Status, "main"); mainIdx == -1 {
 		// waiting for the main container to be up
-		return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 	} else if podFailed, msg := isContainerFailed(&pod.Status.ContainerStatuses[mainIdx]); podFailed {
 		job.Status.State = lmesv1alpha1.CompleteJobState
 		job.Status.Reason = lmesv1alpha1.FailedReason
@@ -479,7 +479,7 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 		log.Info("detect an error on the job's pod. marked the job as done", "name", job.Name)
 		return ctrl.Result{}, err
 	} else if pod.Status.ContainerStatuses[mainIdx].State.Running == nil {
-		return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 	}
 
 	// pull status from the driver
@@ -490,7 +490,7 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 	if err != nil {
 		log.Error(err, "unable to retrieve the status from the job's pod. retry after the pulling interval")
 	}
-	return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+	return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 }
 
 func (r *LMEvalJobReconciler) getPod(ctx context.Context, job *lmesv1alpha1.LMEvalJob) (*corev1.Pod, error) {
@@ -539,7 +539,7 @@ func (r *LMEvalJobReconciler) handleComplete(ctx context.Context, log logr.Logge
 				// send shutdown command if the main container is running
 				if err := r.shutdownDriver(ctx, job); err != nil {
 					log.Error(err, "failed to shutdown the job pod. retry after the pulling interval")
-					return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+					return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 				}
 			}
 		} else {
@@ -577,8 +577,8 @@ func (r *LMEvalJobReconciler) handleCancel(ctx context.Context, log logr.Logger,
 		job.Status.Reason = lmesv1alpha1.CancelledReason
 		if err := r.deleteJobPod(ctx, job); err != nil {
 			// leave the state as is and retry again
-			log.Error(err, "failed to delete pod. scheduled a retry", "interval", options.PodCheckingInterval.String())
-			return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), err
+			log.Error(err, "failed to delete pod. scheduled a retry", "interval", Options.PodCheckingInterval.String())
+			return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), err
 		}
 	}
 
@@ -600,7 +600,7 @@ func (r *LMEvalJobReconciler) handleSuspend(ctx context.Context, log logr.Logger
 		log.Info("Suspend job")
 		if err := r.deleteJobPod(ctx, job); err != nil && client.IgnoreNotFound(err) != nil {
 			log.Error(err, "failed to delete pod for suspended job")
-			return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+			return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 		}
 	} else {
 		log.Info("Create job in suspend state.")
@@ -616,10 +616,10 @@ func (r *LMEvalJobReconciler) handleSuspend(ctx context.Context, log logr.Logger
 
 func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
 	log.Info("Resume job")
-	pod := createPod(options, job, log)
+	pod := CreatePod(Options, job, log)
 	if err := r.Create(ctx, pod); err != nil {
 		log.Error(err, "failed to create pod to resume job")
-		return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 	}
 	job.Status.State = lmesv1alpha1.ScheduledJobState
 	err := r.Status().Update(ctx, job)
@@ -653,7 +653,7 @@ func (r *LMEvalJobReconciler) validateCustomCard(job *lmesv1alpha1.LMEvalJob, lo
 	return nil
 }
 
-func createPod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) *corev1.Pod {
+func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) *corev1.Pod {
 
 	var envVars = job.Spec.Pod.GetContainer().GetEnv()
 
