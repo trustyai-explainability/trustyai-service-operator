@@ -38,7 +38,7 @@ var (
 
 type EnabledServices []string
 
-// regiser a service. it's a private function for now.
+// register a service. it's a private function for now.
 // add a file in the same folder to call this function.
 func registerService(name string, setupf ControllerSetupFunc) {
 	TasServices[name] = setupf

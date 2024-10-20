@@ -27,7 +27,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-var options *serviceOptions = &serviceOptions{
+// set by job_mgr controllerSetup func
+var Job_mgr_enabled bool
+var Options *serviceOptions = &serviceOptions{
 	DriverImage:         DefaultDriverImage,
 	PodImage:            DefaultPodImage,
 	PodCheckingInterval: DefaultPodCheckingInterval,
@@ -49,7 +51,7 @@ type serviceOptions struct {
 
 func constructOptionsFromConfigMap(log *logr.Logger, configmap *corev1.ConfigMap) error {
 
-	rv := reflect.ValueOf(options).Elem()
+	rv := reflect.ValueOf(Options).Elem()
 	var msgs []string
 
 	for idx, cap := 0, rv.NumField(); idx < cap; idx++ {

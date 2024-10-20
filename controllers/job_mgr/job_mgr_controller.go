@@ -17,12 +17,19 @@ limitations under the License.
 package job_mgr
 
 import (
+	"context"
+	"fmt"
+
 	workloadv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"sigs.k8s.io/kueue/pkg/controller/jobframework"
 	"sigs.k8s.io/kueue/pkg/podset"
@@ -36,68 +43,82 @@ import (
 // +kubebuilder:rbac:groups=kueue.x-k8s.io,resources=resourceflavors,verbs=get;list;watch
 // +kubebuilder:rbac:groups=kueue.x-k8s.io,resources=workloadpriorityclasses,verbs=get;list;watch
 
-type LMEvalJob workloadv1alpha1.LMEvalJob
+type LMEvalJob struct {
+	workloadv1alpha1.LMEvalJob
+}
 
-var (
-	GVK                = workloadv1alpha1.GroupVersion.WithKind("LMEvalJob")
-	WorkloadReconciler = jobframework.NewGenericReconcilerFactory(
+func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) error {
+	ctx := context.TODO()
+	if err := jobframework.SetupWorkloadOwnerIndex(ctx, mgr.GetFieldIndexer(), workloadv1alpha1.GroupVersion.WithKind("LMEvalJob")); err != nil {
+		return fmt.Errorf("workload indexer: %w", err)
+	}
+	lmes.Job_mgr_enabled = true
+	return jobframework.NewGenericReconcilerFactory(
 		func() jobframework.GenericJob { return &LMEvalJob{} },
 		func(b *builder.Builder, c client.Client) *builder.Builder {
 			return b.Named("LMEvalJobWorkload")
 		},
-	)
-)
+	)(mgr.GetClient(), mgr.GetEventRecorderFor("kueue")).SetupWithManager(mgr)
+
+}
 
 // Object returns the job instance.
-func (lmej *LMEvalJob) Object() client.Object {
-	return (*workloadv1alpha1.LMEvalJob)(lmej)
+func (job *LMEvalJob) Object() client.Object {
+	return &job.LMEvalJob
 }
 
 // IsSuspended returns whether the job is suspended or not.
-func (lmej *LMEvalJob) IsSuspended() bool {
-	return lmej.Spec.Suspend
+func (job *LMEvalJob) IsSuspended() bool {
+	return job.Spec.Suspend
 }
 
-func (lmej *LMEvalJob) Suspend() {
-	// ToDo: I need to create methods to handle:
-	// 1. Suspend(=true) Upon LMEvalJob creation. This means the job is created but pods are running.
-	// 2. Suspend(=true) while the LMEvalJob is running. This means delete the pods owned by the job.
-	// 3. Suspend(=false) while the LMEvalJob is in suspended state. This means re-create the pods owned by the job.
-	lmej.Spec.Suspend = true
+func (job *LMEvalJob) Suspend() {
+	job.Spec.Suspend = true
 }
 
 // RunWithPodSetsInfo will inject the node affinity and podSet counts extracting from workload to job and unsuspend it.
-func (lmej *LMEvalJob) RunWithPodSetsInfo(podSetsInfo []podset.PodSetInfo) error {
-	// Question: Where do I inject the node affinity and podSet counts in the LMEvaljob object ?
-	lmej.Spec.Suspend = false
+func (job *LMEvalJob) RunWithPodSetsInfo(podSetsInfo []podset.PodSetInfo) error {
+	job.Spec.Pod.Affinity = convertToAffinity(podSetsInfo)
+	job.Spec.Suspend = false
 	return nil
 }
 
 // RestorePodSetsInfo will restore the original node affinity and podSet counts of the job.
 // Returns whether any change was done.
-func (lmej *LMEvalJob) RestorePodSetsInfo(podSetsInfo []podset.PodSetInfo) bool {
-	// Question: Where do I inject the node affinity and podSet counts in the LMEvaljob object ?
+func (job *LMEvalJob) RestorePodSetsInfo(podSetsInfo []podset.PodSetInfo) bool {
+	job.Spec.Pod.Affinity = convertToAffinity(podSetsInfo)
 	return true
 }
 
 // Finished means whether the job is completed/failed or not,
 // condition represents the workload finished condition.
-func (lmej *LMEvalJob) Finished() (condition metav1.Condition, finished bool) {
-	// Question: What should be in the condition and how will it be used?
-	if lmej.Status.State == workloadv1alpha1.CompleteJobState {
-		finished = true
+
+func (job *LMEvalJob) Finished() (condition metav1.Condition, finished bool) {
+	// ToDos: What should be in the condition and how will it be used?
+	condition = metav1.Condition{
+		Type:    "Finished",
+		Status:  "False",
+		Reason:  string(job.Status.Reason),
+		Message: job.Status.Message,
 	}
-	return metav1.Condition{}, finished
+	finished = false
+
+	if job.Status.State == workloadv1alpha1.CompleteJobState {
+		condition.Status = "True"
+		finished = true
+		return
+	}
+	return
 }
 
 // PodSets will build workload podSets corresponding to the job.
-func (lmej *LMEvalJob) PodSets() []kueue.PodSet {
-	// ToDo: Need to create a function to extract PodSpec from the LMEvalJob object to create a PodSet for Workload.
-	// Currently PodSpec is not stored in the LMEvalJob object.
+func (job *LMEvalJob) PodSets() []kueue.PodSet {
+	log := log.FromContext(context.TODO())
+	pod := lmes.CreatePod(lmes.Options, &job.LMEvalJob, log)
 	podSet := kueue.PodSet{
-		Name:     lmej.Status.PodName,
+		Name:     job.Status.PodName,
 		Count:    1,
-		Template: corev1.PodTemplateSpec{},
+		Template: corev1.PodTemplateSpec{Spec: pod.Spec},
 	}
 	podSets := []kueue.PodSet{}
 	podSets = append(podSets, podSet)
@@ -105,8 +126,8 @@ func (lmej *LMEvalJob) PodSets() []kueue.PodSet {
 }
 
 // IsActive returns true if there are any running pods.
-func (lmej *LMEvalJob) IsActive() bool {
-	if lmej.Status.State == workloadv1alpha1.RunningJobState {
+func (job *LMEvalJob) IsActive() bool {
+	if job.Status.State == workloadv1alpha1.RunningJobState {
 		return true
 	} else {
 		return false
@@ -114,9 +135,8 @@ func (lmej *LMEvalJob) IsActive() bool {
 }
 
 // PodsReady instructs whether job derived pods are all ready now.
-func (lmej *LMEvalJob) PodsReady() bool {
-	//Question: Need figure out what pods ready mean. The ScheduledJobState may not carry the podsReady meaning.
-	if lmej.Status.State == workloadv1alpha1.ScheduledJobState {
+func (job *LMEvalJob) PodsReady() bool {
+	if job.Status.State == workloadv1alpha1.ScheduledJobState {
 		return true
 	} else {
 		return false
@@ -124,6 +144,30 @@ func (lmej *LMEvalJob) PodsReady() bool {
 }
 
 // GVK returns GVK (Group Version Kind) for the job.
-func (lmej *LMEvalJob) GVK() schema.GroupVersionKind {
-	return GVK
+func (job *LMEvalJob) GVK() schema.GroupVersionKind {
+	return workloadv1alpha1.GroupVersion.WithKind("LMEvalJob")
+}
+
+func convertToAffinity(psi []podset.PodSetInfo) *corev1.Affinity {
+	// Note there is only 1 element in podset array see PodSets method above.
+	nsl := psi[0].NodeSelector
+	nsra := []corev1.NodeSelectorRequirement{}
+	for k, v := range nsl {
+		nsr := corev1.NodeSelectorRequirement{
+			Key:      k,
+			Operator: "In",
+			Values:   []string{v},
+		}
+		nsra = append(nsra, nsr)
+	}
+	nsta := []corev1.NodeSelectorTerm{}
+	nsta = append(nsta, corev1.NodeSelectorTerm{MatchExpressions: nsra})
+	affinity := corev1.Affinity{
+		NodeAffinity: &corev1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+				NodeSelectorTerms: nsta,
+			},
+		},
+	}
+	return &affinity
 }
