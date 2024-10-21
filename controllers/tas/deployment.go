@@ -5,15 +5,15 @@ import (
 	"reflect"
 	"strconv"
 
+	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
-
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -74,13 +74,13 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	}
 
 	if instance.Spec.Storage.IsStorageDatabase() {
-		_, err := r.getSecret(ctx, instance.Name+"-db-tls", instance.Namespace)
+		_, err := r.getSecret(ctx, instance.Name+"-db-ca", instance.Namespace)
 		if err != nil {
 			deploymentConfig.UseDBTLSCerts = false
-			log.FromContext(ctx).Error(err, "Using insecure database connection. Certificates "+instance.Name+"-db-tls not found")
+			log.FromContext(ctx).Info("Using insecure database connection. Certificates " + instance.Name + "-db-ca not found")
 		} else {
 			deploymentConfig.UseDBTLSCerts = true
-			log.FromContext(ctx).Info("Using secure database connection with certificates " + instance.Name + "-db-tls")
+			log.FromContext(ctx).Info("Using secure database connection with certificates " + instance.Name + "-db-ca")
 		}
 	} else {
 		deploymentConfig.UseDBTLSCerts = false
@@ -203,6 +203,7 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 	return nil
 }
 
+// checkDeploymentReady verifies that a TrustyAI service deployment is ready
 func (r *TrustyAIServiceReconciler) checkDeploymentReady(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (bool, error) {
 	deployment := &appsv1.Deployment{}
 
@@ -217,6 +218,26 @@ func (r *TrustyAIServiceReconciler) checkDeploymentReady(ctx context.Context, in
 	for _, cond := range deployment.Status.Conditions {
 		if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
 			if deployment.Status.ReadyReplicas == *deployment.Spec.Replicas {
+				podList := &corev1.PodList{}
+				listOpts := []client.ListOption{
+					client.InNamespace(instance.Namespace),
+					client.MatchingLabels(deployment.Spec.Selector.MatchLabels),
+				}
+				if err := r.List(ctx, podList, listOpts...); err != nil {
+					return false, err
+				}
+
+				for _, pod := range podList.Items {
+					for _, cs := range pod.Status.ContainerStatuses {
+						if cs.State.Waiting != nil && cs.State.Waiting.Reason == StateReasonCrashLoopBackOff {
+							return false, nil
+						}
+						if cs.State.Terminated != nil && cs.State.Terminated.ExitCode != 0 {
+							return false, nil
+						}
+					}
+				}
+
 				return true, nil
 			}
 		}

@@ -26,6 +26,7 @@ import (
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -79,6 +80,9 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;create;update
+//+kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules,verbs=create;list;watch;get;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=create;list;watch;get;update;patch;delete
+//+kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=list;watch;get
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -167,10 +171,28 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// Get database configuration
 		secret, err := r.findDatabaseSecret(ctx, instance)
 		if err != nil {
+			_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+				UpdateDBCredentialsNotFound(saved)
+				UpdateTrustyAIServiceNotAvailable(saved)
+				saved.Status.Phase = PhaseNotReady
+				saved.Status.Ready = v1.ConditionFalse
+			})
+			if updateErr != nil {
+				return RequeueWithErrorMessage(ctx, err, "Failed to update status")
+			}
 			return RequeueWithErrorMessage(ctx, err, "Service configured to use database storage but no database configuration found.")
 		}
 		err = r.validateDatabaseSecret(secret)
 		if err != nil {
+			_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+				UpdateDBCredentialsError(saved)
+				UpdateTrustyAIServiceNotAvailable(saved)
+				saved.Status.Phase = PhaseNotReady
+				saved.Status.Ready = v1.ConditionFalse
+			})
+			if updateErr != nil {
+				return RequeueWithErrorMessage(ctx, err, "Failed to update status")
+			}
 			return RequeueWithErrorMessage(ctx, err, "Database configuration contains errors.")
 		}
 	}

@@ -260,7 +260,7 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 // patchKServe adds a TrustyAI service as an InferenceLogger to a KServe InferenceService
 func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, infService kservev1beta1.InferenceService, namespace string, crName string, remove bool) error {
 
-	url := utils.GenerateNonTLSServiceURL(crName, namespace)
+	url := utils.GenerateKServeLoggerURL(crName, namespace)
 
 	if remove {
 		if infService.Spec.Predictor.Logger == nil || *infService.Spec.Predictor.Logger.URL != url {
@@ -289,6 +289,50 @@ func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *t
 
 		// Set the InferenceLogger to the InferenceService instance
 		infService.Spec.Predictor.Logger = &logger
+	}
+
+	// Only if the Istio sidecar annotation is set
+	annotations := infService.GetAnnotations()
+	if inject, exists := annotations["sidecar.istio.io/inject"]; exists && inject == "true" {
+
+		// Check if DestinationRule CRD is present. If there's an error, don't proceed and return the error
+		exists, err := r.isDestinationRuleCRDPresent(ctx)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "Error verifying DestinationRule CRD is present")
+			return err
+		}
+
+		// Try to create the DestinationRule, since CRD exists
+		if exists {
+			err := r.ensureDestinationRule(ctx, instance)
+			if err != nil {
+				return fmt.Errorf("failed to ensure DestinationRule: %v", err)
+			}
+		} else {
+			// DestinationRule CRD does not exist. Do not attempt to create it and log error
+			err := fmt.Errorf("the DestinationRule CRD is not present in this cluster")
+			log.FromContext(ctx).Error(err, "InferenceService has service mesh annotation but DestinationRule CRD not found")
+		}
+
+		// Check if VirtualService CRD is present. If there's an error, don't proceed and return the error
+		exists, err = r.isVirtualServiceCRDPresent(ctx)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "Error verifying VirtualService CRD is present")
+			return err
+		}
+
+		// Try to create the VirtualService, since CRD exists
+		if exists {
+			err := r.ensureVirtualService(ctx, instance)
+			if err != nil {
+				return fmt.Errorf("failed to ensure VirtualService: %v", err)
+			}
+		} else {
+			// VirtualService CRD does not exist. Do not attempt to create it and log error
+			err := fmt.Errorf("the VirtualService CRD is not present in this cluster")
+			log.FromContext(ctx).Error(err, "InferenceService has service mesh annotation but VirtualService CRD not found")
+		}
+
 	}
 
 	// Update the InferenceService

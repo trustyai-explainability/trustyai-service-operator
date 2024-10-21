@@ -50,3 +50,8 @@ func GenerateTLSServiceURL(crName string, namespace string) string {
 func GenerateNonTLSServiceURL(crName string, namespace string) string {
 	return "http://" + crName + "." + namespace + ".svc"
 }
+
+// generateKServeLoggerURL generates an logger url for KServe Inference Loggers
+func GenerateKServeLoggerURL(crName string, namespace string) string {
+	return "http://" + crName + "." + namespace + ".svc.cluster.local"
+}
