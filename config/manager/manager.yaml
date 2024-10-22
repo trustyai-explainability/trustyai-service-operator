@@ -32,6 +32,8 @@ spec:
             - /manager
           args:
             - --leader-elect
+            - --enable-services
+            - "TAS,LMES"
           image: $(trustyaiOperatorImage)
           name: manager
           securityContext:

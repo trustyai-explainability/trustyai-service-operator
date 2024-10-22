@@ -7,3 +7,5 @@ rules:
   hyphens:
     max-spaces-after: 1
     level: warning
+  indentation:
+    indent-sequences: consistent
