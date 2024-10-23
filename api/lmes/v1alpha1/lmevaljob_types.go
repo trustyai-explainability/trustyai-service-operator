@@ -146,6 +146,11 @@ type LMEvalContainer struct {
 	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	// SecurityContext defines the security options the container should be run with.
+	// If set, the fields of SecurityContext override the equivalent fields of PodSecurityContext.
+	// More info: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+	// +optional
+	SecurityContext *corev1.SecurityContext `json:"securityContext,omitempty"`
 }
 
 // The following Getter-ish functions avoid nil pointer panic
@@ -183,6 +188,13 @@ type Outputs struct {
 	PersistentVolumeClaimManaged *PersistentVolumeClaimManaged `json:"pvcManaged,omitempty"`
 }
 
+func (c *LMEvalContainer) GetSecurityContext() *corev1.SecurityContext {
+	if c == nil {
+		return nil
+	}
+	return c.SecurityContext
+}
+
 type LMEvalPodSpec struct {
 	// Extra container data for the lm-eval container
 	// +optional
@@ -194,6 +206,13 @@ type LMEvalPodSpec struct {
 	// FIXME: aggregate the sidecar containers into the pod
 	// +optional
 	SideCars []corev1.Container `json:"sideCars,omitempty"`
+	// If specified, the pod's scheduling constraints
+	// +optional
+	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+	// SecurityContext holds pod-level security attributes and common container settings.
+	// Optional: Defaults to empty.  See type description for default values of each field.
+	// +optional
+	SecurityContext *corev1.PodSecurityContext `json:"securityContext,omitempty"`
 }
 
 // The following Getter-ish functions avoid nil pointer panic
@@ -226,6 +245,20 @@ type OfflineStorageSpec struct {
 // OfflineSpec defined the configuration for LMEvalJob's offline mode
 type OfflineSpec struct {
 	StorageSpec OfflineStorageSpec `json:"storage"`
+}
+
+func (p *LMEvalPodSpec) GetAffinity() *corev1.Affinity {
+	if p == nil {
+		return nil
+	}
+	return p.Affinity
+}
+
+func (p *LMEvalPodSpec) GetSecurityContext() *corev1.PodSecurityContext {
+	if p == nil {
+		return nil
+	}
+	return p.SecurityContext
 }
 
 // LMEvalJobSpec defines the desired state of LMEvalJob
