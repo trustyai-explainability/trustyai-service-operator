@@ -12,6 +12,9 @@ COPY cmd/ cmd/
 COPY api/ api/
 COPY controllers/ controllers/
 
+# Copy license
+COPY LICENSE /licenses/ta-lmes-driver.md
+
 RUN GO111MODULE=on CGO_ENABLED=0 GOOS=linux go build -tags netgo -ldflags '-extldflags "-static"' -o /bin/driver ./cmd/lmes_driver/*.go
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
