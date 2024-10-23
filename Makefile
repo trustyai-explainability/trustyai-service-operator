@@ -7,6 +7,9 @@ VERSION ?= 1.17.0
 
 BUILD_TOOL ?= podman
 
+# enable TrustyAIService by default for `make run`
+ENABLED_SERVICES ?= TAS
+
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
 # To re-generate a bundle for other specific channels without changing the standard setup, you can:
@@ -111,11 +114,11 @@ test: manifests generate fmt vet envtest ## Run tests.
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
-	go build -o bin/manager main.go
+	go build -o bin/manager cmd/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./main.go
+	go run ./cmd/main.go --enable-services $(ENABLED_SERVICES)
 
 # If you wish built the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64 ). However, you must enable docker buildKit for it.
@@ -182,7 +185,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v3.8.7
-CONTROLLER_TOOLS_VERSION ?= v0.11.1
+CONTROLLER_TOOLS_VERSION ?= v0.16.3
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 .PHONY: kustomize

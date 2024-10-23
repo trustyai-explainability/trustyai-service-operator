@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM registry.access.redhat.com/ubi8/go-toolset:1.21 as builder
+FROM registry.access.redhat.com/ubi8/go-toolset:1.21 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -12,7 +12,7 @@ COPY go.sum go.sum
 RUN go mod download
 
 # Copy the go source
-COPY main.go main.go
+COPY cmd/ cmd/
 COPY api/ api/
 COPY controllers/ controllers/
 
@@ -22,7 +22,7 @@ COPY controllers/ controllers/
 # the docker BUILDPLATFORM arg will be linux/arm64 when for Apple x86 it will be linux/amd64. Therefore,
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
 USER root
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager main.go
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details

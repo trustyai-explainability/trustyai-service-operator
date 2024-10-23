@@ -2,13 +2,16 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  creationTimestamp: null
   name: manager-role
 rules:
 - apiGroups:
   - ""
   resources:
   - configmaps
+  - persistentvolumeclaims
+  - pods
+  - secrets
+  - services
   verbs:
   - create
   - delete
@@ -28,26 +31,20 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - pods
+  - persistentvolumes
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - ""
   resources:
-  - secrets
+  - pods/exec
   verbs:
   - create
   - delete
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - ""
@@ -103,38 +100,6 @@ rules:
   - get
   - update
 - apiGroups:
-  - ""
-  resources:
-  - persistentvolumeclaims
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - persistentvolumes
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - services
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - monitoring.coreos.com
   resources:
   - servicemonitors
@@ -146,17 +111,6 @@ rules:
   - networking.istio.io
   resources:
   - destinationrules
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - networking.istio.io
-  resources:
   - virtualservices
   verbs:
   - create
@@ -233,6 +187,7 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - lmevaljobs
   - trustyaiservices
   verbs:
   - create
@@ -245,12 +200,14 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - lmevaljobs/finalizers
   - trustyaiservices/finalizers
   verbs:
   - update
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - lmevaljobs/status
   - trustyaiservices/status
   verbs:
   - get
