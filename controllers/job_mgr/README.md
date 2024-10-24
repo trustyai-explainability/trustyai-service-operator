@@ -118,8 +118,6 @@
         kServeServerless: disabled
         lmes-default-batch-size: "8"
         lmes-driver-image: quay.io/yhwang/ta-lmes-driver:latest
-        lmes-grpc-port: "8082"
-        lmes-grpc-service: lmes-grpc
         lmes-image-pull-policy: Always
         lmes-max-batch-size: "24"
         lmes-pod-checking-interval: 10s

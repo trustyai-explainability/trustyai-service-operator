@@ -23,5 +23,5 @@ ENV PYTHONPATH=/opt/app-root/src/.local/lib/python3.11/site-packages:/opt/app-ro
 ENV HF_HOME=/opt/app-root/src/hf_home
 ENV UNITXT_ARTIFACTORIES=/opt/app-root/src/my_catalogs
 
-USER 1001030000:0
+USER 65532:65532
 CMD ["/opt/app-root/bin/python"]
