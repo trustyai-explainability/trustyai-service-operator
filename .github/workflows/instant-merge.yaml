@@ -1,0 +1,26 @@
+name: Instant Merge Konflux PRs
+
+on:
+  pull_request:
+    types:
+      - opened
+    paths:
+      - config/overlays/rhoai/params.env
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: write
+  security-events: write
+  statuses: write
+
+jobs:
+  instant-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: instant-merge
+        if: ${{ github.event.sender.login == 'red-hat-konflux[bot]' && ( startsWith(github.event.pull_request.title, 'Update ta-lmes-') ) }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          gh pr merge --merge --admin ${{ github.event.pull_request.html_url }}
