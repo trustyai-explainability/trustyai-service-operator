@@ -109,6 +109,15 @@ jobs:
           sed -i "s#quay.io/trustyai/trustyai-service-operator:latest#${{ env.IMAGE_NAME }}:$TAG#" ./config/base/params.env
           sed -i "s#quay.io/trustyai/trustyai-service-operator:latest#${{ env.IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
           sed -i "s#quay.io/trustyai/trustyai-service-operator:latest#${{ env.IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
+          
+          sed -i "s#quay.io/trustyai/ta-lmes-driver:latest#${{ env.DRIVER_IMAGE_NAME }}:$TAG#" ./config/base/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-driver:latest#${{ env.DRIVER_IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-driver:latest#${{ env.DRIVER_IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
+          
+          sed -i "s#quay.io/trustyai/ta-lmes-job:latest#${{ env.JOB_IMAGE_NAME }}:$TAG#" ./config/base/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-job:latest#${{ env.JOB_IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-job:latest#${{ env.JOB_IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
+                    
           rm -Rf $(ls . | grep -v config)
           rm -Rf .gitignore .dockerignore .github .git .yamllint.yaml
       # pysh to ci-manifest repo
@@ -141,11 +150,11 @@ jobs:
           body: |
             PR image build and manifest generation completed successfully!
 
-            📦 [PR image](https://quay.io/trustyai/trustyai-service-operator-ci:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/trustyai-service-operator-ci:${{ github.event.pull_request.head.sha }}`
+            📦 [PR image](https://quay.io/trustyai/trustyai-service-operator-ci:${{ github.event.pull_request.head.sha }}): `${{ env.IMAGE_NAME }}:${{ github.event.pull_request.head.sha }}`
 
-            📦 [LMES driver image](https://quay.io/trustyai/ta-lmes-driver:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/ta-lmes-driver:${{ github.event.pull_request.head.sha }}`
+            📦 [LMES driver image](https://quay.io/trustyai/ta-lmes-driver:${{ github.event.pull_request.head.sha }}): `${{ env.DRIVER_IMAGE_NAME }}:${{ github.event.pull_request.head.sha }}`
 
-            📦 [LMES job image](https://quay.io/trustyai/ta-lmes-job:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/ta-lmes-job:${{ github.event.pull_request.head.sha }}`
+            📦 [LMES job image](https://quay.io/trustyai/ta-lmes-job:${{ github.event.pull_request.head.sha }}): `q${{ env.DRIVER_JOB_NAME }}:${{ github.event.pull_request.head.sha }}`
 
             🗂️ [CI manifests](https://github.com/trustyai-explainability/trustyai-service-operator-ci/tree/operator-${{ env.TAG }})
             
