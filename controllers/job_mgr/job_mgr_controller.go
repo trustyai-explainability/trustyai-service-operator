@@ -52,7 +52,7 @@ func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.
 	if err := jobframework.SetupWorkloadOwnerIndex(ctx, mgr.GetFieldIndexer(), workloadv1alpha1.GroupVersion.WithKind("LMEvalJob")); err != nil {
 		return fmt.Errorf("workload indexer: %w", err)
 	}
-	lmes.Job_mgr_enabled = true
+	lmes.JobMgrEnabled = true
 	return jobframework.NewGenericReconcilerFactory(
 		func() jobframework.GenericJob { return &LMEvalJob{} },
 		func(b *builder.Builder, c client.Client) *builder.Builder {
@@ -116,7 +116,7 @@ func (job *LMEvalJob) PodSets() []kueue.PodSet {
 	log := log.FromContext(context.TODO())
 	pod := lmes.CreatePod(lmes.Options, &job.LMEvalJob, log)
 	podSet := kueue.PodSet{
-		Name:     job.Status.PodName,
+		Name:     job.GetPodName(),
 		Count:    1,
 		Template: corev1.PodTemplateSpec{Spec: pod.Spec},
 	}
@@ -148,26 +148,29 @@ func (job *LMEvalJob) GVK() schema.GroupVersionKind {
 	return workloadv1alpha1.GroupVersion.WithKind("LMEvalJob")
 }
 
+// Convert NodeSelector in the PodSetInfo to Pod.Spec.Affinity
 func convertToAffinity(psi []podset.PodSetInfo) *corev1.Affinity {
-	// Note there is only 1 element in podset array see PodSets method above.
-	nsl := psi[0].NodeSelector
-	nsra := []corev1.NodeSelectorRequirement{}
-	for k, v := range nsl {
-		nsr := corev1.NodeSelectorRequirement{
-			Key:      k,
-			Operator: "In",
-			Values:   []string{v},
+	if len(psi) > 0 {
+		nsl := psi[0].NodeSelector // Note there is only 1 element in podset array see PodSets method above.
+		nsra := []corev1.NodeSelectorRequirement{}
+		for k, v := range nsl {
+			nsr := corev1.NodeSelectorRequirement{
+				Key:      k,
+				Operator: "In",
+				Values:   []string{v},
+			}
+			nsra = append(nsra, nsr)
 		}
-		nsra = append(nsra, nsr)
-	}
-	nsta := []corev1.NodeSelectorTerm{}
-	nsta = append(nsta, corev1.NodeSelectorTerm{MatchExpressions: nsra})
-	affinity := corev1.Affinity{
-		NodeAffinity: &corev1.NodeAffinity{
-			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
-				NodeSelectorTerms: nsta,
+		nsta := []corev1.NodeSelectorTerm{}
+		nsta = append(nsta, corev1.NodeSelectorTerm{MatchExpressions: nsra})
+		return &corev1.Affinity{
+			NodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: nsta,
+				},
 			},
-		},
+		}
+
 	}
-	return &affinity
+	return nil
 }

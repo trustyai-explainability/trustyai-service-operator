@@ -28,7 +28,7 @@ import (
 )
 
 // set by job_mgr controllerSetup func
-var Job_mgr_enabled bool
+var JobMgrEnabled bool
 var Options *serviceOptions = &serviceOptions{
 	DriverImage:         DefaultDriverImage,
 	PodImage:            DefaultPodImage,

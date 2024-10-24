@@ -183,12 +183,21 @@ func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Treat this as NewJobState
-	if job.Status.LastScheduleTime == nil {
+	if job.Status.LastScheduleTime == nil && job.Status.CompleteTime == nil {
 		job.Status.State = lmesv1alpha1.NewJobState
 	}
 
-	if job.Spec.Suspend && Job_mgr_enabled {
-		return r.handleSuspend(ctx, log, job)
+	if JobMgrEnabled && job.Status.State != lmesv1alpha1.CompleteJobState {
+		//the job requires kueue.x-k8s.io/queue-name label if Job Manager is enabled
+		if _, ok := job.ObjectMeta.GetLabels()["kueue.x-k8s.io/queue-name"]; !ok {
+			job.Status.State = lmesv1alpha1.CompleteJobState
+			job.Status.Reason = lmesv1alpha1.FailedReason
+			job.Status.Message = "job requires kueue.x-k8s.io/queue-name label"
+			log.Error(fmt.Errorf("job %s requires kueue.x-k8s.io/queue-name label", job.Name), "LMevalJob requires kueue.x-k8s.io/queue-name label when Job Manager is enabled")
+			return r.handleComplete(ctx, log, job)
+		} else if job.Spec.Suspend {
+			return r.handleSuspend(ctx, log, job)
+		}
 	}
 
 	// If outputs have been explicitly set
@@ -431,7 +440,7 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 
 	// Create the pod successfully. Wait for the driver to update the status
 	job.Status.State = lmesv1alpha1.ScheduledJobState
-	job.Status.PodName = pod.Name
+	job.Status.PodName = job.GetPodName()
 	job.Status.LastScheduleTime = &currentTime
 	if err := r.Status().Update(ctx, job); err != nil {
 		log.Error(err, "unable to update LMEvalJob status (pod creation done)")
@@ -476,7 +485,7 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 		if err := r.Status().Update(ctx, job); err != nil {
 			log.Error(err, "unable to update LMEvalJob status for pod failure")
 		}
-		log.Info("detect an error on the job's pod. marked the job as done", "name", job.Name)
+		log.Info("detect an error on the job's pod. marked the job as done", "name", job.GetPodName())
 		return ctrl.Result{}, err
 	} else if pod.Status.ContainerStatuses[mainIdx].State.Running == nil {
 		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
@@ -533,18 +542,20 @@ func (r *LMEvalJobReconciler) deleteJobPod(ctx context.Context, job *lmesv1alpha
 func (r *LMEvalJobReconciler) handleComplete(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
 	if job.Status.CompleteTime == nil {
 		// make sure the pod is in the complete state. if not, run the shutdown command
-		pod, err := r.getPod(ctx, job)
-		if err == nil {
-			if getRunningContainerByName(&pod.Status, "main") != -1 {
-				// send shutdown command if the main container is running
-				if err := r.shutdownDriver(ctx, job); err != nil {
-					log.Error(err, "failed to shutdown the job pod. retry after the pulling interval")
-					return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
+		if job.Status.PodName != "" {
+			pod, err := r.getPod(ctx, job)
+			if err == nil {
+				if getRunningContainerByName(&pod.Status, "main") != -1 {
+					// send shutdown command if the main container is running
+					if err := r.shutdownDriver(ctx, job); err != nil {
+						log.Error(err, "failed to shutdown the job pod. retry after the pulling interval")
+						return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
+					}
 				}
+			} else {
+				// the pod is gone ??
+				log.Error(err, "LMEvalJob is marked as Complete but the pod is gone")
 			}
-		} else {
-			// the pod is gone ??
-			log.Error(err, "LMEvalJob is marked as Complete but the pod is gone")
 		}
 
 		r.Recorder.Event(job, "Normal", "JobCompleted",
@@ -767,7 +778,7 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 			APIVersion: "v1",
 		},
 		ObjectMeta: v1.ObjectMeta{
-			Name:      job.Name,
+			Name:      job.GetPodName(),
 			Namespace: job.Namespace,
 			OwnerReferences: []v1.OwnerReference{
 				{
