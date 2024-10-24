@@ -47,8 +47,12 @@ spec:
         command:
           - /app/bin/fms-guardrails-orchestr8
         env:
-          - name: ORCHESTRATOR_CONFIG
-            value: /config/config.yaml
+          # - name: ORCHESTRATOR_CONFIG
+          #   valueFrom:
+          #     configMapKeyRef:
+          #       name: a-config
+          #       key: akey
+          #       optional: true
           - name: HTTP_PORT
             value: '8033'
         {{if eq .Orchestrator.Spec.TLS.Mode "mTLS" }}
@@ -64,7 +68,7 @@ spec:
           - name: RUST_LOG
             value: 'fms_guardrails_orchestr8=debug'
         volumeMounts:
-          - name: fms-orchestr8-config-nlp # This refers to the configmap below
+          - name: fms-orchestr8-config-nlp
             readOnly: true
             mountPath: /config/config.yaml
             subPath: config.yaml

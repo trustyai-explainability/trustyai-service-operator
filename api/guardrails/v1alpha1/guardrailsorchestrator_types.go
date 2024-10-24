@@ -34,7 +34,8 @@ type GuardrailsOrchestrator struct {
 }
 
 type TLSModeSetting struct {
-	Mode string `json:"mode,omitempy"`
+	Mode           string  `json:"mode,omitempy"`
+	CredentialName *string `json:"credentialName,omitempty"`
 }
 type ServiceSpec struct {
 	Hostname string `json:"hostname"`
@@ -43,7 +44,8 @@ type ServiceSpec struct {
 
 type GenerationSpec struct {
 	Provider string `json:"provider,omitempty"`
-	Service  ServiceSpec
+
+	Service ServiceSpec
 }
 
 type ChunkersSpec struct {

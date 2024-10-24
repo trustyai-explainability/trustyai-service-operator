@@ -40,19 +40,26 @@ spec:
                 type: object
                 properties:
                   provider:
+                    default: tgis
+                    description: Caikit model server
                     type: string
                     enum:
                       - nlp
                       - tgis
-                    pattern: ^(nlp|tgis)$
                     service:
                       type: object
                       properties:
                         hostname:
+                          description: Name of host to connect to
                           type: string
                         port:
+                          default: 8085
+                          description: Port number to connect to at the server host
                           type: integer
                         tls:
+                          default: caikit
+                          description: Name of the secret that holds the TLS certs
+                            including the CA certificates
                           type: string
               chunkers:
                 description: Chunker model
@@ -69,7 +76,11 @@ spec:
                         type: string
                       port:
                         description: The port
+                        default:
                         type: string
+                      tls:
+                        default: chunker
+                        description: TLS credentials
                     type: object
               detectors:
                 description: Dectector models(s)
@@ -82,6 +93,7 @@ spec:
                         type: string
                       port:
                         type: string
+                        default: ...
                     required:
                       - hostname
                       - port
@@ -98,6 +110,8 @@ spec:
                 description:
                 type: object
                 properties:
+                  ...:
+
                   cert_path:
                     type: string
                   key_path:
@@ -107,6 +121,8 @@ spec:
                 required:
                   - cert_path
                   - key_path
+              server_tls_path: /tls/server
+              orchestrator_tls_path: /tls/orch
             replicas:
               description: Number of replicas
               type: integer
@@ -122,20 +138,14 @@ spec:
                 items:
                   description: Condition represents possible conditions of a GuardrailsOrchestratorStatus
                   properties:
+                    type:
+                      type: string
                     lastTransitionTime:
                       description: The last time the condition transitioned from one status to another.
                       format: date-time
                       type: string
                     message:
                       description: Message about the current/final status
-                      type: string
-                    reason:
-                      description: Final result of the orchestrator
-                      enum:
-                      - NoReason
-                      - Succeeded
-                      - Failed
-                      - Cancelled
                       type: string
                     status:
                       description: State of the orchestrator
@@ -144,6 +154,14 @@ spec:
                       - Scheduled
                       - Running
                       - Complete
+                      - Cancelled
+                      type: string
+                    reason:
+                      description: Final result of the orchestrator
+                      enum:
+                      - NoReason
+                      - Succeeded
+                      - Failed
                       - Cancelled
                       type: string
                   required:
