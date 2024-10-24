@@ -1,0 +1,30 @@
+apiVersion: trustyai.opendatahub.io/v1alpha1
+kind: GuardrailsOrchestrator
+metadata:
+  example: example-guardrails-orchestrator
+spec:
+  generation:
+    provider:
+    service:
+      hostname:
+      port:
+      protocol:
+      tls:
+  detectors:
+    regex:
+        service:
+          hostname: https://regex-detector-test.apps.rosa.mac-trustyai.swih.p3.openshiftapps.com/api/v1/text/contents
+          port: 443
+          protocol: https
+        chunker_id: whole_doc_chunker
+        default_threshold: 0.5
+  tls:
+    caikit:
+      cert_path: /tls/server/tls.crt
+      key_path: /tls/server/tls.key
+      client_ca_cert_path: /tls/ca/ca.crt
+  passthrough_headers:
+    - Authorization
+
+
+
