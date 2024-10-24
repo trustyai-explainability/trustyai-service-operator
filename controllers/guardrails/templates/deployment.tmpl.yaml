@@ -47,12 +47,8 @@ spec:
         command:
           - /app/bin/fms-guardrails-orchestr8
         env:
-          # - name: ORCHESTRATOR_CONFIG
-          #   valueFrom:
-          #     configMapKeyRef:
-          #       name: a-config
-          #       key: akey
-          #       optional: true
+          - name: ORCHESTRATOR_CONFIG
+            value: /config/config.yaml
           - name: HTTP_PORT
             value: '8033'
         {{if eq .Orchestrator.Spec.TLS.Mode "mTLS" }}
@@ -95,6 +91,7 @@ spec:
           configMap:
             name: fms-orchestr8-config-nlp
             defaultMode: 420
+            optional: true
         # Add if statement to check if we are using caikit standalone as our server
         - name: server-tls
           secret:
