@@ -1,0 +1,154 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.1
+  creationTimestamp: null
+  name: guardrailsorchestrator.trustyai.opendatahub.io
+spec:
+  group: trustyai.opendatahub.io
+  names:
+    kind: GuardrailOrchestrator
+    listkind: GuardrailsOrchestratorList
+    plural: guardrailsorchestrator
+    singular: guardrailsorchestrator
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GuardrailsOrchestrator is the Schema for the guardrailorchestrator API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: 'GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator'
+            properties:
+              generation:
+                description: Text generation model name
+                type: object
+                properties:
+                  provider:
+                    default: tgis
+                    description: The Caikit model server
+                    type: string
+                    enum:
+                      - nlp
+                      - tgis
+                    service:
+                      required:
+                        - hostname
+                        - port
+                        - protocol
+                      type: object
+                      hostname:
+                        description: Name of host to connect to
+                        type: string
+                      port:
+                        description: Port number to connect to at the server host
+                        type: integer
+                      protocol:
+                        description: gRPC or REST
+                      tls:
+                        description: Key in config map that holds the TLS certs including the CA certs
+                        type: string
+              chunkers:
+                description: A list of chunker model(s)
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      description: The name of the chunker model
+                      type: string
+                    type:
+                      description: The
+                      type: string
+                    service:
+                      description:
+                      type: object
+                      properties:
+                        host:
+                          description: Name of host to connect to
+                          type: string
+                        port:
+                          description: Port number to connect to at the server host
+                          type: integer
+                        protocol:
+                          description: gRPC or REST
+                        tls:
+                          description: Key in config map that holds the TLS certs including the CA certs
+                          type: string
+                      required:
+                        - host
+                        - port
+                        - protocol
+                  required:
+                    - name
+                    - type
+                    - service
+              detectors:
+                description: List of detector model(s)
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      description: The name of the detector model
+                      type: string
+                    service:
+                      type: object
+                      properties:
+                        hostname:
+                          description: Name of host to connect to
+                          type: string
+                        port:
+                          description: Port number to connect to at the server host
+                          type: integer
+                        protocol:
+                          description: gRPC or REST
+                        tls:
+                          description: Key in config map that holds the TLS certs including the CA certs
+                          type: string
+                        required:
+                          - hostname
+                          - port
+                    chunker_id:
+                      description: The name of the chunker
+                      type: string
+                    default_threshold:
+                      default: 0.5
+                      type: number
+                  required:
+                    - name
+                    - service
+                    - chunker_id
+                    - default_threshold
+              tls:
+                description:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      description:
+                    cert_path:
+                      description:
+                      type: string
+                    key_path:
+                      description:
+                      type: string
+                    client_ca_path:
+                      description:
+                      type: string
