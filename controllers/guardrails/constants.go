@@ -1,4 +1,4 @@
-package guardrails
+package guaradrails
 
 // TODO: create new orchestrator image
 const (
@@ -8,12 +8,12 @@ const (
 	orchTLSMouthPath   = "/tls/orch"
 )
 
-// Allowed TLS modes
-const (
-	TLSMode_TLS  = "TLS"
-	TLSMode_mTLS = "mTLS"
-	TLSMode_None = "None"
-)
+// // Allowed TLS modes
+// const (
+// 	TLSMode_TLS  = "TLS"
+// 	TLSMode_mTLS = "mTLS"
+// 	TLSMode_None = "None"
+// )
 
 // Status types
 const (
@@ -39,4 +39,8 @@ const (
 const (
 	EventReasonGenerationCreated = "GeneratorServiceCreated"
 	EventReasonDetectorCreated   = "DetectorServiceCreated"
+)
+
+const (
+	StateReasonCrashLoopBackOff = "CrashLoopBackOff"
 )

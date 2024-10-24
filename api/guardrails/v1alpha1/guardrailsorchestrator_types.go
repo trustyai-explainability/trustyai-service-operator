@@ -33,19 +33,20 @@ type GuardrailsOrchestrator struct {
 	Status GuardrailsOrchestratorStatus `json:"status,omitempty"`
 }
 
-type TLSModeSetting struct {
-	Mode           string  `json:"mode,omitempy"`
-	CredentialName *string `json:"credentialName,omitempty"`
-}
+//	type TLSModeSetting struct {
+//		Mode           string  `json:"mode,omitempy"`
+//		CredentialName *string `json:"credentialName,omitempty"`
+//	}
 type ServiceSpec struct {
-	Hostname string `json:"hostname"`
-	Port     string `json:"port"`
+	Hostname int    `json:"hostname"`
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol"`
+	TLS      string `json:"tls,omitempty"`
 }
 
 type GenerationSpec struct {
 	Provider string `json:"provider,omitempty"`
-
-	Service ServiceSpec
+	Service  ServiceSpec
 }
 
 type ChunkersSpec struct {

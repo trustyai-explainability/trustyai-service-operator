@@ -57,7 +57,6 @@ spec:
                           description: Port number to connect to at the server host
                           type: integer
                         tls:
-                          default: caikit
                           description: Name of the secret that holds the TLS certs
                             including the CA certificates
                           type: string
@@ -76,11 +75,12 @@ spec:
                         type: string
                       port:
                         description: The port
-                        default:
+                        type: integer
+                      protocol:
+                        description: gRPC or REST
                         type: string
                       tls:
-                        default: chunker
-                        description: TLS credentials
+                        description: Name of the secret that TLS credentials
                     type: object
               detectors:
                 description: Dectector models(s)
