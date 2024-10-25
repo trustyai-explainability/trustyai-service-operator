@@ -33,10 +33,12 @@ type GuardrailsOrchestrator struct {
 	Status GuardrailsOrchestratorStatus `json:"status,omitempty"`
 }
 
-//	type TLSModeSetting struct {
-//		Mode           string  `json:"mode,omitempy"`
-//		CredentialName *string `json:"credentialName,omitempty"`
-//	}
+type TLSSpec struct {
+	Name     string
+	CertPath string
+	KeyPath  string
+}
+
 type ServiceSpec struct {
 	Hostname int    `json:"hostname"`
 	Port     int    `json:"port"`
@@ -61,10 +63,6 @@ type DetectorsSpec struct {
 	DefaultThreshold float32     `json:"default_threshold"`
 }
 
-type TLSMode struct {
-	Mode string `json:"tlsMode,omitempty"`
-}
-
 // GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator
 type GuardrailsOrchestratorSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -78,6 +76,9 @@ type GuardrailsOrchestratorSpec struct {
 	Chunker string `json:"chunkers"`
 	// Detector name
 	Detectors string `json:"detector"`
+	// TLS cert and key paths
+	// + Optional
+	TLS string `json:"tls"`
 	// Number of replicas
 	Replicas int32 `json:"replicas"`
 }
@@ -111,18 +112,6 @@ type GuardrailsOrchestratorList struct {
 
 func init() {
 	SchemeBuilder.Register(&GuardrailsOrchestrator{}, &GuardrailsOrchestratorList{})
-}
-
-func (t *TLSModeSetting) IsMTLS() bool {
-	return t.Mode == "mTLS"
-}
-
-func (t *TLSMode) IsTLS() bool {
-	return t.Mode == "TLS"
-}
-
-func (t *TLSMode) IsNone() bool {
-	return t.Mode == "None"
 }
 
 func (g *GuardrailsOrchestrator) SetStatus(condType, reason, message string, status corev1.ConditionStatus) {
