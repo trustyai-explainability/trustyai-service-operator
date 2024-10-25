@@ -148,6 +148,8 @@ func (q *syncedMap4Reconciler) remove(key string) {
 // +kubebuilder:rbac:groups="",resources=pods/exec,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;watch;list
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;watch;list
+// +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=list;get;watch
+// +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=list;get;watch;create;update;patch;delete
 
 func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
@@ -171,6 +173,26 @@ func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if job.Spec.Suspend {
 		return r.handleSuspend(ctx, log, job)
 	}
+
+	// If outputs have been explicitly set
+	if job.Spec.HasCustomOutput() {
+		// If managed PVC is set
+		if job.Spec.Outputs.HasManagedPVC() {
+			if job.Spec.Outputs.HasExistingPVC() {
+				log.Info("LMEvalJob has both managed and existing PVCs defined. Existing PVC configuration will be ignored.")
+			}
+			err := r.handleManagedPVC(ctx, log, job)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		} else if job.Spec.Outputs.HasExistingPVC() {
+			err := r.handleExistingPVC(ctx, log, job)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	}
+	log.Info("Continuing after PVC")
 
 	// Handle the job based on its state
 	switch job.Status.State {
@@ -631,12 +653,42 @@ func createPod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 		},
 	}
 
+	if job.Spec.HasCustomOutput() {
+		outputPVCMount := corev1.VolumeMount{
+			Name:      "outputs",
+			MountPath: OutputPath,
+		}
+		volumeMounts = append(volumeMounts, outputPVCMount)
+
+	}
+
 	var volumes = []corev1.Volume{
 		{
 			Name: "shared", VolumeSource: corev1.VolumeSource{
 				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
 		},
+	}
+
+	if job.Spec.HasCustomOutput() {
+
+		var claimName string
+		if job.Spec.Outputs.HasManagedPVC() {
+			claimName = generateManagedPVCName(job)
+		} else if job.Spec.Outputs.HasExistingPVC() {
+			claimName = *job.Spec.Outputs.PersistentVolumeClaimName
+		}
+
+		outputPVC := corev1.Volume{
+			Name: "outputs",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: claimName,
+					ReadOnly:  false,
+				},
+			},
+		}
+		volumes = append(volumes, outputPVC)
 	}
 
 	volumes = append(volumes, job.Spec.Pod.GetVolumes()...)
