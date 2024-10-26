@@ -17,7 +17,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: "quay.io/trustyai/trustyai-service-operator:${{ github.sha }}"
-          format: "github"
+          format: "table"
           exit-code: "1"
           ignore-unfixed: true
           vuln-type: "os,library"
@@ -28,7 +28,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: "quay.io/trustyai/ta-lmes-driver:${{ github.sha }}"
-          format: "github"
+          format: "table"
           exit-code: "1"
           ignore-unfixed: true
           vuln-type: "os,library"
