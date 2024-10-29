@@ -89,6 +89,19 @@ spec:
               numFewShot:
                 description: Sets the number of few-shot examples to place in context
                 type: integer
+              outputs:
+                description: Outputs specifies storage for evaluation results
+                properties:
+                  pvcManaged:
+                    description: Create an operator managed PVC
+                    properties:
+                      size:
+                        type: string
+                    type: object
+                  pvcName:
+                    description: Use an existing PVC to store the outputs
+                    type: string
+                type: object
               pod:
                 description: Specify extra information for the lm-eval job's pod
                 properties:

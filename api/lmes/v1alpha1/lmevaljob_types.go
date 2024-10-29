@@ -170,6 +170,19 @@ func (c *LMEvalContainer) GetResources() *corev1.ResourceRequirements {
 	return c.Resources
 }
 
+type PersistentVolumeClaimManaged struct {
+	Size string `json:"size,omitempty"`
+}
+
+type Outputs struct {
+	// Use an existing PVC to store the outputs
+	// +optional
+	PersistentVolumeClaimName *string `json:"pvcName,omitempty"`
+	// Create an operator managed PVC
+	// +optional
+	PersistentVolumeClaimManaged *PersistentVolumeClaimManaged `json:"pvcManaged,omitempty"`
+}
+
 type LMEvalPodSpec struct {
 	// Extra container data for the lm-eval container
 	// +optional
@@ -241,6 +254,24 @@ type LMEvalJobSpec struct {
 	// Suspend keeps the job but without pods. This is intended to be used by the Kueue integration
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
+	// Outputs specifies storage for evaluation results
+	// +optional
+	Outputs *Outputs `json:"outputs,omitempty"`
+}
+
+// HasCustomOutput returns whether an LMEvalJobSpec defines custom outputs or not
+func (s *LMEvalJobSpec) HasCustomOutput() bool {
+	return s.Outputs != nil
+}
+
+// HasManagedPVC returns whether the outputs define a managed PVC
+func (o *Outputs) HasManagedPVC() bool {
+	return o.PersistentVolumeClaimManaged != nil
+}
+
+// HasExistingPVC returns whether the outputs define an existing PVC
+func (o *Outputs) HasExistingPVC() bool {
+	return o.PersistentVolumeClaimName != nil
 }
 
 // LMEvalJobStatus defines the observed state of LMEvalJob
