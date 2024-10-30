@@ -660,7 +660,7 @@ func Test_GenerateArgBatchSize(t *testing.T) {
 		DriverImage:      "driver:latest",
 		ImagePullPolicy:  corev1.PullAlways,
 		MaxBatchSize:     20,
-		DefaultBatchSize: 4,
+		DefaultBatchSize: "4",
 	}
 	var job = &lmesv1alpha1.LMEvalJob{
 		ObjectMeta: metav1.ObjectMeta{
@@ -686,11 +686,11 @@ func Test_GenerateArgBatchSize(t *testing.T) {
 	// no batchSize in the job, use default batchSize
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + strconv.Itoa(svcOpts.DefaultBatchSize),
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + svcOpts.DefaultBatchSize,
 	}, generateArgs(svcOpts, job, log))
 
 	// exceed the max-batch-size, use max-batch-size
-	var biggerBatchSize = 30
+	var biggerBatchSize = "30"
 	job.Spec.BatchSize = &biggerBatchSize
 	assert.Equal(t, []string{
 		"sh", "-ec",
@@ -698,7 +698,7 @@ func Test_GenerateArgBatchSize(t *testing.T) {
 	}, generateArgs(svcOpts, job, log))
 
 	// normal batchSize
-	var normalBatchSize = 16
+	var normalBatchSize = "16"
 	job.Spec.BatchSize = &normalBatchSize
 	assert.Equal(t, []string{
 		"sh", "-ec",
@@ -752,7 +752,7 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 	// one TaskRecipe
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0 --include_path /opt/app-root/src/my_tasks --batch_size 8",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0 --include_path /opt/app-root/src/my_tasks --batch_size " + DefaultBatchSize,
 	}, generateArgs(svcOpts, job, log))
 
 	assert.Equal(t, []string{
@@ -777,7 +777,7 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 	// one TaskRecipe
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0,tr_1 --include_path /opt/app-root/src/my_tasks --batch_size 8",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0,tr_1 --include_path /opt/app-root/src/my_tasks --batch_size " + DefaultBatchSize,
 	}, generateArgs(svcOpts, job, log))
 
 	assert.Equal(t, []string{
@@ -836,7 +836,7 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0 --include_path /opt/app-root/src/my_tasks --batch_size 8",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0 --include_path /opt/app-root/src/my_tasks --batch_size " + DefaultBatchSize,
 	}, generateArgs(svcOpts, job, log))
 
 	assert.Equal(t, []string{
@@ -1364,4 +1364,31 @@ func Test_PVCPreference(t *testing.T) {
 	newPod := createPod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
+}
+
+func Test_ValidateBatchSize(t *testing.T) {
+	maxBatchSize := 32
+	logger := log.Log.WithName("tests")
+	scenarios := []struct {
+		provided  string
+		validated string
+	}{
+		{"5", "5"},
+		{"auto", "auto"},
+		{"auto:3", "auto:3"},
+		{"auto:0", "auto:" + strconv.Itoa(maxBatchSize)},
+		{"auto:-5", "auto:" + strconv.Itoa(maxBatchSize)},
+		{"64", strconv.Itoa(maxBatchSize)},
+		{"-5", DefaultBatchSize},
+		{"invalid", DefaultBatchSize},
+		{"0", DefaultBatchSize},
+		{"auto:auto", "auto:" + strconv.Itoa(maxBatchSize)},
+	}
+
+	for _, scenario := range scenarios {
+		result := validateBatchSize(scenario.provided, maxBatchSize, logger)
+		if result != scenario.validated {
+			t.Errorf("validateBatchSize(%q) = %q; want %q", scenario.provided, result, scenario.validated)
+		}
+	}
 }
