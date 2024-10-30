@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -818,6 +819,42 @@ func mergeMapWithFilters(dest, src map[string]string, prefixFilters []string, lo
 	}
 }
 
+func validateBatchSize(input string, maxBatchSize int, log logr.Logger) string {
+
+	maxBatchSizeString := strconv.Itoa(maxBatchSize)
+
+	if input == "auto" {
+		// No validation needed, return original
+		return input
+	}
+
+	// Validate "auto:N" style batch size
+	if strings.HasPrefix(input, "auto:") {
+		autoN := strings.TrimPrefix(input, "auto:")
+		if n, err := strconv.Atoi(autoN); err == nil && n > 0 {
+			// If N is a positive integer, use it and ignore maxBatchSize, since is now the maximum batch size
+			return input
+		}
+		// If N is an invalid integer, use "auto:maxBatchSize"
+		log.Info(input + " not supported. Using auto:" + maxBatchSizeString)
+		return "auto:" + maxBatchSizeString
+	}
+
+	// Validate N batch size
+	if n, err := strconv.Atoi(input); err == nil && n > 0 {
+		// If N is valid, but larger than maxBatchSize, set it to maximum batch size
+		if n > maxBatchSize {
+			log.Info("batchSize is greater than max-batch-size of the controller's configuration, use the max-batch-size instead")
+			return maxBatchSizeString
+		}
+		// If N is valid, use it
+		return strconv.Itoa(n)
+	}
+
+	log.Info("invalid batchSize " + input + " using batch size " + DefaultBatchSize)
+	return DefaultBatchSize
+}
+
 func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) []string {
 	if job == nil {
 		return nil
@@ -853,15 +890,12 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 	}
 	// --batch_size
 	var batchSize = svcOpts.DefaultBatchSize
-	if job.Spec.BatchSize != nil && *job.Spec.BatchSize > 0 {
-		batchSize = *job.Spec.BatchSize
+	if job.Spec.BatchSize != nil {
+		// This could be done in the webhook if it's enabled.
+		batchSize = validateBatchSize(*job.Spec.BatchSize, svcOpts.MaxBatchSize, log)
 	}
-	// This could be done in the webhook if it's enabled.
-	if batchSize > svcOpts.MaxBatchSize {
-		batchSize = svcOpts.MaxBatchSize
-		log.Info("batchSize is greater than max-batch-size of the controller's configuration, use the max-batch-size instead")
-	}
-	cmds = append(cmds, "--batch_size", fmt.Sprintf("%d", batchSize))
+
+	cmds = append(cmds, "--batch_size", batchSize)
 
 	return []string{"sh", "-ec", strings.Join(cmds, " ")}
 }

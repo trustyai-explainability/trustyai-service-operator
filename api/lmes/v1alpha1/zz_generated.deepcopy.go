@@ -174,7 +174,7 @@ func (in *LMEvalJobSpec) DeepCopyInto(out *LMEvalJobSpec) {
 	}
 	if in.BatchSize != nil {
 		in, out := &in.BatchSize, &out.BatchSize
-		*out = new(int)
+		*out = new(string)
 		**out = **in
 	}
 	if in.Pod != nil {

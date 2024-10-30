@@ -38,7 +38,7 @@ const (
 	DefaultPodCheckingInterval = time.Second * 10
 	DefaultImagePullPolicy     = corev1.PullAlways
 	DefaultMaxBatchSize        = 24
-	DefaultBatchSize           = 8
+	DefaultBatchSize           = "1"
 	DefaultDetectDevice        = true
 	ServiceName                = "LMES"
 )
