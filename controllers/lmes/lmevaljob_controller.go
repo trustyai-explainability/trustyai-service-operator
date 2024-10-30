@@ -845,7 +845,7 @@ func validateBatchSize(input string, maxBatchSize int, log logr.Logger) string {
 		// If N is valid, but larger than maxBatchSize, set it to maximum batch size
 		if n > maxBatchSize {
 			log.Info("batchSize is greater than max-batch-size of the controller's configuration, use the max-batch-size instead")
-			return strconv.Itoa(maxBatchSize)
+			return maxBatchSizeString
 		}
 		// If N is valid, use it
 		return strconv.Itoa(n)
