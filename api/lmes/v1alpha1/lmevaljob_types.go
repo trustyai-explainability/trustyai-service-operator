@@ -218,6 +218,16 @@ func (p *LMEvalPodSpec) GetSideCards() []corev1.Container {
 	return p.SideCars
 }
 
+// OfflineStorageSpec defines the storage configuration for LMEvalJob's offline mode
+type OfflineStorageSpec struct {
+	PersistentVolumeClaimName string `json:"pvcName"`
+}
+
+// OfflineSpec defined the configuration for LMEvalJob's offline mode
+type OfflineSpec struct {
+	StorageSpec OfflineStorageSpec `json:"storage"`
+}
+
 // LMEvalJobSpec defines the desired state of LMEvalJob
 type LMEvalJobSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -257,6 +267,13 @@ type LMEvalJobSpec struct {
 	// Outputs specifies storage for evaluation results
 	// +optional
 	Outputs *Outputs `json:"outputs,omitempty"`
+	// Offline specifies settings for running LMEvalJobs in a offline mode
+	Offline *OfflineSpec `json:"offline,omitempty"`
+}
+
+// IsOffline returns whether this LMEvalJob is configured to run offline
+func (s *LMEvalJobSpec) IsOffline() bool {
+	return s.Offline != nil
 }
 
 // HasCustomOutput returns whether an LMEvalJobSpec defines custom outputs or not
