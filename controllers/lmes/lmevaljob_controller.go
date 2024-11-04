@@ -692,6 +692,41 @@ func createPod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 		volumes = append(volumes, outputPVC)
 	}
 
+	// If the job is supposed to run offline, set the appropriate HuggingFace offline flags
+	if job.Spec.IsOffline() {
+
+		offlineHuggingFaceEnvVars := []corev1.EnvVar{
+			{
+				Name:  "HF_DATASETS_OFFLINE",
+				Value: "1",
+			},
+			{
+				Name:  "HF_HUB_OFFLINE",
+				Value: "1",
+			},
+		}
+		envVars = append(envVars, offlineHuggingFaceEnvVars...)
+
+		// If the job is offline, a storage must be set. PVC is the only supported storage backend at the moment.
+		offlinePVCMount := corev1.VolumeMount{
+			Name:      "offline",
+			MountPath: HuggingFaceHomePath,
+		}
+		volumeMounts = append(volumeMounts, offlinePVCMount)
+
+		offlinePVC := corev1.Volume{
+			Name: "offline",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: job.Spec.Offline.StorageSpec.PersistentVolumeClaimName,
+					ReadOnly:  false,
+				},
+			},
+		}
+		volumes = append(volumes, offlinePVC)
+
+	}
+
 	volumes = append(volumes, job.Spec.Pod.GetVolumes()...)
 	volumeMounts = append(volumeMounts, job.Spec.Pod.GetContainer().GetVolumMounts()...)
 	labels := getPodLabels(job.Labels, log)

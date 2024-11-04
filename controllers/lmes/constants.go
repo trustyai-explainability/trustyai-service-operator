@@ -26,6 +26,7 @@ const (
 	DriverPath                 = "/bin/driver"
 	DestDriverPath             = "/opt/app-root/src/bin/driver"
 	OutputPath                 = "/opt/app-root/src/output"
+	HuggingFaceHomePath        = "/opt/app-root/src/hf_home"
 	PodImageKey                = "lmes-pod-image"
 	DriverImageKey             = "lmes-driver-image"
 	PodCheckingIntervalKey     = "lmes-pod-checking-interval"

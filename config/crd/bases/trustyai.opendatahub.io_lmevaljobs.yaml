@@ -89,6 +89,22 @@ spec:
               numFewShot:
                 description: Sets the number of few-shot examples to place in context
                 type: integer
+              offline:
+                description: Offline specifies settings for running LMEvalJobs in
+                  a offline mode
+                properties:
+                  storage:
+                    description: OfflineStorageSpec defines the storage configuration
+                      for LMEvalJob's offline mode
+                    properties:
+                      pvcName:
+                        type: string
+                    required:
+                    - pvcName
+                    type: object
+                required:
+                - storage
+                type: object
               outputs:
                 description: Outputs specifies storage for evaluation results
                 properties:
