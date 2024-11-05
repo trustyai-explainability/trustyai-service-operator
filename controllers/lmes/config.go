@@ -43,7 +43,7 @@ type serviceOptions struct {
 	PodCheckingInterval time.Duration
 	ImagePullPolicy     corev1.PullPolicy
 	MaxBatchSize        int
-	DefaultBatchSize    int
+	DefaultBatchSize    string
 	DetectDevice        bool
 }
 

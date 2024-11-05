@@ -146,6 +146,11 @@ type LMEvalContainer struct {
 	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	// SecurityContext defines the security options the container should be run with.
+	// If set, the fields of SecurityContext override the equivalent fields of PodSecurityContext.
+	// More info: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+	// +optional
+	SecurityContext *corev1.SecurityContext `json:"securityContext,omitempty"`
 }
 
 // The following Getter-ish functions avoid nil pointer panic
@@ -170,6 +175,26 @@ func (c *LMEvalContainer) GetResources() *corev1.ResourceRequirements {
 	return c.Resources
 }
 
+type PersistentVolumeClaimManaged struct {
+	Size string `json:"size,omitempty"`
+}
+
+type Outputs struct {
+	// Use an existing PVC to store the outputs
+	// +optional
+	PersistentVolumeClaimName *string `json:"pvcName,omitempty"`
+	// Create an operator managed PVC
+	// +optional
+	PersistentVolumeClaimManaged *PersistentVolumeClaimManaged `json:"pvcManaged,omitempty"`
+}
+
+func (c *LMEvalContainer) GetSecurityContext() *corev1.SecurityContext {
+	if c == nil {
+		return nil
+	}
+	return c.SecurityContext
+}
+
 type LMEvalPodSpec struct {
 	// Extra container data for the lm-eval container
 	// +optional
@@ -181,6 +206,13 @@ type LMEvalPodSpec struct {
 	// FIXME: aggregate the sidecar containers into the pod
 	// +optional
 	SideCars []corev1.Container `json:"sideCars,omitempty"`
+	// If specified, the pod's scheduling constraints
+	// +optional
+	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+	// SecurityContext holds pod-level security attributes and common container settings.
+	// Optional: Defaults to empty.  See type description for default values of each field.
+	// +optional
+	SecurityContext *corev1.PodSecurityContext `json:"securityContext,omitempty"`
 }
 
 // The following Getter-ish functions avoid nil pointer panic
@@ -203,6 +235,30 @@ func (p *LMEvalPodSpec) GetSideCards() []corev1.Container {
 		return nil
 	}
 	return p.SideCars
+}
+
+// OfflineStorageSpec defines the storage configuration for LMEvalJob's offline mode
+type OfflineStorageSpec struct {
+	PersistentVolumeClaimName string `json:"pvcName"`
+}
+
+// OfflineSpec defined the configuration for LMEvalJob's offline mode
+type OfflineSpec struct {
+	StorageSpec OfflineStorageSpec `json:"storage"`
+}
+
+func (p *LMEvalPodSpec) GetAffinity() *corev1.Affinity {
+	if p == nil {
+		return nil
+	}
+	return p.Affinity
+}
+
+func (p *LMEvalPodSpec) GetSecurityContext() *corev1.PodSecurityContext {
+	if p == nil {
+		return nil
+	}
+	return p.SecurityContext
 }
 
 // LMEvalJobSpec defines the desired state of LMEvalJob
@@ -234,13 +290,38 @@ type LMEvalJobSpec struct {
 	LogSamples *bool `json:"logSamples,omitempty"`
 	// Batch size for the evaluation. This is used by the models that run and are loaded
 	// locally and not apply for the commercial APIs.
-	BatchSize *int `json:"batchSize,omitempty"`
+	BatchSize *string `json:"batchSize,omitempty"`
 	// Specify extra information for the lm-eval job's pod
 	// +optional
 	Pod *LMEvalPodSpec `json:"pod,omitempty"`
 	// Suspend keeps the job but without pods. This is intended to be used by the Kueue integration
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
+	// Outputs specifies storage for evaluation results
+	// +optional
+	Outputs *Outputs `json:"outputs,omitempty"`
+	// Offline specifies settings for running LMEvalJobs in a offline mode
+	Offline *OfflineSpec `json:"offline,omitempty"`
+}
+
+// IsOffline returns whether this LMEvalJob is configured to run offline
+func (s *LMEvalJobSpec) IsOffline() bool {
+	return s.Offline != nil
+}
+
+// HasCustomOutput returns whether an LMEvalJobSpec defines custom outputs or not
+func (s *LMEvalJobSpec) HasCustomOutput() bool {
+	return s.Outputs != nil
+}
+
+// HasManagedPVC returns whether the outputs define a managed PVC
+func (o *Outputs) HasManagedPVC() bool {
+	return o.PersistentVolumeClaimManaged != nil
+}
+
+// HasExistingPVC returns whether the outputs define an existing PVC
+func (o *Outputs) HasExistingPVC() bool {
+	return o.PersistentVolumeClaimName != nil
 }
 
 // LMEvalJobStatus defines the observed state of LMEvalJob

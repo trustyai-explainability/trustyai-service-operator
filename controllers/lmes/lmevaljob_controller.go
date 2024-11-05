@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -70,8 +71,25 @@ var (
 		"DetectDevice":        DetectDeviceKey,
 	}
 
-	labelFilterPrefixes      = []string{}
-	annotationFilterPrefixes = []string{}
+	labelFilterPrefixes       = []string{}
+	annotationFilterPrefixes  = []string{}
+	allowPrivilegeEscalation  = false
+	runAsNonRootUser          = true
+	ownerRefController        = true
+	defaultPodSecurityContext = &corev1.PodSecurityContext{
+		RunAsNonRoot: &runAsNonRootUser,
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
+	defaultSecurityContext = &corev1.SecurityContext{
+		AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{
+				"ALL",
+			},
+		},
+	}
 )
 
 // maintain a list of key-time pair data.
@@ -148,6 +166,8 @@ func (q *syncedMap4Reconciler) remove(key string) {
 // +kubebuilder:rbac:groups="",resources=pods/exec,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;watch;list
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;watch;list
+// +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=list;get;watch
+// +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=list;get;watch;create;update;patch;delete
 
 func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
@@ -171,6 +191,26 @@ func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if job.Spec.Suspend {
 		return r.handleSuspend(ctx, log, job)
 	}
+
+	// If outputs have been explicitly set
+	if job.Spec.HasCustomOutput() {
+		// If managed PVC is set
+		if job.Spec.Outputs.HasManagedPVC() {
+			if job.Spec.Outputs.HasExistingPVC() {
+				log.Info("LMEvalJob has both managed and existing PVCs defined. Existing PVC configuration will be ignored.")
+			}
+			err := r.handleManagedPVC(ctx, log, job)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		} else if job.Spec.Outputs.HasExistingPVC() {
+			err := r.handleExistingPVC(ctx, log, job)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	}
+	log.Info("Continuing after PVC")
 
 	// Handle the job based on its state
 	switch job.Status.State {
@@ -618,9 +658,6 @@ func (r *LMEvalJobReconciler) validateCustomCard(job *lmesv1alpha1.LMEvalJob, lo
 }
 
 func createPod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) *corev1.Pod {
-	var allowPrivilegeEscalation = false
-	var runAsNonRootUser = true
-	var ownerRefController = true
 
 	var envVars = job.Spec.Pod.GetContainer().GetEnv()
 
@@ -631,6 +668,15 @@ func createPod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 		},
 	}
 
+	if job.Spec.HasCustomOutput() {
+		outputPVCMount := corev1.VolumeMount{
+			Name:      "outputs",
+			MountPath: OutputPath,
+		}
+		volumeMounts = append(volumeMounts, outputPVCMount)
+
+	}
+
 	var volumes = []corev1.Volume{
 		{
 			Name: "shared", VolumeSource: corev1.VolumeSource{
@@ -639,11 +685,84 @@ func createPod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 		},
 	}
 
+	if job.Spec.HasCustomOutput() {
+
+		var claimName string
+		if job.Spec.Outputs.HasManagedPVC() {
+			claimName = generateManagedPVCName(job)
+		} else if job.Spec.Outputs.HasExistingPVC() {
+			claimName = *job.Spec.Outputs.PersistentVolumeClaimName
+		}
+
+		outputPVC := corev1.Volume{
+			Name: "outputs",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: claimName,
+					ReadOnly:  false,
+				},
+			},
+		}
+		volumes = append(volumes, outputPVC)
+	}
+
+	// If the job is supposed to run offline, set the appropriate HuggingFace offline flags
+	if job.Spec.IsOffline() {
+
+		offlineHuggingFaceEnvVars := []corev1.EnvVar{
+			{
+				Name:  "HF_DATASETS_OFFLINE",
+				Value: "1",
+			},
+			{
+				Name:  "HF_HUB_OFFLINE",
+				Value: "1",
+			},
+		}
+		envVars = append(envVars, offlineHuggingFaceEnvVars...)
+
+		// If the job is offline, a storage must be set. PVC is the only supported storage backend at the moment.
+		offlinePVCMount := corev1.VolumeMount{
+			Name:      "offline",
+			MountPath: HuggingFaceHomePath,
+		}
+		volumeMounts = append(volumeMounts, offlinePVCMount)
+
+		offlinePVC := corev1.Volume{
+			Name: "offline",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: job.Spec.Offline.StorageSpec.PersistentVolumeClaimName,
+					ReadOnly:  false,
+				},
+			},
+		}
+		volumes = append(volumes, offlinePVC)
+
+	}
+
 	volumes = append(volumes, job.Spec.Pod.GetVolumes()...)
 	volumeMounts = append(volumeMounts, job.Spec.Pod.GetContainer().GetVolumMounts()...)
 	labels := getPodLabels(job.Labels, log)
 	annotations := getAnnotations(job.Annotations, log)
 	resources := getResources(job.Spec.Pod.GetContainer().GetResources())
+	affinity := job.Spec.Pod.GetAffinity()
+	podSecurityContext := getPodSecurityContext(job.Spec.Pod.GetSecurityContext())
+	mainSecurityContext := getMainSecurityContext(job.Spec.Pod.GetContainer().GetSecurityContext())
+	containers := []corev1.Container{
+		{
+			Name:            "main",
+			Image:           svcOpts.PodImage,
+			ImagePullPolicy: svcOpts.ImagePullPolicy,
+			Env:             envVars,
+			Command:         generateCmd(svcOpts, job),
+			Args:            generateArgs(svcOpts, job, log),
+			SecurityContext: mainSecurityContext,
+			VolumeMounts:    volumeMounts,
+			Resources:       *resources,
+		},
+	}
+	containers = append(containers, job.Spec.Pod.GetSideCards()...)
 
 	// Then compose the Pod CR
 	pod := corev1.Pod{
@@ -673,14 +792,7 @@ func createPod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 					Image:           svcOpts.DriverImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -689,34 +801,11 @@ func createPod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 					},
 				},
 			},
-			Containers: []corev1.Container{
-				{
-					Name:            "main",
-					Image:           svcOpts.PodImage,
-					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Env:             envVars,
-					Command:         generateCmd(svcOpts, job),
-					Args:            generateArgs(svcOpts, job, log),
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
-					VolumeMounts: volumeMounts,
-					Resources:    *resources,
-				},
-			},
-			SecurityContext: &corev1.PodSecurityContext{
-				RunAsNonRoot: &runAsNonRootUser,
-				SeccompProfile: &corev1.SeccompProfile{
-					Type: corev1.SeccompProfileTypeRuntimeDefault,
-				},
-			},
-			Volumes:       volumes,
-			RestartPolicy: corev1.RestartPolicyNever,
+			Containers:      containers,
+			SecurityContext: podSecurityContext,
+			Affinity:        affinity,
+			Volumes:         volumes,
+			RestartPolicy:   corev1.RestartPolicyNever,
 		},
 	}
 	return &pod
@@ -746,6 +835,22 @@ func getResources(resources *corev1.ResourceRequirements) *corev1.ResourceRequir
 	return resources
 }
 
+func getPodSecurityContext(securityContext *corev1.PodSecurityContext) *corev1.PodSecurityContext {
+	// user config Overrides default config
+	if securityContext == nil {
+		return defaultPodSecurityContext
+	}
+	return securityContext
+}
+
+func getMainSecurityContext(securityContext *corev1.SecurityContext) *corev1.SecurityContext {
+	// user config Overrides default config
+	if securityContext == nil {
+		return defaultSecurityContext
+	}
+	return securityContext
+}
+
 // Merge the map based on the filters. If the names in the `src` map contains any prefixes
 // in the prefixFilters list, those KV will be discarded, otherwise, KV will be merge into
 // `dest` map.
@@ -764,6 +869,42 @@ func mergeMapWithFilters(dest, src map[string]string, prefixFilters []string, lo
 			}
 		}
 	}
+}
+
+func validateBatchSize(input string, maxBatchSize int, log logr.Logger) string {
+
+	maxBatchSizeString := strconv.Itoa(maxBatchSize)
+
+	if input == "auto" {
+		// No validation needed, return original
+		return input
+	}
+
+	// Validate "auto:N" style batch size
+	if strings.HasPrefix(input, "auto:") {
+		autoN := strings.TrimPrefix(input, "auto:")
+		if n, err := strconv.Atoi(autoN); err == nil && n > 0 {
+			// If N is a positive integer, use it and ignore maxBatchSize, since is now the maximum batch size
+			return input
+		}
+		// If N is an invalid integer, use "auto:maxBatchSize"
+		log.Info(input + " not supported. Using auto:" + maxBatchSizeString)
+		return "auto:" + maxBatchSizeString
+	}
+
+	// Validate N batch size
+	if n, err := strconv.Atoi(input); err == nil && n > 0 {
+		// If N is valid, but larger than maxBatchSize, set it to maximum batch size
+		if n > maxBatchSize {
+			log.Info("batchSize is greater than max-batch-size of the controller's configuration, use the max-batch-size instead")
+			return maxBatchSizeString
+		}
+		// If N is valid, use it
+		return strconv.Itoa(n)
+	}
+
+	log.Info("invalid batchSize " + input + " using batch size " + DefaultBatchSize)
+	return DefaultBatchSize
 }
 
 func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) []string {
@@ -801,15 +942,12 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 	}
 	// --batch_size
 	var batchSize = svcOpts.DefaultBatchSize
-	if job.Spec.BatchSize != nil && *job.Spec.BatchSize > 0 {
-		batchSize = *job.Spec.BatchSize
+	if job.Spec.BatchSize != nil {
+		// This could be done in the webhook if it's enabled.
+		batchSize = validateBatchSize(*job.Spec.BatchSize, svcOpts.MaxBatchSize, log)
 	}
-	// This could be done in the webhook if it's enabled.
-	if batchSize > svcOpts.MaxBatchSize {
-		batchSize = svcOpts.MaxBatchSize
-		log.Info("batchSize is greater than max-batch-size of the controller's configuration, use the max-batch-size instead")
-	}
-	cmds = append(cmds, "--batch_size", fmt.Sprintf("%d", batchSize))
+
+	cmds = append(cmds, "--batch_size", batchSize)
 
 	return []string{"sh", "-ec", strings.Join(cmds, " ")}
 }
