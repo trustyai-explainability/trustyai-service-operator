@@ -1050,7 +1050,7 @@ func Test_ManagedPVC(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -1166,7 +1166,7 @@ func Test_ExistingPVC(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -1305,7 +1305,7 @@ func Test_PVCPreference(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -1480,7 +1480,7 @@ func Test_OfflineMode(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -1644,7 +1644,7 @@ func Test_OfflineModeWithOutput(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }

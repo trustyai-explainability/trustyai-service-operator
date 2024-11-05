@@ -129,6 +129,8 @@ When Job Manager is an enabled service LMevalJob requires `kueue.x-k8s.io/queue-
     ```
     Start the controller locally:
     ```bash
+    # This file is needed to run controller outside of container
+    echo -n "default">/var/run/secrets/kubernetes.io/serviceaccount/namespace
     ENABLED_SERVICES=LMES,JOB_MGR make run
     ```
     Verify logs
