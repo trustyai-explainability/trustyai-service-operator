@@ -31,9 +31,9 @@ import (
 )
 
 var (
-	isController             = true
-	allowPrivilegeEscalation = false
-	runAsNonRootUser         = true
+	isController       = true
+	runAsUser    int64 = 1000000
+	runAsGroup   int64 = 1000000
 )
 
 func Test_SimplePod(t *testing.T) {
@@ -93,14 +93,7 @@ func Test_SimplePod(t *testing.T) {
 					Image:           svcOpts.DriverImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -116,14 +109,7 @@ func Test_SimplePod(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -132,12 +118,7 @@ func Test_SimplePod(t *testing.T) {
 					},
 				},
 			},
-			SecurityContext: &corev1.PodSecurityContext{
-				RunAsNonRoot: &runAsNonRootUser,
-				SeccompProfile: &corev1.SeccompProfile{
-					Type: corev1.SeccompProfileTypeRuntimeDefault,
-				},
-			},
+			SecurityContext: defaultPodSecurityContext,
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
@@ -154,7 +135,7 @@ func Test_SimplePod(t *testing.T) {
 	assert.Equal(t, expect, newPod)
 }
 
-func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
+func Test_WithCustomPod(t *testing.T) {
 	log := log.FromContext(context.Background())
 	svcOpts := &serviceOptions{
 		PodImage:        "podimage:latest",
@@ -200,6 +181,10 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 							MountPath: "/test",
 						},
 					},
+					SecurityContext: &corev1.SecurityContext{
+						RunAsUser:  &runAsUser,
+						RunAsGroup: &runAsGroup,
+					},
 				},
 				Volumes: []corev1.Volume{
 					{
@@ -210,6 +195,33 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 								ReadOnly:  true,
 							},
 						},
+					},
+				},
+				SecurityContext: &corev1.PodSecurityContext{
+					RunAsNonRoot: &runAsNonRootUser,
+				},
+				Affinity: &corev1.Affinity{
+					NodeAffinity: &corev1.NodeAffinity{
+						RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+							NodeSelectorTerms: []corev1.NodeSelectorTerm{
+								{
+									MatchFields: []corev1.NodeSelectorRequirement{
+										{
+											Key:      "node",
+											Operator: corev1.NodeSelectorOpIn,
+											Values:   []string{"test"},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				SideCars: []corev1.Container{
+					{
+						Name:    "sidecar1",
+						Image:   "busybox",
+						Command: []string{"sh", "-ec", "sleep 3600"},
 					},
 				},
 			},
@@ -250,14 +262,7 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 					Image:           svcOpts.DriverImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -274,12 +279,8 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
+						RunAsUser:  &runAsUser,
+						RunAsGroup: &runAsGroup,
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
@@ -297,12 +298,14 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 						},
 					},
 				},
+				{
+					Name:    "sidecar1",
+					Image:   "busybox",
+					Command: []string{"sh", "-ec", "sleep 3600"},
+				},
 			},
 			SecurityContext: &corev1.PodSecurityContext{
 				RunAsNonRoot: &runAsNonRootUser,
-				SeccompProfile: &corev1.SeccompProfile{
-					Type: corev1.SeccompProfileTypeRuntimeDefault,
-				},
 			},
 			Volumes: []corev1.Volume{
 				{
@@ -316,6 +319,23 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 							ClaimName: "mypvc",
 							ReadOnly:  true,
+						},
+					},
+				},
+			},
+			Affinity: &corev1.Affinity{
+				NodeAffinity: &corev1.NodeAffinity{
+					RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+						NodeSelectorTerms: []corev1.NodeSelectorTerm{
+							{
+								MatchFields: []corev1.NodeSelectorRequirement{
+									{
+										Key:      "node",
+										Operator: corev1.NodeSelectorOpIn,
+										Values:   []string{"test"},
+									},
+								},
+							},
 						},
 					},
 				},
@@ -416,14 +436,7 @@ func Test_EnvSecretsPod(t *testing.T) {
 					Image:           svcOpts.DriverImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -450,16 +463,9 @@ func Test_EnvSecretsPod(t *testing.T) {
 							},
 						},
 					},
-					Command: generateCmd(svcOpts, job),
-					Args:    generateArgs(svcOpts, job, log),
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -468,12 +474,7 @@ func Test_EnvSecretsPod(t *testing.T) {
 					},
 				},
 			},
-			SecurityContext: &corev1.PodSecurityContext{
-				RunAsNonRoot: &runAsNonRootUser,
-				SeccompProfile: &corev1.SeccompProfile{
-					Type: corev1.SeccompProfileTypeRuntimeDefault,
-				},
-			},
+			SecurityContext: defaultPodSecurityContext,
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
@@ -573,14 +574,7 @@ func Test_FileSecretsPod(t *testing.T) {
 					Image:           svcOpts.DriverImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -596,14 +590,7 @@ func Test_FileSecretsPod(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -617,12 +604,7 @@ func Test_FileSecretsPod(t *testing.T) {
 					},
 				},
 			},
-			SecurityContext: &corev1.PodSecurityContext{
-				RunAsNonRoot: &runAsNonRootUser,
-				SeccompProfile: &corev1.SeccompProfile{
-					Type: corev1.SeccompProfileTypeRuntimeDefault,
-				},
-			},
+			SecurityContext: defaultPodSecurityContext,
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
@@ -1019,14 +1001,7 @@ func Test_ManagedPVC(t *testing.T) {
 					Image:           svcOpts.DriverImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -1042,14 +1017,7 @@ func Test_ManagedPVC(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -1062,12 +1030,7 @@ func Test_ManagedPVC(t *testing.T) {
 					},
 				},
 			},
-			SecurityContext: &corev1.PodSecurityContext{
-				RunAsNonRoot: &runAsNonRootUser,
-				SeccompProfile: &corev1.SeccompProfile{
-					Type: corev1.SeccompProfileTypeRuntimeDefault,
-				},
-			},
+			SecurityContext: defaultPodSecurityContext,
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
@@ -1154,14 +1117,7 @@ func Test_ExistingPVC(t *testing.T) {
 					Image:           svcOpts.DriverImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -1177,14 +1133,7 @@ func Test_ExistingPVC(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -1197,12 +1146,7 @@ func Test_ExistingPVC(t *testing.T) {
 					},
 				},
 			},
-			SecurityContext: &corev1.PodSecurityContext{
-				RunAsNonRoot: &runAsNonRootUser,
-				SeccompProfile: &corev1.SeccompProfile{
-					Type: corev1.SeccompProfileTypeRuntimeDefault,
-				},
-			},
+			SecurityContext: defaultPodSecurityContext,
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
