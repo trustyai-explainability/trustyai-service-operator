@@ -283,18 +283,27 @@ func (dc *driverComm) notifyShutdownWait() {
 	dc.connection <- 1
 }
 
-type FormattedWriter struct{}
+type PodLogAndPipeWriter struct {
+	pw *io.PipeWriter
+}
 
-func (f FormattedWriter) Write(p []byte) (n int, err error) {
-	// format lm-eval output to stdout
+func (f PodLogAndPipeWriter) Write(p []byte) (n int, err error) {
+	// format lm-eval output to stdout and the pipewriter
 	line := string(p)
-	res, err := fmt.Print(line)
+	fmt.Print(line)
+	if _, err := f.pw.Write(p); err != nil {
+		return 0, err
+	}
 
 	// carriage returns do not correctly display, so replace with newlines
+	// carriage returns also break the pipewriter, so make sure we get newlines as well.
 	if strings.ContainsAny(line, "\r") && !strings.ContainsAny(line, "\n") {
 		fmt.Print("\n")
+		if _, err := f.pw.Write([]byte("\n")); err != nil {
+			return 0, err
+		}
 	}
-	return res, err
+	return 0, nil
 }
 
 func (d *driverImpl) exec() error {
@@ -330,8 +339,8 @@ func (d *driverImpl) exec() error {
 
 	// have a pipe to check the output and report progress
 	// lm-eval's outputs are in the stderr
-	pr, _ := io.Pipe()
-	mwriter := io.MultiWriter(stderr, FormattedWriter{})
+	pr, pw := io.Pipe()
+	mwriter := io.MultiWriter(stderr, PodLogAndPipeWriter{pw})
 	scanner := bufio.NewScanner(pr)
 
 	executor := exec.Command(d.Option.Args[0], args...)
