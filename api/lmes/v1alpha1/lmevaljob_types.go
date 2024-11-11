@@ -363,6 +363,11 @@ type LMEvalJob struct {
 	Status LMEvalJobStatus `json:"status,omitempty"`
 }
 
+// generate pod name for the job
+func (j *LMEvalJob) GetPodName() string {
+	return j.Name
+}
+
 // +kubebuilder:object:root=true
 
 // LMEvalJobList contains a list of LMEvalJob

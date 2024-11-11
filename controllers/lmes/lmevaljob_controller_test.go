@@ -130,7 +130,7 @@ func Test_SimplePod(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -344,7 +344,7 @@ func Test_WithCustomPod(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 
@@ -359,7 +359,7 @@ func Test_WithCustomPod(t *testing.T) {
 		"custom/annotation1": "annotation1",
 	}
 
-	newPod = createPod(svcOpts, job, log)
+	newPod = CreatePod(svcOpts, job, log)
 	assert.Equal(t, expect, newPod)
 }
 
@@ -486,7 +486,7 @@ func Test_EnvSecretsPod(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 	// maybe only verify the envs: Containers[0].Env
 	assert.Equal(t, expect, newPod)
 }
@@ -630,7 +630,7 @@ func Test_FileSecretsPod(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 	// maybe only verify the envs: Containers[0].Env
 	assert.Equal(t, expect, newPod)
 }
@@ -694,8 +694,8 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 		PodImage:         "podimage:latest",
 		DriverImage:      "driver:latest",
 		ImagePullPolicy:  corev1.PullAlways,
-		MaxBatchSize:     options.MaxBatchSize,
-		DefaultBatchSize: options.DefaultBatchSize,
+		MaxBatchSize:     Options.MaxBatchSize,
+		DefaultBatchSize: Options.DefaultBatchSize,
 	}
 	var format = "unitxt.format"
 	var numDemos = 5
@@ -777,8 +777,8 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 		PodImage:         "podimage:latest",
 		DriverImage:      "driver:latest",
 		ImagePullPolicy:  corev1.PullAlways,
-		MaxBatchSize:     options.MaxBatchSize,
-		DefaultBatchSize: options.DefaultBatchSize,
+		MaxBatchSize:     Options.MaxBatchSize,
+		DefaultBatchSize: Options.DefaultBatchSize,
 	}
 	var format = "unitxt.format"
 	var numDemos = 5
@@ -1050,7 +1050,7 @@ func Test_ManagedPVC(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -1166,7 +1166,7 @@ func Test_ExistingPVC(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -1305,7 +1305,7 @@ func Test_PVCPreference(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -1480,7 +1480,7 @@ func Test_OfflineMode(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -1644,7 +1644,7 @@ func Test_OfflineModeWithOutput(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
