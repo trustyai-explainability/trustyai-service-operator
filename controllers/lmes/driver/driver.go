@@ -283,6 +283,20 @@ func (dc *driverComm) notifyShutdownWait() {
 	dc.connection <- 1
 }
 
+type FormattedWriter struct{}
+
+func (f FormattedWriter) Write(p []byte) (n int, err error) {
+	// format lm-eval output to stdout
+	line := string(p)
+	res, err := fmt.Print(line)
+
+	// carriage returns do not correctly display, so replace with newlines
+	if strings.ContainsAny(line, "\r") && !strings.ContainsAny(line, "\n") {
+		fmt.Print("\n")
+	}
+	return res, err
+}
+
 func (d *driverImpl) exec() error {
 	// create Unitxt task recipes
 	if err := d.createTaskRecipes(); err != nil {
@@ -316,8 +330,8 @@ func (d *driverImpl) exec() error {
 
 	// have a pipe to check the output and report progress
 	// lm-eval's outputs are in the stderr
-	pr, pw := io.Pipe()
-	mwriter := io.MultiWriter(stderr, pw)
+	pr, _ := io.Pipe()
+	mwriter := io.MultiWriter(stderr, FormattedWriter{})
 	scanner := bufio.NewScanner(pr)
 
 	executor := exec.Command(d.Option.Args[0], args...)
