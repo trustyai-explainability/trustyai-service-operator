@@ -290,7 +290,7 @@ type PodLogAndPipeWriter struct {
 func (f PodLogAndPipeWriter) Write(p []byte) (n int, err error) {
 	// format lm-eval output to stdout and the pipewriter
 	line := string(p)
-	fmt.Print(line)
+	res, _ := fmt.Print(line)
 	if _, err := f.pw.Write(p); err != nil {
 		return 0, err
 	}
@@ -303,7 +303,7 @@ func (f PodLogAndPipeWriter) Write(p []byte) (n int, err error) {
 			return 0, err
 		}
 	}
-	return 0, nil
+	return res, nil
 }
 
 func (d *driverImpl) exec() error {
