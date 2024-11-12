@@ -131,7 +131,8 @@ func (d *driverImpl) Run() error {
 		}
 	}
 	toConsole(filepath.Join(d.Option.OutputPath, "stdout.log"))
-	toConsole(filepath.Join(d.Option.OutputPath, "stderr.log"))
+	// TODO: Remove so that log is not printed again at job's completion
+	// toConsole(filepath.Join(d.Option.OutputPath, "stderr.log"))
 
 	d.updateCompleteStatus(execErr)
 
