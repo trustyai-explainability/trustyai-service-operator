@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: instant-merge
-        if: ${{ github.event.sender.login == 'red-hat-konflux[bot]' && ( startsWith(github.event.pull_request.title, 'Update ta-lmes-') ) }}
+        if: ${{ github.event.sender.login == 'red-hat-konflux[bot]' && ( contains(github.event.pull_request.title, 'update ta-lmes-') ) }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
