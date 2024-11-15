@@ -257,7 +257,7 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 			}
 			continue
 
-		case DEPLOYMENT_MODE_SERVERLESS:
+		default:
 			// Handle KServe Serverless deployments
 			if kServeServerlessEnabled {
 				err := r.patchKServe(ctx, instance, infService, namespace, crName, remove, false)
