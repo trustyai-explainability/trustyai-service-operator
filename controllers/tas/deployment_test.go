@@ -275,7 +275,7 @@ func setupAndTestDeploymentInferenceService(instance *trustyaiopendatahubiov1alp
 		return k8sClient.Create(ctx, inferenceService)
 	}, "failed to create deployment")
 
-	Expect(reconciler.patchKServe(ctx, instance, *inferenceService, namespace, instance.Name, false)).ToNot(HaveOccurred())
+	Expect(reconciler.patchKServe(ctx, instance, *inferenceService, namespace, instance.Name, false, false)).ToNot(HaveOccurred())
 
 	deployment := &appsv1.Deployment{}
 	WaitFor(func() error {
