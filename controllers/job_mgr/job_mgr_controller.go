@@ -152,6 +152,9 @@ func (job *LMEvalJob) GVK() schema.GroupVersionKind {
 func convertToAffinity(psi []podset.PodSetInfo) *corev1.Affinity {
 	if len(psi) > 0 {
 		nsl := psi[0].NodeSelector // Note there is only 1 element in podset array see PodSets method above.
+		if len(nsl) == 0 {
+			return nil
+		}
 		nsra := []corev1.NodeSelectorRequirement{}
 		for k, v := range nsl {
 			nsr := corev1.NodeSelectorRequirement{

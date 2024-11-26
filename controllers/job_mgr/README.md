@@ -22,6 +22,139 @@ When Job Manager is an enabled service LMevalJob requires `kueue.x-k8s.io/queue-
     curl -L  https://github.com/kubernetes-sigs/kueue/releases/download/v0.8.1/manifests.yaml | sed 's/#  externalFrameworks/  externalFrameworks/; s/#  - "Foo.v1.example.com"/  - "trustyai.opendatahub.io\/lmevaljob"/'|kubectl apply --server-side -f -
     ```
 
+    After the kueue-controller-manager deployment is ready, create a ClusterQueue, ResourceFlavor, and a namespaced LocalQueue at least.
+    ```bash
+    cat <<EOF | kubectl apply -f -
+    apiVersion: kueue.x-k8s.io/v1beta1
+    kind: ClusterQueue
+    metadata:
+      name: "cluster-queue"
+    spec:
+      namespaceSelector: {} # match all.
+      resourceGroups:
+      - coveredResources: ["cpu", "memory"]
+        flavors:
+        - name: "default-flavor"
+          resources:
+          - name: "cpu"
+            nominalQuota: 4
+          - name: "memory"
+            nominalQuota: 50Gi
+    ---
+    apiVersion: kueue.x-k8s.io/v1beta1
+    kind: ResourceFlavor
+    metadata:
+      name: "default-flavor"
+    ---
+    apiVersion: kueue.x-k8s.io/v1beta1
+    kind: LocalQueue
+    metadata:
+      namespace: "default"
+      name: "user-queue"
+    spec:
+      clusterQueue: "cluster-queue"
+    EOF
+    ```
+
+1. Install TAS CRDs
+    ```bash
+    make install
+    ```
+
+1. Start controllers locally
+    First manually create the `trustyai-service-operator-config` configmap
+    ```bash
+    cat <<EOF | kubectl apply -f -
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: trustyai-service-operator-config
+      labels:
+        app.kubernetes.io/part-of: trustyai
+      annotations:
+        internal.config.kubernetes.io/generatorBehavior: unspecified
+        internal.config.kubernetes.io/prefixes: trustyai-service-operator-
+        internal.config.kubernetes.io/previousKinds: ConfigMap,ConfigMap
+        internal.config.kubernetes.io/previousNames: config,trustyai-service-operator-config
+        internal.config.kubernetes.io/previousNamespaces: default,default
+    data:
+      kServeServerless: disabled
+      lmes-default-batch-size: "8"
+      lmes-driver-image: quay.io/trustyai/ta-lmes-driver:latest
+      lmes-image-pull-policy: Always
+      lmes-max-batch-size: "24"
+      lmes-pod-checking-interval: 10s
+      lmes-pod-image: quay.io/trustyai/ta-lmes-job:latest
+      oauthProxyImage: quay.io/openshift/origin-oauth-proxy:4.14.0
+      trustyaiOperatorImage: quay.io/trustyai/trustyai-service-operator:latest
+      trustyaiServiceImage: quay.io/trustyai/trustyai-service:latest
+    EOF
+    ```
+    Start the controller locally:
+    ```bash
+    # This file is needed to run controller outside of container
+    mkdir -p /var/run/secrets/kubernetes.io/serviceaccount
+    echo -n "default">/var/run/secrets/kubernetes.io/serviceaccount/namespace
+    ENABLED_SERVICES=LMES,JOB_MGR make run
+    ```
+    Verify logs
+    ```
+    INFO    Starting workers        {"controller": "lmevaljob", "controllerGroup": "trustyai.opendatahub.io", "controllerKind": "LMEvalJob", "worker count": 1}
+    INFO    Starting workers        {"controller": "LMEvalJobWorkload", "controllerGroup": "trustyai.opendatahub.io", "controllerKind": "LMEvalJob", "worker count": 1}
+    ```
+1. Admit an lmevaljob to the `user-queue` LocalQueue, specify `kueue.x-k8s.io/queue-name: user-queue` in the metadata.labels
+    ```bash
+    cat <<EOF | kubectl create -f -
+    apiVersion: trustyai.opendatahub.io/v1alpha1
+    kind: LMEvalJob
+    metadata:
+      labels:
+        app.kubernetes.io/name: fms-lm-eval-service
+        app.kubernetes.io/managed-by: kustomize
+        kueue.x-k8s.io/queue-name: user-queue
+      generateName: evaljob-sample-
+      namespace: default
+    spec:
+      pod:
+        container:
+          resources:
+            requests:
+              cpu: 2
+      suspend: true
+      model: hf
+      modelArgs:
+      - name: pretrained
+        value: EleutherAI/pythia-70m
+      taskList:
+        taskNames:
+        - unfair_tos
+      logSamples: true
+      limit: "5"
+    EOF
+    ```
+
+    Run this command: 
+    ```bash
+    kubectl get lmevaljob,workloads,pod
+    ```
+    Verify the output is similar to:
+    ```
+    NAME                                                     STATE
+    lmevaljob.trustyai.opendatahub.io/evaljob-sample-5mdgj   Scheduled
+
+    NAME                                                           QUEUE        RESERVED IN     ADMITTED   FINISHED   AGE
+    workload.kueue.x-k8s.io/lmevaljob-evaljob-sample-5mdgj-b0412   user-queue   cluster-queue   True                  27s
+
+    NAME                       READY   STATUS            RESTARTS   AGE
+    pod/evaljob-sample-5mdgj   0/1     PodInitializing   0          26s
+    ```
+
+    Delete the job:
+    ```bash
+    kubectl delete lmevaljob $(kubectl get lmevaljob|grep evaljob-sample-|cut -d" " -f1)
+    ```
+1. Quota and Node Affinity example. To run a lmevaljob Pod on a particular node, use `spec.nodeLabels` in ResourceFlavor.
+
     Create 2 sets of Kueue CRs.
     ```bash
     cat <<EOF | kubectl apply -f -
@@ -39,7 +172,7 @@ When Job Manager is an enabled service LMevalJob requires `kueue.x-k8s.io/queue-
           - name: "cpu"
             nominalQuota: 4
           - name: "memory"
-            nominalQuota: 88888888Gi
+            nominalQuota: 50Gi
     ---
     apiVersion: kueue.x-k8s.io/v1beta1
     kind: ClusterQueue
@@ -91,55 +224,7 @@ When Job Manager is an enabled service LMevalJob requires `kueue.x-k8s.io/queue-
     EOF
     ```
 
-
-
-1. Install TAS CRDs
-    ```bash
-    make install
-    ```
-
-1. Start controllers locally
-    First manually create the `trustyai-service-operator-config` configmap
-    ```bash
-    cat <<EOF | kubectl apply -f -
-    apiVersion: v1
-    kind: ConfigMap
-    metadata:
-      name: trustyai-service-operator-config
-      labels:
-        app.kubernetes.io/part-of: trustyai
-      annotations:
-        internal.config.kubernetes.io/generatorBehavior: unspecified
-        internal.config.kubernetes.io/prefixes: trustyai-service-operator-
-        internal.config.kubernetes.io/previousKinds: ConfigMap,ConfigMap
-        internal.config.kubernetes.io/previousNames: config,trustyai-service-operator-config
-        internal.config.kubernetes.io/previousNamespaces: default,default
-    data:
-      kServeServerless: disabled
-      lmes-default-batch-size: "8"
-      lmes-driver-image: quay.io/yhwang/ta-lmes-driver:latest
-      lmes-image-pull-policy: Always
-      lmes-max-batch-size: "24"
-      lmes-pod-checking-interval: 10s
-      lmes-pod-image: quay.io/tedchang/ta-lmes-job:latest
-      oauthProxyImage: quay.io/openshift/origin-oauth-proxy:4.14.0
-      trustyaiOperatorImage: quay.io/tedchang/trustyai-service-operator:latest
-      trustyaiServiceImage: quay.io/trustyai/trustyai-service:latest
-    EOF
-    ```
-    Start the controller locally:
-    ```bash
-    # This file is needed to run controller outside of container
-    echo -n "default">/var/run/secrets/kubernetes.io/serviceaccount/namespace
-    ENABLED_SERVICES=LMES,JOB_MGR make run
-    ```
-    Verify logs
-    ```
-    INFO    Starting workers        {"controller": "lmevaljob", "controllerGroup": "trustyai.opendatahub.io", "controllerKind": "LMEvalJob", "worker count": 1}
-    INFO    Starting workers        {"controller": "LMEvalJobWorkload", "controllerGroup": "trustyai.opendatahub.io", "controllerKind": "LMEvalJob", "worker count": 1}
-    ```
-1. Quota and Node Affinity example. We will create 5 jobs.
-    
+    We will create 5 lmevaljobs.
     Jobs labeled with `user-queue` will be run on `kueue-worker` node.
     Job labeled with `user-queue-2` will be run on `kueue-worker2` node.
     Job will be Suspended if there is not enough quota. 
@@ -331,6 +416,10 @@ When Job Manager is an enabled service LMevalJob requires `kueue.x-k8s.io/queue-
     ```
 
     Verify they are in running state:
+    ```bash
+    watch -d -n5 kubectl get lmevaljob,workloads,pod -owide
+    ```
+
     ```
     NAME                                                     STATE
     lmevaljob.trustyai.opendatahub.io/evaljob-sample-8cr8k   Running
