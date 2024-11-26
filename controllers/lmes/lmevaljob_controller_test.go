@@ -118,6 +118,14 @@ func Test_SimplePod(t *testing.T) {
 					},
 					Env: []corev1.EnvVar{
 						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
 						},
@@ -314,6 +322,14 @@ func Test_WithCustomPod(t *testing.T) {
 					},
 					Env: []corev1.EnvVar{
 						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
 						},
@@ -492,6 +508,14 @@ func Test_EnvSecretsPod(t *testing.T) {
 							},
 						},
 						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
 						},
@@ -633,6 +657,14 @@ func Test_FileSecretsPod(t *testing.T) {
 					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: defaultSecurityContext,
 					Env: []corev1.EnvVar{
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
 						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
@@ -1075,6 +1107,14 @@ func Test_ManagedPVC(t *testing.T) {
 					SecurityContext: defaultSecurityContext,
 					Env: []corev1.EnvVar{
 						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
 						},
@@ -1205,6 +1245,14 @@ func Test_ExistingPVC(t *testing.T) {
 					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: defaultSecurityContext,
 					Env: []corev1.EnvVar{
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
 						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
@@ -1353,6 +1401,14 @@ func Test_PVCPreference(t *testing.T) {
 						},
 					},
 					Env: []corev1.EnvVar{
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
 						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
@@ -1533,6 +1589,14 @@ func Test_OfflineMode(t *testing.T) {
 					},
 					Env: []corev1.EnvVar{
 						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
 						},
@@ -1688,6 +1752,14 @@ func Test_OfflineModeWithOutput(t *testing.T) {
 						},
 					},
 					Env: []corev1.EnvVar{
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
 						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",

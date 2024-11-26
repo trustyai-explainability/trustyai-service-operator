@@ -713,6 +713,19 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 		volumes = append(volumes, outputPVC)
 	}
 
+	// Disable remote code execution by default
+	remoteCodeEnvVars := []corev1.EnvVar{
+		{
+			Name:  "TRUST_REMOTE_CODE",
+			Value: "0",
+		},
+		{
+			Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+			Value: "0",
+		},
+	}
+	envVars = append(envVars, remoteCodeEnvVars...)
+
 	// Enforce offline mode by default
 	offlineHuggingFaceEnvVars := []corev1.EnvVar{
 		{
