@@ -116,6 +116,20 @@ func Test_SimplePod(t *testing.T) {
 							MountPath: "/opt/app-root/src/bin",
 						},
 					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+					},
 				},
 			},
 			SecurityContext: defaultPodSecurityContext,
@@ -282,6 +296,7 @@ func Test_WithCustomPod(t *testing.T) {
 						RunAsUser:  &runAsUser,
 						RunAsGroup: &runAsGroup,
 					},
+
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -295,6 +310,20 @@ func Test_WithCustomPod(t *testing.T) {
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
 							corev1.ResourceCPU: resource.MustParse("1"),
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
 						},
 					},
 				},
@@ -462,6 +491,18 @@ func Test_EnvSecretsPod(t *testing.T) {
 								},
 							},
 						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
 					},
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
@@ -591,6 +632,20 @@ func Test_FileSecretsPod(t *testing.T) {
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: defaultSecurityContext,
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -1018,6 +1073,21 @@ func Test_ManagedPVC(t *testing.T) {
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: defaultSecurityContext,
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+					},
+
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -1134,6 +1204,20 @@ func Test_ExistingPVC(t *testing.T) {
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: defaultSecurityContext,
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -1266,6 +1350,20 @@ func Test_PVCPreference(t *testing.T) {
 							Drop: []corev1.Capability{
 								"ALL",
 							},
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
 						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
@@ -1442,6 +1540,10 @@ func Test_OfflineMode(t *testing.T) {
 							Name:  "HF_HUB_OFFLINE",
 							Value: "1",
 						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
@@ -1592,6 +1694,10 @@ func Test_OfflineModeWithOutput(t *testing.T) {
 						},
 						{
 							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
 							Value: "1",
 						},
 					},
