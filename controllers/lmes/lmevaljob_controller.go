@@ -740,6 +740,10 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 			Name:  "TRANSFORMERS_OFFLINE",
 			Value: "1",
 		},
+		{
+			Name:  "HF_EVALUATE_OFFLINE",
+			Value: "1",
+		},
 	}
 	envVars = append(envVars, offlineHuggingFaceEnvVars...)
 
