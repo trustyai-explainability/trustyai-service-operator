@@ -301,7 +301,7 @@ type LMEvalJobSpec struct {
 	// +optional
 	Outputs *Outputs `json:"outputs,omitempty"`
 	// Offline specifies settings for running LMEvalJobs in a offline mode
-	Offline *OfflineSpec `json:"offline,omitempty"`
+	Offline *OfflineSpec `json:"offline"`
 }
 
 // IsOffline returns whether this LMEvalJob is configured to run offline
