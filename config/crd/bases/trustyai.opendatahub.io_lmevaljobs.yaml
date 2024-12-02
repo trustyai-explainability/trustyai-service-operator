@@ -4636,6 +4636,7 @@ spec:
                 type: object
             required:
             - model
+            - offline
             - taskList
             type: object
           status:
