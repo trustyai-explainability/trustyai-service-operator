@@ -714,38 +714,42 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 	}
 
 	// Disable remote code execution by default
-	remoteCodeEnvVars := []corev1.EnvVar{
-		{
-			Name:  "TRUST_REMOTE_CODE",
-			Value: "0",
-		},
-		{
-			Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
-			Value: "0",
-		},
+	if job.Spec.AllowCodeExecution == nil || *job.Spec.AllowCodeExecution == false {
+		remoteCodeEnvVars := []corev1.EnvVar{
+			{
+				Name:  "TRUST_REMOTE_CODE",
+				Value: "0",
+			},
+			{
+				Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+				Value: "0",
+			},
+		}
+		envVars = append(envVars, remoteCodeEnvVars...)
 	}
-	envVars = append(envVars, remoteCodeEnvVars...)
 
 	// Enforce offline mode by default
-	offlineHuggingFaceEnvVars := []corev1.EnvVar{
-		{
-			Name:  "HF_DATASETS_OFFLINE",
-			Value: "1",
-		},
-		{
-			Name:  "HF_HUB_OFFLINE",
-			Value: "1",
-		},
-		{
-			Name:  "TRANSFORMERS_OFFLINE",
-			Value: "1",
-		},
-		{
-			Name:  "HF_EVALUATE_OFFLINE",
-			Value: "1",
-		},
+	if job.Spec.AllowOnline == nil || *job.Spec.AllowOnline == false {
+		offlineHuggingFaceEnvVars := []corev1.EnvVar{
+			{
+				Name:  "HF_DATASETS_OFFLINE",
+				Value: "1",
+			},
+			{
+				Name:  "HF_HUB_OFFLINE",
+				Value: "1",
+			},
+			{
+				Name:  "TRANSFORMERS_OFFLINE",
+				Value: "1",
+			},
+			{
+				Name:  "HF_EVALUATE_OFFLINE",
+				Value: "1",
+			},
+		}
+		envVars = append(envVars, offlineHuggingFaceEnvVars...)
 	}
-	envVars = append(envVars, offlineHuggingFaceEnvVars...)
 
 	if job.Spec.IsOffline() {
 

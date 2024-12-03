@@ -43,6 +43,14 @@ spec:
           spec:
             description: LMEvalJobSpec defines the desired state of LMEvalJob
             properties:
+              allowCodeExecution:
+                description: AllowCodeExecution specifies whether the LMEvalJob can
+                  execute remote code. Default is false.
+                type: boolean
+              allowOnline:
+                description: AllowOnly specifies whether the LMEvalJob can directly
+                  download remote code, datasets and metrics. Default is false.
+                type: boolean
               batchSize:
                 description: |-
                   Batch size for the evaluation. This is used by the models that run and are loaded
@@ -91,7 +99,7 @@ spec:
                 type: integer
               offline:
                 description: Offline specifies settings for running LMEvalJobs in
-                  a offline mode
+                  an offline mode
                 properties:
                   storage:
                     description: OfflineStorageSpec defines the storage configuration
@@ -4636,7 +4644,6 @@ spec:
                 type: object
             required:
             - model
-            - offline
             - taskList
             type: object
           status:
