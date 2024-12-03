@@ -44,10 +44,12 @@ spec:
             description: LMEvalJobSpec defines the desired state of LMEvalJob
             properties:
               allowCodeExecution:
+                default: false
                 description: AllowCodeExecution specifies whether the LMEvalJob can
                   execute remote code. Default is false.
                 type: boolean
               allowOnline:
+                default: false
                 description: AllowOnly specifies whether the LMEvalJob can directly
                   download remote code, datasets and metrics. Default is false.
                 type: boolean

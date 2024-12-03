@@ -305,9 +305,11 @@ type LMEvalJobSpec struct {
 	Offline *OfflineSpec `json:"offline,omitempty"`
 	// AllowOnly specifies whether the LMEvalJob can directly download remote code, datasets and metrics. Default is false.
 	// +optional
+	// +kubebuilder:default:=false
 	AllowOnline *bool `json:"allowOnline,omitempty"`
 	// AllowCodeExecution specifies whether the LMEvalJob can execute remote code. Default is false.
 	// +optional
+	// +kubebuilder:default:=false
 	AllowCodeExecution *bool `json:"allowCodeExecution,omitempty"`
 }
 
