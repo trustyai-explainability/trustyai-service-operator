@@ -231,12 +231,7 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 
 	for _, infService := range inferenceServices.Items {
 		annotations := infService.GetAnnotations()
-		deploymentMode, ok := annotations["serving.kserve.io/deploymentMode"]
-
-		if !ok {
-			// Model is not annotated as either KServe serverless, KServe Raw or ModelMesh
-			continue
-		}
+		deploymentMode := annotations["serving.kserve.io/deploymentMode"]
 
 		switch deploymentMode {
 		case DEPLOYMENT_MODE_MODELMESH:
