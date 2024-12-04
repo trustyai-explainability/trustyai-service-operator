@@ -300,8 +300,17 @@ type LMEvalJobSpec struct {
 	// Outputs specifies storage for evaluation results
 	// +optional
 	Outputs *Outputs `json:"outputs,omitempty"`
-	// Offline specifies settings for running LMEvalJobs in a offline mode
+	// Offline specifies settings for running LMEvalJobs in an offline mode
+	// +optional
 	Offline *OfflineSpec `json:"offline,omitempty"`
+	// AllowOnly specifies whether the LMEvalJob can directly download remote code, datasets and metrics. Default is false.
+	// +optional
+	// +kubebuilder:default:=false
+	AllowOnline *bool `json:"allowOnline,omitempty"`
+	// AllowCodeExecution specifies whether the LMEvalJob can execute remote code. Default is false.
+	// +optional
+	// +kubebuilder:default:=false
+	AllowCodeExecution *bool `json:"allowCodeExecution,omitempty"`
 }
 
 // IsOffline returns whether this LMEvalJob is configured to run offline

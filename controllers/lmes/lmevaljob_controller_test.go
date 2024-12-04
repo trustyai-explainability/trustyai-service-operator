@@ -116,6 +116,32 @@ func Test_SimplePod(t *testing.T) {
 							MountPath: "/opt/app-root/src/bin",
 						},
 					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+					},
 				},
 			},
 			SecurityContext: defaultPodSecurityContext,
@@ -282,6 +308,7 @@ func Test_WithCustomPod(t *testing.T) {
 						RunAsUser:  &runAsUser,
 						RunAsGroup: &runAsGroup,
 					},
+
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -295,6 +322,32 @@ func Test_WithCustomPod(t *testing.T) {
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
 							corev1.ResourceCPU: resource.MustParse("1"),
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
 						},
 					},
 				},
@@ -462,6 +515,30 @@ func Test_EnvSecretsPod(t *testing.T) {
 								},
 							},
 						},
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
 					},
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
@@ -591,6 +668,32 @@ func Test_FileSecretsPod(t *testing.T) {
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: defaultSecurityContext,
+					Env: []corev1.EnvVar{
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -1018,6 +1121,33 @@ func Test_ManagedPVC(t *testing.T) {
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: defaultSecurityContext,
+					Env: []corev1.EnvVar{
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+					},
+
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -1134,6 +1264,32 @@ func Test_ExistingPVC(t *testing.T) {
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: defaultSecurityContext,
+					Env: []corev1.EnvVar{
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -1266,6 +1422,32 @@ func Test_PVCPreference(t *testing.T) {
 							Drop: []corev1.Capability{
 								"ALL",
 							},
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
 						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
@@ -1435,11 +1617,477 @@ func Test_OfflineMode(t *testing.T) {
 					},
 					Env: []corev1.EnvVar{
 						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
 						},
 						{
 							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+						{
+							Name:      "offline",
+							MountPath: "/opt/app-root/src/hf_home",
+						},
+					},
+				},
+			},
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot: &runAsNonRootUser,
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "shared", VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+				{
+					Name: "offline", VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyNever,
+		},
+	}
+
+	newPod := CreatePod(svcOpts, job, log)
+
+	assert.Equal(t, expect, newPod)
+}
+
+// Test_OnlineMode tests that if the online mode is set the configuration is correct
+func Test_OnlineMode(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
+	}
+
+	allowOnline := true
+	jobName := "test"
+	pvcName := "my-pvc"
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
+			Offline: &lmesv1alpha1.OfflineSpec{
+				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
+					PersistentVolumeClaimName: pvcName,
+				},
+			},
+			AllowOnline: &allowOnline,
+		},
+	}
+
+	expect := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "ta-lmes",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: lmesv1alpha1.Version,
+					Kind:       lmesv1alpha1.KindName,
+					Name:       "test",
+					Controller: &isController,
+					UID:        "for-testing",
+				},
+			},
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{
+					Name:            "driver",
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         []string{DriverPath, "--copy", DestDriverPath},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+					},
+				},
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            "main",
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+						{
+							Name:      "offline",
+							MountPath: "/opt/app-root/src/hf_home",
+						},
+					},
+				},
+			},
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot: &runAsNonRootUser,
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "shared", VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+				{
+					Name: "offline", VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyNever,
+		},
+	}
+
+	newPod := CreatePod(svcOpts, job, log)
+
+	assert.Equal(t, expect, newPod)
+}
+
+// Test_AllowCodeOnlineMode tests that if the online mode and allow code is set the configuration is correct
+func Test_AllowCodeOnlineMode(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
+	}
+
+	jobName := "test"
+	pvcName := "my-pvc"
+	allowOnline := true
+	allowCode := true
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
+			Offline: &lmesv1alpha1.OfflineSpec{
+				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
+					PersistentVolumeClaimName: pvcName,
+				},
+			},
+			AllowOnline:        &allowOnline,
+			AllowCodeExecution: &allowCode,
+		},
+	}
+
+	expect := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "ta-lmes",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: lmesv1alpha1.Version,
+					Kind:       lmesv1alpha1.KindName,
+					Name:       "test",
+					Controller: &isController,
+					UID:        "for-testing",
+				},
+			},
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{
+					Name:            "driver",
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         []string{DriverPath, "--copy", DestDriverPath},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+					},
+				},
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            "main",
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+						{
+							Name:      "offline",
+							MountPath: "/opt/app-root/src/hf_home",
+						},
+					},
+				},
+			},
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot: &runAsNonRootUser,
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "shared", VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+				{
+					Name: "offline", VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyNever,
+		},
+	}
+
+	newPod := CreatePod(svcOpts, job, log)
+
+	assert.Equal(t, expect, newPod)
+}
+
+// Test_AllowCodeOfflineMode tests that if the online mode is set the configuration is correct
+func Test_AllowCodeOfflineMode(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
+	}
+
+	jobName := "test"
+	pvcName := "my-pvc"
+	allowCode := true
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
+			Offline: &lmesv1alpha1.OfflineSpec{
+				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
+					PersistentVolumeClaimName: pvcName,
+				},
+			},
+			AllowCodeExecution: &allowCode,
+		},
+	}
+
+	expect := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "ta-lmes",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: lmesv1alpha1.Version,
+					Kind:       lmesv1alpha1.KindName,
+					Name:       "test",
+					Controller: &isController,
+					UID:        "for-testing",
+				},
+			},
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{
+					Name:            "driver",
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         []string{DriverPath, "--copy", DestDriverPath},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+					},
+				},
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            "main",
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
 							Value: "1",
 						},
 					},
@@ -1587,11 +2235,27 @@ func Test_OfflineModeWithOutput(t *testing.T) {
 					},
 					Env: []corev1.EnvVar{
 						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
 						},
 						{
 							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
 							Value: "1",
 						},
 					},

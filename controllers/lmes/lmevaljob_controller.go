@@ -713,9 +713,23 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 		volumes = append(volumes, outputPVC)
 	}
 
-	// If the job is supposed to run offline, set the appropriate HuggingFace offline flags
-	if job.Spec.IsOffline() {
+	// Disable remote code execution by default
+	if job.Spec.AllowCodeExecution == nil || *job.Spec.AllowCodeExecution == false {
+		remoteCodeEnvVars := []corev1.EnvVar{
+			{
+				Name:  "TRUST_REMOTE_CODE",
+				Value: "0",
+			},
+			{
+				Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+				Value: "0",
+			},
+		}
+		envVars = append(envVars, remoteCodeEnvVars...)
+	}
 
+	// Enforce offline mode by default
+	if job.Spec.AllowOnline == nil || *job.Spec.AllowOnline == false {
 		offlineHuggingFaceEnvVars := []corev1.EnvVar{
 			{
 				Name:  "HF_DATASETS_OFFLINE",
@@ -725,8 +739,19 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 				Name:  "HF_HUB_OFFLINE",
 				Value: "1",
 			},
+			{
+				Name:  "TRANSFORMERS_OFFLINE",
+				Value: "1",
+			},
+			{
+				Name:  "HF_EVALUATE_OFFLINE",
+				Value: "1",
+			},
 		}
 		envVars = append(envVars, offlineHuggingFaceEnvVars...)
+	}
+
+	if job.Spec.IsOffline() {
 
 		// If the job is offline, a storage must be set. PVC is the only supported storage backend at the moment.
 		offlinePVCMount := corev1.VolumeMount{
