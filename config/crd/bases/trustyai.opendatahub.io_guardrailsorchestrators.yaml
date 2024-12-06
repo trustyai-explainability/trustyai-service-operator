@@ -17,8 +17,8 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: GuardrailsOrchestrator is the Schema for the GuardrailsOrchestrator
-          API
+        description: GuardrailsOrchestrator is the Schema for the guardrailsorchestrators
+          API.
         properties:
           apiVersion:
             description: |-
@@ -38,86 +38,127 @@ spec:
           metadata:
             type: object
           spec:
-            description: GuardrailsOrchestratorStatus defines the desired state of
-              GuardrailsOrchestrator
+            description: GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator.
             properties:
-              chunker:
-                description: Chunker name
-                properties:
-                  service:
-                    properties:
-                      hostname:
-                        type: string
-                      port:
-                        type: integer
-                      tls:
-                        description: TLS credentials path
-                        type: string
-                    required:
-                    - hostname
-                    - port
-                    - tls
-                    type: object
-                  type:
-                    type: string
-                required:
-                - service
-                - type
-                type: object
-              detectors:
-                description: Detector name(s)
+              chunkers:
+                description: Chunker configuration
                 items:
                   properties:
-                    chunker_id:
-                      description: Chunker ID
-                      type: string
-                    default_threshold:
+                    provider:
                       type: string
                     service:
-                      description: Service
                       properties:
                         hostname:
                           type: string
                         port:
                           type: integer
-                        tls:
-                          description: TLS credentials path
+                        protocol:
                           type: string
+                        tls:
+                          properties:
+                            ca_cert_path:
+                              type: string
+                            cert_path:
+                              type: string
+                            key_path:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                          - ca_cert_path
+                          - cert_path
+                          - key_path
+                          - type
+                          type: object
                       required:
                       - hostname
                       - port
-                      - tls
+                      - protocol
+                      type: object
+                  required:
+                  - provider
+                  - service
+                  type: object
+                type: array
+              detectors:
+                description: Detector configuration
+                items:
+                  properties:
+                    chunkerName:
+                      type: string
+                    defaultThreshold:
+                      type: string
+                    service:
+                      properties:
+                        hostname:
+                          type: string
+                        port:
+                          type: integer
+                        protocol:
+                          type: string
+                        tls:
+                          properties:
+                            ca_cert_path:
+                              type: string
+                            cert_path:
+                              type: string
+                            key_path:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                          - ca_cert_path
+                          - cert_path
+                          - key_path
+                          - type
+                          type: object
+                      required:
+                      - hostname
+                      - port
+                      - protocol
                       type: object
                     type:
-                      description: Detector name
                       type: string
                   required:
-                  - chunker_id
-                  - default_threshold
+                  - chunkerName
+                  - defaultThreshold
                   - service
                   - type
                   type: object
                 type: array
               generator:
-                description: Generator name
+                description: Generator configuration
                 properties:
                   provider:
-                    description: Provider name
                     type: string
                   service:
-                    description: Service
                     properties:
                       hostname:
                         type: string
                       port:
                         type: integer
-                      tls:
-                        description: TLS credentials path
+                      protocol:
                         type: string
+                      tls:
+                        properties:
+                          ca_cert_path:
+                            type: string
+                          cert_path:
+                            type: string
+                          key_path:
+                            type: string
+                          type:
+                            type: string
+                        required:
+                        - ca_cert_path
+                        - cert_path
+                        - key_path
+                        - type
+                        type: object
                     required:
                     - hostname
                     - port
-                    - tls
+                    - protocol
                     type: object
                 required:
                 - provider
@@ -128,68 +169,29 @@ spec:
                 format: int32
                 type: integer
               tls:
-                description: TLS
-                properties:
-                  ca_cert_path:
-                    type: string
-                  cert_path:
-                    type: string
-                  key_path:
-                    type: string
-                  type:
-                    type: string
-                required:
-                - ca_cert_path
-                - cert_path
-                - key_path
-                - type
-                type: object
+                description: TLS configuration
+                type: string
             required:
-            - chunker
             - detectors
             - generator
             - replicas
-            - tls
             type: object
           status:
             description: GuardrailsOrchestratorStatus defines the observed state of
-              GuardrailsOrchestrator
+              GuardrailsOrchestrator.
             properties:
-              conditions:
-                items:
-                  description: Condition defines the condition of the GuardrailsOrchestrator
-                  properties:
-                    lastTransitionTime:
-                      format: date-time
-                      type: string
-                    message:
-                      type: string
-                    reason:
-                      type: string
-                    status:
-                      type: string
-                    type:
-                      type: string
-                  required:
-                  - lastTransitionTime
-                  - message
-                  - reason
-                  - status
-                  - type
-                  type: object
-                type: array
-              phase:
+              condition:
+                description: |-
+                  INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
+                  Important: Run "make" to regenerate code after modifying this file
                 type: string
               ready:
-                type: string
-              replicas:
-                format: int32
-                type: integer
+                type: boolean
             required:
-            - conditions
-            - phase
-            - replicas
+            - ready
             type: object
         type: object
     served: true
     storage: true
+    subresources:
+      status: {}

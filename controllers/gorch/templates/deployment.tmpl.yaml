@@ -1,0 +1,87 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+  annotations:
+      sidecar.istio.io/inject: "true"
+  labels:
+    app: {{.Name}}
+    component: {{.Name}}
+    deploy-name: {{.Name}}
+    app.kubernetes.io/instance: {{.Name}}
+    app.kubernetes.io/name: {{.Name}}
+    app.kubernetes.io/part-of: trustyai
+    app.kubernetes.io/version: {{.Version}}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{.Name}}
+      component: {{.Name}}
+      deploy-name: {{.Name}}
+      app.kubernetes.io/instance: {{.Name}}
+      app.kubernetes.io/name: {{.Name}}
+      app.kubernetes.io/part-of: trustyai
+  template:
+    metadata:
+      labels:
+        app: {{.Name}}
+        component: {{.Name}}
+        deploy-name: {{.Name}}
+        app.kubernetes.io/instance: {{.Name}}
+        app.kubernetes.io/name: {{.Name}}
+        app.kubernetes.io/part-of: trustyai
+        app.kubernetes.io/version: {{.Version}}
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      serviceAccountName: {{.Name}}-serviceaccount
+      containers:
+        - name: {{.Name}}
+          image: {{.ContainerImage}}
+          env:
+            - name: ORCHESTRATOR_CONFIG
+              value: /config/config.yaml
+            - name: HTTP_PORT
+              value: '8033'
+            - name: RUST_BACKTRACE
+              value: 'full'
+            - name: RUST_LOG
+              value: 'fms_guardrails_orchestr8=trace,tower_grpc=debug'
+          ports:
+            - name: http
+              containerPort: 8033
+              protocol: TCP
+          imagePullPolicy: Always
+          terminationMessagePolicy: File
+          resources:
+            limits:
+              cpu: '1'
+              memory: 2Gi
+            requests:
+              cpu: '1'
+              memory: 2Gi
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+            readinessProbe:
+              httpGet:
+                path: /health
+                port: 8033
+                scheme: HTTP
+              initialDelaySeconds: 10
+              timeoutSeconds: 10
+              periodSeconds: 20
+              successThreshold: 1
+              failureThreshold: 3
+            terminationMessagePath: /dev/termination-log
+            command:
+              - /app/bin/fms-guardrails-orchestr8

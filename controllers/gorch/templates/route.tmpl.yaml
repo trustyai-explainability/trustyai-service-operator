@@ -1,0 +1,23 @@
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: {{.Name}}-route
+  namespace: {{.Namespace}}
+  labels:
+    app: {{.Name}}
+    component: {{.Name}}
+    app.kubernetes.io/instance: {{.Name}}
+    app.kubernetes.io/name: {{.Name}}
+    app.kubernetes.io/part-of: trustyai
+    app.kubernetes.io/version: {{.Version}}
+spec:
+  to:
+    kind: Service
+    name:  {{.Name}}-service
+    weight: 100
+  port:
+    targetPort: {{.PortName}}
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
