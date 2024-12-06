@@ -2,127 +2,60 @@ package guardrails
 
 import (
 	"context"
+	"reflect"
 
-	"github.com/go-logr/logr"
 	guardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/guardrails/v1alpha1"
+	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func createDeployment(orchestrator *guardrailsv1alpha1.GuardrailsOrchestrator, log logr.Logger) *appsv1.Deployment {
-	var allowPrivilegeEscalation = false
-	var privileged = false
-	var runAsNonRootUser = true
-	var command = []string{"/app/bin/fms-guardrails-orchestr8"}
-	var devTerminationPath = "/dev/termination-log"
+var deploymentTemplatePath = "templates/deployment.yaml"
 
-	var envVars = []corev1.EnvVar{
-		{
-			Name:  "HTTPS_PORT",
-			Value: HTTPSPort,
-		},
+type DeploymentConfig struct {
+	Orchestrator    *guardrailsv1alpha1.GuardrailsOrchestrator
+	ContainerImage  string
+	VolumeMountName string
+}
+
+func (r *GuardrailsReconciler) ensureDeployment(ctx context.Context, orchestrator *guardrailsv1alpha1.GuardrailsOrchestrator) error {
+	// Check if the deployment already exists, if not create a new one
+	existingDeployment := &appsv1.Deployment{}
+	err := r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingDeployment)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Create the deployment
+			return r.createDeployment(ctx, orchestrator, "")
+		}
+		// Error that isn't due to the deployment not existing
+		return err
 	}
-	envVars = append(envVars, orchestrator.Spec.Pod.GetContainer().Env...)
+	return nil
+}
 
-	var volumeMounts = []corev1.VolumeMount{
-		{
-			Name:      "server-tls",
-			ReadOnly:  true,
-			MountPath: "/tls/server",
-		},
+func (r *GuardrailsReconciler) createDeployment(ctx context.Context, orchestrator *guardrailsv1alpha1.GuardrailsOrchestrator, orchestratorImage string) error {
+
+	deploymentConfig := DeploymentConfig{
+		Orchestrator:    orchestrator,
+		ContainerImage:  orchestratorImage,
+		VolumeMountName: "",
 	}
-	volumeMounts = append(volumeMounts, orchestrator.Spec.Pod.GetContainer().VolumeMounts...)
-
-	var volumes = []corev1.Volume{}
-	volumes = append(volumes, orchestrator.Spec.Pod.Volumes...)
-
-	var labels = map[string]string{
-		"app":         "fmstack-nlp",
-		"component":   orchestrator.Name,
-		"deploy-name": orchestrator.Name,
+	var deployment *appsv1.Deployment
+	deployment, err := templateParser.ParseResource[appsv1.Deployment](deploymentTemplatePath, deploymentConfig, reflect.TypeOf(appsv1.Deployment{}))
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to parse deployment template")
 	}
-
-	var annotations = map[string]string{}
-
-	var resources = corev1.ResourceRequirements{
-		Limits: corev1.ResourceList{
-			corev1.ResourceCPU:            resource.MustParse("1"),
-			corev1.ResourceMemory:         resource.MustParse("2Gi"),
-			corev1.ResourceRequestsCPU:    resource.MustParse("1"),
-			corev1.ResourceRequestsMemory: resource.MustParse("2Gi"),
-		},
+	controllerutil.SetControllerReference(orchestrator, deployment, r.Scheme)
+	err = r.Create(ctx, deployment)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to create deployment")
+		return err
 	}
-
-	var readinessProbe = &corev1.Probe{
-		HTTPGet: &corev1.HTTPGetAction{
-			Path:   "/health",
-			Port:   HTTPSPort,
-			Scheme: "HTTP",
-		},
-		InitialDelaySeconds: 5,
-		TimeoutSeconds:      5,
-		PeriodSeconds:       10,
-		SuccessThreshold:    1,
-		FailureThreshold:    3,
-	}
-
-	var ports = []corev1.ContainerPort{{
-		Name:          "http",
-		ContainerPort: int32(443),
-		Protocol:      corev1.ProtocolTCP,
-	}}
-
-	deployment := appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        orchestrator.Name,
-			Namespace:   orchestrator.Namespace,
-			Annotations: annotations,
-			Labels:      labels,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: &orchestrator.Spec.Replicas,
-			Selector: &metav1.LabelSelector{},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-				},
-				Spec: corev1.PodSpec{
-
-					Containers: []corev1.Container{
-						{
-							Name:            orchestrator.Name,
-							Image:           orchestrator.Spec.Pod.GetContainer().Image,
-							ImagePullPolicy: corev1.PullAlways,
-							Command:         command,
-							Env:             envVars,
-							SecurityContext: &corev1.SecurityContext{
-								AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-								Capabilities: &corev1.Capabilities{
-									Drop: []corev1.Capability{
-										"ALL",
-									},
-								},
-								Privileged:   &privileged,
-								RunAsNonRoot: &runAsNonRootUser,
-								SeccompProfile: &corev1.SeccompProfile{
-									Type: corev1.SeccompProfileTypeRuntimeDefault,
-								},
-							},
-							VolumeMounts:           volumeMounts,
-							Resources:              resources,
-							ReadinessProbe:         readinessProbe,
-							TerminationMessagePath: devTerminationPath,
-							Ports:                  ports,
-						},
-					},
-					Volumes:       volumes,
-					RestartPolicy: corev1.RestartPolicyNever,
-				},
-			},
-		},
-	}
-	return &deployment
+	return nil
 }
 
 func (r *GuardrailsReconciler) deleteDeployment(ctx context.Context, orchestrator *guardrailsv1alpha1.GuardrailsOrchestrator) error {
