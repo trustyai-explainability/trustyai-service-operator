@@ -1,7 +1,6 @@
 package guardrails
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,7 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 var (
@@ -28,10 +27,12 @@ var (
 		},
 	}
 	readinessProbe = &corev1.Probe{
-		HTTPGet: &corev1.HTTPGetAction{
-			Path:   "/health",
-			Port:   8033,
-			Scheme: "HTTP",
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path:   "/health",
+				Port:   intstr.IntOrString{IntVal: 443},
+				Scheme: "HTTP",
+			},
 		},
 		InitialDelaySeconds: 5,
 		TimeoutSeconds:      5,
@@ -42,8 +43,6 @@ var (
 )
 
 func TestSimpleDeployment(t *testing.T) {
-	log := log.FromContext(context.Background())
-
 	var orchestrator = &guardrailsv1alpha1.GuardrailsOrchestrator{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-orchestrator",
@@ -51,7 +50,7 @@ func TestSimpleDeployment(t *testing.T) {
 		},
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "GuardrailsOrchestrator",
-			APIVersion: "guardrails.trusty.ai/v1alpha1",
+			APIVersion: "guardrails.trustyai/v1alpha1",
 		},
 		Spec: guardrailsv1alpha1.GuardrailsOrchestratorSpec{
 			Replicas: 1,
@@ -59,17 +58,22 @@ func TestSimpleDeployment(t *testing.T) {
 	}
 
 	expect := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        guardrailsv1alpha1.Name,
-			Namespace:   "default",
-			Annotations: map[string]string{},
-		},
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Deployment",
 			APIVersion: "apps/v1",
 		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        orchestrator.Name,
+			Namespace:   "default",
+			Annotations: map[string]string{},
+			Labels: map[string]string{
+				"app":         "fmstack-nlp",
+				"component":   orchestrator.Name,
+				"deploy-name": orchestrator.Name,
+			},
+		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: int32(1),
+			Replicas: &orchestrator.Spec.Replicas,
 			Selector: &metav1.LabelSelector{},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
@@ -83,13 +87,13 @@ func TestSimpleDeployment(t *testing.T) {
 					Containers: []corev1.Container{
 						{
 							Name:            orchestrator.Name,
-							Image:           orchestrator.Spec.DefaultContainerImage,
+							Image:           DefaultContainerImage,
 							ImagePullPolicy: corev1.PullAlways,
 							Command:         command,
 							Env: []corev1.EnvVar{
 								{
 									Name:  "HTTPS_PORT",
-									Value: orchestrator.HTTPSPort,
+									Value: HTTPSPort,
 								},
 							},
 							SecurityContext: &corev1.SecurityContext{
@@ -129,8 +133,8 @@ func TestSimpleDeployment(t *testing.T) {
 							Name: "server-tls",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
-									SecretName:  "caikitstack-caikit-inf-tls",
-									DefaultMode: 256,
+									SecretName: "caikitstack-caikit-inf-tls",
+									// DefaultMode: 256,
 								},
 							},
 						},
@@ -140,25 +144,25 @@ func TestSimpleDeployment(t *testing.T) {
 			},
 		},
 	}
-	newDeployment := createDeployment(orchestrator, log)
+	newDeployment := createDeployment(orchestrator)
 	assert.Equal(t, expect, newDeployment)
 }
 
-func TestEnvVarsDeployment(t *testing.T) {
-	log := log.FromContext(context.Background())
+// func TestEnvVarsDeployment(t *testing.T) {
+// 	log := log.FromContext(context.Background())
 
-	var orchestrator = &guardrailsv1alpha1.GuardrailsOrchestrator{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-orchestrator",
-			Namespace: "default",
-		},
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "GuardrailsOrchestrator",
-			APIVersion: "guardrails.trusty.ai/v1alpha1",
-		},
-		Spec: guardrailsv1alpha1.GuardrailsOrchestratorSpec{
-			Replicas: 1,
-		},
-	}
+// 	var orchestrator = &guardrailsv1alpha1.GuardrailsOrchestrator{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name:      "test-orchestrator",
+// 			Namespace: "default",
+// 		},
+// 		TypeMeta: metav1.TypeMeta{
+// 			Kind:       "GuardrailsOrchestrator",
+// 			APIVersion: "guardrails.trusty.ai/v1alpha1",
+// 		},
+// 		Spec: guardrailsv1alpha1.GuardrailsOrchestratorSpec{
+// 			Replicas: 1,
+// 		},
+// 	}
 
-}
+// }

@@ -1,5 +1,20 @@
 package guardrails
 
+// import (
+// 	"context"
+
+// 	guardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/guardrails/v1alpha1"
+// 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+// 	appsv1 "k8s.io/api/apps/v1"
+// 	"k8s.io/apimachinery/pkg/runtime"
+// 	"k8s.io/client-go/tools/record"
+// 	ctrl "sigs.k8s.io/controller-runtime"
+// 	"sigs.k8s.io/controller-runtime/pkg/client"
+// 	"sigs.k8s.io/controller-runtime/pkg/handler"
+// 	"sigs.k8s.io/controller-runtime/pkg/log"
+// 	"sigs.k8s.io/controller-runtime/pkg/manager"
+// 	"sigs.k8s.io/controller-runtime/pkg/source"
+// )
 import (
 	"context"
 
@@ -12,23 +27,26 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-type GuardrailsReconciler struct {
-	client.Client
-	Scheme        *runtime.Scheme
-	EventRecorder record.EventRecorder
-	Namespace     string
-}
-
-func ControllerSetUp(mgr ctrl.Manager, recorder record.EventRecorder, ns string) error {
+// The registered function to set up the Guardrails controller
+func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) error {
 	return (&GuardrailsReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
-		EventRecorder: recorder,
 		Namespace:     ns,
+		EventRecorder: recorder,
 	}).SetupWithManager(mgr)
+}
+
+// GuardrailsReconciler reconciles a GuardrailsOrchestrator object
+type GuardrailsReconciler struct {
+	client.Client
+	Scheme        *runtime.Scheme
+	Namespace     string
+	EventRecorder record.EventRecorder
 }
 
 func (r *GuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -66,11 +84,45 @@ func (r *GuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			log.Error(err, "failed to add the finalizer")
 		}
 	}
-	deployment := createDeployment(orchestrator, log)
+
+	// Create the deployment
+	deployment := createDeployment(orchestrator)
 	if err := r.Create(ctx, deployment); err != nil {
 		log.Error(err, "unable to create deployment")
 		return ctrl.Result{}, err
 	}
+
+	// Fetch GuardrailsOrchestrator instance
+	orchestrator = &guardrailsv1alpha1.GuardrailsOrchestrator{}
+	err = r.Get(context.TODO(), req.NamespacedName, orchestrator)
+	if err != nil {
+		log.Error(err, "unable to fetch GuardrailsOrchestrator")
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	// Create the service
+	// service, err := r.createService(ctx, orchestrator)
+	// if err != nil {
+	// 	log.Error(err, "unable to create service")
+	// 	return ctrl.Result{Requeue: true}, err
+	// }
+	// if err := r.Create(ctx, service); err != nil {
+	// 	if errors.IsAlreadyExists(err) {
+	// 		log.Info("service already exists")
+	// 	} else {
+	// 		return ctrl.Result{Requeue: true}, err
+	// 	}
+	// }
+
+	// // Create the route
+	// err := r.createRoute(ctx, orchestrator) {
+	// 	if err !nil {
+	// 		log.Error(err, "unable to create route")
+	// 		return ctrl.Result{Requeue: true}, err {
+
+	// 	}
+	// }
+
 	return ctrl.Result{}, nil
 }
 
