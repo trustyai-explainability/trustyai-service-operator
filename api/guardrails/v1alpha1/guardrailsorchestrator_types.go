@@ -76,11 +76,13 @@ type GuardrailsOrchestratorSpec struct {
 	Detectors []DetectorSpec `json:"detectors"`
 	// TLS
 	TLS TLSSpec `json:"tls"`
+	// Pod configuration
+	Pod GuardrailsOrchestratorPod `json:"pod"`
 }
 
 type GuardrailsOrchestratorPod struct {
 	Container *GuardrailsOrchestratorContainer `json:"container"`
-	Volumes   []corev1.Volume                  `json:"volumes, omitempty"`
+	Volumes   []corev1.Volume                  `json:"volumes,omitempty"`
 }
 
 // The following Getter-ish functions avoid nil pointer panic
@@ -109,6 +111,7 @@ type GuardrailsOrchestratorContainer struct {
 	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	Image     string                       `json:"image"`
 }
 
 // The following Getter-ish functions avoid nil pointer panic
