@@ -12,28 +12,31 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-type GuardrailsReconciler struct {
-	client.Client
-	Scheme        *runtime.Scheme
-	EventRecorder record.EventRecorder
-	Namespace     string
-}
-
-func ControllerSetUp(mgr ctrl.Manager, recorder record.EventRecorder, ns string) error {
+// The registered function to set up the Guardrails controller
+func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) error {
 	return (&GuardrailsReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
-		EventRecorder: recorder,
 		Namespace:     ns,
+		EventRecorder: recorder,
 	}).SetupWithManager(mgr)
 }
 
+// GuardrailsReconciler reconciles a GuardrailsOrchestrator object
+type GuardrailsReconciler struct {
+	client.Client
+	Scheme        *runtime.Scheme
+	Namespace     string
+	EventRecorder record.EventRecorder
+}
+
 func (r *GuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	// your logic here
 	log := log.FromContext(ctx)
+	// Fetch the GuardrailsOrchestrator instance
 	orchestrator := &guardrailsv1alpha1.GuardrailsOrchestrator{}
 	err := r.Get(context.TODO(), req.NamespacedName, orchestrator)
 	if err != nil {
@@ -59,18 +62,53 @@ func (r *GuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// Handle creation
+	// Add the finalizer if it does not exist
 	if !utils.ContainsString(orchestrator.Finalizers, FinalizerName) {
 		orchestrator.Finalizers = append(orchestrator.Finalizers, FinalizerName)
 		if err := r.Update(ctx, orchestrator); err != nil {
 			log.Error(err, "failed to add the finalizer")
 		}
 	}
-	deployment := createDeployment(orchestrator, log)
-	if err := r.Create(ctx, deployment); err != nil {
-		log.Error(err, "unable to create deployment")
+
+	// Create the service account
+	err = r.ensureServiceAccount(ctx, orchestrator)
+	if err != nil {
+		log.Error(err, "ServiceAccount not ready")
+		return ctrl.Result{Requeue: true}, err
+	}
+
+	// Create external routes for inference services
+	shouldContinue, err := r.ensureInferenceServices(ctx, orchestrator, orchestrator.Namespace)
+	if err != nil {
+		log.Error(err, "Failed to ensure inference services")
+		return ctrl.Result{Requeue: true}, err
+	}
+	if !shouldContinue {
+		log.Error(err, "Failed to ")
+		return ctrl.Result{Requeue: true}, err
+	}
+
+	// Create the deployment
+	err = r.ensureDeployment(ctx, orchestrator)
+	if err != nil {
+		log.Error(err, "Deployment not ready")
 		return ctrl.Result{}, err
 	}
+
+	// Check if the service already exists, if not create the service
+	err = r.ensureService(ctx, orchestrator)
+	if err != nil {
+		log.Error(err, "Service not ready")
+		return ctrl.Result{}, err
+	}
+
+	// Check if the Route already exists, if not create the route
+	err = r.ensureRoute(ctx, orchestrator)
+	if err != nil {
+		log.Error(err, "Route not ready")
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
 }
 
