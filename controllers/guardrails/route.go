@@ -2,38 +2,54 @@ package guardrails
 
 import (
 	"context"
+	"reflect"
 
 	routev1 "github.com/openshift/api/route/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	controllerutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
 	guardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/guardrails/v1alpha1"
+	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func (r *GuardrailsReconciler) createRoute(ctx context.Context, orchestrator *guardrailsv1alpha1.GuardrailsOrchestrator) (*routev1.Route, error) {
-	route := &routev1.Route{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      orchestrator.Name,
-			Namespace: orchestrator.Namespace,
-			Labels:    map[string]string{"app": orchestrator.Name},
-		},
-		Spec: routev1.RouteSpec{
-			Host: orchestrator.Name,
-			To: routev1.RouteTargetReference{
-				Kind: "Service",
-				Name: orchestrator.Name,
-			},
-			Port: &routev1.RoutePort{
-				TargetPort: intstr.FromString("http"),
-			},
-			TLS: &routev1.TLSConfig{
-				Termination:                   routev1.TLSTerminationPassthrough,
-				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
-			},
-			WildcardPolicy: routev1.WildcardPolicyNone,
-		},
+var routeTemplatePath = "templates/route.yaml"
+
+type RouteConfig struct {
+	Name      string
+	Namespace string
+	PortName  string
+}
+
+func (r *GuardrailsReconciler) ensureRoute(ctx context.Context, orchestrator *guardrailsv1alpha1.GuardrailsOrchestrator) error {
+	// Check if the route already exists, if not create a new one
+	existingRoute := &routev1.Route{}
+	err := r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingRoute)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return r.createRoute(ctx, orchestrator, routeTemplatePath)
+		}
+		return err
+	}
+	return nil
+}
+
+func (r *GuardrailsReconciler) createRoute(ctx context.Context, orchestrator *guardrailsv1alpha1.GuardrailsOrchestrator, routeTemplatePath string) error {
+
+	routeConfig := RouteConfig{
+		Name:      orchestrator.Name,
+		Namespace: orchestrator.Namespace,
+		PortName:  "http",
+	}
+
+	var route *routev1.Route
+	route, err := templateParser.ParseResource[routev1.Route](routeTemplatePath, routeConfig, reflect.TypeOf(routev1.Route{}))
+
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to parse route template")
+		return err
 	}
 	controllerutil.SetControllerReference(orchestrator, route, r.Scheme)
-	return route, nil
+
+	return nil
 }
