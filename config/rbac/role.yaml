@@ -187,6 +187,7 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - guardrailsorchestrators
   - lmevaljobs
   - trustyaiservices
   verbs:
@@ -200,6 +201,7 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - guardrailsorchestrators/finalizers
   - lmevaljobs/finalizers
   - trustyaiservices/finalizers
   verbs:
@@ -207,6 +209,7 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - guardrailsorchestrators/status
   - lmevaljobs/status
   - trustyaiservices/status
   verbs:

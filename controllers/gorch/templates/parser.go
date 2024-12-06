@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"embed"
 	"reflect"
-	"sigs.k8s.io/yaml"
 	"text/template"
+
+	"sigs.k8s.io/yaml"
 )
 
-//go:embed service/*.tmpl.yaml
+//go:embed *.tmpl.yaml
 var templateFS embed.FS
 
 // executeTemplate parses the template file and executes it with the provided data.

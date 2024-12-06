@@ -1,9 +1,10 @@
 resources:
   - bases/trustyai.opendatahub.io_trustyaiservices.yaml
   - bases/trustyai.opendatahub.io_lmevaljobs.yaml
+  - bases/trustyai.opendatahub.io_guardrailsorchestrators.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
-patchesStrategicMerge:
+patchesStrategicMerge: []
 #+kubebuilder:scaffold:crdkustomizewebhookpatch
 #+kubebuilder:scaffold:crdkustomizecainjectionpatch
 
