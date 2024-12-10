@@ -37,6 +37,8 @@ var Options *serviceOptions = &serviceOptions{
 	MaxBatchSize:        DefaultMaxBatchSize,
 	DetectDevice:        DefaultDetectDevice,
 	DefaultBatchSize:    DefaultBatchSize,
+	AllowOnline:         false,
+	AllowCodeExecution:  false,
 }
 
 type serviceOptions struct {
@@ -47,6 +49,8 @@ type serviceOptions struct {
 	MaxBatchSize        int
 	DefaultBatchSize    string
 	DetectDevice        bool
+	AllowOnline         bool
+	AllowCodeExecution  bool
 }
 
 func constructOptionsFromConfigMap(log *logr.Logger, configmap *corev1.ConfigMap) error {

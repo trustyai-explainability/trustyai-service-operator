@@ -34,6 +34,8 @@ const (
 	MaxBatchSizeKey            = "lmes-max-batch-size"
 	DefaultBatchSizeKey        = "lmes-default-batch-size"
 	DetectDeviceKey            = "lmes-detect-device"
+	AllowOnline                = "lmes-allow-online"
+	AllowCodeExecution         = "lmes-allow-code-execution"
 	DefaultPodImage            = "quay.io/trustyai/ta-lmes-job:latest"
 	DefaultDriverImage         = "quay.io/trustyai/ta-lmes-driver:latest"
 	DefaultPodCheckingInterval = time.Second * 10
