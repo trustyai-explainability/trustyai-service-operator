@@ -668,7 +668,7 @@ func (r *LMEvalJobReconciler) validateCustomCard(job *lmesv1alpha1.LMEvalJob, lo
 
 func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) *corev1.Pod {
 
-	var envVars = job.Spec.Pod.GetContainer().GetEnv()
+	var envVars = removeProtectedEnvVars(job.Spec.Pod.GetContainer().GetEnv())
 
 	var volumeMounts = []corev1.VolumeMount{
 		{
@@ -1084,4 +1084,26 @@ func getContainerByName(status *corev1.PodStatus, name string) int {
 	return slices.IndexFunc(status.ContainerStatuses, func(s corev1.ContainerStatus) bool {
 		return s.Name == name
 	})
+}
+
+var ProtectedEnvVarNames = []string{"TRUST_REMOTE_CODE", "HF_DATASETS_TRUST_REMOTE_CODE", "HF_DATASETS_OFFLINE", "HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "HF_EVALUATE_OFFLINE"}
+
+// removeProtectedEnvVars removes protected EnvVars from a list of EnvVars
+func removeProtectedEnvVars(envVars []corev1.EnvVar) []corev1.EnvVar {
+	var allowedEnvVars []corev1.EnvVar
+
+	for _, env := range envVars {
+		exclude := false
+		for _, name := range ProtectedEnvVarNames {
+			if env.Name == name {
+				exclude = true
+				break
+			}
+		}
+		if !exclude {
+			allowedEnvVars = append(allowedEnvVars, env)
+		}
+	}
+
+	return allowedEnvVars
 }
