@@ -1,0 +1,23 @@
+kind: Service
+apiVersion: v1
+metadata:
+    name: {{ .Name }}
+    namespace: {{ .Namespace }}
+    labels:
+        app: {{ .Name }}
+        component: {{ .Name }}
+spec:
+    ipFamilies:
+        - IPv4
+    ports:
+        - name: http
+          protocol: TCP
+          port: 8033
+          targetPort: 8033
+    type: ClusterIP
+    ipFamilyPolicy: SingleStack
+    sessionAffinity: None
+    selector:
+        app: {{ .Name }}
+        component: {{ .Name }}
+        deploy-naem: {{ .Name }}
