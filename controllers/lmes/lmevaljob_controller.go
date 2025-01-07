@@ -670,6 +670,19 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 
 	var envVars = removeProtectedEnvVars(job.Spec.Pod.GetContainer().GetEnv())
 
+	disableTelemetryEnvVars := []corev1.EnvVar{
+		{
+			Name:  "HF_HUB_DISABLE_TELEMETRY",
+			Value: "1",
+		},
+		{
+			Name:  "DO_NOT_TRACK",
+			Value: "1",
+		},
+	}
+
+	envVars = append(envVars, disableTelemetryEnvVars...)
+
 	var volumeMounts = []corev1.VolumeMount{
 		{
 			Name:      "shared",

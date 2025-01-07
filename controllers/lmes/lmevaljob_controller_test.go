@@ -118,6 +118,14 @@ func Test_SimplePod(t *testing.T) {
 					},
 					Env: []corev1.EnvVar{
 						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
 							Name:  "TRUST_REMOTE_CODE",
 							Value: "0",
 						},
@@ -330,6 +338,14 @@ func Test_WithCustomPod(t *testing.T) {
 					},
 					Env: []corev1.EnvVar{
 						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
 							Name:  "TRUST_REMOTE_CODE",
 							Value: "0",
 						},
@@ -524,6 +540,14 @@ func Test_EnvSecretsPod(t *testing.T) {
 							},
 						},
 						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
 							Name:  "TRUST_REMOTE_CODE",
 							Value: "0",
 						},
@@ -681,6 +705,14 @@ func Test_FileSecretsPod(t *testing.T) {
 					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: defaultSecurityContext,
 					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
 						{
 							Name:  "TRUST_REMOTE_CODE",
 							Value: "0",
@@ -1139,6 +1171,14 @@ func Test_ManagedPVC(t *testing.T) {
 					SecurityContext: defaultSecurityContext,
 					Env: []corev1.EnvVar{
 						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
 							Name:  "TRUST_REMOTE_CODE",
 							Value: "0",
 						},
@@ -1285,6 +1325,14 @@ func Test_ExistingPVC(t *testing.T) {
 					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: defaultSecurityContext,
 					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
 						{
 							Name:  "TRUST_REMOTE_CODE",
 							Value: "0",
@@ -1449,6 +1497,14 @@ func Test_PVCPreference(t *testing.T) {
 						},
 					},
 					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
 						{
 							Name:  "TRUST_REMOTE_CODE",
 							Value: "0",
@@ -1645,6 +1701,14 @@ func Test_OfflineMode(t *testing.T) {
 					},
 					Env: []corev1.EnvVar{
 						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
 							Name:  "TRUST_REMOTE_CODE",
 							Value: "0",
 						},
@@ -1840,6 +1904,15 @@ func Test_ProtectedVars(t *testing.T) {
 							Value: "True",
 						},
 						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+
+						{
 							Name:  "TRUST_REMOTE_CODE",
 							Value: "0",
 						},
@@ -2015,6 +2088,14 @@ func Test_OnlineModeDisabled(t *testing.T) {
 					},
 					Env: []corev1.EnvVar{
 						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
 							Name:  "TRUST_REMOTE_CODE",
 							Value: "0",
 						},
@@ -2186,6 +2267,14 @@ func Test_OnlineMode(t *testing.T) {
 					},
 					Env: []corev1.EnvVar{
 						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
 							Name:  "TRUST_REMOTE_CODE",
 							Value: "0",
 						},
@@ -2344,6 +2433,14 @@ func Test_AllowCodeOnlineMode(t *testing.T) {
 					},
 					Env: []corev1.EnvVar{
 						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
 							Name:  "TRUST_REMOTE_CODE",
 							Value: "1",
 						},
@@ -2499,6 +2596,14 @@ func Test_AllowCodeOfflineMode(t *testing.T) {
 						},
 					},
 					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
 						{
 							Name:  "TRUST_REMOTE_CODE",
 							Value: "1",
@@ -2671,6 +2776,14 @@ func Test_OfflineModeWithOutput(t *testing.T) {
 						},
 					},
 					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
 						{
 							Name:  "TRUST_REMOTE_CODE",
 							Value: "0",
