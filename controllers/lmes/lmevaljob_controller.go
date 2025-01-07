@@ -670,6 +670,19 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 
 	var envVars = removeProtectedEnvVars(job.Spec.Pod.GetContainer().GetEnv())
 
+	disableTelemetryEnvVars := []corev1.EnvVar{
+		{
+			Name:  "HF_HUB_DISABLE_TELEMETRY",
+			Value: "1",
+		},
+		{
+			Name:  "DO_NOT_TRACK",
+			Value: "1",
+		},
+	}
+
+	envVars = append(envVars, disableTelemetryEnvVars...)
+
 	var volumeMounts = []corev1.VolumeMount{
 		{
 			Name:      "shared",
@@ -715,7 +728,7 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 		volumes = append(volumes, outputPVC)
 	}
 
-	remoteCodeEnvVars := []corev1.EnvVar{
+	disallowRemoteCodeEnvVars := []corev1.EnvVar{
 		{
 			Name:  "TRUST_REMOTE_CODE",
 			Value: "0",
@@ -724,17 +737,37 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 			Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
 			Value: "0",
 		},
+		{
+			Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+			Value: "False",
+		},
 	}
-
+	allowRemoteCodeEnvVars := []corev1.EnvVar{
+		{
+			Name:  "TRUST_REMOTE_CODE",
+			Value: "1",
+		},
+		{
+			Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+			Value: "1",
+		},
+		{
+			Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+			Value: "True",
+		},
+	}
 	if job.Spec.AllowCodeExecution != nil && *job.Spec.AllowCodeExecution {
 		// Disable remote code execution by default
 
 		if !svcOpts.AllowCodeExecution {
 			log.Error(fmt.Errorf("code execution not allowed by the operator"), "change this setting and redeploy the operator")
-			envVars = append(envVars, remoteCodeEnvVars...)
+			envVars = append(envVars, disallowRemoteCodeEnvVars...)
+		} else {
+			log.Info("enabling code execution")
+			envVars = append(envVars, allowRemoteCodeEnvVars...)
 		}
 	} else {
-		envVars = append(envVars, remoteCodeEnvVars...)
+		envVars = append(envVars, disallowRemoteCodeEnvVars...)
 	}
 
 	offlineHuggingFaceEnvVars := []corev1.EnvVar{
@@ -1086,7 +1119,15 @@ func getContainerByName(status *corev1.PodStatus, name string) int {
 	})
 }
 
-var ProtectedEnvVarNames = []string{"TRUST_REMOTE_CODE", "HF_DATASETS_TRUST_REMOTE_CODE", "HF_DATASETS_OFFLINE", "HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "HF_EVALUATE_OFFLINE"}
+var ProtectedEnvVarNames = []string{
+	"TRUST_REMOTE_CODE",
+	"HF_DATASETS_TRUST_REMOTE_CODE",
+	"HF_DATASETS_OFFLINE",
+	"HF_HUB_OFFLINE",
+	"TRANSFORMERS_OFFLINE",
+	"HF_EVALUATE_OFFLINE",
+	"UNITXT_ALLOW_UNVERIFIED_CODE",
+}
 
 // removeProtectedEnvVars removes protected EnvVars from a list of EnvVars
 func removeProtectedEnvVars(envVars []corev1.EnvVar) []corev1.EnvVar {
