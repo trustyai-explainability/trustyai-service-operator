@@ -153,6 +153,10 @@ func Test_SimplePod(t *testing.T) {
 							Name:  "HF_EVALUATE_OFFLINE",
 							Value: "1",
 						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
 					},
 				},
 			},
@@ -373,6 +377,10 @@ func Test_WithCustomPod(t *testing.T) {
 							Name:  "HF_EVALUATE_OFFLINE",
 							Value: "1",
 						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
 					},
 				},
 				{
@@ -575,6 +583,10 @@ func Test_EnvSecretsPod(t *testing.T) {
 							Name:  "HF_EVALUATE_OFFLINE",
 							Value: "1",
 						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
 					},
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
@@ -740,6 +752,10 @@ func Test_FileSecretsPod(t *testing.T) {
 						{
 							Name:  "HF_EVALUATE_OFFLINE",
 							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
 						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
@@ -1206,6 +1222,10 @@ func Test_ManagedPVC(t *testing.T) {
 							Name:  "HF_EVALUATE_OFFLINE",
 							Value: "1",
 						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
 					},
 
 					VolumeMounts: []corev1.VolumeMount{
@@ -1360,6 +1380,10 @@ func Test_ExistingPVC(t *testing.T) {
 						{
 							Name:  "HF_EVALUATE_OFFLINE",
 							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
 						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
@@ -1532,6 +1556,10 @@ func Test_PVCPreference(t *testing.T) {
 						{
 							Name:  "HF_EVALUATE_OFFLINE",
 							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
 						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
@@ -1735,6 +1763,10 @@ func Test_OfflineMode(t *testing.T) {
 						{
 							Name:  "HF_EVALUATE_OFFLINE",
 							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
 						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
@@ -1940,6 +1972,10 @@ func Test_ProtectedVars(t *testing.T) {
 							Name:  "HF_EVALUATE_OFFLINE",
 							Value: "1",
 						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
@@ -2122,6 +2158,10 @@ func Test_OnlineModeDisabled(t *testing.T) {
 						{
 							Name:  "HF_EVALUATE_OFFLINE",
 							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
 						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
@@ -2632,6 +2672,10 @@ func Test_AllowCodeOfflineMode(t *testing.T) {
 							Name:  "HF_EVALUATE_OFFLINE",
 							Value: "1",
 						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
@@ -2811,6 +2855,10 @@ func Test_OfflineModeWithOutput(t *testing.T) {
 						{
 							Name:  "HF_EVALUATE_OFFLINE",
 							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
 						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
