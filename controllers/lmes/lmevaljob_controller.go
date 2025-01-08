@@ -787,6 +787,10 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 			Name:  "HF_EVALUATE_OFFLINE",
 			Value: "1",
 		},
+		{
+			Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+			Value: "True",
+		},
 	}
 
 	// Enforce offline mode by default
