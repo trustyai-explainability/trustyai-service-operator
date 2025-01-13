@@ -20,10 +20,11 @@ import (
 	"context"
 	"fmt"
 
+	routev1 "github.com/openshift/api/route/v1"
+	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -33,14 +34,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-
-	routev1 "github.com/openshift/api/route/v1"
-	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
-)
-
-const (
-	typeDegradedOrchestrator  = "Degraded"
-	typeAvailableOrchestrator = "Available"
 )
 
 // GuardrailsOrchestratorReconciler reconciles a GuardrailsOrchestrator object
@@ -78,10 +71,9 @@ func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.
 func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
-	// TODO(user): your logic here
 	orchestrator := &gorchv1alpha1.GuardrailsOrchestrator{}
 
-	err := r.Get(ctx, req.NamespacedName, orchestrator)
+	err := r.Get(context.TODO(), req.NamespacedName, orchestrator)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			log.Info("GuardrailsOrchestrator resource not found. Ignoring since object must be deleted.")
@@ -89,6 +81,20 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 		log.Error(err, "Failed to get GuardrailsOrchestrator")
 		return ctrl.Result{}, err
+	}
+
+	// Start reconcilation
+	if orchestrator.Status.Conditions == nil {
+		reason := ReconcileInit
+		message := "Intializing GuardrailsOrchestrator resource"
+		orchestrator, err = r.updateStatus(orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+			SetProgressingCondition(&saved.Status.Conditions, reason, message)
+			saved.Status.Phase = PhaseProgressing
+		})
+		if err != nil {
+			log.Error(err, "Failed to update GuardrailsOrchestrator status during initialization")
+			return ctrl.Result{}, err
+		}
 	}
 
 	if !controllerutil.ContainsFinalizer(orchestrator, finalizerName) {
@@ -110,15 +116,6 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		if controllerutil.ContainsFinalizer(orchestrator, finalizerName) {
 			log.Info("Performing Finalizer Operations for GuardrailsOrchestrator before delete CR")
 
-			meta.SetStatusCondition(&orchestrator.Status.Conditions, metav1.Condition{Type: typeDegradedOrchestrator,
-				Status: metav1.ConditionUnknown, Reason: "Finalizing",
-				Message: fmt.Sprintf("Performing finalizer operations for the custom resource: %s", orchestrator.Name)})
-
-			if err := r.Status().Update(ctx, orchestrator); err != nil {
-				log.Error(err, "Failed to update GuardrailsOrchestrator status")
-				return ctrl.Result{}, err
-			}
-
 			if err = r.doFinalizerOperationsForOrchestrator(ctx, orchestrator); err != nil {
 				log.Error(err, "Failed to do finalizer operations for GuardrailsOrchestrator")
 				return ctrl.Result{}, err
@@ -128,16 +125,6 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 				log.Error(err, "Failed to re-fetch GuardrailsOrchestrator")
 				return ctrl.Result{}, err
 			}
-
-			meta.SetStatusCondition(&orchestrator.Status.Conditions, metav1.Condition{Type: typeDegradedOrchestrator,
-				Status: metav1.ConditionTrue, Reason: "Finalizing",
-				Message: fmt.Sprintf("Finalizer operations for custom resource %s were sucessfully accomplished", orchestratorName)})
-
-			if err := r.Status().Update(ctx, orchestrator); err != nil {
-				log.Error(err, "Failed to update GuardrailsOrchestrator status")
-				return ctrl.Result{}, err
-			}
-
 			log.Info("Removing Finalizer for GuardrailsOrchestrator after sucessfully performing the operations")
 			if ok := controllerutil.RemoveFinalizer(orchestrator, finalizerName); !ok {
 				log.Error(err, "Failed to remove finalizer from GuardrailsOrchestrator")
@@ -150,6 +137,29 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 			}
 		}
 		return ctrl.Result{}, nil
+	}
+
+	existingConfigMap := &corev1.ConfigMap{}
+	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-config", Namespace: orchestrator.Namespace}, existingConfigMap)
+	if err != nil && errors.IsNotFound(err) {
+		configMap := r.createConfigMap(ctx, orchestrator)
+		log.Info("Creating a new ConfigMap", "ConfigMap.Namespace", configMap.Namespace, "ConfigMap.Name", configMap.Name)
+		err = r.Create(ctx, configMap)
+		if err != nil {
+			log.Error(err, "Failed to create new ConfigMap", "ConfigMap.Namespace", configMap.Namespace, "ConfigMap.Name", configMap.Name)
+			return ctrl.Result{}, err
+		}
+	} else if err != nil {
+		log.Error(err, "Failed to get ConfigMap")
+		return ctrl.Result{}, err
+	}
+	// TODO: add create constant
+	orchestrator, err = r.updateStatus(orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+		SetResourceCondition(&saved.Status.Conditions, "ConfigMap", "ConfigMapCreated", "ConfigMap created succesfully", corev1.ConditionTrue)
+	})
+	if err != nil {
+		log.Error(err, "Failed to update GuardrailsOrchestrator status after ConfigMap creation")
+		return ctrl.Result{}, err
 	}
 
 	existingServiceAccount := &corev1.ServiceAccount{}
@@ -166,10 +176,18 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		log.Error(err, "Failed to get ServiceAccount")
 		return ctrl.Result{}, err
 	}
+	orchestrator, err = r.updateStatus(orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+		SetResourceCondition(&saved.Status.Conditions, "ServiceAccount", "ServiceAccountCreated", "ServiceAccount created succesfully", corev1.ConditionTrue)
+	})
+	if err != nil {
+		log.Error(err, "Failed to update GuardrailsOrchestrator status after Service Account creation")
+		return ctrl.Result{}, err
+	}
 
 	existingDeployment := &appsv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Name: orchestratorName, Namespace: orchestrator.Namespace}, existingDeployment)
 	if err != nil && errors.IsNotFound(err) {
+		// Create a new deployment
 		deployment := r.createDeployment(ctx, orchestrator)
 		log.Info("Creating a new Deployment", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
 		err = r.Create(ctx, deployment)
@@ -179,6 +197,13 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 	} else if err != nil {
 		log.Error(err, "Failed to get Deployment")
+		return ctrl.Result{}, err
+	}
+	orchestrator, err = r.updateStatus(orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+		SetResourceCondition(&saved.Status.Conditions, "Deployment", "DeploymentCreated", "Deployment created succesfully", corev1.ConditionTrue)
+	})
+	if err != nil {
+		log.Error(err, "Failed to update GuardrailsOrchestrator status after Deployment creation")
 		return ctrl.Result{}, err
 	}
 
@@ -197,6 +222,13 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		log.Error(err, "Failed to get Service")
 		return ctrl.Result{}, err
 	}
+	orchestrator, err = r.updateStatus(orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+		SetResourceCondition(&saved.Status.Conditions, "Service", "ServiceCreated", "Service created succesfully", corev1.ConditionTrue)
+	})
+	if err != nil {
+		log.Error(err, "Failed to update GuardrailsOrchestrator status after Service creation")
+		return ctrl.Result{}, err
+	}
 
 	existingRoute := &routev1.Route{}
 	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingRoute)
@@ -207,17 +239,28 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		err = r.Create(ctx, route)
 		if err != nil {
 			log.Error(err, "Failed to create new Route", "Route.Namespace", route.Namespace, "Route.Name", route.Name)
-			return ctrl.Result{}, err
 		}
 	} else if err != nil {
 		log.Error(err, "Failed to get Route")
 		return ctrl.Result{}, err
 	}
 
-	meta.SetStatusCondition(&orchestrator.Status.Conditions, metav1.Condition{Type: typeAvailableOrchestrator, Status: metav1.ConditionTrue,
-		Reason: "Available", Message: "GuardrailsOrchestrator is available"})
-	if err := r.Status().Update(ctx, orchestrator); err != nil {
-		log.Error(err, "Failed to update GuardrailsOrchestrator status")
+	orchestrator, err = r.updateStatus(orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+		SetResourceCondition(&saved.Status.Conditions, "Route", "RouteCreated", "Route created succesfully", corev1.ConditionTrue)
+
+	})
+	if err != nil {
+		log.Error(err, "Failed to update GuardrailsOrchestrator status after Route creation")
+		return ctrl.Result{}, err
+	}
+
+	// finalize reconcilation
+	orchestrator, err = r.updateStatus(orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+		SetCompleteCondition(&saved.Status.Conditions, ReconcileCompleted, ReconcileCompletedMessage)
+		saved.Status.Phase = PhaseReady
+	})
+	if err != nil {
+		log.Error(err, "failed to update GuardrailsOrchestrator conditions after successfuly completed reconciliation")
 		return ctrl.Result{}, err
 	}
 

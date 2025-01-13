@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -42,11 +44,13 @@ type GeneratorSpec struct {
 }
 
 type ChunkerSpec struct {
-	Provider string      `json:"provider"`
-	Service  ServiceSpec `json:"service"`
+	ChunkerName string      `json:"chunkerName"`
+	Provider    string      `json:"provider"`
+	Service     ServiceSpec `json:"service"`
 }
 
 type DetectorSpec struct {
+	Name             string      `json:"name"`
 	Type             string      `json:"type"`
 	Service          ServiceSpec `json:"service"`
 	ChunkerName      string      `json:"chunkerName"`
@@ -60,6 +64,7 @@ type GuardrailsOrchestratorSpec struct {
 
 	// Number of replicas
 	Replicas int32 `json:"replicas"`
+	// CongigMapName string `json:"configMapName"`
 	// Generator configuration
 	Generator GeneratorSpec `json:"generator"`
 	// Chunker configuration
@@ -70,25 +75,35 @@ type GuardrailsOrchestratorSpec struct {
 	TLS string `json:"tls,omitempty"`
 }
 
-// const (
-// 	OrchestratorConditionReconciled ConditionType = "Reconciled"
-// 	// OrchestratorConditionReady represents the fact that the orchestrator's components are ready
-// 	OrchestratorConditionReady           ConditionType   = "Ready"
-// 	OrchestratorDeploymentNotReady       ConditionReason = "DeploymentNotReady"
-// 	OrchestratorInferenceServiceNotReady ConditionReason = "InferenceServiceNotReady"
-// 	OrchestratorRouteNotAdmitted         ConditionReason = "RouteNotAdmitted"
-// 	OrchestratorHealthy                  ConditionReason = "Healthy"
-// 	OrchestratorReadinessCheckFailed     ConditionReason = "ReadinessCheckFailed"
-// )
+type ConditionType string
+
+type Condition struct {
+	Type ConditionType `json:"type" description:"type of condition ie. Available|Progressing|Degraded."`
+
+	Status corev1.ConditionStatus `json:"status" description:"status of the condition, one of True, False, Unknown"`
+
+	// +optional
+	Reason string `json:"reason,omitempty" description:"one-word CamelCase reason for the condition's last transition"`
+
+	// +optional
+	Message string `json:"message,omitempty" description:"human-readable message indicating details about last transition"`
+
+	// +optional
+	LastTransitionTime metav1.Time `json:"lastTransitionTime" description:"last time the condition transit from one status to another"`
+}
 
 type GuardrailsOrchestratorStatus struct {
-	Conditions []metav1.Condition `json:"conditions"`
+	Phase string `json:"phase,omitempty"`
+
+	// Conditions describes the state of the DataScienceCluster resource.
+	// +optional
+	Conditions []Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
 
 // GuardrailsOrchestrator is the Schema for the guardrailsorchestrators API.
+// +kubebuilder:subresource:status
 type GuardrailsOrchestrator struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

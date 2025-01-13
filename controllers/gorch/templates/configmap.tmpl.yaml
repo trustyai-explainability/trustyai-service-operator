@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app:
+    component: fms-orchestr8-nlp
+    deploy-name: fms-orchestr8-nlp
+  name: {{.Orchestrator.Name}}-config
+  namespace: {{.Orchestrator.Namespace}}
+data:
+  config.yaml: |
+    generation:
+      provider: {{.Orchestrator.Spec.Generator.Provider}}
+      service:
+        hostname: {{.Orchestrator.Spec.Generator.Service.Hostname}}
+        port: {{.Orchestrator.Spec.Generator.Service.Port}}
+    {{- range .Orchestrator.Spec.Detectors }}
+    detectors:
+      {{.Name}}:
+        type: {{.Type}}
+        service:
+          hostname: {{.Service.Hostname}}
+          port: {{.Service.Port}}
+        chunker_id: {{.ChunkerName}}
+        default_threshold: {{.DefaultThreshold}}
+    {{- end }}
+    {{ if .Orchestrator.Spec.Chunkers}}
+    {{- range .Orchestrator.Spec.Chunkers }}
+    chunkers:
+      {{.ChunkerName}}:
+        service:
+          hostname: {{.Service.Hostname}}
+          port: {{.Service.Port}}
+    {{- end }}
+    {{- end }}

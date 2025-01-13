@@ -44,6 +44,8 @@ spec:
                 description: Chunker configuration
                 items:
                   properties:
+                    chunkerName:
+                      type: string
                     provider:
                       type: string
                     service:
@@ -52,8 +54,6 @@ spec:
                           type: string
                         port:
                           type: integer
-                        protocol:
-                          type: string
                         tls:
                           properties:
                             ca_cert_path:
@@ -73,9 +73,9 @@ spec:
                       required:
                       - hostname
                       - port
-                      - protocol
                       type: object
                   required:
+                  - chunkerName
                   - provider
                   - service
                   type: object
@@ -88,14 +88,14 @@ spec:
                       type: string
                     defaultThreshold:
                       type: string
+                    name:
+                      type: string
                     service:
                       properties:
                         hostname:
                           type: string
                         port:
                           type: integer
-                        protocol:
-                          type: string
                         tls:
                           properties:
                             ca_cert_path:
@@ -115,19 +115,21 @@ spec:
                       required:
                       - hostname
                       - port
-                      - protocol
                       type: object
                     type:
                       type: string
                   required:
                   - chunkerName
                   - defaultThreshold
+                  - name
                   - service
                   - type
                   type: object
                 type: array
               generator:
-                description: Generator configuration
+                description: |-
+                  CongigMapName string `json:"configMapName"`
+                  Generator configuration
                 properties:
                   provider:
                     type: string
@@ -137,8 +139,6 @@ spec:
                         type: string
                       port:
                         type: integer
-                      protocol:
-                        type: string
                       tls:
                         properties:
                           ca_cert_path:
@@ -158,7 +158,6 @@ spec:
                     required:
                     - hostname
                     - port
-                    - protocol
                     type: object
                 required:
                 - provider
@@ -177,18 +176,30 @@ spec:
             - replicas
             type: object
           status:
-            description: GuardrailsOrchestratorStatus defines the observed state of
-              GuardrailsOrchestrator.
             properties:
-              condition:
-                description: |-
-                  INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-                  Important: Run "make" to regenerate code after modifying this file
+              conditions:
+                description: Conditions describes the state of the DataScienceCluster
+                  resource.
+                items:
+                  properties:
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
+              phase:
                 type: string
-              ready:
-                type: boolean
-            required:
-            - ready
             type: object
         type: object
     served: true

@@ -23,24 +23,76 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	// "golang.org/x/sys/unix"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/scheme"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 )
 
-func createGuardrailsOrchestrator(ctx context.Context, namespace string) error {
+// func createGuardrailsOrchestrator(ctx context.Context, typedNamespaceName *types.NamespacedName) error {
+// 	// typedNamespacedName := types.NamespacedName{Name: orchestratorName, Namespace: namespace}
+// 	err := k8sClient.Get(ctx, typedNamespacedName, &gorchv1alpha1.GuardrailsOrchestrator{})
+// 	if err != nil && errors.IsNotFound(err) {
+// 		gorch := &gorchv1alpha1.GuardrailsOrchestrator{
+// 			ObjectMeta: metav1.ObjectMeta{
+// 				Name:      typedNamespacedName.Name,
+// 				Namespace: typedNamespacedName.Namespace,
+// 			},
+// 			Spec: gorchv1alpha1.GuardrailsOrchestratorSpec{
+// 				Replicas: 1,
+// 				Generator: gorchv1alpha1.GeneratorSpec{
+// 					Provider: "nlp",
+// 					Service: gorchv1alpha1.ServiceSpec{
+// 						Hostname: "test",
+// 						Port:     8085,
+// 					},
+// 				},
+// 				Detectors: []gorchv1alpha1.DetectorSpec{
+// 					{
+// 						Type: "regex",
+// 						Service: gorchv1alpha1.ServiceSpec{
+// 							Hostname: "test",
+// 							Port:     8000,
+// 						},
+// 						ChunkerName:      "whole_doc_chunker",
+// 						DefaultThreshold: "0.5",
+// 					},
+// 				},
+// 			},
+// 		}
+// 		err = k8sClient.Create(ctx, gorch)
+// 	}
+// 	return err
+// }
+
+func deleteGuardrailsOrchestrator(ctx context.Context, namespace string) error {
 	typedNamespacedName := types.NamespacedName{Name: orchestratorName, Namespace: namespace}
 	err := k8sClient.Get(ctx, typedNamespacedName, &gorchv1alpha1.GuardrailsOrchestrator{})
-	if err != nil && errors.IsNotFound(err) {
+	if err == nil {
+		gorch := &gorchv1alpha1.GuardrailsOrchestrator{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      typedNamespacedName.Name,
+				Namespace: typedNamespacedName.Namespace,
+			},
+		}
+		err = k8sClient.Delete(ctx, gorch)
+	}
+	return err
+}
+
+func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
+	It("Should sucessfully reconcile creating a custom resource for the GuardrailsOrchestrator", func() {
+		By("Creating a custom resource for the GuardrailsOrchestrator")
+		ctx := context.Background()
+		typedNamespacedName := types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}
 		gorch := &gorchv1alpha1.GuardrailsOrchestrator{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      typedNamespacedName.Name,
@@ -68,36 +120,29 @@ func createGuardrailsOrchestrator(ctx context.Context, namespace string) error {
 				},
 			},
 		}
-		err = k8sClient.Create(ctx, gorch)
-	}
-	return err
-}
-
-func deleteGuardrailsOrchestrator(ctx context.Context, namespace string) error {
-	typedNamespacedName := types.NamespacedName{Name: orchestratorName, Namespace: namespace}
-	err := k8sClient.Get(ctx, typedNamespacedName, &gorchv1alpha1.GuardrailsOrchestrator{})
-	if err == nil {
-		gorch := &gorchv1alpha1.GuardrailsOrchestrator{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      typedNamespacedName.Name,
-				Namespace: typedNamespacedName.Namespace,
-			},
-		}
-		err = k8sClient.Delete(ctx, gorch)
-	}
-	return err
-}
-
-func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
-	It("Should sucessfully reconcile creating a custom resource for the GuardrailsOrchestrator", func() {
-		By("Creating a custom resource for the GuardrailsOrchestrator")
-		ctx := context.Background()
-		typedNamespacedName := types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}
-		err := createGuardrailsOrchestrator(ctx, namespaceName)
+		err := k8sClient.Create(ctx, gorch)
+		// err := createGuardrailsOrchestrator(ctx, typedNamespacedName)
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Checking if the custom resource was successfully created")
 		err = k8sClient.Get(ctx, typedNamespacedName, &gorchv1alpha1.GuardrailsOrchestrator{})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Checking if the configmap was successfully created")
+		configMap := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      constants.ConfigMap,
+				Namespace: namespaceName,
+			},
+			Data: map[string]string{
+				configMapKey: "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+			},
+		}
+		err = k8sClient.Create(ctx, configMap)
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Reconciling the custom resource that was created")
@@ -105,11 +150,20 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 			Client: k8sClient,
 			Scheme: k8sClient.Scheme(),
 		}
+
 		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typedNamespacedName})
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Checking if resources were successfully created in the reconcilation")
 		Eventually(func() error {
+			configMap := &corev1.ConfigMap{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-config", Namespace: namespaceName}, configMap); err != nil {
+				return err
+			}
+			Expect(configMap.Name).Should(Equal(orchestratorName + "-config"))
+			Expect(configMap.Namespace).Should(Equal(namespaceName))
+			Expect(configMap.Data["config.yaml"]).ShouldNot(BeEmpty())
+
 			serviceAccount := &corev1.ServiceAccount{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-serviceaccount", Namespace: namespaceName}, serviceAccount); err != nil {
 				return err
@@ -123,7 +177,10 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 			Expect(deployment.Namespace).Should(Equal(namespaceName))
 			Expect(deployment.Name).Should(Equal(orchestratorName))
 			Expect(deployment.Labels["app"]).Should(Equal(orchestratorName))
-			Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal(defaultContainerImage))
+			Expect(deployment.Spec.Template.Spec.Volumes[0].Name).Should(Equal(orchestratorName + "-config"))
+			Expect(deployment.Spec.Template.Spec.Volumes[0].ConfigMap.Name).Should(Equal(orchestratorName + "-config"))
+			// Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/ta-guardrails-orchestrator:latest"))
+			Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts[0].Name).Should(Equal(orchestratorName + "-config"))
 
 			service := &corev1.Service{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-service", Namespace: namespaceName}, service); err != nil {
