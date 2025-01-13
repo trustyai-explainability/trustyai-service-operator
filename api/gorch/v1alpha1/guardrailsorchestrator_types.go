@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"time"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -42,11 +44,13 @@ type GeneratorSpec struct {
 }
 
 type ChunkerSpec struct {
-	Provider string      `json:"provider"`
-	Service  ServiceSpec `json:"service"`
+	ChunkerName string      `json:"chunkerName"`
+	Provider    string      `json:"provider"`
+	Service     ServiceSpec `json:"service"`
 }
 
 type DetectorSpec struct {
+	Name             string      `json:"name"`
 	Type             string      `json:"type"`
 	Service          ServiceSpec `json:"service"`
 	ChunkerName      string      `json:"chunkerName"`
@@ -70,23 +74,49 @@ type GuardrailsOrchestratorSpec struct {
 	TLS string `json:"tls,omitempty"`
 }
 
-// const (
-// 	OrchestratorConditionReconciled ConditionType = "Reconciled"
-// 	// OrchestratorConditionReady represents the fact that the orchestrator's components are ready
-// 	OrchestratorConditionReady           ConditionType   = "Ready"
-// 	OrchestratorDeploymentNotReady       ConditionReason = "DeploymentNotReady"
-// 	OrchestratorInferenceServiceNotReady ConditionReason = "InferenceServiceNotReady"
-// 	OrchestratorRouteNotAdmitted         ConditionReason = "RouteNotAdmitted"
-// 	OrchestratorHealthy                  ConditionReason = "Healthy"
-// 	OrchestratorReadinessCheckFailed     ConditionReason = "ReadinessCheckFailed"
-// )
-
 type GuardrailsOrchestratorStatus struct {
-	Conditions []metav1.Condition `json:"conditions"`
+	Conditions []GuardrailsOrchestratorCondition `json:"conditions,omitempty"`
+}
+
+var testTime *time.Time
+
+func (in *GuardrailsOrchestratorStatus) SetConditions(condition GuardrailsOrchestratorCondition) {
+	var now time.Time
+	if testTime == nil {
+		now = time.Now()
+	} else {
+		now = *testTime
+	}
+
+	lastTransitionTime := metav1.NewTime(now.Truncate(time.Second))
+
+	for i, prevCondition := range in.Conditions {
+		if prevCondition.Type == condition.Type {
+			if prevCondition.Status != condition.Status {
+				condition.LastTransitionTime = lastTransitionTime
+			} else {
+				condition.LastTransitionTime = prevCondition.LastTransitionTime
+			}
+			in.Conditions[i] = condition
+			return
+		}
+	}
+	condition.LastTransitionTime = lastTransitionTime
+	in.Conditions = append(in.Conditions, condition)
+}
+
+type GuardrailsOrchestratorCondition struct {
+	Type   string                 `json:"type"`
+	Status metav1.ConditionStatus `json:"status"`
+	// +optional
+	Reason string `json:"reason,omitempty"`
+	// +optional
+	Message string `json:"message,omitempty"`
+	// +optional
+	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
 
 // GuardrailsOrchestrator is the Schema for the guardrailsorchestrators API.
 type GuardrailsOrchestrator struct {

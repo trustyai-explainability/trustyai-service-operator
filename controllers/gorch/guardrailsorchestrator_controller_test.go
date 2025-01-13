@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	// "golang.org/x/sys/unix"
 	appsv1 "k8s.io/api/apps/v1"
@@ -30,7 +31,6 @@ import (
 	"k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/scheme"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -110,6 +110,14 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 
 		By("Checking if resources were successfully created in the reconcilation")
 		Eventually(func() error {
+			configMap := &corev1.ConfigMap{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-config", Namespace: namespaceName}, configMap); err != nil {
+				return err
+			}
+			Expect(configMap.Name).Should(Equal(orchestratorName + "-config"))
+			Expect(configMap.Namespace).Should(Equal(namespaceName))
+			Expect(configMap.Data["config.yaml"]).ShouldNot(BeEmpty())
+
 			serviceAccount := &corev1.ServiceAccount{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-serviceaccount", Namespace: namespaceName}, serviceAccount); err != nil {
 				return err
@@ -123,7 +131,10 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 			Expect(deployment.Namespace).Should(Equal(namespaceName))
 			Expect(deployment.Name).Should(Equal(orchestratorName))
 			Expect(deployment.Labels["app"]).Should(Equal(orchestratorName))
+			Expect(deployment.Spec.Template.Spec.Volumes[0].Name).Should(Equal(orchestratorName + "-config"))
+			Expect(deployment.Spec.Template.Spec.Volumes[0].ConfigMap.Name).Should(Equal(orchestratorName + "-config"))
 			Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal(defaultContainerImage))
+			Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts[0].Name).Should(Equal(orchestratorName + "-config"))
 
 			service := &corev1.Service{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-service", Namespace: namespaceName}, service); err != nil {

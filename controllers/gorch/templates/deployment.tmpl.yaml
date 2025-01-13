@@ -1,44 +1,50 @@
 kind: Deployment
 apiVersion: apps/v1
 metadata:
-  name: {{.Name}}
-  namespace: {{.Namespace}}
+  name: {{.Orchestrator.Name}}
+  namespace: {{.Orchestrator.Namespace}}
   annotations:
       sidecar.istio.io/inject: "true"
   labels:
-    app: {{.Name}}
-    component: {{.Name}}
-    deploy-name: {{.Name}}
-    app.kubernetes.io/instance: {{.Name}}
-    app.kubernetes.io/name: {{.Name}}
+    app: {{.Orchestrator.Name}}
+    component: {{.Orchestrator.Name}}
+    deploy-name: {{.Orchestrator.Name}}
+    app.kubernetes.io/instance: {{.Orchestrator.Name}}
+    app.kubernetes.io/name: {{.Orchestrator.Name}}
     app.kubernetes.io/part-of: trustyai
     app.kubernetes.io/version: {{.Version}}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: {{.Name}}
-      component: {{.Name}}
-      deploy-name: {{.Name}}
-      app.kubernetes.io/instance: {{.Name}}
-      app.kubernetes.io/name: {{.Name}}
+      app: {{.Orchestrator.Name}}
+      component: {{.Orchestrator.Name}}
+      deploy-name: {{.Orchestrator.Name}}
+      app.kubernetes.io/instance: {{.Orchestrator.Name}}
+      app.kubernetes.io/name: {{.Orchestrator.Name}}
       app.kubernetes.io/part-of: trustyai
+      app.kubernetes.io/version: {{.Version}}
   template:
     metadata:
       labels:
-        app: {{.Name}}
-        component: {{.Name}}
-        deploy-name: {{.Name}}
-        app.kubernetes.io/instance: {{.Name}}
-        app.kubernetes.io/name: {{.Name}}
+        app: {{.Orchestrator.Name}}
+        component: {{.Orchestrator.Name}}
+        deploy-name: {{.Orchestrator.Name}}
+        app.kubernetes.io/instance: {{.Orchestrator.Name}}
+        app.kubernetes.io/name: {{.Orchestrator.Name}}
         app.kubernetes.io/part-of: trustyai
         app.kubernetes.io/version: {{.Version}}
       annotations:
         sidecar.istio.io/inject: "true"
     spec:
-      serviceAccountName: {{.Name}}-serviceaccount
+      volumes:
+        - name: {{.Orchestrator.Name}}-config
+          configMap:
+            name: {{.Orchestrator.Name}}-config
+            defualtMode: 420
+      serviceAccountName: {{.Orchestrator.Name}}-serviceaccount
       containers:
-        - name: {{.Name}}
+        - name: {{.Orchestrator.Name}}
           image: {{.ContainerImage}}
           env:
             - name: ORCHESTRATOR_CONFIG
@@ -49,6 +55,11 @@ spec:
               value: 'full'
             - name: RUST_LOG
               value: 'fms_guardrails_orchestr8=trace,tower_grpc=debug'
+          volumeMounts:
+            - name: {{.Orchestrator.Name}}-config
+              readOnly: true
+              mountPath: /config
+              subPath: config.yaml
           ports:
             - name: http
               containerPort: 8033

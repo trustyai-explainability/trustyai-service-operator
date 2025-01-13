@@ -14,17 +14,17 @@ import (
 const deploymentTemplatePath = "deployment.tmpl.yaml"
 
 type DeploymentConfig struct {
-	Name           string
-	Namespace      string
+	Orchestrator   *gorchv1alpha1.GuardrailsOrchestrator
 	ContainerImage string
 	Version        string
 }
 
+// TO-DO: Move configmap args to volumes
+
 func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *appsv1.Deployment {
 	containerImage, err := r.getImageFromConfigMap(ctx, configMapKey, defaultContainerImage)
 	deploymentConfig := DeploymentConfig{
-		Name:           orchestratorName,
-		Namespace:      orchestrator.Namespace,
+		Orchestrator:   orchestrator,
 		ContainerImage: containerImage,
 		Version:        Version,
 	}
@@ -32,6 +32,7 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 		log.FromContext(ctx).Error(err, "Error getting container image from ConfigMap. Using the default image value of "+defaultContainerImage)
 	}
 	var deployment *appsv1.Deployment
+
 	deployment, err = templateParser.ParseResource[appsv1.Deployment](deploymentTemplatePath, deploymentConfig, reflect.TypeOf(&appsv1.Deployment{}))
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to parse deployment template")
