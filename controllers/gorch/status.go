@@ -2,120 +2,119 @@ package gorch
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
-	typeDegradedOrchestrator  = "Degraded"
-	typeAvailableOrchestrator = "Available"
+	ConditionReconcileComplete gorchv1alpha1.ConditionType = "ReconcileComplete"
+	ConditionProgessing        gorchv1alpha1.ConditionType = "Progressing"
 )
 
-type updateStatusFunc func(orchestrator *gorchv1alpha1.GuardrailsOrchestrator, message string) error
+const (
+	PhaseProgressing = "Progressing"
+	PhaseReady       = "Ready"
+)
 
-func setStatusConditions(conditions []gorchv1alpha1.GuardrailsOrchestratorCondition, newConditions ...gorchv1alpha1.GuardrailsOrchestratorCondition) ([]gorchv1alpha1.GuardrailsOrchestratorCondition, bool) {
-	var atLeastOneUpdated bool
-	var updated bool
-	for _, cond := range newConditions {
-		conditions, updated = updateStatusCondition(conditions, cond)
-		atLeastOneUpdated = atLeastOneUpdated || updated
-	}
+const (
+	ReconcileFailed           = "ReconcileFailed"
+	ReconcileInit             = "ReconcileSuccess"
+	ReconcileCompleted        = "ReconcileCompleted"
+	ReconcileCompletedMessage = "Reconcile completed successfully"
+)
 
-	return conditions, atLeastOneUpdated
-}
-
-var testTime *time.Time
-
-// updateStatusConditions updates the status of the orchestrator with the new conditions
-func updateStatusConditions(orchestrator *gorchv1alpha1.GuardrailsOrchestrator, client client.Client, newConditions ...gorchv1alpha1.GuardrailsOrchestratorCondition) error {
-	var updated bool
-	log := log.FromContext(context.Background())
-	orchestrator.Status.Conditions, updated = setStatusConditions(orchestrator.Status.Conditions, newConditions...)
-	if !updated {
-		log.Info("GuardrailsOrchestrator status conditions not changed")
-		return nil
-	}
-	return client.Status().Update(context.TODO(), orchestrator)
-}
-
-// updateStatusCondition updates the status of the orchestrator with the new condition.
-func updateStatusCondition(conditions []gorchv1alpha1.GuardrailsOrchestratorCondition, newCondition gorchv1alpha1.GuardrailsOrchestratorCondition) ([]gorchv1alpha1.GuardrailsOrchestratorCondition, bool) {
-	var now time.Time
-	if testTime == nil {
-		now = time.Now()
-	} else {
-		now = *testTime
-	}
-
-	newCondition.LastTransitionTime = metav1.NewTime(now.Truncate(time.Second))
-
-	//  If the condition doesn't exist, add it
+func SetStatusCondition(conditions *[]gorchv1alpha1.Condition, newCondition gorchv1alpha1.Condition) bool {
 	if conditions == nil {
-		return []gorchv1alpha1.GuardrailsOrchestratorCondition{newCondition}, true
+		conditions = &[]gorchv1alpha1.Condition{}
 	}
-	for i, cond := range conditions {
-		if cond.Type == newCondition.Type {
-			// Case 1: The condition has not changed
-			if cond.Status == newCondition.Status &&
-				cond.Reason == newCondition.Reason &&
-				cond.Message == newCondition.Message {
-				return conditions, false
-			}
+	existingCondition := GetStatusCondition(*conditions, newCondition.Type)
+	if existingCondition == nil {
+		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
+		*conditions = append(*conditions, newCondition)
+		return true
+	}
 
-			// Case 2: The condition status has changed
-			if newCondition.Status == cond.Status {
-				newCondition.LastTransitionTime = cond.LastTransitionTime
-			}
-			// Case 3: The condition has changed, create a new slice with the updated condition
-			res := make([]gorchv1alpha1.GuardrailsOrchestratorCondition, len(conditions))
-			copy(res, conditions)
-			res[i] = newCondition
-			return res, true
+	changed := updateCondition(existingCondition, newCondition)
+
+	return changed
+}
+
+func GetStatusCondition(conditions []gorchv1alpha1.Condition, conditionType gorchv1alpha1.ConditionType) *gorchv1alpha1.Condition {
+	for i := range conditions {
+		if conditions[i].Type == conditionType {
+			return &conditions[i]
 		}
 	}
-	return append(conditions, newCondition), true
+	return nil
 }
 
-// statusUpdateError updates the status of the orchestrator with the error message if the error is not nil.
-func (r *GuardrailsOrchestratorReconciler) statusUpdateError(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, updateStatus updateStatusFunc, err error) error {
-	log := log.FromContext(ctx)
-	if err == nil {
-		return nil
+func updateCondition(existingCondition *gorchv1alpha1.Condition, newCondition gorchv1alpha1.Condition) bool {
+	changed := false
+	if existingCondition.Status != newCondition.Status {
+		changed = true
+		existingCondition.Status = newCondition.Status
+		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
 	}
-	if err := updateStatus(orchestrator, err.Error()); err != nil {
-		log.Error(err, "Failed to update GuardrailsOrchestrator status")
+	if existingCondition.Reason != newCondition.Reason {
+		changed = true
+		existingCondition.Reason = newCondition.Reason
+
 	}
-	return err
+	if existingCondition.Message != newCondition.Message {
+		changed = true
+		existingCondition.Message = newCondition.Message
+	}
+	return changed
 }
 
-// setStatusFailed handles the case where one of the orchestrator's components is not available.
-func (r *GuardrailsOrchestratorReconciler) setStatusFailed(reason string) updateStatusFunc {
-	return func(orchestrator *gorchv1alpha1.GuardrailsOrchestrator, message string) error {
-		return updateStatusConditions(
-			orchestrator,
-			r.Client,
-			statusNotReady(reason, message),
-		)
-	}
-}
-
-func statusReady() gorchv1alpha1.GuardrailsOrchestratorCondition {
-	return gorchv1alpha1.GuardrailsOrchestratorCondition{
-		Type:   typeAvailableOrchestrator,
-		Status: metav1.ConditionTrue,
-		Reason: "OrchestratorAvailable",
-	}
-}
-
-func statusNotReady(reason, message string) gorchv1alpha1.GuardrailsOrchestratorCondition {
-	return gorchv1alpha1.GuardrailsOrchestratorCondition{
-		Type:    typeAvailableOrchestrator,
-		Status:  metav1.ConditionFalse,
+func SetProgressingCondition(conditions *[]gorchv1alpha1.Condition, reason string, message string) {
+	SetStatusCondition(conditions, gorchv1alpha1.Condition{
+		Type:    ConditionProgessing,
+		Status:  corev1.ConditionTrue,
 		Reason:  reason,
 		Message: message,
-	}
+	})
+
+}
+
+func SetResourceCondition(conditions *[]gorchv1alpha1.Condition, component string, reason string, message string, status corev1.ConditionStatus) {
+	condtype := component + "Ready"
+	SetStatusCondition(conditions, gorchv1alpha1.Condition{
+		Type:    gorchv1alpha1.ConditionType(condtype),
+		Status:  status,
+		Reason:  reason,
+		Message: message,
+	})
+}
+
+func SetCompleteCondition(conditions *[]gorchv1alpha1.Condition, reason, message string) {
+	SetStatusCondition(conditions, gorchv1alpha1.Condition{
+		Type:    ConditionReconcileComplete,
+		Status:  corev1.ConditionTrue,
+		Reason:  reason,
+		Message: message,
+	})
+}
+
+func (r *GuardrailsOrchestratorReconciler) updateStatus(original *gorchv1alpha1.GuardrailsOrchestrator, update func(saved *gorchv1alpha1.GuardrailsOrchestrator)) (*gorchv1alpha1.GuardrailsOrchestrator, error) {
+	saved := &gorchv1alpha1.GuardrailsOrchestrator{}
+
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		key := client.ObjectKeyFromObject(original)
+		fmt.Printf("Fetching GuardrailsOrchestrator with key: %v\n", key)
+		err := r.Client.Get(context.TODO(), key, saved)
+		if err != nil {
+			return err
+		}
+		update(saved)
+		err = r.Client.Status().Update(context.TODO(), saved)
+		return err
+	})
+	return saved, err
 }

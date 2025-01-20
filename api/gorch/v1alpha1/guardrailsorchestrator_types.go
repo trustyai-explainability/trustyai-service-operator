@@ -17,7 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"time"
+	corev1 "k8s.io/api/core/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -64,6 +64,7 @@ type GuardrailsOrchestratorSpec struct {
 
 	// Number of replicas
 	Replicas int32 `json:"replicas"`
+	// CongigMapName string `json:"configMapName"`
 	// Generator configuration
 	Generator GeneratorSpec `json:"generator"`
 	// Chunker configuration
@@ -74,51 +75,35 @@ type GuardrailsOrchestratorSpec struct {
 	TLS string `json:"tls,omitempty"`
 }
 
+type ConditionType string
+
+type Condition struct {
+	Type ConditionType `json:"type" description:"type of condition ie. Available|Progressing|Degraded."`
+
+	Status corev1.ConditionStatus `json:"status" description:"status of the condition, one of True, False, Unknown"`
+
+	// +optional
+	Reason string `json:"reason,omitempty" description:"one-word CamelCase reason for the condition's last transition"`
+
+	// +optional
+	Message string `json:"message,omitempty" description:"human-readable message indicating details about last transition"`
+
+	// +optional
+	LastTransitionTime metav1.Time `json:"lastTransitionTime" description:"last time the condition transit from one status to another"`
+}
+
 type GuardrailsOrchestratorStatus struct {
-	Conditions []GuardrailsOrchestratorCondition `json:"conditions,omitempty"`
-}
+	Phase string `json:"phase,omitempty"`
 
-var testTime *time.Time
-
-func (in *GuardrailsOrchestratorStatus) SetConditions(condition GuardrailsOrchestratorCondition) {
-	var now time.Time
-	if testTime == nil {
-		now = time.Now()
-	} else {
-		now = *testTime
-	}
-
-	lastTransitionTime := metav1.NewTime(now.Truncate(time.Second))
-
-	for i, prevCondition := range in.Conditions {
-		if prevCondition.Type == condition.Type {
-			if prevCondition.Status != condition.Status {
-				condition.LastTransitionTime = lastTransitionTime
-			} else {
-				condition.LastTransitionTime = prevCondition.LastTransitionTime
-			}
-			in.Conditions[i] = condition
-			return
-		}
-	}
-	condition.LastTransitionTime = lastTransitionTime
-	in.Conditions = append(in.Conditions, condition)
-}
-
-type GuardrailsOrchestratorCondition struct {
-	Type   string                 `json:"type"`
-	Status metav1.ConditionStatus `json:"status"`
+	// Conditions describes the state of the GuardrailsOrchestrator resource.
 	// +optional
-	Reason string `json:"reason,omitempty"`
-	// +optional
-	Message string `json:"message,omitempty"`
-	// +optional
-	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
+	Conditions []Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
 // GuardrailsOrchestrator is the Schema for the guardrailsorchestrators API.
+// +kubebuilder:subresource:status
 type GuardrailsOrchestrator struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

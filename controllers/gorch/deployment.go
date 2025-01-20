@@ -29,7 +29,7 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 		Version:        Version,
 	}
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Error getting container image from ConfigMap. Using the default image value of "+defaultContainerImage)
+		log.FromContext(ctx).Error(err, "Error getting container image from ConfigMap.")
 	}
 	var deployment *appsv1.Deployment
 
