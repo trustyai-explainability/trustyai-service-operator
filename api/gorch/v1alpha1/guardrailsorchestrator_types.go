@@ -95,7 +95,7 @@ type Condition struct {
 type GuardrailsOrchestratorStatus struct {
 	Phase string `json:"phase,omitempty"`
 
-	// Conditions describes the state of the DataScienceCluster resource.
+	// Conditions describes the state of the GuardrailsOrchestrator resource.
 	// +optional
 	Conditions []Condition `json:"conditions,omitempty"`
 }
