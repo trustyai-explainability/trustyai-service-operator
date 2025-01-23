@@ -28,7 +28,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -281,23 +280,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// Watch ServingRuntime objects (not managed by this controller)
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &appsv1.Deployment{}, ".metadata.controller", func(rawObj client.Object) []string {
-		// Grab the deployment object and extract the owner
-		deployment := rawObj.(*appsv1.Deployment)
-		owner := metav1.GetControllerOf(deployment)
-		if owner == nil {
-			return nil
-		}
-		// Retain ServingRuntimes only
-		if owner.APIVersion != kservev1beta1.APIVersion || owner.Kind != "ServingRuntime" {
-			return nil
-		}
-		return []string{owner.Name}
-	}); err != nil {
-		return err
-	}
-
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&trustyaiopendatahubiov1alpha1.TrustyAIService{}).
 		Owns(&appsv1.Deployment{}).
