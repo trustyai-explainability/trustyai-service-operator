@@ -25,38 +25,6 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-type TLSSpec struct {
-	Type       string `json:"type"`
-	CertPath   string `json:"cert_path"`
-	KeyPath    string `json:"key_path"`
-	CACertPath string `json:"ca_cert_path"`
-}
-
-type ServiceSpec struct {
-	Hostname string  `json:"hostname"`
-	Port     int     `json:"port"`
-	TLS      TLSSpec `json:"tls,omitempty"`
-}
-
-type GeneratorSpec struct {
-	Provider string      `json:"provider"`
-	Service  ServiceSpec `json:"service"`
-}
-
-type ChunkerSpec struct {
-	ChunkerName string      `json:"chunkerName"`
-	Provider    string      `json:"provider"`
-	Service     ServiceSpec `json:"service"`
-}
-
-type DetectorSpec struct {
-	Name             string      `json:"name"`
-	Type             string      `json:"type"`
-	Service          ServiceSpec `json:"service"`
-	ChunkerName      string      `json:"chunkerName"`
-	DefaultThreshold string      `json:"defaultThreshold"`
-}
-
 // GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator.
 type GuardrailsOrchestratorSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -64,15 +32,10 @@ type GuardrailsOrchestratorSpec struct {
 
 	// Number of replicas
 	Replicas int32 `json:"replicas"`
-	// CongigMapName string `json:"configMapName"`
-	// Generator configuration
-	Generator GeneratorSpec `json:"generator"`
-	// Chunker configuration
-	Chunkers []ChunkerSpec `json:"chunkers,omitempty"`
-	// Detector configuration
-	Detectors []DetectorSpec `json:"detectors"`
-	// TLS configuration
-	TLS string `json:"tls,omitempty"`
+	// Name of configmap containing generator,detector,and chunker arguments
+	OrchestratorConfig *string `json:"orchestratorConfig"`
+	// +optional
+	VLLMGatewayConfig *string `json:"vllmGatewayConfig,omitempty"`
 }
 
 type ConditionType string

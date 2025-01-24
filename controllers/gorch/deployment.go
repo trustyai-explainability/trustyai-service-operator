@@ -5,32 +5,59 @@ import (
 	"reflect"
 
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/gorch/templates"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const deploymentTemplatePath = "deployment.tmpl.yaml"
 
-type DeploymentConfig struct {
-	Orchestrator   *gorchv1alpha1.GuardrailsOrchestrator
-	ContainerImage string
-	Version        string
+type ContainerImages struct {
+	OrchestratorImage  string
+	RegexDetectorImage string
+	GatewayImage       string
 }
 
-// TO-DO: Move configmap args to volumes
+type DeploymentConfig struct {
+	Orchestrator    *gorchv1alpha1.GuardrailsOrchestrator
+	ContainerImages ContainerImages
+}
 
 func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *appsv1.Deployment {
-	containerImage, err := r.getImageFromConfigMap(ctx, configMapKey, defaultContainerImage)
-	deploymentConfig := DeploymentConfig{
-		Orchestrator:   orchestrator,
-		ContainerImage: containerImage,
-		Version:        Version,
-	}
-	if err != nil {
+	var containerImages ContainerImages
+	// Get orchestrator image
+	orchestratorImage, err := r.getImageFromConfigMap(ctx, orchestratorImageKey, constants.ConfigMap, orchestrator.Namespace)
+	if orchestratorImage == "" || err != nil {
 		log.FromContext(ctx).Error(err, "Error getting container image from ConfigMap.")
 	}
+	containerImages.OrchestratorImage = orchestratorImage
+
+	// Check if the vLLM gateway is enabled
+	if orchestrator.Spec.VLLMGatewayConfig != nil {
+		//  Get the gateway and regex detector container images
+		vllmGatewayImage, err := r.getImageFromConfigMap(ctx, vllmGatewayImageKey, constants.ConfigMap, orchestrator.Namespace)
+		if vllmGatewayImage == "" || err != nil {
+			log.FromContext(ctx).Error(err, "Error getting vLLM gateway image from ConfigMap.")
+		}
+		regexDetectorImage, err := r.getImageFromConfigMap(ctx, regexDetectorImageKey, constants.ConfigMap, orchestrator.Namespace)
+		if regexDetectorImage == "" || err != nil {
+			log.FromContext(ctx).Error(err, "Error getting regex detectors image from ConfigMap.")
+		}
+		containerImages.GatewayImage = vllmGatewayImage
+		containerImages.RegexDetectorImage = regexDetectorImage
+	}
+
+	deploymentConfig := DeploymentConfig{
+		Orchestrator:    orchestrator,
+		ContainerImages: containerImages,
+	}
+
 	var deployment *appsv1.Deployment
 
 	deployment, err = templateParser.ParseResource[appsv1.Deployment](deploymentTemplatePath, deploymentConfig, reflect.TypeOf(&appsv1.Deployment{}))
@@ -41,4 +68,33 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 		log.FromContext(ctx).Error(err, "Failed to set controller reference for deployment")
 	}
 	return deployment
+}
+
+func (r *GuardrailsOrchestratorReconciler) checkDeploymentReady(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (bool, error) {
+	deployment := &appsv1.Deployment{}
+	err := r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: r.Namespace}, deployment)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	for _, condition := range deployment.Status.Conditions {
+		if condition.Type == appsv1.DeploymentAvailable && condition.Status == "True" {
+			podList := &corev1.PodList{}
+			if err := r.List(ctx, podList, client.InNamespace(r.Namespace), client.MatchingLabels(deployment.Spec.Selector.MatchLabels)); err != nil {
+				return false, err
+			}
+			for _, pod := range podList.Items {
+				for _, cs := range pod.Status.ContainerStatuses {
+					if !cs.Ready {
+						return false, nil
+					}
+				}
+			}
+			return true, nil
+		}
+	}
+	return false, nil
 }

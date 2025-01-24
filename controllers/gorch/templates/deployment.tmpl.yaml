@@ -12,7 +12,6 @@ metadata:
     app.kubernetes.io/instance: {{.Orchestrator.Name}}
     app.kubernetes.io/name: {{.Orchestrator.Name}}
     app.kubernetes.io/part-of: trustyai
-    app.kubernetes.io/version: {{.Version}}
 spec:
   replicas: 1
   selector:
@@ -23,7 +22,6 @@ spec:
       app.kubernetes.io/instance: {{.Orchestrator.Name}}
       app.kubernetes.io/name: {{.Orchestrator.Name}}
       app.kubernetes.io/part-of: trustyai
-      app.kubernetes.io/version: {{.Version}}
   template:
     metadata:
       labels:
@@ -33,19 +31,24 @@ spec:
         app.kubernetes.io/instance: {{.Orchestrator.Name}}
         app.kubernetes.io/name: {{.Orchestrator.Name}}
         app.kubernetes.io/part-of: trustyai
-        app.kubernetes.io/version: {{.Version}}
       annotations:
         sidecar.istio.io/inject: "true"
     spec:
       volumes:
         - name: {{.Orchestrator.Name}}-config
           configMap:
-            name: {{.Orchestrator.Name}}-config
-            defualtMode: 420
+            name: {{.Orchestrator.Spec.OrchestratorConfig}}
+            defaultMode: 420
+        {{if .Orchestrator.Spec.VLLMGatewayConfig}}
+        - name: {{.Orchestrator.Name}}-vllm-config
+          configMap:
+            name: {{.Orchestrator.Spec.VLLMGatewayConfig}}
+            defaultMode: 420
+        {{end}}
       serviceAccountName: {{.Orchestrator.Name}}-serviceaccount
       containers:
         - name: {{.Orchestrator.Name}}
-          image: {{.ContainerImage}}
+          image: {{.ContainerImages.OrchestratorImage}}
           env:
             - name: ORCHESTRATOR_CONFIG
               value: /config/config.yaml
@@ -58,7 +61,7 @@ spec:
           volumeMounts:
             - name: {{.Orchestrator.Name}}-config
               readOnly: true
-              mountPath: /config
+              mountPath: /config/config.yaml
               subPath: config.yaml
           ports:
             - name: http
@@ -96,3 +99,19 @@ spec:
             terminationMessagePath: /dev/termination-log
             command:
               - /app/bin/fms-guardrails-orchestr8
+        {{if .Orchestrator.Spec.VLLMGatewayConfig}}
+        - name: {{.Orchestrator.Name}}-gateway
+          image : {{.ContainerImages.GatewayImage}}
+          command: ["/app/vllm-orchestrator-gateway"]
+          volumeMounts:
+            - name: {{.Orchestrator.Name}}-vllm-config
+              readOnly: true
+              mountPath: /config/config.yaml
+              subPath: config.yaml
+          env:
+            - name: VLLM_GATEWAY_CONFIG
+              value: /config/config.yaml
+        - name: {{.Orchestrator.Name}}-detectors
+          image : {{.ContainerImages.RegexDetectorImage}}
+          command: ["/bin/sh", "-c", "/app/local-detectors"]
+        {{end}}

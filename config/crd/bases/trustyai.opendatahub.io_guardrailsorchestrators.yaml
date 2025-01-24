@@ -40,139 +40,18 @@ spec:
           spec:
             description: GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator.
             properties:
-              chunkers:
-                description: Chunker configuration
-                items:
-                  properties:
-                    chunkerName:
-                      type: string
-                    provider:
-                      type: string
-                    service:
-                      properties:
-                        hostname:
-                          type: string
-                        port:
-                          type: integer
-                        tls:
-                          properties:
-                            ca_cert_path:
-                              type: string
-                            cert_path:
-                              type: string
-                            key_path:
-                              type: string
-                            type:
-                              type: string
-                          required:
-                          - ca_cert_path
-                          - cert_path
-                          - key_path
-                          - type
-                          type: object
-                      required:
-                      - hostname
-                      - port
-                      type: object
-                  required:
-                  - chunkerName
-                  - provider
-                  - service
-                  type: object
-                type: array
-              detectors:
-                description: Detector configuration
-                items:
-                  properties:
-                    chunkerName:
-                      type: string
-                    defaultThreshold:
-                      type: string
-                    name:
-                      type: string
-                    service:
-                      properties:
-                        hostname:
-                          type: string
-                        port:
-                          type: integer
-                        tls:
-                          properties:
-                            ca_cert_path:
-                              type: string
-                            cert_path:
-                              type: string
-                            key_path:
-                              type: string
-                            type:
-                              type: string
-                          required:
-                          - ca_cert_path
-                          - cert_path
-                          - key_path
-                          - type
-                          type: object
-                      required:
-                      - hostname
-                      - port
-                      type: object
-                    type:
-                      type: string
-                  required:
-                  - chunkerName
-                  - defaultThreshold
-                  - name
-                  - service
-                  - type
-                  type: object
-                type: array
-              generator:
-                description: |-
-                  CongigMapName string `json:"configMapName"`
-                  Generator configuration
-                properties:
-                  provider:
-                    type: string
-                  service:
-                    properties:
-                      hostname:
-                        type: string
-                      port:
-                        type: integer
-                      tls:
-                        properties:
-                          ca_cert_path:
-                            type: string
-                          cert_path:
-                            type: string
-                          key_path:
-                            type: string
-                          type:
-                            type: string
-                        required:
-                        - ca_cert_path
-                        - cert_path
-                        - key_path
-                        - type
-                        type: object
-                    required:
-                    - hostname
-                    - port
-                    type: object
-                required:
-                - provider
-                - service
-                type: object
+              orchestratorConfig:
+                description: Name of configmap containing generator,detector,and chunker
+                  arguments
+                type: string
               replicas:
                 description: Number of replicas
                 format: int32
                 type: integer
-              tls:
-                description: TLS configuration
+              vllmGatewayConfig:
                 type: string
             required:
-            - detectors
-            - generator
+            - orchestratorConfig
             - replicas
             type: object
           status:
