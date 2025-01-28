@@ -6,8 +6,12 @@ metadata:
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
-      == "rhoai-2.18"
+    build.appstudio.openshift.io/build-nudge-files: "config/overlays/rhoai/params.env"
+    pipelinesascode.tekton.dev/on-cel-expression: |
+      event == "push" 
+      && target_branch == "rhoai-2.17"
+      && ( !".tekton/**".pathChanged() || ".tekton/ta-lmes-driver-v2-218-push.yaml".pathChanged() )
+      && !"config/overlays/rhoai/params.env".pathChanged()
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: rhoai-v2-18
@@ -22,7 +26,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/rhoai-tenant/ta-lmes-driver-v2-218:{{revision}}
+    value: quay.io/modh/ta-lmes-driver:{{target_branch}}
   - name: dockerfile
     value: Dockerfile.driver
   pipelineSpec:
@@ -508,6 +512,9 @@ spec:
       params:
       - name: IMAGE
         value: $(tasks.build-image-index.results.IMAGE_URL)
+      - name: ADDITIONAL_TAGS
+        value:
+          - '{{target_branch}}-{{revision}}'
       runAfter:
       - build-image-index
       taskRef:
