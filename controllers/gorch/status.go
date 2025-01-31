@@ -110,16 +110,16 @@ func SetCompleteCondition(conditions *[]gorchv1alpha1.Condition, status corev1.C
 	})
 }
 
-func (r *GuardrailsOrchestratorReconciler) updateStatus(original *gorchv1alpha1.GuardrailsOrchestrator, update func(saved *gorchv1alpha1.GuardrailsOrchestrator)) (*gorchv1alpha1.GuardrailsOrchestrator, error) {
+func (r *GuardrailsOrchestratorReconciler) updateStatus(ctx context.Context, original *gorchv1alpha1.GuardrailsOrchestrator, update func(saved *gorchv1alpha1.GuardrailsOrchestrator)) (*gorchv1alpha1.GuardrailsOrchestrator, error) {
 	saved := &gorchv1alpha1.GuardrailsOrchestrator{}
 
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		err := r.Client.Get(context.TODO(), client.ObjectKeyFromObject(original), saved)
+		err := r.Client.Get(ctx, client.ObjectKeyFromObject(original), saved)
 		if err != nil {
 			return err
 		}
 		update(saved)
-		err = r.Client.Status().Update(context.TODO(), saved)
+		err = r.Client.Status().Update(ctx, saved)
 		return err
 	})
 	return saved, err
@@ -131,7 +131,7 @@ func (r *GuardrailsOrchestratorReconciler) reconcileStatuses(ctx context.Context
 	routeReady, _ = r.checkRouteReady(ctx, orchestrator)
 
 	if generatorReady && deploymentReady && routeReady {
-		_, updateErr := r.updateStatus(orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+		_, updateErr := r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
 			SetResourceCondition(&saved.Status.Conditions, "InferenceService", "InferenceServiceReady", "Inference service is ready", corev1.ConditionTrue)
 			SetResourceCondition(&saved.Status.Conditions, "Deployment", "DeploymentReady", "Deployment is ready", corev1.ConditionTrue)
 			SetResourceCondition(&saved.Status.Conditions, "Route", "RouteReady", "Route is ready", corev1.ConditionTrue)
@@ -143,7 +143,7 @@ func (r *GuardrailsOrchestratorReconciler) reconcileStatuses(ctx context.Context
 			return ctrl.Result{}, updateErr
 		}
 	} else {
-		_, updateErr := r.updateStatus(orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+		_, updateErr := r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
 			if generatorReady {
 				SetResourceCondition(&saved.Status.Conditions, "InferenceService", "InferenceServiceReady", "Inference service is ready", corev1.ConditionTrue)
 			} else {

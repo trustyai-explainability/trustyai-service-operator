@@ -95,7 +95,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	if orchestrator.Status.Conditions == nil {
 		reason := ReconcileInit
 		message := "Intializing GuardrailsOrchestrator resource"
-		orchestrator, err = r.updateStatus(orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+		orchestrator, err = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
 			SetProgressingCondition(&saved.Status.Conditions, reason, message)
 			saved.Status.Phase = PhaseProgressing
 		})
@@ -212,12 +212,6 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 	} else if err != nil {
 		log.Error(err, "Failed to get Route")
-		return ctrl.Result{}, err
-	}
-
-	// Refetch the orchestrator before updating the status
-	err = r.Get(ctx, req.NamespacedName, orchestrator)
-	if err != nil {
 		return ctrl.Result{}, err
 	}
 
