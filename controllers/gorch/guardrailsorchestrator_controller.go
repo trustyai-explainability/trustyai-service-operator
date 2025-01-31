@@ -215,6 +215,12 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
+	// Refetch the orchestrator before updating the status
+	err = r.Get(ctx, req.NamespacedName, orchestrator)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Finalize reconcilation
 	_, updateErr := r.reconcileStatuses(ctx, orchestrator)
 	if updateErr != nil {

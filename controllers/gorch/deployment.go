@@ -72,7 +72,7 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 
 func (r *GuardrailsOrchestratorReconciler) checkDeploymentReady(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (bool, error) {
 	deployment := &appsv1.Deployment{}
-	err := r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: r.Namespace}, deployment)
+	err := r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, deployment)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return false, nil

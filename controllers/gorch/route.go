@@ -41,7 +41,7 @@ func (r *GuardrailsOrchestratorReconciler) createRoute(ctx context.Context, orch
 
 func (r *GuardrailsOrchestratorReconciler) checkRouteReady(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (bool, error) {
 	existingRoute := &routev1.Route{}
-	typedNamespaceName := types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}
+	typedNamespaceName := types.NamespacedName{Name: orchestrator.Name + "-route", Namespace: orchestrator.Namespace}
 	err := r.Get(ctx, typedNamespaceName, existingRoute)
 	if err != nil {
 		if errors.IsNotFound(err) {
