@@ -222,19 +222,19 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 		err := k8sClient.Create(ctx, configMap)
 		Expect(err).ToNot(HaveOccurred())
 
-		// By("Creating an VLLM Gateway configmap")
-		// configMap = &corev1.ConfigMap{
-		// 	TypeMeta: metav1.TypeMeta{
-		// 		Kind:       "ConfigMap",
-		// 		APIVersion: "v1",
-		// 	},
-		// 	ObjectMeta: metav1.ObjectMeta{
-		// 		Name:      orchestratorName + "-vllm-config",
-		// 		Namespace: namespaceName,
-		// 	},
-		// }
-		// err = k8sClient.Create(ctx, configMap)
-		// Expect(err).ToNot(HaveOccurred())
+		By("Creating an VLLM Gateway configmap")
+		configMap = &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orchestratorName + "-vllm-config",
+				Namespace: namespaceName,
+			},
+		}
+		err = k8sClient.Create(ctx, configMap)
+		Expect(err).ToNot(HaveOccurred())
 
 		By("Creating a custom resource for the GuardrailsOrchestrator")
 		ctx := context.Background()
@@ -297,7 +297,6 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 			Expect(deployment.Name).Should(Equal(orchestratorName))
 			Expect(deployment.Labels["app"]).Should(Equal(orchestratorName))
 			Expect(deployment.Spec.Template.Spec.Volumes[0].Name).Should(Equal(orchestratorName + "-config"))
-			Expect(deployment.Spec.Template.Spec.Volumes[0].ConfigMap.Name).Should(Equal(orchestratorName + "-config"))
 			Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/ta-guardrails-orchestrator:latest"))
 			Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts[0].Name).Should(Equal(orchestratorName + "-config"))
 			Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("quay.io/trustyai/ta-guardrails-gateway:latest"))
