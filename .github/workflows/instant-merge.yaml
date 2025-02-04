@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: instant-merge
-        if: ${{ github.event.sender.login == 'red-hat-konflux[bot]' && ( contains(github.event.pull_request.title, 'update ta-lmes-') ) }}
+        if: ${{ github.event.sender.login == 'red-hat-konflux[bot]' && ( contains(github.event.pull_request.title, 'update ta-lmes-') || contains(github.event.pull_request.title, 'update fms-guardrails-orchestrator-') ) }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
