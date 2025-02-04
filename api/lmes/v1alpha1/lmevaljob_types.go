@@ -237,9 +237,21 @@ func (p *LMEvalPodSpec) GetSideCards() []corev1.Container {
 	return p.SideCars
 }
 
+type OfflineS3Spec struct {
+	AccessKeyIdRef     corev1.SecretKeySelector  `json:"accessKeyId"`
+	SecretAccessKeyRef corev1.SecretKeySelector  `json:"secretAccessKey"`
+	Bucket             corev1.SecretKeySelector  `json:"bucket"`
+	Path               string                    `json:"path"`
+	Region             corev1.SecretKeySelector  `json:"region"`
+	Endpoint           corev1.SecretKeySelector  `json:"endpoint"`
+	VerifySSL          *bool                     `json:"verifySSL,omitempty"`
+	CABundle           *corev1.SecretKeySelector `json:"caBundle,omitempty"`
+}
+
 // OfflineStorageSpec defines the storage configuration for LMEvalJob's offline mode
 type OfflineStorageSpec struct {
-	PersistentVolumeClaimName string `json:"pvcName"`
+	PersistentVolumeClaimName *string        `json:"pvcName,omitempty"`
+	S3Spec                    *OfflineS3Spec `json:"s3,omitempty"`
 }
 
 // OfflineSpec defined the configuration for LMEvalJob's offline mode
@@ -316,6 +328,18 @@ type LMEvalJobSpec struct {
 // IsOffline returns whether this LMEvalJob is configured to run offline
 func (s *LMEvalJobSpec) IsOffline() bool {
 	return s.Offline != nil
+}
+
+func (s *LMEvalJobSpec) HasOfflinePVC() bool {
+	return s.Offline != nil && s.Offline.StorageSpec.PersistentVolumeClaimName != nil
+}
+
+func (s *LMEvalJobSpec) HasOfflineS3() bool {
+	return s.Offline != nil && s.Offline.StorageSpec.S3Spec != nil
+}
+
+func (s *OfflineS3Spec) HasCertificates() bool {
+	return s.CABundle != nil
 }
 
 // HasCustomOutput returns whether an LMEvalJobSpec defines custom outputs or not

@@ -53,16 +53,17 @@ const (
 )
 
 type DriverOption struct {
-	Context         context.Context
-	OutputPath      string
-	DetectDevice    bool
-	TaskRecipesPath string
-	TaskRecipes     []string
-	CatalogPath     string
-	CustomCards     []string
-	Logger          logr.Logger
-	Args            []string
-	SocketPath      string
+	Context          context.Context
+	OutputPath       string
+	DetectDevice     bool
+	TaskRecipesPath  string
+	TaskRecipes      []string
+	CatalogPath      string
+	CustomCards      []string
+	Logger           logr.Logger
+	Args             []string
+	SocketPath       string
+	DownloadAssetsS3 bool
 }
 
 type Driver interface {
@@ -198,6 +199,24 @@ func (d *driverImpl) detectDevice() error {
 	return nil
 }
 
+func (d *driverImpl) downloadS3Assets() error {
+	if d == nil || !d.Option.DownloadAssetsS3 {
+		return nil
+	}
+
+	fmt.Println("Downloading assets from S3")
+	output, err := exec.Command(
+		"python",
+		"/opt/app-root/src/scripts/s3_downloader.py",
+	).Output()
+	fmt.Println(string(output))
+	if err != nil {
+		return fmt.Errorf("failed to download assets from S3: %v", err)
+	}
+
+	return nil
+}
+
 func patchDevice(args []string, hasCuda bool) {
 	var device = "cpu"
 	if hasCuda {
@@ -315,6 +334,11 @@ func (d *driverImpl) exec() error {
 
 	if err := d.createCustomCards(); err != nil {
 		return fmt.Errorf("failed to create custom cards: %v", err)
+	}
+
+	// Copy S3 assets if needed
+	if err := d.downloadS3Assets(); err != nil {
+		return err
 	}
 
 	// Detect available devices if needed

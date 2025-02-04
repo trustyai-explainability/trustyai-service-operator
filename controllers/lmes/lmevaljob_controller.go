@@ -806,23 +806,127 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 
 	if job.Spec.IsOffline() {
 
-		// If the job is offline, a storage must be set. PVC is the only supported storage backend at the moment.
-		offlinePVCMount := corev1.VolumeMount{
-			Name:      "offline",
-			MountPath: HuggingFaceHomePath,
-		}
-		volumeMounts = append(volumeMounts, offlinePVCMount)
+		if job.Spec.HasOfflinePVC() {
+			offlinePVCMount := corev1.VolumeMount{
+				Name:      "offline",
+				MountPath: HuggingFaceHomePath,
+			}
+			volumeMounts = append(volumeMounts, offlinePVCMount)
 
-		offlinePVC := corev1.Volume{
-			Name: "offline",
-			VolumeSource: corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: job.Spec.Offline.StorageSpec.PersistentVolumeClaimName,
-					ReadOnly:  false,
+			offlinePVC := corev1.Volume{
+				Name: "offline",
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: *job.Spec.Offline.StorageSpec.PersistentVolumeClaimName,
+						ReadOnly:  false,
+					},
 				},
-			},
+			}
+			volumes = append(volumes, offlinePVC)
 		}
-		volumes = append(volumes, offlinePVC)
+
+		if job.Spec.HasOfflineS3() {
+
+			s3EnvVars := []corev1.EnvVar{
+				{
+					Name: "AWS_ACCESS_KEY_ID",
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: job.Spec.Offline.StorageSpec.S3Spec.AccessKeyIdRef.Name,
+							},
+							Key: job.Spec.Offline.StorageSpec.S3Spec.AccessKeyIdRef.Key,
+						},
+					},
+				},
+				{
+					Name: "AWS_SECRET_ACCESS_KEY",
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: job.Spec.Offline.StorageSpec.S3Spec.SecretAccessKeyRef.Name,
+							},
+							Key: job.Spec.Offline.StorageSpec.S3Spec.SecretAccessKeyRef.Key,
+						},
+					},
+				},
+				{
+					Name: "AWS_DEFAULT_REGION",
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: job.Spec.Offline.StorageSpec.S3Spec.Region.Name,
+							},
+							Key: job.Spec.Offline.StorageSpec.S3Spec.Region.Key,
+						},
+					},
+				},
+				{
+					Name: "AWS_S3_BUCKET",
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: job.Spec.Offline.StorageSpec.S3Spec.Bucket.Name,
+							},
+							Key: job.Spec.Offline.StorageSpec.S3Spec.Bucket.Key,
+						},
+					},
+				},
+				{
+					Name: "AWS_S3_ENDPOINT",
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: job.Spec.Offline.StorageSpec.S3Spec.Endpoint.Name,
+							},
+							Key: job.Spec.Offline.StorageSpec.S3Spec.Endpoint.Key,
+						},
+					},
+				},
+				{
+					Name:  "AWS_PATH",
+					Value: job.Spec.Offline.StorageSpec.S3Spec.Path,
+				},
+				{
+					Name:  "S3_VERIFY_SSL",
+					Value: strconv.FormatBool(*job.Spec.Offline.StorageSpec.S3Spec.VerifySSL),
+				},
+			}
+			envVars = append(envVars, s3EnvVars...)
+
+			// If certificates are specified, create volume to hold them
+			if job.Spec.Offline.StorageSpec.S3Spec.HasCertificates() {
+
+				s3CertificatesMount := corev1.VolumeMount{
+					Name:      "certificates-s3",
+					MountPath: "/etc/certificates/s3",
+				}
+				volumeMounts = append(volumeMounts, s3CertificatesMount)
+
+				s3CertificatesVolume := corev1.Volume{
+					Name: "certificates-s3",
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: job.Spec.Offline.StorageSpec.S3Spec.CABundle.Name,
+							},
+						},
+					},
+				}
+
+				volumes = append(volumes, s3CertificatesVolume)
+
+				s3CertificateEnvVars := []corev1.EnvVar{
+					{
+						Name:  "AWS_CA_BUNDLE",
+						Value: fmt.Sprintf("/etc/certificates/s3/%s", job.Spec.Offline.StorageSpec.S3Spec.CABundle.Key),
+					},
+				}
+
+				envVars = append(envVars, s3CertificateEnvVars...)
+			}
+
+		}
 
 	}
 
@@ -1056,6 +1160,10 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 	cmds := []string{
 		DestDriverPath,
 		"--output-path", "/opt/app-root/src/output",
+	}
+
+	if job.Spec.HasOfflineS3() {
+		cmds = append(cmds, "--download-assets-s3")
 	}
 
 	if svcOpts.DetectDevice {

@@ -50,14 +50,15 @@ func (t *strArrayArg) String() string {
 }
 
 var (
-	taskRecipes  strArrayArg
-	customCards  strArrayArg
-	copy         = flag.String("copy", "", "copy this binary to specified destination path")
-	getStatus    = flag.Bool("get-status", false, "Get current status")
-	shutdown     = flag.Bool("shutdown", false, "Shutdown the driver")
-	outputPath   = flag.String("output-path", OutputPath, "output path")
-	detectDevice = flag.Bool("detect-device", false, "detect available device(s), CUDA or CPU")
-	driverLog    = ctrl.Log.WithName("driver")
+	taskRecipes      strArrayArg
+	customCards      strArrayArg
+	copy             = flag.String("copy", "", "copy this binary to specified destination path")
+	getStatus        = flag.Bool("get-status", false, "Get current status")
+	shutdown         = flag.Bool("shutdown", false, "Shutdown the driver")
+	outputPath       = flag.String("output-path", OutputPath, "output path")
+	detectDevice     = flag.Bool("detect-device", false, "detect available device(s), CUDA or CPU")
+	downloadAssetsS3 = flag.Bool("download-assets-s3", false, "Download assets from S3")
+	driverLog        = ctrl.Log.WithName("driver")
 )
 
 func init() {
@@ -105,13 +106,14 @@ func main() {
 	}
 
 	driverOpt := driver.DriverOption{
-		Context:      ctx,
-		OutputPath:   *outputPath,
-		DetectDevice: *detectDevice,
-		Logger:       driverLog,
-		TaskRecipes:  taskRecipes,
-		CustomCards:  customCards,
-		Args:         args,
+		Context:          ctx,
+		OutputPath:       *outputPath,
+		DetectDevice:     *detectDevice,
+		Logger:           driverLog,
+		TaskRecipes:      taskRecipes,
+		CustomCards:      customCards,
+		Args:             args,
+		DownloadAssetsS3: *downloadAssetsS3,
 	}
 
 	driver, err := driver.NewDriver(&driverOpt)
