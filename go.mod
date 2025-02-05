@@ -139,7 +139,7 @@ replace (
 	// before removing it make sure that the next version of the related k8s dependencies contains the fix
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp => go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.44.0
 	// Fixes CVE-2023-48795 - golang.org/x/crypto Authentication Bypass by Capture-replay
-	golang.org/x/crypto => golang.org/x/crypto v0.17.0
+	golang.org/x/crypto => golang.org/x/crypto v0.31.0
 	golang.org/x/net => golang.org/x/net v0.33.0
 // remove when upgrade to controller-runtime 0.15.x or apimachinery to 0.27.x
 // Fixes github.com/elazarl/goproxy Denial of Service (DoS)
