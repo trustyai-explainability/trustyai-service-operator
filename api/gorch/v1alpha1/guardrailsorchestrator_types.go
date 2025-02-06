@@ -34,8 +34,37 @@ type GuardrailsOrchestratorSpec struct {
 	Replicas int32 `json:"replicas"`
 	// Name of configmap containing generator,detector,and chunker arguments
 	OrchestratorConfig *string `json:"orchestratorConfig"`
+	//  Name of the configmap containg vLLM gateway arguments
 	// +optional
 	VLLMGatewayConfig *string `json:"vllmGatewayConfig,omitempty"`
+	// List of orchestrator enviroment variables for configuring the OTLP exporter
+	// +optional
+	OtelExporter OtelExporter `json:"otelExporter,omitempty"`
+}
+
+// OtelExporter defines the environment variables for configuring the OTLP exporter.
+type OtelExporter struct {
+	// Sets the protocol for all the OTLP endpoints
+	// +optional
+	Protocol string `json:"protocol,omitempty"`
+	// Overrides the protocol for traces
+	// +optional
+	TracesProtocol string `json:"tracesProtocol,omitempty"`
+	// Overrides the protocol for traces
+	// +optional
+	MetricsProtocol string `json:"metricsProtocol,omitempty"`
+	// Sets the OTLP endpoint
+	// +optional
+	OTLPEndpoint string `json:"otlpEndpoint,omitempty"`
+	// Overrides the OTLP endpoint for metrics
+	// +optional
+	MetricsEndpoint string `json:"metricsEndpoint,omitempty"`
+	// Overrides the OTLP endpoint for traces
+	// +optional
+	TracesEndpoint string `json:"tracesEndpoint,omitempty"`
+	// Specifies which data types to export
+	// +optional
+	OTLPExport string `json:"otlpExport,omitempty"`
 }
 
 type ConditionType string

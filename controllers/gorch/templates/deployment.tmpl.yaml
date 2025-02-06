@@ -58,6 +58,34 @@ spec:
               value: 'full'
             - name: RUST_LOG
               value: 'info'
+          {{if .Orchestrator.Spec.OtelExporter.Protocol}}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: {{.Orchestrator.Spec.OtelExporter.Protocol}}
+          {{end}}
+          {{if .Orchestrator.Spec.OtelExporter.TracesProtocol}}
+            - name: OTEL_EXPORTER_OTLP_TRACES_PROTOCOL
+              value: {{.Orchestrator.Spec.OtelExporter.TracesProtocol}}
+          {{end}}
+          {{if .Orchestrator.Spec.OtelExporter.MetricsProtocol}}
+            - name: OTEL_EXPORTER_OTLP_METRICS_PROTOCOL
+              value: {{.Orchestrator.Spec.OtelExporter.MetricsProtocol}}
+          {{end}}
+          {{if .Orchestrator.Spec.OtelExporter.OTLPEndpoint}}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{.Orchestrator.Spec.OtelExporter.OTLPEndpoint}}
+          {{end}}
+          {{if .Orchestrator.Spec.OtelExporter.TracesEndpoint}}
+            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+              value: {{.Orchestrator.Spec.OtelExporter.TracesEndpoint}}
+          {{end}}
+          {{if .Orchestrator.Spec.OtelExporter.MetricsEndpoint}}
+            - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+              value: {{.Orchestrator.Spec.OtelExporter.MetricsEndpoint}}
+          {{end}}
+          {{if .Orchestrator.Spec.OtelExporter.OTLPExport}}
+            - name: OTLP_EXPORT
+              value: {{.Orchestrator.Spec.OtelExporter.OTLPExport}}
+          {{end}}
           volumeMounts:
             - name: {{.Orchestrator.Name}}-config
               readOnly: true

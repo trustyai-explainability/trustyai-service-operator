@@ -49,6 +49,23 @@ var cancel context.CancelFunc
 
 const namespaceName = "test"
 
+func getContainers(containerName string, containers []corev1.Container) *corev1.Container {
+	for _, container := range containers {
+		if container.Name == containerName {
+			return &container
+		}
+	}
+	return nil
+}
+func getEnvVar(envVarName string, envVars []corev1.EnvVar) *corev1.EnvVar {
+	for _, envVar := range envVars {
+		if envVar.Name == envVarName {
+			return &envVar
+		}
+	}
+	return nil
+}
+
 func TestControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
 
