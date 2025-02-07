@@ -4764,15 +4764,36 @@ spec:
                         numDemos:
                           description: Number of fewshot
                           type: integer
+                        systemPrompt:
+                          description: The Unitxt System Prompt
+                          properties:
+                            custom:
+                              description: A custom system prompt string
+                              type: string
+                            name:
+                              description: Unitxt System Prompt id
+                              type: string
+                          type: object
                         task:
                           description: The Unitxt Task
                           type: string
                         template:
                           description: The Unitxt template
-                          type: string
+                          properties:
+                            custom:
+                              description: |-
+                                A JSON string for a custom unitxt template.
+                                Use the documentation here: https://www.unitxt.ai/en/latest/docs/adding_template.html
+                                to compose a custom template, store it as a JSON file by calling the
+                                add_to_catalog API: https://www.unitxt.ai/en/latest/docs/saving_and_loading_from_catalog.html#adding-assets-to-the-catalog,
+                                and use the JSON content as the value here.
+                              type: string
+                            name:
+                              description: Unitxt template ID
+                              type: string
+                          type: object
                       required:
                       - card
-                      - template
                       type: object
                     type: array
                 type: object
