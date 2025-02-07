@@ -282,9 +282,9 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 				Namespace: namespaceName,
 			},
 			Data: map[string]string{
-				orchestratorImageKey:  "quay.io/trustyai/ta-guardrails-orchestrator:latest",
-				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
-				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
+				orchestratorImageKey: "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+				vllmGatewayImageKey:  "quay.io/trustyai/ta-guardrails-gateway:latest",
+				detectorImageKey:     "quay.io/trustyai/ta-guardrails-regex:latest",
 			},
 		}
 		err = k8sClient.Create(ctx, configMap)
@@ -317,15 +317,22 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 			if err = k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}, deployment); err != nil {
 				return err
 			}
+			var container *corev1.Container
 			Expect(*deployment.Spec.Replicas).Should(Equal(int32(1)))
 			Expect(deployment.Namespace).Should(Equal(namespaceName))
 			Expect(deployment.Name).Should(Equal(orchestratorName))
 			Expect(deployment.Labels["app"]).Should(Equal(orchestratorName))
 			Expect(deployment.Spec.Template.Spec.Volumes[0].Name).Should(Equal(orchestratorName + "-config"))
-			Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/ta-guardrails-orchestrator:latest"))
-			Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts[0].Name).Should(Equal(orchestratorName + "-config"))
-			Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("quay.io/trustyai/ta-guardrails-gateway:latest"))
-			Expect(deployment.Spec.Template.Spec.Containers[2].Image).Should(Equal("quay.io/trustyai/ta-guardrails-regex:latest"))
+
+			container = getContainers(orchestratorName, deployment.Spec.Template.Spec.Containers)
+			Expect(container.Image).Should(Equal("quay.io/trustyai/ta-guardrails-orchestrator:latest"))
+			Expect(container.VolumeMounts[0].Name).Should(Equal(orchestratorName + "-config"))
+
+			container = getContainers(orchestratorName+"-gateway", deployment.Spec.Template.Spec.Containers)
+			Expect(container.Image).Should(Equal("quay.io/trustyai/ta-guardrails-gateway:latest"))
+
+			container = getContainers(orchestratorName+"-detectors", deployment.Spec.Template.Spec.Containers)
+			Expect(container.Image).Should(Equal("quay.io/trustyai/ta-guardrails-regex:latest"))
 
 			service := &corev1.Service{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-service", Namespace: namespaceName}, service); err != nil {
@@ -438,6 +445,7 @@ func testCreateDeleteGuardrailsOrchestratorOtelExporter(namespaceName string) {
 			Expect(deployment.Name).Should(Equal(orchestratorName))
 			Expect(deployment.Labels["app"]).Should(Equal(orchestratorName))
 			Expect(deployment.Spec.Template.Spec.Volumes[0].Name).Should(Equal(orchestratorName + "-config"))
+
 			container = getContainers(orchestratorName, deployment.Spec.Template.Spec.Containers)
 			Expect(container.Image).Should(Equal("quay.io/trustyai/ta-guardrails-orchestrator:latest"))
 			Expect(container.VolumeMounts[0].Name).Should(Equal(orchestratorName + "-config"))

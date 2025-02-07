@@ -3,8 +3,6 @@ apiVersion: apps/v1
 metadata:
   name: {{.Orchestrator.Name}}
   namespace: {{.Orchestrator.Namespace}}
-  annotations:
-      sidecar.istio.io/inject: "true"
   labels:
     app: {{.Orchestrator.Name}}
     component: {{.Orchestrator.Name}}
@@ -140,6 +138,6 @@ spec:
             - name: GATEWAY_CONFIG
               value: /config/config.yaml
         - name: {{.Orchestrator.Name}}-detectors
-          image : {{.ContainerImages.RegexDetectorImage}}
+          image : {{.ContainerImages.DetectorImage}}
           command: ["/bin/sh", "-c", "/app/local-detectors"]
         {{end}}

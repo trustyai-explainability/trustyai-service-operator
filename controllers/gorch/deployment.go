@@ -24,9 +24,9 @@ import (
 const deploymentTemplatePath = "deployment.tmpl.yaml"
 
 type ContainerImages struct {
-	OrchestratorImage  string
-	RegexDetectorImage string
-	GatewayImage       string
+	OrchestratorImage string
+	DetectorImage     string
+	GatewayImage      string
 }
 
 type DeploymentConfig struct {
@@ -45,17 +45,17 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 
 	// Check if the vLLM gateway is enabled
 	if orchestrator.Spec.VLLMGatewayConfig != nil {
-		//  Get the gateway and regex detector container images
+		//  Get the gateway and detector container images
 		vllmGatewayImage, err := r.getImageFromConfigMap(ctx, vllmGatewayImageKey, constants.ConfigMap, orchestrator.Namespace)
 		if vllmGatewayImage == "" || err != nil {
 			log.FromContext(ctx).Error(err, "Error getting vLLM gateway image from ConfigMap.")
 		}
-		regexDetectorImage, err := r.getImageFromConfigMap(ctx, regexDetectorImageKey, constants.ConfigMap, orchestrator.Namespace)
-		if regexDetectorImage == "" || err != nil {
+		detectorImage, err := r.getImageFromConfigMap(ctx, detectorImageKey, constants.ConfigMap, orchestrator.Namespace)
+		if detectorImage == "" || err != nil {
 			log.FromContext(ctx).Error(err, "Error getting regex detectors image from ConfigMap.")
 		}
 		containerImages.GatewayImage = vllmGatewayImage
-		containerImages.RegexDetectorImage = regexDetectorImage
+		containerImages.DetectorImage = detectorImage
 	}
 
 	deploymentConfig := DeploymentConfig{
