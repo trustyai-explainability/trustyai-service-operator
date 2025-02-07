@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -53,17 +54,19 @@ const (
 )
 
 type DriverOption struct {
-	Context          context.Context
-	OutputPath       string
-	DetectDevice     bool
-	TaskRecipesPath  string
-	TaskRecipes      []string
-	CatalogPath      string
-	CustomCards      []string
-	Logger           logr.Logger
-	Args             []string
-	CommPort         int
-	DownloadAssetsS3 bool
+	Context            context.Context
+	OutputPath         string
+	DetectDevice       bool
+	TaskRecipesPath    string
+	TaskRecipes        []string
+	CatalogPath        string
+	CustomCards        []string
+	CustomTemplates    []string
+	CustomSystemPrompt []string
+	Logger             logr.Logger
+	Args               []string
+	CommPort           int
+	DownloadAssetsS3   bool
 }
 
 type Driver interface {
@@ -321,6 +324,10 @@ func (d *driverImpl) exec() error {
 		return fmt.Errorf("failed to create task recipes: %v", err)
 	}
 
+	if err := d.prepDir4CustomArtifacts(); err != nil {
+		return fmt.Errorf("failed to create the directories for custom artifacts: %v", err)
+	}
+
 	if err := d.createCustomCards(); err != nil {
 		return fmt.Errorf("failed to create custom cards: %v", err)
 	}
@@ -328,6 +335,12 @@ func (d *driverImpl) exec() error {
 	// Copy S3 assets if needed
 	if err := d.downloadS3Assets(); err != nil {
 		return err
+	}
+	if err := d.createCustomTemplates(); err != nil {
+		return fmt.Errorf("failed to create custom templates: %v", err)
+	}
+	if err := d.createCustomSystemPrompts(); err != nil {
+		return fmt.Errorf("failed to create custom system_prompts: %v", err)
 	}
 
 	// Detect available devices if needed
@@ -491,6 +504,15 @@ func (d *driverImpl) createTaskRecipes() error {
 	return nil
 }
 
+func (d *driverImpl) prepDir4CustomArtifacts() error {
+	subDirs := []string{"cards", "templates", "system_prompts"}
+	var errs []error
+	for _, dir := range subDirs {
+		errs = append(errs, mkdirIfNotExist(filepath.Join(d.Option.CatalogPath, dir)))
+	}
+	return errors.Join(errs...)
+}
+
 func (d *driverImpl) createCustomCards() error {
 	for i, customCard := range d.Option.CustomCards {
 		err := os.WriteFile(
@@ -501,6 +523,47 @@ func (d *driverImpl) createCustomCards() error {
 		if err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (d *driverImpl) createCustomTemplates() error {
+	for _, customTemplate := range d.Option.CustomTemplates {
+		values := strings.SplitN(customTemplate, "|", 2)
+		err := os.WriteFile(
+			filepath.Join(d.Option.CatalogPath, "templates", fmt.Sprintf("%s.json", values[0])),
+			[]byte(values[1]),
+			0666,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *driverImpl) createCustomSystemPrompts() error {
+	for _, systemPrompt := range d.Option.CustomSystemPrompt {
+		values := strings.SplitN(systemPrompt, "|", 2)
+		err := os.WriteFile(
+			filepath.Join(d.Option.CatalogPath, "system_prompts", fmt.Sprintf("%s.json", values[0])),
+			[]byte(fmt.Sprintf(`{ "__type__": "textual_system_prompt", "text": "%s" }`, values[1])),
+			0666,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func mkdirIfNotExist(path string) error {
+	fi, err := os.Stat(path)
+	if err == nil && !fi.IsDir() {
+		return fmt.Errorf("%s is a file. can not create a directory", path)
+	}
+	if os.IsNotExist(err) {
+		return os.MkdirAll(path, 0770)
 	}
 	return nil
 }

@@ -19,8 +19,10 @@ package driver
 import (
 	"context"
 	"flag"
+	"fmt"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -46,10 +48,39 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
-// to support concurrent testing if needed, each test needs a
-// dedicated port
-func genRandomPort() int {
-	return rand.Intn(1000) + 18080
+type testInfo struct {
+	outputPath  string
+	catalogPath string
+	taskPath    string
+	port        int
+	tearDown    func(*testing.T)
+}
+
+func setupTest(t *testing.T, hasOutput bool) testInfo {
+	folderSuffix := rand.Intn(100)
+	outputPath := fmt.Sprintf("outputs%d", folderSuffix)
+	catalogPath := fmt.Sprintf("mycatalogs%d", folderSuffix)
+	taskPath := fmt.Sprintf("mytasks%d", folderSuffix)
+	os.Mkdir(outputPath, 0750)
+	os.Mkdir(catalogPath, 0750)
+	os.Mkdir(taskPath, 0750)
+
+	testInfo := testInfo{
+		outputPath:  outputPath,
+		catalogPath: catalogPath,
+		taskPath:    taskPath,
+		port:        rand.Intn(1000) + 18080,
+		tearDown: func(t *testing.T) {
+			if hasOutput {
+				assert.Nil(t, os.Remove(filepath.Join(outputPath, "stderr.log")))
+				assert.Nil(t, os.Remove(filepath.Join(outputPath, "stdout.log")))
+			}
+			assert.Nil(t, os.RemoveAll(taskPath))
+			assert.Nil(t, os.RemoveAll(outputPath))
+			assert.Nil(t, os.RemoveAll(catalogPath))
+		},
+	}
+	return testInfo
 }
 
 func runDriverAndWait4Complete(t *testing.T, driver Driver, returnError bool) (progressMsgs []string, results string) {
@@ -77,29 +108,33 @@ func runDriverAndWait4Complete(t *testing.T, driver Driver, returnError bool) (p
 }
 
 func Test_Driver(t *testing.T) {
+	info := setupTest(t, true)
+	defer info.tearDown(t)
+
 	driver, err := NewDriver(&DriverOption{
-		Context:    context.Background(),
-		OutputPath: ".",
-		Logger:     driverLog,
-		Args:       []string{"sh", "-ec", "echo tttttttttttttttttttt"},
-		CommPort:   genRandomPort(),
+		Context:     context.Background(),
+		OutputPath:  info.outputPath,
+		CatalogPath: info.catalogPath,
+		Logger:      driverLog,
+		Args:        []string{"sh", "-ec", "echo tttttttttttttttttttt"},
+		CommPort:    info.port,
 	})
 	assert.Nil(t, err)
-
 	runDriverAndWait4Complete(t, driver, false)
-
 	assert.Nil(t, driver.Shutdown())
-	assert.Nil(t, os.Remove("./stderr.log"))
-	assert.Nil(t, os.Remove("./stdout.log"))
 }
 
 func Test_Wait4Shutdown(t *testing.T) {
+	info := setupTest(t, true)
+	defer info.tearDown(t)
+
 	driver, err := NewDriver(&DriverOption{
-		Context:    context.Background(),
-		OutputPath: ".",
-		Logger:     driverLog,
-		Args:       []string{"sh", "-ec", "echo test"},
-		CommPort:   genRandomPort(),
+		Context:     context.Background(),
+		OutputPath:  info.outputPath,
+		CatalogPath: info.catalogPath,
+		Logger:      driverLog,
+		Args:        []string{"sh", "-ec", "echo test"},
+		CommPort:    info.port,
 	})
 	assert.Nil(t, err)
 
@@ -115,18 +150,19 @@ func Test_Wait4Shutdown(t *testing.T) {
 
 	_, err = driver.GetStatus()
 	assert.ErrorContains(t, err, "connection refused")
-
-	assert.Nil(t, os.Remove("./stderr.log"))
-	assert.Nil(t, os.Remove("./stdout.log"))
 }
 
 func Test_ProgressUpdate(t *testing.T) {
+	info := setupTest(t, true)
+	defer info.tearDown(t)
+
 	driver, err := NewDriver(&DriverOption{
-		Context:    context.Background(),
-		OutputPath: ".",
-		Logger:     driverLog,
-		Args:       []string{"sh", "-ec", "sleep 2; echo 'testing progress: 100%|' >&2; sleep 4"},
-		CommPort:   genRandomPort(),
+		Context:     context.Background(),
+		OutputPath:  info.outputPath,
+		CatalogPath: info.catalogPath,
+		Logger:      driverLog,
+		Args:        []string{"sh", "-ec", "sleep 2; echo 'testing progress: 100%|' >&2; sleep 4"},
+		CommPort:    info.port,
 	})
 	assert.Nil(t, err)
 
@@ -139,18 +175,20 @@ func Test_ProgressUpdate(t *testing.T) {
 	}, msgs)
 
 	assert.Nil(t, driver.Shutdown())
-	assert.Nil(t, os.Remove("./stderr.log"))
-	assert.Nil(t, os.Remove("./stdout.log"))
 }
 
 func Test_DetectDeviceError(t *testing.T) {
+	info := setupTest(t, false)
+	defer info.tearDown(t)
+
 	driver, err := NewDriver(&DriverOption{
 		Context:      context.Background(),
-		OutputPath:   ".",
+		OutputPath:   info.outputPath,
+		CatalogPath:  info.catalogPath,
 		DetectDevice: true,
 		Logger:       driverLog,
 		Args:         []string{"sh", "-ec", "python -m lm_eval --output_path ./output --model test --model_args arg1=value1 --tasks task1,task2"},
-		CommPort:     genRandomPort(),
+		CommPort:     info.port,
 	})
 	assert.Nil(t, err)
 
@@ -162,18 +200,22 @@ func Test_DetectDeviceError(t *testing.T) {
 	assert.Nil(t, driver.Shutdown())
 
 	// the following files don't exist for this case
-	assert.NotNil(t, os.Remove("./stderr.log"))
-	assert.NotNil(t, os.Remove("./stdout.log"))
+	assert.NotNil(t, os.Remove(filepath.Join(info.outputPath, "stderr.log")))
+	assert.NotNil(t, os.Remove(filepath.Join(info.outputPath, "stdout.log")))
 }
 
 func Test_DownloadAssetsS3Error(t *testing.T) {
+	info := setupTest(t, false)
+	defer info.tearDown(t)
+
 	driver, err := NewDriver(&DriverOption{
 		Context:          context.Background(),
-		OutputPath:       ".",
+		OutputPath:       info.outputPath,
+		CatalogPath:      info.catalogPath,
 		DetectDevice:     false,
 		Logger:           driverLog,
 		Args:             []string{"sh", "-ec", "python -m lm_eval --output_path ./output --model test --model_args arg1=value1 --tasks task1,task2"},
-		CommPort:         genRandomPort(),
+		CommPort:         info.port,
 		DownloadAssetsS3: true,
 	})
 	assert.Nil(t, err)
@@ -220,17 +262,21 @@ func Test_PatchDevice(t *testing.T) {
 }
 
 func Test_TaskRecipes(t *testing.T) {
+	info := setupTest(t, true)
+	defer info.tearDown(t)
+
 	driver, err := NewDriver(&DriverOption{
 		Context:         context.Background(),
-		OutputPath:      ".",
+		OutputPath:      info.outputPath,
+		CatalogPath:     info.catalogPath,
 		Logger:          driverLog,
-		TaskRecipesPath: "./",
+		TaskRecipesPath: info.taskPath,
 		TaskRecipes: []string{
 			"card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 			"card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		},
 		Args:     []string{"sh", "-ec", "sleep 2; echo 'testing progress: 100%|' >&2; sleep 4"},
-		CommPort: genRandomPort(),
+		CommPort: info.port,
 	})
 	assert.Nil(t, err)
 
@@ -244,43 +290,47 @@ func Test_TaskRecipes(t *testing.T) {
 
 	assert.Nil(t, driver.Shutdown())
 
-	tr0, err := os.ReadFile("./tr_0.yaml")
+	tr0, err := os.ReadFile(filepath.Join(info.taskPath, "tr_0.yaml"))
 	assert.Nil(t, err)
 	assert.Equal(t,
 		"task: tr_0\ninclude: unitxt\nrecipe: card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		string(tr0),
 	)
-	tr1, err := os.ReadFile("./tr_1.yaml")
+	tr1, err := os.ReadFile(filepath.Join(info.taskPath, "tr_1.yaml"))
 	assert.Nil(t, err)
 	assert.Equal(t,
 		"task: tr_1\ninclude: unitxt\nrecipe: card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		string(tr1),
 	)
-	assert.Nil(t, os.Remove("./stderr.log"))
-	assert.Nil(t, os.Remove("./stdout.log"))
-	assert.Nil(t, os.Remove("./tr_0.yaml"))
-	assert.Nil(t, os.Remove("./tr_1.yaml"))
 }
 
 func Test_CustomCards(t *testing.T) {
+	info := setupTest(t, true)
+	defer info.tearDown(t)
+
 	driver, err := NewDriver(&DriverOption{
 		Context:         context.Background(),
-		OutputPath:      ".",
+		OutputPath:      info.outputPath,
 		Logger:          driverLog,
-		TaskRecipesPath: "./",
-		CatalogPath:     "./",
+		TaskRecipesPath: info.taskPath,
+		CatalogPath:     info.catalogPath,
 		TaskRecipes: []string{
 			"card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+			"card=cards.unitxt.card1,template=templates.tp_0,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		},
 		CustomCards: []string{
 			`{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "deutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		},
+		CustomTemplates: []string{
+			`tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
+		},
+		CustomSystemPrompt: []string{
+			"sp_0|this is a custom system prompt",
+		},
 		Args:     []string{"sh", "-ec", "sleep 1; echo 'testing progress: 100%|' >&2; sleep 3"},
-		CommPort: genRandomPort(),
+		CommPort: info.port,
 	})
 	assert.Nil(t, err)
-
-	os.Mkdir("cards", 0750)
 
 	msgs, _ := runDriverAndWait4Complete(t, driver, false)
 
@@ -292,32 +342,49 @@ func Test_CustomCards(t *testing.T) {
 
 	assert.Nil(t, driver.Shutdown())
 
-	tr0, err := os.ReadFile("./tr_0.yaml")
+	tr0, err := os.ReadFile(filepath.Join(info.taskPath, "tr_0.yaml"))
 	assert.Nil(t, err)
 	assert.Equal(t,
 		"task: tr_0\ninclude: unitxt\nrecipe: card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		string(tr0),
 	)
-	custom0, err := os.ReadFile("./cards/custom_0.json")
+	tr1, err := os.ReadFile(filepath.Join(info.taskPath, "tr_1.yaml"))
+	assert.Nil(t, err)
+	assert.Equal(t,
+		"task: tr_1\ninclude: unitxt\nrecipe: card=cards.unitxt.card1,template=templates.tp_0,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		string(tr1),
+	)
+	custom0, err := os.ReadFile(filepath.Join(info.catalogPath, "cards", "custom_0.json"))
 	assert.Nil(t, err)
 	assert.Equal(t,
 		`{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "deutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		string(custom0),
 	)
-	assert.Nil(t, os.Remove("./stderr.log"))
-	assert.Nil(t, os.Remove("./stdout.log"))
-	assert.Nil(t, os.Remove("./tr_0.yaml"))
-	assert.Nil(t, os.Remove("./cards/custom_0.json"))
-	assert.Nil(t, os.Remove("./cards"))
+	template0, err := os.ReadFile(filepath.Join(info.catalogPath, "templates", "tp_0.json"))
+	assert.Nil(t, err)
+	assert.Equal(t,
+		`{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
+		string(template0),
+	)
+	prompt0, err := os.ReadFile(filepath.Join(info.catalogPath, "system_prompts", "sp_0.json"))
+	assert.Nil(t, err)
+	assert.Equal(t,
+		`{ "__type__": "textual_system_prompt", "text": "this is a custom system prompt" }`,
+		string(prompt0),
+	)
 }
 
 func Test_ProgramError(t *testing.T) {
+	info := setupTest(t, true)
+	defer info.tearDown(t)
+
 	driver, err := NewDriver(&DriverOption{
-		Context:    context.Background(),
-		OutputPath: ".",
-		Logger:     driverLog,
-		Args:       []string{"sh", "-ec", "sleep 1; exit 1"},
-		CommPort:   genRandomPort(),
+		Context:     context.Background(),
+		OutputPath:  info.outputPath,
+		CatalogPath: info.catalogPath,
+		Logger:      driverLog,
+		Args:        []string{"sh", "-ec", "sleep 1; exit 1"},
+		CommPort:    info.port,
 	})
 	assert.Nil(t, err)
 
@@ -329,7 +396,4 @@ func Test_ProgramError(t *testing.T) {
 	}, msgs)
 
 	assert.Nil(t, driver.Shutdown())
-
-	assert.Nil(t, os.Remove("./stderr.log"))
-	assert.Nil(t, os.Remove("./stdout.log"))
 }
