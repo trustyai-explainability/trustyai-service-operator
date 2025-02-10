@@ -345,10 +345,11 @@ func (r *LMEvalJobReconciler) remoteCommand(ctx context.Context, job *lmesv1alph
 		Name(job.GetName()).
 		SubResource("exec").
 		VersionedParams(&corev1.PodExecOptions{
-			Command: []string{"/bin/sh", "-c", command},
-			Stdin:   false,
-			Stdout:  true,
-			Stderr:  true,
+			Command:   []string{"/bin/sh", "-c", command},
+			Stdin:     false,
+			Stdout:    true,
+			Stderr:    true,
+			Container: "main",
 		}, scheme.ParameterCodec)
 
 	outBuff := &bytes.Buffer{}
