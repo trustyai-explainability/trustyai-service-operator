@@ -827,6 +827,12 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 
 		if job.Spec.HasOfflineS3() {
 
+			sslVerify := "true"
+
+			if job.Spec.Offline.StorageSpec.S3Spec.VerifySSL != nil {
+				sslVerify = strconv.FormatBool(*job.Spec.Offline.StorageSpec.S3Spec.VerifySSL)
+			}
+
 			s3EnvVars := []corev1.EnvVar{
 				{
 					Name: "AWS_ACCESS_KEY_ID",
@@ -889,7 +895,7 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 				},
 				{
 					Name:  "S3_VERIFY_SSL",
-					Value: strconv.FormatBool(*job.Spec.Offline.StorageSpec.S3Spec.VerifySSL),
+					Value: sslVerify,
 				},
 			}
 			envVars = append(envVars, s3EnvVars...)
