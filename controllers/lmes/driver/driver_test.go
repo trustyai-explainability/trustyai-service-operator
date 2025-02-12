@@ -173,7 +173,7 @@ func Test_DownloadAssetsS3Error(t *testing.T) {
 		DetectDevice:     false,
 		Logger:           driverLog,
 		Args:             []string{"sh", "-ec", "python -m lm_eval --output_path ./output --model test --model_args arg1=value1 --tasks task1,task2"},
-		SocketPath:       genRandomSocketPath(),
+		CommPort:         genRandomPort(),
 		DownloadAssetsS3: true,
 	})
 	assert.Nil(t, err)

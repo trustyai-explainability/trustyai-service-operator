@@ -53,16 +53,16 @@ const (
 )
 
 type DriverOption struct {
-	Context         context.Context
-	OutputPath      string
-	DetectDevice    bool
-	TaskRecipesPath string
-	TaskRecipes     []string
-	CatalogPath     string
-	CustomCards     []string
-	Logger          logr.Logger
-	Args            []string
-	CommPort        int
+	Context          context.Context
+	OutputPath       string
+	DetectDevice     bool
+	TaskRecipesPath  string
+	TaskRecipes      []string
+	CatalogPath      string
+	CustomCards      []string
+	Logger           logr.Logger
+	Args             []string
+	CommPort         int
 	DownloadAssetsS3 bool
 }
 
