@@ -42,8 +42,8 @@ var (
 )
 
 const (
-	// put the domain socket under /tmp. may move to emptydir to share across containers
-	socketPath             = "/tmp/ta-lmes-driver.sock"
+	// the default port for the driver to listen on
+	DefaultPort            = 18080
 	DefaultTaskRecipesPath = "/opt/app-root/src/my_tasks"
 	DefaultCatalogPath     = "/opt/app-root/src/my_catalogs"
 	TaskRecipePrefix       = "tr"
@@ -53,16 +53,16 @@ const (
 )
 
 type DriverOption struct {
-	Context          context.Context
-	OutputPath       string
-	DetectDevice     bool
-	TaskRecipesPath  string
-	TaskRecipes      []string
-	CatalogPath      string
-	CustomCards      []string
-	Logger           logr.Logger
-	Args             []string
-	SocketPath       string
+	Context         context.Context
+	OutputPath      string
+	DetectDevice    bool
+	TaskRecipesPath string
+	TaskRecipes     []string
+	CatalogPath     string
+	CustomCards     []string
+	Logger          logr.Logger
+	Args            []string
+	CommPort        int
 	DownloadAssetsS3 bool
 }
 
@@ -77,7 +77,7 @@ type Driver interface {
 type driverComm struct {
 	connection chan int
 	server     *http.Server
-	path       string
+	port       int
 }
 
 type driverImpl struct {
@@ -105,8 +105,8 @@ func NewDriver(opt *DriverOption) (Driver, error) {
 		opt.CatalogPath = DefaultCatalogPath
 	}
 
-	if opt.SocketPath == "" {
-		opt.SocketPath = socketPath
+	if opt.CommPort == 0 {
+		opt.CommPort = DefaultPort
 	}
 
 	return &driverImpl{
@@ -144,8 +144,8 @@ func (d *driverImpl) Run() error {
 }
 
 func (d *driverImpl) GetStatus() (*lmesv1alpha1.LMEvalJobStatus, error) {
-	client := createClient(d.Option.SocketPath)
-	resp, err := client.Get(fmt.Sprintf("http://unix%s", GetStatusURI))
+	client := &http.Client{}
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/%s", d.Option.CommPort, GetStatusURI))
 	if err != nil {
 		return nil, err
 	}
@@ -161,8 +161,8 @@ func (d *driverImpl) GetStatus() (*lmesv1alpha1.LMEvalJobStatus, error) {
 	return &status, err
 }
 func (d *driverImpl) Shutdown() error {
-	client := createClient(d.Option.SocketPath)
-	resp, err := client.Post(fmt.Sprintf("http://unix%s", ShutdownURI), "application/json", nil)
+	client := &http.Client{}
+	resp, err := client.Post(fmt.Sprintf("http://127.0.0.1:%d/%s", d.Option.CommPort, ShutdownURI), "application/json", nil)
 	if err != nil {
 		return err
 	}
@@ -241,7 +241,7 @@ func (d *driverImpl) setupComm() error {
 	d.comm = &driverComm{
 		server:     &http.Server{Handler: serve},
 		connection: make(chan int),
-		path:       d.Option.SocketPath,
+		port:       d.Option.CommPort,
 	}
 
 	// handle the `GetStatus` API: return the complete lmesv1alpha1.LMEvalJobStatus
@@ -268,22 +268,12 @@ func (d *driverImpl) setupComm() error {
 	return nil
 }
 
-func createClient(path string) *http.Client {
-	return &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", path)
-			},
-		},
-	}
-}
-
 func (dc *driverComm) wait4Sutdownload() {
 	<-dc.connection
 }
 
 func (dc *driverComm) serve() error {
-	socket, err := net.Listen("unix", dc.path)
+	socket, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", dc.port))
 	if err != nil {
 		return err
 	}
@@ -295,7 +285,6 @@ func (dc *driverComm) close() {
 	if dc.server != nil && dc.connection != nil {
 		dc.server.Shutdown(context.Background())
 		close(dc.connection)
-		os.Remove(dc.path)
 	}
 }
 

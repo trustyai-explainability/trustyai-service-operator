@@ -70,6 +70,7 @@ var (
 		"DetectDevice":        DetectDeviceKey,
 		"AllowOnline":         AllowOnline,
 		"AllowCodeExecution":  AllowCodeExecution,
+		"DriverPort":          DriverPort,
 	}
 
 	labelFilterPrefixes       = []string{}
@@ -345,10 +346,11 @@ func (r *LMEvalJobReconciler) remoteCommand(ctx context.Context, job *lmesv1alph
 		Name(job.GetName()).
 		SubResource("exec").
 		VersionedParams(&corev1.PodExecOptions{
-			Command: []string{"/bin/sh", "-c", command},
-			Stdin:   false,
-			Stdout:  true,
-			Stderr:  true,
+			Command:   []string{"/bin/sh", "-c", command},
+			Stdin:     false,
+			Stdout:    true,
+			Stderr:    true,
+			Container: "main",
 		}, scheme.ParameterCodec)
 
 	outBuff := &bytes.Buffer{}
@@ -955,6 +957,11 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 			SecurityContext: mainSecurityContext,
 			VolumeMounts:    volumeMounts,
 			Resources:       *resources,
+			Ports: []corev1.ContainerPort{
+				{
+					ContainerPort: int32(svcOpts.DriverPort),
+				},
+			},
 		},
 	}
 	containers = append(containers, job.Spec.Pod.GetSideCards()...)
@@ -1174,6 +1181,10 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 
 	if svcOpts.DetectDevice {
 		cmds = append(cmds, "--detect-device")
+	}
+
+	if svcOpts.DriverPort != 0 && svcOpts.DriverPort != driver.DefaultPort {
+		cmds = append(cmds, "--listen-port", fmt.Sprintf("%d", svcOpts.DriverPort))
 	}
 
 	cr_idx := 0

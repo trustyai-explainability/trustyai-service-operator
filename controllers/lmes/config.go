@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes/driver"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -39,6 +40,7 @@ var Options *serviceOptions = &serviceOptions{
 	DefaultBatchSize:    DefaultBatchSize,
 	AllowOnline:         false,
 	AllowCodeExecution:  false,
+	DriverPort:          driver.DefaultPort,
 }
 
 type serviceOptions struct {
@@ -51,6 +53,7 @@ type serviceOptions struct {
 	DetectDevice        bool
 	AllowOnline         bool
 	AllowCodeExecution  bool
+	DriverPort          int
 }
 
 func constructOptionsFromConfigMap(log *logr.Logger, configmap *corev1.ConfigMap) error {
