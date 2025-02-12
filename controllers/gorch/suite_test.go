@@ -25,12 +25,15 @@ import (
 	. "github.com/onsi/gomega"
 
 	routev1 "github.com/openshift/api/route/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -64,6 +67,106 @@ func getEnvVar(envVarName string, envVars []corev1.EnvVar) *corev1.EnvVar {
 		}
 	}
 	return nil
+}
+
+func deleteServiceAccount(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (err error) {
+	obj := client.ObjectKey{Name: orchestrator.Name + "-serviceaccount", Namespace: orchestrator.Namespace}
+	orig := &corev1.ServiceAccount{}
+	log := log.FromContext(ctx).WithValues("GuardrailsOrchestratorReconciler.deleteServiceAccount", obj)
+	err = k8sClient.Get(ctx, obj, orig)
+	if errors.IsNotFound(err) {
+		return nil
+	} else if err != nil {
+		log.Error(err, "Get", "ServiceAccount", obj)
+		return err
+	}
+
+	err = k8sClient.Delete(ctx, orig, &client.DeleteOptions{})
+	if err != nil && errors.IsNotFound(err) {
+		log.Error(err, "Delete", "ServiceAccount", obj)
+		return err
+	}
+	log.Info("Delete", "ServiceAccount", obj)
+	return nil
+}
+
+func deleteDeployment(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (err error) {
+	obj := client.ObjectKey{Name: orchestrator.Name, Namespace: orchestrator.Namespace}
+	orig := &appsv1.Deployment{}
+	log := log.FromContext(ctx).WithValues("GuardrailsOrchestratorReconciler.deleteDeployment", obj)
+	err = k8sClient.Get(ctx, obj, orig)
+	if errors.IsNotFound(err) {
+		return nil
+	} else if err != nil {
+		log.Error(err, "Get", "Deployment", obj)
+		return err
+	}
+
+	err = k8sClient.Delete(ctx, orig, &client.DeleteOptions{})
+	if err != nil && errors.IsNotFound(err) {
+		log.Error(err, "Delete", "Deployment", obj)
+		return err
+	}
+	log.Info("Delete", "Deployment", obj)
+	return nil
+}
+
+func deleteService(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (err error) {
+	obj := client.ObjectKey{Name: orchestrator.Name + "-service", Namespace: orchestrator.Namespace}
+	orig := &corev1.Service{}
+	log := log.FromContext(ctx).WithValues("GuardrailsOrchestratorReconciler.deleteService", obj)
+	err = k8sClient.Get(ctx, obj, orig)
+	if errors.IsNotFound(err) {
+		return nil
+	} else if err != nil {
+		log.Error(err, "Get", "Service", obj)
+		return err
+	}
+
+	err = k8sClient.Delete(ctx, orig, &client.DeleteOptions{})
+	if err != nil && errors.IsNotFound(err) {
+		log.Error(err, "Delete", "Service", obj)
+		return err
+	}
+	log.Info("Delete", "Service", obj)
+	return nil
+}
+
+func deleteRoute(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (err error) {
+	obj := client.ObjectKey{Name: orchestrator.Name + "-route", Namespace: orchestrator.Namespace}
+	orig := &routev1.Route{}
+	log := log.FromContext(ctx).WithValues("GuardrailsOrchestratorReconciler.deleteRoute", obj)
+	err = k8sClient.Get(ctx, obj, orig)
+	if errors.IsNotFound(err) {
+		return nil
+	} else if err != nil {
+		log.Error(err, "Get", "Route", obj)
+		return err
+	}
+
+	err = k8sClient.Delete(ctx, orig, &client.DeleteOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		log.Error(err, "Delete", "Route", obj)
+		return err
+	}
+	log.Info("Delete", "Route", obj)
+	return nil
+}
+
+func doFinalizerOperationsForOrchestrator(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (err error) {
+	if err = deleteServiceAccount(ctx, orchestrator); err != nil {
+		return err
+	}
+	if err = deleteDeployment(ctx, orchestrator); err != nil {
+		return err
+	}
+	if err = deleteService(ctx, orchestrator); err != nil {
+		return err
+	}
+	if err = deleteRoute(ctx, orchestrator); err != nil {
+		return err
+	}
+	return
 }
 
 func TestControllers(t *testing.T) {

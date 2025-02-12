@@ -122,16 +122,11 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	isMarkedToBeDeleted := orchestrator.GetDeletionTimestamp() != nil
 	if isMarkedToBeDeleted {
 		if controllerutil.ContainsFinalizer(orchestrator, finalizerName) {
-			log.Info("Performing Finalizer Operations for GuardrailsOrchestrator before deleting the CR")
-			if err = r.doFinalizerOperationsForOrchestrator(ctx, orchestrator); err != nil {
-				log.Error(err, "Failed to do finalizer operations for GuardrailsOrchestrator")
-				return ctrl.Result{Requeue: true}, err
-			}
 			if err = r.Get(ctx, req.NamespacedName, orchestrator); err != nil {
 				log.Error(err, "Failed to re-fetch GuardrailsOrchestrator")
 				return ctrl.Result{}, err
 			}
-			log.Info("Removing Finalizer for GuardrailsOrchestrator after sucessfully performing the operations")
+			log.Info("Removing Finalizer for GuardrailsOrchestrator")
 			if ok := controllerutil.RemoveFinalizer(orchestrator, finalizerName); !ok {
 				log.Error(err, "Failed to remove finalizer from GuardrailsOrchestrator")
 				return ctrl.Result{Requeue: true}, nil
@@ -201,14 +196,28 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	existingRoute := &routev1.Route{}
-	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-route", Namespace: orchestrator.Namespace}, existingRoute)
+	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-http", Namespace: orchestrator.Namespace}, existingRoute)
 	if err != nil && errors.IsNotFound(err) {
 		// Define a new route
-		route := r.createRoute(ctx, orchestrator)
-		log.Info("Creating a new Route", "Route.Namespace", route.Namespace, "Route.Name", route.Name)
-		err = r.Create(ctx, route)
+		httpRoute := r.createRoute(ctx, "http-route.tmpl.yaml", orchestrator)
+		log.Info("Creating a new Route", "Route.Namespace", httpRoute.Namespace, "Route.Name", httpRoute.Name)
+		err = r.Create(ctx, httpRoute)
 		if err != nil {
-			log.Error(err, "Failed to create new Route", "Route.Namespace", route.Namespace, "Route.Name", route.Name)
+			log.Error(err, "Failed to create new Route", "Route.Namespace", httpRoute.Namespace, "Route.Name", httpRoute.Name)
+		}
+	} else if err != nil {
+		log.Error(err, "Failed to get Route")
+		return ctrl.Result{}, err
+	}
+
+	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-health", Namespace: orchestrator.Namespace}, existingRoute)
+	if err != nil && errors.IsNotFound(err) {
+		// Define a new route
+		healthRoute := r.createRoute(ctx, "health-route.tmpl.yaml", orchestrator)
+		log.Info("Creating a new Route", "Route.Namespace", healthRoute.Namespace, "Route.Name", healthRoute.Name)
+		err = r.Create(ctx, healthRoute)
+		if err != nil {
+			log.Error(err, "Failed to create new Route", "Route.Namespace", healthRoute.Namespace, "Route.Name", healthRoute.Name)
 		}
 	} else if err != nil {
 		log.Error(err, "Failed to get Route")
@@ -221,106 +230,6 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, updateErr
 	}
 	return ctrl.Result{Requeue: true, RequeueAfter: 30 * time.Second}, nil
-}
-
-func (r *GuardrailsOrchestratorReconciler) deleteServiceAccount(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (err error) {
-	obj := client.ObjectKey{Name: orchestrator.Name + "-serviceaccount", Namespace: orchestrator.Namespace}
-	orig := &corev1.ServiceAccount{}
-	log := log.FromContext(ctx).WithValues("GuardrailsOrchestratorReconciler.deleteServiceAccount", obj)
-	err = r.Get(ctx, obj, orig)
-	if errors.IsNotFound(err) {
-		return nil
-	} else if err != nil {
-		log.Error(err, "Get", "ServiceAccount", obj)
-		return err
-	}
-
-	err = r.Delete(ctx, orig, &client.DeleteOptions{})
-	if err != nil && errors.IsNotFound(err) {
-		log.Error(err, "Delete", "ServiceAccount", obj)
-		return err
-	}
-	log.Info("Delete", "ServiceAccount", obj)
-	return nil
-}
-
-func (r *GuardrailsOrchestratorReconciler) deleteDeployment(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (err error) {
-	obj := client.ObjectKey{Name: orchestrator.Name, Namespace: orchestrator.Namespace}
-	orig := &appsv1.Deployment{}
-	log := log.FromContext(ctx).WithValues("GuardrailsOrchestratorReconciler.deleteDeployment", obj)
-	err = r.Get(ctx, obj, orig)
-	if errors.IsNotFound(err) {
-		return nil
-	} else if err != nil {
-		log.Error(err, "Get", "Deployment", obj)
-		return err
-	}
-
-	err = r.Delete(ctx, orig, &client.DeleteOptions{})
-	if err != nil && errors.IsNotFound(err) {
-		log.Error(err, "Delete", "Deployment", obj)
-		return err
-	}
-	log.Info("Delete", "Deployment", obj)
-	return nil
-}
-
-func (r *GuardrailsOrchestratorReconciler) deleteService(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (err error) {
-	obj := client.ObjectKey{Name: orchestrator.Name + "-service", Namespace: orchestrator.Namespace}
-	orig := &corev1.Service{}
-	log := log.FromContext(ctx).WithValues("GuardrailsOrchestratorReconciler.deleteService", obj)
-	err = r.Get(ctx, obj, orig)
-	if errors.IsNotFound(err) {
-		return nil
-	} else if err != nil {
-		log.Error(err, "Get", "Service", obj)
-		return err
-	}
-
-	err = r.Delete(ctx, orig, &client.DeleteOptions{})
-	if err != nil && errors.IsNotFound(err) {
-		log.Error(err, "Delete", "Service", obj)
-		return err
-	}
-	log.Info("Delete", "Service", obj)
-	return nil
-}
-
-func (r *GuardrailsOrchestratorReconciler) deleteRoute(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (err error) {
-	obj := client.ObjectKey{Name: orchestrator.Name + "-route", Namespace: orchestrator.Namespace}
-	orig := &routev1.Route{}
-	log := log.FromContext(ctx).WithValues("GuardrailsOrchestratorReconciler.deleteRoute", obj)
-	err = r.Get(ctx, obj, orig)
-	if errors.IsNotFound(err) {
-		return nil
-	} else if err != nil {
-		log.Error(err, "Get", "Route", obj)
-		return err
-	}
-
-	err = r.Delete(ctx, orig, &client.DeleteOptions{})
-	if err != nil && !errors.IsNotFound(err) {
-		log.Error(err, "Delete", "Route", obj)
-		return err
-	}
-	log.Info("Delete", "Route", obj)
-	return nil
-}
-
-func (r *GuardrailsOrchestratorReconciler) doFinalizerOperationsForOrchestrator(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (err error) {
-	if err = r.deleteServiceAccount(ctx, orchestrator); err != nil {
-		return err
-	}
-	if err = r.deleteDeployment(ctx, orchestrator); err != nil {
-		return err
-	}
-	if err = r.deleteService(ctx, orchestrator); err != nil {
-		return err
-	}
-	if err = r.deleteRoute(ctx, orchestrator); err != nil {
-		return err
-	}
-	return
 }
 
 // SetupWithManager sets up the controller with the Manager.

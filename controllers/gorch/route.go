@@ -17,17 +17,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-const routeTemplatePath = "route.tmpl.yaml"
-
 type RouteConfig struct {
 	Orchestrator *gorchv1alpha1.GuardrailsOrchestrator
-	PortName     string
 }
 
-func (r *GuardrailsOrchestratorReconciler) createRoute(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *routev1.Route {
+func (r *GuardrailsOrchestratorReconciler) createRoute(ctx context.Context, routeTemplatePath string, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *routev1.Route {
 	routeHttpConfig := RouteConfig{
 		Orchestrator: orchestrator,
-		PortName:     "http",
 	}
 	var route *routev1.Route
 	route, err := templateParser.ParseResource[routev1.Route](routeTemplatePath, routeHttpConfig, reflect.TypeOf(&routev1.Route{}))
@@ -39,7 +35,7 @@ func (r *GuardrailsOrchestratorReconciler) createRoute(ctx context.Context, orch
 	return route
 }
 
-func (r *GuardrailsOrchestratorReconciler) checkRouteReady(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (bool, error) {
+func (r *GuardrailsOrchestratorReconciler) checkRouteReady(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, portName string) (bool, error) {
 	// Retry logic for getting the route and checking its readiness
 	var existingRoute *routev1.Route
 	err := retry.OnError(
@@ -52,7 +48,7 @@ func (r *GuardrailsOrchestratorReconciler) checkRouteReady(ctx context.Context, 
 		},
 		func() error {
 			// Fetch the Route resource
-			typedNamespaceName := types.NamespacedName{Name: orchestrator.Name + "-route", Namespace: orchestrator.Namespace}
+			typedNamespaceName := types.NamespacedName{Name: orchestrator.Name + portName, Namespace: orchestrator.Namespace}
 			existingRoute = &routev1.Route{}
 			err := r.Get(ctx, typedNamespaceName, existingRoute)
 			if err != nil {

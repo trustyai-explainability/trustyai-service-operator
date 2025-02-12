@@ -52,8 +52,13 @@ spec:
           env:
             - name: ORCHESTRATOR_CONFIG
               value: /config/config.yaml
+            {{if .Orchestrator.Spec.VLLMGatewayConfig}}
+            - name: HTTP_PORT
+              value: '8032'
+            {{else}}
             - name: HTTP_PORT
               value: '8033'
+            {{end}}
             - name: RUST_BACKTRACE
               value: 'full'
             - name: RUST_LOG
@@ -92,9 +97,15 @@ spec:
               mountPath: /config/config.yaml
               subPath: config.yaml
           ports:
+            {{if .Orchestrator.Spec.VLLMGatewayConfig}}
+            - name: http
+              containerPort: 8032
+              protocol: TCP
+            {{else}}
             - name: http
               containerPort: 8033
               protocol: TCP
+            {{end}}
           imagePullPolicy: Always
           terminationMessagePolicy: File
           resources:
@@ -130,7 +141,7 @@ spec:
         {{if .Orchestrator.Spec.VLLMGatewayConfig}}
         - name: {{.Orchestrator.Name}}-gateway
           image : {{.ContainerImages.GatewayImage}}
-          command: ["/app/vllm-orchestrator-gateway"]
+          command: ["/app/bin/vllm-orchestrator-gateway"]
           volumeMounts:
             - name: {{.Orchestrator.Name}}-vllm-config
               readOnly: true
@@ -141,5 +152,5 @@ spec:
               value: /config/config.yaml
         - name: {{.Orchestrator.Name}}-detectors
           image : {{.ContainerImages.RegexDetectorImage}}
-          command: ["/bin/sh", "-c", "/app/local-detectors"]
+          command: ["/app/bin/regex-detector"]
         {{end}}

@@ -6,17 +6,21 @@ metadata:
   labels:
     app: {{.Orchestrator.Name}}
     component: {{.Orchestrator.Name}}
-    app.kubernetes.io/instance: {{.Orchestrator.Name}}
-    app.kubernetes.io/name: {{.Orchestrator.Name}}
-    app.kubernetes.io/part-of: trustyai
 spec:
   ipFamilies:
     - IPv4
   ports:
+    {{if .Orchestrator.Spec.VLLMGatewayConfig}}
+    - name: http
+      protocol: TCP
+      port: 8032
+      targetPort: 8032
+    {{else}}
     - name: http
       protocol: TCP
       port: 8033
       targetPort: 8033
+    {{end}}
     - name: health
       protocol: TCP
       port: 8034
@@ -28,6 +32,3 @@ spec:
   selector:
     app: {{.Orchestrator.Name}}
     component: {{.Orchestrator.Name}}
-    app.kubernetes.io/instance: {{.Orchestrator.Name}}
-    app.kubernetes.io/name: {{.Orchestrator.Name}}
-    app.kubernetes.io/part-of: trustyai

@@ -112,7 +112,14 @@ func deleteGuardrailsOrchestrator(ctx context.Context, namespace string) error {
 				Namespace: typedNamespacedName.Namespace,
 			},
 		}
+		err = doFinalizerOperationsForOrchestrator(ctx, gorch)
+		if err != nil {
+			return err
+		}
 		err = k8sClient.Delete(ctx, gorch)
+		if err != nil {
+			return err
+		}
 	}
 	return err
 }
@@ -207,7 +214,10 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 			if err := routev1.AddToScheme(scheme.Scheme); err != nil {
 				return err
 			}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-route", Namespace: namespaceName}, route); err != nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-http", Namespace: namespaceName}, route); err != nil {
+				return err
+			}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-health", Namespace: namespaceName}, route); err != nil {
 				return err
 			}
 			return nil
@@ -337,7 +347,10 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 			if err := routev1.AddToScheme(scheme.Scheme); err != nil {
 				return err
 			}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-route", Namespace: namespaceName}, route); err != nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-http", Namespace: namespaceName}, route); err != nil {
+				return err
+			}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-health", Namespace: namespaceName}, route); err != nil {
 				return err
 			}
 			return nil
@@ -461,7 +474,10 @@ func testCreateDeleteGuardrailsOrchestratorOtelExporter(namespaceName string) {
 			if err := routev1.AddToScheme(scheme.Scheme); err != nil {
 				return err
 			}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-route", Namespace: namespaceName}, route); err != nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-http", Namespace: namespaceName}, route); err != nil {
+				return err
+			}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-health", Namespace: namespaceName}, route); err != nil {
 				return err
 			}
 			return nil
