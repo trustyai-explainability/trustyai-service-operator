@@ -1,0 +1,156 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: {{.Orchestrator.Name}}
+  namespace: {{.Orchestrator.Namespace}}
+  annotations:
+      sidecar.istio.io/inject: "true"
+  labels:
+    app: {{.Orchestrator.Name}}
+    component: {{.Orchestrator.Name}}
+    deploy-name: {{.Orchestrator.Name}}
+    app.kubernetes.io/instance: {{.Orchestrator.Name}}
+    app.kubernetes.io/name: {{.Orchestrator.Name}}
+    app.kubernetes.io/part-of: trustyai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{.Orchestrator.Name}}
+      component: {{.Orchestrator.Name}}
+      deploy-name: {{.Orchestrator.Name}}
+      app.kubernetes.io/instance: {{.Orchestrator.Name}}
+      app.kubernetes.io/name: {{.Orchestrator.Name}}
+      app.kubernetes.io/part-of: trustyai
+  template:
+    metadata:
+      labels:
+        app: {{.Orchestrator.Name}}
+        component: {{.Orchestrator.Name}}
+        deploy-name: {{.Orchestrator.Name}}
+        app.kubernetes.io/instance: {{.Orchestrator.Name}}
+        app.kubernetes.io/name: {{.Orchestrator.Name}}
+        app.kubernetes.io/part-of: trustyai
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      volumes:
+        - name: {{.Orchestrator.Name}}-config
+          configMap:
+            name: {{.Orchestrator.Spec.OrchestratorConfig}}
+            defaultMode: 420
+        {{if .Orchestrator.Spec.VLLMGatewayConfig}}
+        - name: {{.Orchestrator.Name}}-vllm-config
+          configMap:
+            name: {{.Orchestrator.Spec.VLLMGatewayConfig}}
+            defaultMode: 420
+        {{end}}
+      serviceAccountName: {{.Orchestrator.Name}}-serviceaccount
+      containers:
+        - name: {{.Orchestrator.Name}}
+          image: {{.ContainerImages.OrchestratorImage}}
+          env:
+            - name: ORCHESTRATOR_CONFIG
+              value: /config/config.yaml
+            {{if .Orchestrator.Spec.VLLMGatewayConfig}}
+            - name: HTTP_PORT
+              value: '8032'
+            {{else}}
+            - name: HTTP_PORT
+              value: '8033'
+            {{end}}
+            - name: RUST_BACKTRACE
+              value: 'full'
+            - name: RUST_LOG
+              value: 'info'
+          {{if .Orchestrator.Spec.OtelExporter.Protocol}}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: {{.Orchestrator.Spec.OtelExporter.Protocol}}
+          {{end}}
+          {{if .Orchestrator.Spec.OtelExporter.TracesProtocol}}
+            - name: OTEL_EXPORTER_OTLP_TRACES_PROTOCOL
+              value: {{.Orchestrator.Spec.OtelExporter.TracesProtocol}}
+          {{end}}
+          {{if .Orchestrator.Spec.OtelExporter.MetricsProtocol}}
+            - name: OTEL_EXPORTER_OTLP_METRICS_PROTOCOL
+              value: {{.Orchestrator.Spec.OtelExporter.MetricsProtocol}}
+          {{end}}
+          {{if .Orchestrator.Spec.OtelExporter.OTLPEndpoint}}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{.Orchestrator.Spec.OtelExporter.OTLPEndpoint}}
+          {{end}}
+          {{if .Orchestrator.Spec.OtelExporter.TracesEndpoint}}
+            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+              value: {{.Orchestrator.Spec.OtelExporter.TracesEndpoint}}
+          {{end}}
+          {{if .Orchestrator.Spec.OtelExporter.MetricsEndpoint}}
+            - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+              value: {{.Orchestrator.Spec.OtelExporter.MetricsEndpoint}}
+          {{end}}
+          {{if .Orchestrator.Spec.OtelExporter.OTLPExport}}
+            - name: OTLP_EXPORT
+              value: {{.Orchestrator.Spec.OtelExporter.OTLPExport}}
+          {{end}}
+          volumeMounts:
+            - name: {{.Orchestrator.Name}}-config
+              readOnly: true
+              mountPath: /config/config.yaml
+              subPath: config.yaml
+          ports:
+            {{if .Orchestrator.Spec.VLLMGatewayConfig}}
+            - name: http
+              containerPort: 8032
+              protocol: TCP
+            {{else}}
+            - name: http
+              containerPort: 8033
+              protocol: TCP
+            {{end}}
+          imagePullPolicy: Always
+          terminationMessagePolicy: File
+          resources:
+            limits:
+              cpu: '1'
+              memory: 2Gi
+            requests:
+              cpu: '1'
+              memory: 2Gi
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+            readinessProbe:
+              httpGet:
+                path: /health
+                port: 8033
+                scheme: HTTP
+              initialDelaySeconds: 10
+              timeoutSeconds: 10
+              periodSeconds: 20
+              successThreshold: 1
+              failureThreshold: 3
+            terminationMessagePath: /dev/termination-log
+            command:
+              - /app/bin/fms-guardrails-orchestr8
+        {{if .Orchestrator.Spec.VLLMGatewayConfig}}
+        - name: {{.Orchestrator.Name}}-gateway
+          image : {{.ContainerImages.GatewayImage}}
+          command: ["/app/bin/vllm-orchestrator-gateway"]
+          volumeMounts:
+            - name: {{.Orchestrator.Name}}-vllm-config
+              readOnly: true
+              mountPath: /config/config.yaml
+              subPath: config.yaml
+          env:
+            - name: GATEWAY_CONFIG
+              value: /config/config.yaml
+        - name: {{.Orchestrator.Name}}-detectors
+          image : {{.ContainerImages.RegexDetectorImage}}
+          command: ["/app/bin/regex-detector"]
+        {{end}}
