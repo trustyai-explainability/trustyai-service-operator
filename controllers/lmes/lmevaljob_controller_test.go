@@ -1696,7 +1696,7 @@ func Test_OfflineMode(t *testing.T) {
 			},
 			Offline: &lmesv1alpha1.OfflineSpec{
 				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
-					PersistentVolumeClaimName: pvcName,
+					PersistentVolumeClaimName: &pvcName,
 				},
 			},
 		},
@@ -1882,7 +1882,7 @@ func Test_ProtectedVars(t *testing.T) {
 			},
 			Offline: &lmesv1alpha1.OfflineSpec{
 				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
-					PersistentVolumeClaimName: pvcName,
+					PersistentVolumeClaimName: &pvcName,
 				},
 			},
 			Pod: &lmesv1alpha1.LMEvalPodSpec{
@@ -2101,7 +2101,7 @@ func Test_OnlineModeDisabled(t *testing.T) {
 			},
 			Offline: &lmesv1alpha1.OfflineSpec{
 				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
-					PersistentVolumeClaimName: pvcName,
+					PersistentVolumeClaimName: &pvcName,
 				},
 			},
 		},
@@ -2288,7 +2288,7 @@ func Test_OnlineMode(t *testing.T) {
 			},
 			Offline: &lmesv1alpha1.OfflineSpec{
 				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
-					PersistentVolumeClaimName: pvcName,
+					PersistentVolumeClaimName: &pvcName,
 				},
 			},
 			AllowOnline: &allowOnline,
@@ -2458,7 +2458,7 @@ func Test_AllowCodeOnlineMode(t *testing.T) {
 			},
 			Offline: &lmesv1alpha1.OfflineSpec{
 				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
-					PersistentVolumeClaimName: pvcName,
+					PersistentVolumeClaimName: &pvcName,
 				},
 			},
 			AllowOnline:        &allowOnline,
@@ -2628,7 +2628,7 @@ func Test_AllowCodeOfflineMode(t *testing.T) {
 			},
 			Offline: &lmesv1alpha1.OfflineSpec{
 				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
-					PersistentVolumeClaimName: pvcName,
+					PersistentVolumeClaimName: &pvcName,
 				},
 			},
 			AllowCodeExecution: &allowCode,
@@ -2815,7 +2815,7 @@ func Test_OfflineModeWithOutput(t *testing.T) {
 			},
 			Offline: &lmesv1alpha1.OfflineSpec{
 				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
-					PersistentVolumeClaimName: offlinePvcName,
+					PersistentVolumeClaimName: &offlinePvcName,
 				},
 			},
 			Outputs: &lmesv1alpha1.Outputs{

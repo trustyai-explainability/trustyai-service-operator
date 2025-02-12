@@ -166,6 +166,26 @@ func Test_DetectDeviceError(t *testing.T) {
 	assert.NotNil(t, os.Remove("./stdout.log"))
 }
 
+func Test_DownloadAssetsS3Error(t *testing.T) {
+	driver, err := NewDriver(&DriverOption{
+		Context:          context.Background(),
+		OutputPath:       ".",
+		DetectDevice:     false,
+		Logger:           driverLog,
+		Args:             []string{"sh", "-ec", "python -m lm_eval --output_path ./output --model test --model_args arg1=value1 --tasks task1,task2"},
+		CommPort:         genRandomPort(),
+		DownloadAssetsS3: true,
+	})
+	assert.Nil(t, err)
+
+	msgs, _ := runDriverAndWait4Complete(t, driver, true)
+	assert.Equal(t, []string{
+		"failed to download assets from S3: exit status 2",
+	}, msgs)
+
+	assert.Nil(t, driver.Shutdown())
+}
+
 func Test_PatchDevice(t *testing.T) {
 	driverOpt := DriverOption{
 		Context:      context.Background(),
