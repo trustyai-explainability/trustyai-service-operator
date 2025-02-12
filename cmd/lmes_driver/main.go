@@ -57,6 +57,7 @@ var (
 	shutdown     = flag.Bool("shutdown", false, "Shutdown the driver")
 	outputPath   = flag.String("output-path", OutputPath, "output path")
 	detectDevice = flag.Bool("detect-device", false, "detect available device(s), CUDA or CPU")
+	commPort     = flag.Int("listen-port", driver.DefaultPort, "driver serves APIs on the port")
 	driverLog    = ctrl.Log.WithName("driver")
 )
 
@@ -112,6 +113,7 @@ func main() {
 		TaskRecipes:  taskRecipes,
 		CustomCards:  customCards,
 		Args:         args,
+		CommPort:     *commPort,
 	}
 
 	driver, err := driver.NewDriver(&driverOpt)

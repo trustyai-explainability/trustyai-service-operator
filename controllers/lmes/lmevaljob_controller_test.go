@@ -116,6 +116,11 @@ func Test_SimplePod(t *testing.T) {
 							MountPath: "/opt/app-root/src/bin",
 						},
 					},
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
 					Env: []corev1.EnvVar{
 						{
 							Name:  "HF_HUB_DISABLE_TELEMETRY",
@@ -324,7 +329,11 @@ func Test_WithCustomPod(t *testing.T) {
 						RunAsUser:  &runAsUser,
 						RunAsGroup: &runAsGroup,
 					},
-
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -535,6 +544,11 @@ func Test_EnvSecretsPod(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
 					Env: []corev1.EnvVar{
 						{
 							Name: "my_env",
@@ -715,6 +729,11 @@ func Test_FileSecretsPod(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
 					SecurityContext: defaultSecurityContext,
 					Env: []corev1.EnvVar{
 						{
@@ -1184,6 +1203,11 @@ func Test_ManagedPVC(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
 					SecurityContext: defaultSecurityContext,
 					Env: []corev1.EnvVar{
 						{
@@ -1343,6 +1367,11 @@ func Test_ExistingPVC(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
 					SecurityContext: defaultSecurityContext,
 					Env: []corev1.EnvVar{
 						{
@@ -1512,6 +1541,11 @@ func Test_PVCPreference(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						Capabilities: &corev1.Capabilities{
@@ -1719,6 +1753,11 @@ func Test_OfflineMode(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						Capabilities: &corev1.Capabilities{
@@ -1922,6 +1961,11 @@ func Test_ProtectedVars(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						Capabilities: &corev1.Capabilities{
@@ -2114,6 +2158,11 @@ func Test_OnlineModeDisabled(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						Capabilities: &corev1.Capabilities{
@@ -2297,6 +2346,11 @@ func Test_OnlineMode(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						Capabilities: &corev1.Capabilities{
@@ -2463,6 +2517,11 @@ func Test_AllowCodeOnlineMode(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						Capabilities: &corev1.Capabilities{
@@ -2627,6 +2686,11 @@ func Test_AllowCodeOfflineMode(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						Capabilities: &corev1.Capabilities{
@@ -2811,6 +2875,11 @@ func Test_OfflineModeWithOutput(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 						Capabilities: &corev1.Capabilities{
