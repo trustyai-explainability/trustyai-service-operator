@@ -2,13 +2,19 @@ ARG UBI_MINIMAL_BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal
 ARG UBI_BASE_IMAGE_TAG=latest
 ARG PROTOC_VERSION=26.0
 ARG CONFIG_FILE=config/config.yaml
-
+ARG ORCH_REPO=/midstream
 ## Rust builder ################################################################
 # Specific debian version so that compatible glibc version is used
 FROM rust:1.80.1-bullseye as rust-builder
 ARG PROTOC_VERSION
-
+ARG ORCH_REPO=/midstream
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+
+RUN curl -L https://github.com/trustyai-explainability/fms-guardrails-orchestrator/archive/HEAD.tar.gz -o /tmp/orchestrator.tar.gz \
+    && mkdir -p $ORCH_REPO \
+    && tar -xzf /tmp/orchestrator.tar.gz -C $ORCH_REPO --strip-components=1 \
+    && cp /midstream/rust-toolchain.toml rust-toolchain.toml \
+    && rm /tmp/orchestrator.tar.gz
 
 # Install protoc, no longer included in prost crate
 RUN cd /tmp && \
@@ -17,17 +23,15 @@ RUN cd /tmp && \
 
 WORKDIR /app
 
-COPY rust-toolchain.toml rust-toolchain.toml
-
 RUN rustup component add rustfmt
 
 ## Orchestrator builder #########################################################
 FROM rust-builder as fms-guardrails-orchestr8-builder
-
-COPY build.rs *.toml LICENSE /app/
-COPY ${CONFIG_FILE} /app/config/config.yaml
-COPY protos/ /app/protos/
-COPY src/ /app/src/
+ARG ORCH_REPO=/midstream
+COPY --from=rust-builder $ORCH_REPO/build.rs /midstream/*.toml /midstream/LICENSE /app/
+COPY --from=rust-builder $ORCH_REPO/${CONFIG_FILE} /app/config/config.yaml
+COPY --from=rust-builder $ORCH_REPO/protos/ /app/protos/
+COPY --from=rust-builder $ORCH_REPO/src/ /app/src/
 
 WORKDIR /app
 
