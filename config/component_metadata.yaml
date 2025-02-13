@@ -11,3 +11,6 @@ releases:
   - name: TrustyAI LMEval job
     version: latest
     repoUrl: https://github.com/opendatahub-io/lm-evaluation-harness
+  - name: TrustyAI Guardrails orchestrator
+    version: latest
+    repoUrl: https://github.com/trustyai-explainability/fms-guardrails-orchestrator
