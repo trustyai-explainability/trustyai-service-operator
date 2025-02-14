@@ -22,7 +22,7 @@ RUN python -c 'from lm_eval.tasks.unitxt import task; import os.path; print("cla
 
 ENV PYTHONPATH=/opt/app-root/src/.local/lib/python3.11/site-packages:/opt/app-root/src/lm-evaluation-harness:/opt/app-root/src:/opt/app-root/src/server
 ENV HF_HOME=/opt/app-root/src/hf_home
-ENV UNITXT_ARTIFACTORIES=/opt/app-root/src/my_catalogs
+ENV UNITXT_CATALOGS=/opt/app-root/src/my_catalogs
 
 USER 65532:65532
 CMD ["/opt/app-root/bin/python"]
