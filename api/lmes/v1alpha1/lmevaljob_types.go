@@ -76,6 +76,26 @@ type Card struct {
 	Custom string `json:"custom,omitempty"`
 }
 
+type Template struct {
+	// Unitxt template ID
+	// +optional
+	Name string `json:"name,omitempty"`
+	// A JSON string for a custom unitxt template.
+	// Use the documentation here: https://www.unitxt.ai/en/latest/docs/adding_template.html
+	// to compose a custom template, store it as a JSON file by calling the
+	// add_to_catalog API: https://www.unitxt.ai/en/latest/docs/saving_and_loading_from_catalog.html#adding-assets-to-the-catalog,
+	// and use the JSON content as the value here.
+	// +optional
+	Custom string `json:"custom,omitempty"`
+}
+
+type SystemPrompt struct {
+	// Unitxt System Prompt id
+	Name string `json:"name,omitempty"`
+	// A custom system prompt string
+	Custom string `json:"custom,omitempty"`
+}
+
 // Use a task recipe to form a custom task. It maps to the Unitxt Recipe
 // Find details of the Unitxt Recipe here:
 // https://www.unitxt.ai/en/latest/unitxt.standard.html#unitxt.standard.StandardRecipe
@@ -83,7 +103,11 @@ type TaskRecipe struct {
 	// The Unitxt dataset card
 	Card Card `json:"card"`
 	// The Unitxt template
-	Template string `json:"template"`
+	// +optional
+	Template *Template `json:"template,omitempty"`
+	// The Unitxt System Prompt
+	// +optional
+	SystemPrompt *SystemPrompt `json:"systemPrompt,omitempty"`
 	// The Unitxt Task
 	// +optional
 	Task *string `json:"task,omitempty"`
@@ -111,9 +135,17 @@ type TaskList struct {
 	TaskRecipes []TaskRecipe `json:"taskRecipes,omitempty"`
 }
 
+// Use the tp_idx and sp_idx to point to the corresponding custom template
+// and custom system_prompt
 func (t *TaskRecipe) String() string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("card=%s,template=%s", t.Card.Name, t.Template))
+	b.WriteString(fmt.Sprintf("card=%s", t.Card.Name))
+	if t.Template != nil && t.Template.Name != "" {
+		b.WriteString(fmt.Sprintf(",template=%s", t.Template.Name))
+	}
+	if t.SystemPrompt != nil && t.SystemPrompt.Name != "" {
+		b.WriteString(fmt.Sprintf(",system_prompt=%s", t.SystemPrompt.Name))
+	}
 	if t.Task != nil {
 		b.WriteString(fmt.Sprintf(",task=%s", *t.Task))
 	}
