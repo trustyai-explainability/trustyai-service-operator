@@ -136,6 +136,10 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 				Name:      orchestratorName + "-config",
 				Namespace: namespaceName,
 			},
+			Data: map[string]string{
+				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
+				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
+			},
 		}
 		err := k8sClient.Create(ctx, configMap)
 		Expect(err).ToNot(HaveOccurred())
@@ -169,8 +173,9 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 
 		By("Reconciling the custom resource that was created")
 		reconciler := &GuardrailsOrchestratorReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: namespaceName,
 		}
 
 		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typedNamespacedName})
@@ -257,6 +262,23 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 		err := k8sClient.Create(ctx, configMap)
 		Expect(err).ToNot(HaveOccurred())
 
+		configMap = &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orchestratorName + "-config",
+				Namespace: namespaceName,
+			},
+			Data: map[string]string{
+				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
+				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
+			},
+		}
+		err = k8sClient.Create(ctx, configMap)
+		Expect(err).ToNot(HaveOccurred())
+
 		By("Creating an VLLM Gateway configmap")
 		configMap = &corev1.ConfigMap{
 			TypeMeta: metav1.TypeMeta{
@@ -288,11 +310,10 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 				APIVersion: "v1",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      constants.ConfigMap,
+				Name:      orchestratorName + "-config",
 				Namespace: namespaceName,
 			},
 			Data: map[string]string{
-				orchestratorImageKey:  "quay.io/trustyai/ta-guardrails-orchestrator:latest",
 				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
 				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
 			},
@@ -302,8 +323,9 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 
 		By("Reconciling the custom resource that was created")
 		reconciler := &GuardrailsOrchestratorReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: namespaceName,
 		}
 
 		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typedNamespacedName})
@@ -312,11 +334,11 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 		By("Checking if resources were successfully created in the reconcilation")
 		Eventually(func() error {
 			configMap := &corev1.ConfigMap{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: constants.ConfigMap, Namespace: namespaceName}, configMap); err != nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-config", Namespace: namespaceName}, configMap); err != nil {
 				return err
 			}
 			Expect(configMap.Namespace).Should(Equal(namespaceName))
-			Expect(configMap.Name).Should(Equal(constants.ConfigMap))
+			Expect(configMap.Name).Should(Equal(orchestratorName + "-config"))
 
 			serviceAccount := &corev1.ServiceAccount{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-serviceaccount", Namespace: namespaceName}, serviceAccount); err != nil {
@@ -400,27 +422,11 @@ func testCreateDeleteGuardrailsOrchestratorOtelExporter(namespaceName string) {
 		err = k8sClient.Get(ctx, typedNamespacedName, &gorchv1alpha1.GuardrailsOrchestrator{})
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Creating the TrustyAI configmap with sidecar images")
-		configMap = &corev1.ConfigMap{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "ConfigMap",
-				APIVersion: "v1",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      constants.ConfigMap,
-				Namespace: namespaceName,
-			},
-			Data: map[string]string{
-				orchestratorImageKey: "quay.io/trustyai/ta-guardrails-orchestrator:latest",
-			},
-		}
-		err = k8sClient.Create(ctx, configMap)
-		Expect(err).ToNot(HaveOccurred())
-
 		By("Reconciling the custom resource that was created")
 		reconciler := &GuardrailsOrchestratorReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: namespaceName,
 		}
 
 		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typedNamespacedName})

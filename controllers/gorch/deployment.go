@@ -46,11 +46,11 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 	// Check if the vLLM gateway is enabled
 	if orchestrator.Spec.VLLMGatewayConfig != nil {
 		//  Get the gateway and regex detector container images
-		vllmGatewayImage, err := r.getImageFromConfigMap(ctx, vllmGatewayImageKey, configMapName, orchestrator.Namespace)
+		vllmGatewayImage, err := r.getImageFromConfigMap(ctx, vllmGatewayImageKey, orchestratorName+"-config", orchestrator.Namespace)
 		if vllmGatewayImage == "" || err != nil {
 			log.FromContext(ctx).Error(err, "Error getting vLLM gateway image from ConfigMap.")
 		}
-		regexDetectorImage, err := r.getImageFromConfigMap(ctx, regexDetectorImageKey, configMapName, orchestrator.Namespace)
+		regexDetectorImage, err := r.getImageFromConfigMap(ctx, regexDetectorImageKey, orchestratorName+"-config", orchestrator.Namespace)
 		if regexDetectorImage == "" || err != nil {
 			log.FromContext(ctx).Error(err, "Error getting regex detectors image from ConfigMap.")
 		}
