@@ -127,14 +127,6 @@ func deleteGuardrailsOrchestrator(ctx context.Context, namespace string) error {
 func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 	It("Should sucessfully reconcile creating a custom resource for the GuardrailsOrchestrator", func() {
 		By("Creating an Orchestrator configmap")
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "system",
-			},
-		}
-		err := k8sClient.Create(ctx, ns)
-		Expect(err).ToNot(HaveOccurred())
-
 		configMap := &corev1.ConfigMap{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "ConfigMap",
@@ -145,23 +137,8 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 				Namespace: namespaceName,
 			},
 		}
-		err = k8sClient.Create(ctx, configMap)
+		err := k8sClient.Create(ctx, configMap)
 		Expect(err).ToNot(HaveOccurred())
-
-		By("Creating the TrustyAI configmap for testing")
-		configMap = &corev1.ConfigMap{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "ConfigMap",
-				APIVersion: "v1",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      constants.ConfigMap,
-				Namespace: "system",
-			},
-			Data: map[string]string{
-				orchestratorImageKey: "quay.io/trustyai/ta-guardrails-orchestrator:latest",
-			},
-		}
 
 		By("Creating a custom resource for the GuardrailsOrchestrator")
 		ctx := context.Background()
@@ -173,6 +150,20 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 		err = k8sClient.Get(ctx, typedNamespacedName, &gorchv1alpha1.GuardrailsOrchestrator{})
 		Expect(err).ToNot(HaveOccurred())
 
+		By("Creating the TrustyAI configmap for testing")
+		configMap = &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      constants.ConfigMap,
+				Namespace: namespaceName,
+			},
+			Data: map[string]string{
+				orchestratorImageKey: "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+			},
+		}
 		err = k8sClient.Create(ctx, configMap)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -511,6 +502,29 @@ func testCreateDeleteGuardrailsOrchestratorOtelExporter(namespaceName string) {
 }
 
 var _ = Describe("GuardrailsOrchestrator Controller", func() {
+	var ctx = context.Background()
+	BeforeEach(func() {
+		By("Creating the operator's ConfigMap")
+		configMap := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      constants.ConfigMap,
+				Namespace: namespaceName,
+			},
+			Data: map[string]string{
+				orchestratorImageKey: "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+			},
+		}
+		err := k8sClient.Create(ctx, configMap)
+
+		if err != nil && !errors.IsAlreadyExists(err) {
+			Expect(err).ToNot(HaveOccurred())
+		}
+	})
+
 	Context("GuardrailsOrchestrator Controller Test", func() {
 		testCreateDeleteGuardrailsOrchestrator(namespaceName)
 		testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName)
