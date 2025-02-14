@@ -133,7 +133,7 @@ require (
 )
 
 replace (
-	github.com/cloudevents/sdk-go => github.com/cloudevents/sdk-go/v2 v2.15.2
+	github.com/cloudevents/sdk-go/v2 => github.com/cloudevents/sdk-go/v2 v2.15.2
 	// Fixes CVE-2022-21698 and CVE-2023-45142
 	// this dependency comes from k8s.io/component-base@v0.26.4 and k8s.io/apiextensions-apiserver@v0.26.4
 	// before removing it make sure that the next version of the related k8s dependencies contains the fix
