@@ -508,3 +508,310 @@ var _ = Describe("GuardrailsOrchestrator Controller", func() {
 		testCreateDeleteGuardrailsOrchestratorOtelExporter(namespaceName)
 	})
 })
+
+func testMultipleOrchestratorsInSameNamespace(namespaceName string) {
+	It("Should successfully create and manage two GuardrailsOrchestrator instances in the same namespace", func() {
+		ctx := context.Background()
+
+		configMap1 := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orchestratorName + "-config-1",
+				Namespace: namespaceName,
+			},
+		}
+		err := k8sClient.Create(ctx, configMap1)
+		Expect(err).ToNot(HaveOccurred())
+
+		configMap2 := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orchestratorName + "-config-2",
+				Namespace: namespaceName,
+			},
+		}
+		err = k8sClient.Create(ctx, configMap2)
+		Expect(err).ToNot(HaveOccurred())
+
+		trustyAIConfigMap := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      constants.ConfigMap,
+				Namespace: namespaceName,
+			},
+			Data: map[string]string{
+				orchestratorImageKey: "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+			},
+		}
+		err = k8sClient.Create(ctx, trustyAIConfigMap)
+		Expect(err).ToNot(HaveOccurred())
+
+		orchestrator1 := &gorchv1alpha1.GuardrailsOrchestrator{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orchestratorName + "-1",
+				Namespace: namespaceName,
+			},
+			Spec: gorchv1alpha1.GuardrailsOrchestratorSpec{
+				Replicas:           1,
+				OrchestratorConfig: &configMap1.Name,
+			},
+		}
+		err = k8sClient.Create(ctx, orchestrator1)
+		Expect(err).ToNot(HaveOccurred())
+
+		orchestrator2 := &gorchv1alpha1.GuardrailsOrchestrator{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orchestratorName + "-2",
+				Namespace: namespaceName,
+			},
+			Spec: gorchv1alpha1.GuardrailsOrchestratorSpec{
+				Replicas:           1,
+				OrchestratorConfig: &configMap2.Name,
+			},
+		}
+		err = k8sClient.Create(ctx, orchestrator2)
+		Expect(err).ToNot(HaveOccurred())
+
+		reconciler := &GuardrailsOrchestratorReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
+		}
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: orchestrator1.Name, Namespace: namespaceName},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: orchestrator2.Name, Namespace: namespaceName},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		Eventually(func() error {
+			deployment1 := &appsv1.Deployment{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestrator1.Name, Namespace: namespaceName}, deployment1); err != nil {
+				return err
+			}
+			Expect(deployment1.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/ta-guardrails-orchestrator:latest"))
+
+			service1 := &corev1.Service{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestrator1.Name + "-service", Namespace: namespaceName}, service1); err != nil {
+				return err
+			}
+
+			deployment2 := &appsv1.Deployment{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestrator2.Name, Namespace: namespaceName}, deployment2); err != nil {
+				return err
+			}
+			Expect(deployment2.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/ta-guardrails-orchestrator:latest"))
+
+			service2 := &corev1.Service{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestrator2.Name + "-service", Namespace: namespaceName}, service2); err != nil {
+				return err
+			}
+
+			return nil
+		}, time.Second*10, time.Millisecond*10).Should(Succeed())
+
+		By("Deleting the first GuardrailsOrchestrator instance")
+		err = k8sClient.Delete(ctx, orchestrator1)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Deleting the second GuardrailsOrchestrator instance")
+		err = k8sClient.Delete(ctx, orchestrator2)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Deleting the config maps")
+		err = k8sClient.Delete(ctx, configMap1)
+		Expect(err).ToNot(HaveOccurred())
+		err = k8sClient.Delete(ctx, configMap2)
+		Expect(err).ToNot(HaveOccurred())
+		err = k8sClient.Delete(ctx, trustyAIConfigMap)
+		Expect(err).ToNot(HaveOccurred())
+	})
+}
+
+func testMultipleOrchestratorsInDifferentNamespaces() {
+	It("Should successfully create and manage GuardrailsOrchestrator instances in different namespaces", func() {
+		ctx := context.Background()
+		namespace1 := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-namespace-1",
+			},
+		}
+		namespace2 := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-namespace-2",
+			},
+		}
+
+		err := k8sClient.Create(ctx, namespace1)
+		Expect(err).ToNot(HaveOccurred())
+		err = k8sClient.Create(ctx, namespace2)
+		Expect(err).ToNot(HaveOccurred())
+
+		configMap1 := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orchestratorName + "-config",
+				Namespace: namespace1.Name,
+			},
+		}
+		err = k8sClient.Create(ctx, configMap1)
+		Expect(err).ToNot(HaveOccurred())
+
+		configMap2 := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orchestratorName + "-config",
+				Namespace: namespace2.Name,
+			},
+		}
+		err = k8sClient.Create(ctx, configMap2)
+		Expect(err).ToNot(HaveOccurred())
+
+		trustyAIConfigMap1 := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      constants.ConfigMap,
+				Namespace: namespace1.Name,
+			},
+			Data: map[string]string{
+				orchestratorImageKey: "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+			},
+		}
+		err = k8sClient.Create(ctx, trustyAIConfigMap1)
+		Expect(err).ToNot(HaveOccurred())
+
+		trustyAIConfigMap2 := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      constants.ConfigMap,
+				Namespace: namespace2.Name,
+			},
+			Data: map[string]string{
+				orchestratorImageKey: "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+			},
+		}
+		err = k8sClient.Create(ctx, trustyAIConfigMap2)
+		Expect(err).ToNot(HaveOccurred())
+
+		orchestrator1 := &gorchv1alpha1.GuardrailsOrchestrator{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orchestratorName,
+				Namespace: namespace1.Name,
+			},
+			Spec: gorchv1alpha1.GuardrailsOrchestratorSpec{
+				Replicas:           1,
+				OrchestratorConfig: &configMap1.Name,
+			},
+		}
+		err = k8sClient.Create(ctx, orchestrator1)
+		Expect(err).ToNot(HaveOccurred())
+
+		orchestrator2 := &gorchv1alpha1.GuardrailsOrchestrator{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orchestratorName,
+				Namespace: namespace2.Name,
+			},
+			Spec: gorchv1alpha1.GuardrailsOrchestratorSpec{
+				Replicas:           1,
+				OrchestratorConfig: &configMap2.Name,
+			},
+		}
+		err = k8sClient.Create(ctx, orchestrator2)
+		Expect(err).ToNot(HaveOccurred())
+
+		reconciler := &GuardrailsOrchestratorReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
+		}
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: orchestrator1.Name, Namespace: namespace1.Name},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: orchestrator2.Name, Namespace: namespace2.Name},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		Eventually(func() error {
+			deployment1 := &appsv1.Deployment{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName, Namespace: namespace1.Name}, deployment1); err != nil {
+				return err
+			}
+			Expect(deployment1.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/ta-guardrails-orchestrator:latest"))
+
+			service1 := &corev1.Service{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-service", Namespace: namespace1.Name}, service1); err != nil {
+				return err
+			}
+
+			deployment2 := &appsv1.Deployment{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName, Namespace: namespace2.Name}, deployment2); err != nil {
+				return err
+			}
+			Expect(deployment2.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/ta-guardrails-orchestrator:latest"))
+
+			service2 := &corev1.Service{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-service", Namespace: namespace2.Name}, service2); err != nil {
+				return err
+			}
+
+			return nil
+		}, time.Second*10, time.Millisecond*10).Should(Succeed())
+
+		// Cleanup
+		By("Deleting the GuardrailsOrchestrator instances")
+		err = k8sClient.Delete(ctx, orchestrator1)
+		Expect(err).ToNot(HaveOccurred())
+		err = k8sClient.Delete(ctx, orchestrator2)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Deleting the config maps")
+		err = k8sClient.Delete(ctx, configMap1)
+		Expect(err).ToNot(HaveOccurred())
+		err = k8sClient.Delete(ctx, configMap2)
+		Expect(err).ToNot(HaveOccurred())
+		err = k8sClient.Delete(ctx, trustyAIConfigMap1)
+		Expect(err).ToNot(HaveOccurred())
+		err = k8sClient.Delete(ctx, trustyAIConfigMap2)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Deleting the test namespaces")
+		err = k8sClient.Delete(ctx, namespace1)
+		Expect(err).ToNot(HaveOccurred())
+		err = k8sClient.Delete(ctx, namespace2)
+		Expect(err).ToNot(HaveOccurred())
+	})
+}
+
+var _ = Describe("Multiple GuardrailsOrchestrator Tests", func() {
+	Context("Multiple GuardrailsOrchestrator Controller Test", func() {
+		testMultipleOrchestratorsInSameNamespace(namespaceName)
+		testMultipleOrchestratorsInDifferentNamespaces()
+	})
+})
