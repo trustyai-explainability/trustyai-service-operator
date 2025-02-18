@@ -94,7 +94,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	// Start reconcilation
 	if orchestrator.Status.Conditions == nil {
 		reason := ReconcileInit
-		message := "Intializing GuardrailsOrchestrator resource"
+		message := "Initializing GuardrailsOrchestrator resource"
 		orchestrator, err = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
 			SetProgressingCondition(&saved.Status.Conditions, reason, message)
 			saved.Status.Phase = PhaseProgressing
