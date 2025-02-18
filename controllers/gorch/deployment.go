@@ -37,23 +37,26 @@ type DeploymentConfig struct {
 func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *appsv1.Deployment {
 	var containerImages ContainerImages
 	// Get orchestrator image
+	orchestratorConfigMapName := orchestrator.Name + "-config"
 	orchestratorImage, err := r.getImageFromConfigMap(ctx, orchestratorImageKey, constants.ConfigMap, r.Namespace)
 	if orchestratorImage == "" || err != nil {
 		log.FromContext(ctx).Error(err, "Error getting container image from ConfigMap.")
 	}
 	containerImages.OrchestratorImage = orchestratorImage
-
+	log.FromContext(ctx).Info("using orchestratorImage " + orchestratorImage + "from config map " + r.Namespace + ":" + constants.ConfigMap)
 	// Check if the vLLM gateway is enabled
 	if orchestrator.Spec.VLLMGatewayConfig != nil {
 		//  Get the gateway and regex detector container images
-		vllmGatewayImage, err := r.getImageFromConfigMap(ctx, vllmGatewayImageKey, orchestratorName+"-config", orchestrator.Namespace)
+		vllmGatewayImage, err := r.getImageFromConfigMap(ctx, vllmGatewayImageKey, orchestratorConfigMapName, orchestrator.Namespace)
 		if vllmGatewayImage == "" || err != nil {
 			log.FromContext(ctx).Error(err, "Error getting vLLM gateway image from ConfigMap.")
 		}
-		regexDetectorImage, err := r.getImageFromConfigMap(ctx, regexDetectorImageKey, orchestratorName+"-config", orchestrator.Namespace)
+		log.FromContext(ctx).Info("using vLLM gateway image " + vllmGatewayImage + "from config map " + orchestrator.Namespace + ":" + orchestratorConfigMapName)
+		regexDetectorImage, err := r.getImageFromConfigMap(ctx, regexDetectorImageKey, orchestratorConfigMapName, orchestrator.Namespace)
 		if regexDetectorImage == "" || err != nil {
 			log.FromContext(ctx).Error(err, "Error getting regex detectors image from ConfigMap.")
 		}
+		log.FromContext(ctx).Info("using regex detectors image " + regexDetectorImage + "from config map " + orchestrator.Namespace + ":" + orchestratorConfigMapName)
 		containerImages.GatewayImage = vllmGatewayImage
 		containerImages.RegexDetectorImage = regexDetectorImage
 	}
