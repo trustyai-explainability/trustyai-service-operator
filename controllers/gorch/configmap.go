@@ -14,15 +14,15 @@ func (r *GuardrailsOrchestratorReconciler) getImageFromConfigMap(ctx context.Con
 	err := r.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: namespace}, configMap)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return "", nil
+			return "", fmt.Errorf("could not find configmap %s on namespace %s", configMapName, namespace)
 		}
-		return "", fmt.Errorf("error reading configmap %s", configMapName)
+		return "", fmt.Errorf("error reading configmap %s on namespace %s", configMapName, namespace)
 	}
 
 	containerImage, ok := configMap.Data[configMapKey]
 
 	if !ok {
-		return "", fmt.Errorf("configmap %s does not contain necessary keys", configMapName)
+		return "", fmt.Errorf("configmap %s on namespace %s does not contain necessary keys", configMapName, namespace)
 	}
 	return containerImage, nil
 }
