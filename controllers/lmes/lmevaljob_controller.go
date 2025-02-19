@@ -221,7 +221,8 @@ func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 		}
 	}
-	log.Info("Continuing after PVC")
+
+	log.Info("Checking the job state")
 
 	// Handle the job based on its state
 	switch job.Status.State {
@@ -415,15 +416,18 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 
 	// Validate the custom card if exists
 	// FIXME: Move the validation to the webhook once we enable it.
-	if err := r.validateCustomCard(job, log); err != nil {
+	if err := r.validateCustomRecipes(job, log); err != nil {
 		// custom card validation failed
 		job.Status.State = lmesv1alpha1.CompleteJobState
 		job.Status.Reason = lmesv1alpha1.FailedReason
 		job.Status.Message = err.Error()
+		// also update the complete time
+		current := v1.Now()
+		job.Status.CompleteTime = &current
 		if err := r.Status().Update(ctx, job); err != nil {
-			log.Error(err, "unable to update LMEvalJob status for custom card validation error")
+			log.Error(err, "unable to update LMEvalJob status for custom recipe validation error")
 		}
-		log.Error(err, "Contain invalid custom card in the LMEvalJob", "name", job.Name)
+		log.Error(err, "Contain invalid custom recipe in the LMEvalJob", "name", job.Name)
 		return ctrl.Result{}, err
 	}
 
@@ -523,6 +527,10 @@ func (r *LMEvalJobReconciler) getPod(ctx context.Context, job *lmesv1alpha1.LMEv
 }
 
 func (r *LMEvalJobReconciler) deleteJobPod(ctx context.Context, job *lmesv1alpha1.LMEvalJob) error {
+	if job.Status.PodName == "" {
+		return nil
+	}
+
 	pod := corev1.Pod{
 		TypeMeta: v1.TypeMeta{
 			Kind:       "Pod",
@@ -644,15 +652,17 @@ func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger,
 	return ctrl.Result{}, err
 }
 
-func (r *LMEvalJobReconciler) validateCustomCard(job *lmesv1alpha1.LMEvalJob, log logr.Logger) error {
+func (r *LMEvalJobReconciler) validateCustomRecipes(job *lmesv1alpha1.LMEvalJob, log logr.Logger) error {
 	if job.Spec.TaskList.TaskRecipes == nil {
 		return nil
 	}
 
+	var checkedTemplates []string
+	customArtifacts := job.Spec.TaskList.CustomArtifacts
 	for _, taskRecipe := range job.Spec.TaskList.TaskRecipes {
 		if taskRecipe.Card.Custom != "" {
-			var card map[string]interface{}
-			if err := json.Unmarshal([]byte(taskRecipe.Card.Custom), &card); err != nil {
+			card, err := unmarshal(taskRecipe.Card.Custom)
+			if err != nil {
 				log.Error(err, "failed to parse the custom card")
 				return fmt.Errorf("custom card is not a valid JSON string, %s", err.Error())
 			}
@@ -663,9 +673,59 @@ func (r *LMEvalJobReconciler) validateCustomCard(job *lmesv1alpha1.LMEvalJob, lo
 				return missKeyError
 			}
 		}
+
+		// validate the template JSON
+		if taskRecipe.Template != nil && taskRecipe.Template.Ref != "" &&
+			!slices.Contains(checkedTemplates, taskRecipe.Template.Ref) {
+
+			custom := getCustomArtifactByName(customArtifacts.GetTemplates(), taskRecipe.Template.Ref)
+			if custom == nil {
+				return fmt.Errorf("the reference name of the custom template is not defined: %s", taskRecipe.Template.Ref)
+			}
+
+			template, err := unmarshal(custom.Value)
+			if err != nil {
+				log.Error(err, "failed to parse the custom template")
+				return fmt.Errorf("custom template is not a valid JSON string, %s", err.Error())
+			}
+			// two mandatory fields: input_format and output_format
+			for _, fieldName := range []string{"input_format", "output_format"} {
+				if _, ok := template[fieldName]; !ok {
+					missKeyError := fmt.Errorf("no %s definition in the custom template", fieldName)
+					log.Error(missKeyError, "failed to parse the custom template")
+					return missKeyError
+				}
+			}
+			checkedTemplates = append(checkedTemplates, taskRecipe.Template.Ref)
+		}
+
+		// only check if the system prompt is defined in the custom section or not
+		if taskRecipe.SystemPrompt != nil && taskRecipe.SystemPrompt.Ref != "" {
+			if getCustomArtifactByName(customArtifacts.GetSystemPrompts(), taskRecipe.SystemPrompt.Ref) == nil {
+				return fmt.Errorf("the reference name of the custom system prompt is not defined: %s", taskRecipe.SystemPrompt.Ref)
+			}
+		}
 	}
 
 	return nil
+}
+
+func getCustomArtifactByName(customs []lmesv1alpha1.CustomArtifact, name string) *lmesv1alpha1.CustomArtifact {
+	if len(customs) == 0 {
+		return nil
+	}
+	for _, custom := range customs {
+		if custom.Name == name {
+			return &custom
+		}
+	}
+	return nil
+}
+
+func unmarshal(custom string) (map[string]interface{}, error) {
+	var obj map[string]interface{}
+	err := json.Unmarshal([]byte(custom), &obj)
+	return obj, err
 }
 
 func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) *corev1.Pod {
@@ -1187,19 +1247,33 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 		cmds = append(cmds, "--listen-port", fmt.Sprintf("%d", svcOpts.DriverPort))
 	}
 
+	if svcOpts.DriverPort != 0 && svcOpts.DriverPort != driver.DefaultPort {
+		cmds = append(cmds, "--listen-port", fmt.Sprintf("%d", svcOpts.DriverPort))
+	}
+
 	cr_idx := 0
 	for _, recipe := range job.Spec.TaskList.TaskRecipes {
-		if recipe.Card.Name != "" {
-			// built-in card, regular recipe
-			cmds = append(cmds, "--task-recipe", recipe.String())
-		} else if recipe.Card.Custom != "" {
+		// duplicate the TaskRecipe and update its content to generate proper recipe string
+		dupRecipe := recipe.DeepCopy()
+
+		if recipe.Card.Custom != "" {
 			// custom card, need to inject --custom-card arg as well
-			dupRecipe := recipe.DeepCopy()
 			// the format of a custom card's name: custom_<index>
 			dupRecipe.Card.Name = fmt.Sprintf("cards.%s_%d", driver.CustomCardPrefix, cr_idx)
-			cmds = append(cmds, "--task-recipe", dupRecipe.String())
 			cmds = append(cmds, "--custom-card", dupRecipe.Card.Custom)
 			cr_idx++
+		}
+
+		cmds = append(cmds, "--task-recipe", dupRecipe.String())
+	}
+
+	// go through custom artificats and add corresponding arguments
+	if job.Spec.TaskList.CustomArtifacts != nil {
+		for _, template := range job.Spec.TaskList.CustomArtifacts.GetTemplates() {
+			cmds = append(cmds, "--custom-template", template.String())
+		}
+		for _, prompt := range job.Spec.TaskList.CustomArtifacts.GetSystemPrompts() {
+			cmds = append(cmds, "--custom-prompt", prompt.String())
 		}
 	}
 
