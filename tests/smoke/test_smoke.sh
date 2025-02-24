@@ -12,8 +12,7 @@ SERVICE_NAME_1="trustyai-service"
 SERVICE_NAME_2="trustyai-service-tls"
 DEPLOYMENT_NAME="trustyai-service-operator"
 
-EXPECTED_IMAGE="smoke/operator:pr-${{ github.event.pull_request.number || env.PR_NUMBER }}"
-
+EXPECTED_IMAGE="smoke/operator:pr-${PR_NUMBER:-default-pr-number}"
 
 log_success() {
     local message=$1
@@ -41,8 +40,8 @@ check_resource() {
 
 gen_cert() {
     openssl req -x509 -nodes -newkey rsa:2048 -keyout tls.key -days 365 -out tls.crt -subj '/CN=trustyai-service-tls'
-    oc create secret generic trustyai-service-internal  --from-file=./tls.crt --from-file=./tls.key -n "$NAMESPACE"
-    oc create secret generic trustyai-service-tls  --from-file=./tls.crt --from-file=./tls.key -n "$NAMESPACE"
+    kubectl create secret generic trustyai-service-internal  --from-file=./tls.crt --from-file=./tls.key -n "$NAMESPACE"
+    kubectl create secret generic trustyai-service-tls  --from-file=./tls.crt --from-file=./tls.key -n "$NAMESPACE"
     rm tls.key tls.crt
 }
 
