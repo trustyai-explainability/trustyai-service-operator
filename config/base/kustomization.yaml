@@ -6,8 +6,11 @@ resources:
   - ../rbac
   - ../manager
 
-commonLabels:
-  app.kubernetes.io/part-of: trustyai
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: trustyai
+    includeSelectors: true
+    includeTemplates: true
 
 configMapGenerator:
   - env: params.env
@@ -19,32 +22,17 @@ configurations:
 generatorOptions:
   disableNameSuffixHash: true
 
-vars:
-  - name: trustyaiServiceImage
-    objref:
+replacements:
+  # Operator image replacement
+  - source:
       kind: ConfigMap
       name: config
-      apiVersion: v1
-    fieldref:
-      fieldpath: data.trustyaiServiceImage
-  - name: trustyaiOperatorImage
-    objref:
-      kind: ConfigMap
-      name: config
-      apiVersion: v1
-    fieldref:
-      fieldpath: data.trustyaiOperatorImage
-  - name: oauthProxyImage
-    objref:
-      kind: ConfigMap
-      name: config
-      apiVersion: v1
-    fieldref:
-      fieldpath: data.oauthProxyImage
-  - name: kServeServerless
-    objref:
-      kind: ConfigMap
-      name: config
-      apiVersion: v1
-    fieldref:
-      fieldpath: data.kServeServerless
+      version: v1
+      fieldPath: data.trustyaiOperatorImage
+    targets:
+      - select:
+          group: apps
+          kind: Deployment
+          name: controller-manager
+        fieldPaths:
+          - spec.template.spec.containers.0.image
