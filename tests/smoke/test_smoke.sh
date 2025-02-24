@@ -10,7 +10,7 @@ CRD_PATH="./tests/smoke/manifests/trustyai-cr.yaml"
 PVC_NAME="trustyai-service-pvc"
 SERVICE_NAME_1="trustyai-service"
 SERVICE_NAME_2="trustyai-service-tls"
-DEPLOYMENT_NAME="trustyai-service-operator"
+DEPLOYMENT_NAME="trustyai-service-operator-controller-manager"
 
 EXPECTED_IMAGE="smoke/operator:pr-${PR_NUMBER:-default-pr-number}"
 
