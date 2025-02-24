@@ -4,7 +4,7 @@ resources:
   - bases/trustyai.opendatahub.io_guardrailsorchestrators.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
-patchesStrategicMerge: []
+patches: []
 #+kubebuilder:scaffold:crdkustomizewebhookpatch
 #+kubebuilder:scaffold:crdkustomizecainjectionpatch
 

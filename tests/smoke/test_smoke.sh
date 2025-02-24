@@ -10,6 +10,10 @@ CRD_PATH="./tests/smoke/manifests/trustyai-cr.yaml"
 PVC_NAME="trustyai-service-pvc"
 SERVICE_NAME_1="trustyai-service"
 SERVICE_NAME_2="trustyai-service-tls"
+DEPLOYMENT_NAME="trustyai-service-operator"
+
+EXPECTED_IMAGE="smoke/operator:pr-${{ github.event.pull_request.number || env.PR_NUMBER }}"
+
 
 log_success() {
     local message=$1
@@ -55,6 +59,16 @@ check_resource service "$SERVICE_NAME_2" "$NAMESPACE"
 
 # Check for the PVC creation
 check_resource pvc "$PVC_NAME" "$NAMESPACE"
+
+# Check for correct Operator image assignment
+OPERATOR_IMAGE=$(kubectl get deployment "${DEPLOYMENT_NAME}" -n system \
+  -o jsonpath='{.spec.template.spec.containers[0].image}')
+
+if [[ "${OPERATOR_IMAGE}" == "${EXPECTED_IMAGE}" ]]; then
+  log_success "Operator image is correct: ${OPERATOR_IMAGE}"
+else
+  log_failure "Operator image mismatch! Expected ${EXPECTED_IMAGE}, got ${OPERATOR_IMAGE}"
+fi
 
 kubectl delete namespace "$NAMESPACE"
 
