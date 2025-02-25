@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -42,8 +43,8 @@ var (
 )
 
 const (
-	// put the domain socket under /tmp. may move to emptydir to share across containers
-	socketPath             = "/tmp/ta-lmes-driver.sock"
+	// the default port for the driver to listen on
+	DefaultPort            = 18080
 	DefaultTaskRecipesPath = "/opt/app-root/src/my_tasks"
 	DefaultCatalogPath     = "/opt/app-root/src/my_catalogs"
 	TaskRecipePrefix       = "tr"
@@ -53,16 +54,19 @@ const (
 )
 
 type DriverOption struct {
-	Context         context.Context
-	OutputPath      string
-	DetectDevice    bool
-	TaskRecipesPath string
-	TaskRecipes     []string
-	CatalogPath     string
-	CustomCards     []string
-	Logger          logr.Logger
-	Args            []string
-	SocketPath      string
+	Context            context.Context
+	OutputPath         string
+	DetectDevice       bool
+	TaskRecipesPath    string
+	TaskRecipes        []string
+	CatalogPath        string
+	CustomCards        []string
+	CustomTemplates    []string
+	CustomSystemPrompt []string
+	Logger             logr.Logger
+	Args               []string
+	CommPort           int
+	DownloadAssetsS3   bool
 }
 
 type Driver interface {
@@ -76,7 +80,7 @@ type Driver interface {
 type driverComm struct {
 	connection chan int
 	server     *http.Server
-	path       string
+	port       int
 }
 
 type driverImpl struct {
@@ -104,8 +108,8 @@ func NewDriver(opt *DriverOption) (Driver, error) {
 		opt.CatalogPath = DefaultCatalogPath
 	}
 
-	if opt.SocketPath == "" {
-		opt.SocketPath = socketPath
+	if opt.CommPort == 0 {
+		opt.CommPort = DefaultPort
 	}
 
 	return &driverImpl{
@@ -131,7 +135,8 @@ func (d *driverImpl) Run() error {
 		}
 	}
 	toConsole(filepath.Join(d.Option.OutputPath, "stdout.log"))
-	toConsole(filepath.Join(d.Option.OutputPath, "stderr.log"))
+	// TODO: Remove so that log is not printed again at job's completion
+	// toConsole(filepath.Join(d.Option.OutputPath, "stderr.log"))
 
 	d.updateCompleteStatus(execErr)
 
@@ -142,8 +147,8 @@ func (d *driverImpl) Run() error {
 }
 
 func (d *driverImpl) GetStatus() (*lmesv1alpha1.LMEvalJobStatus, error) {
-	client := createClient(d.Option.SocketPath)
-	resp, err := client.Get(fmt.Sprintf("http://unix%s", GetStatusURI))
+	client := &http.Client{}
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/%s", d.Option.CommPort, GetStatusURI))
 	if err != nil {
 		return nil, err
 	}
@@ -159,8 +164,8 @@ func (d *driverImpl) GetStatus() (*lmesv1alpha1.LMEvalJobStatus, error) {
 	return &status, err
 }
 func (d *driverImpl) Shutdown() error {
-	client := createClient(d.Option.SocketPath)
-	resp, err := client.Post(fmt.Sprintf("http://unix%s", ShutdownURI), "application/json", nil)
+	client := &http.Client{}
+	resp, err := client.Post(fmt.Sprintf("http://127.0.0.1:%d/%s", d.Option.CommPort, ShutdownURI), "application/json", nil)
 	if err != nil {
 		return err
 	}
@@ -197,6 +202,24 @@ func (d *driverImpl) detectDevice() error {
 	return nil
 }
 
+func (d *driverImpl) downloadS3Assets() error {
+	if d == nil || !d.Option.DownloadAssetsS3 {
+		return nil
+	}
+
+	fmt.Println("Downloading assets from S3")
+	output, err := exec.Command(
+		"python",
+		"/opt/app-root/src/scripts/s3_downloader.py",
+	).Output()
+	fmt.Println(string(output))
+	if err != nil {
+		return fmt.Errorf("failed to download assets from S3: %v", err)
+	}
+
+	return nil
+}
+
 func patchDevice(args []string, hasCuda bool) {
 	var device = "cpu"
 	if hasCuda {
@@ -221,7 +244,7 @@ func (d *driverImpl) setupComm() error {
 	d.comm = &driverComm{
 		server:     &http.Server{Handler: serve},
 		connection: make(chan int),
-		path:       d.Option.SocketPath,
+		port:       d.Option.CommPort,
 	}
 
 	// handle the `GetStatus` API: return the complete lmesv1alpha1.LMEvalJobStatus
@@ -248,22 +271,12 @@ func (d *driverImpl) setupComm() error {
 	return nil
 }
 
-func createClient(path string) *http.Client {
-	return &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", path)
-			},
-		},
-	}
-}
-
 func (dc *driverComm) wait4Sutdownload() {
 	<-dc.connection
 }
 
 func (dc *driverComm) serve() error {
-	socket, err := net.Listen("unix", dc.path)
+	socket, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", dc.port))
 	if err != nil {
 		return err
 	}
@@ -275,12 +288,34 @@ func (dc *driverComm) close() {
 	if dc.server != nil && dc.connection != nil {
 		dc.server.Shutdown(context.Background())
 		close(dc.connection)
-		os.Remove(dc.path)
 	}
 }
 
 func (dc *driverComm) notifyShutdownWait() {
 	dc.connection <- 1
+}
+
+type PodLogAndPipeWriter struct {
+	pw *io.PipeWriter
+}
+
+func (f PodLogAndPipeWriter) Write(p []byte) (n int, err error) {
+	// format lm-eval output to stdout and the pipewriter
+	line := string(p)
+	res, _ := fmt.Print(line)
+	if _, err := f.pw.Write(p); err != nil {
+		return 0, err
+	}
+
+	// carriage returns do not correctly display, so replace with newlines
+	// carriage returns also break the pipewriter, so make sure we get newlines as well.
+	if strings.ContainsAny(line, "\r") && !strings.ContainsAny(line, "\n") {
+		fmt.Print("\n")
+		if _, err := f.pw.Write([]byte("\n")); err != nil {
+			return 0, err
+		}
+	}
+	return res, nil
 }
 
 func (d *driverImpl) exec() error {
@@ -289,8 +324,23 @@ func (d *driverImpl) exec() error {
 		return fmt.Errorf("failed to create task recipes: %v", err)
 	}
 
+	if err := d.prepDir4CustomArtifacts(); err != nil {
+		return fmt.Errorf("failed to create the directories for custom artifacts: %v", err)
+	}
+
 	if err := d.createCustomCards(); err != nil {
 		return fmt.Errorf("failed to create custom cards: %v", err)
+	}
+
+	// Copy S3 assets if needed
+	if err := d.downloadS3Assets(); err != nil {
+		return err
+	}
+	if err := d.createCustomTemplates(); err != nil {
+		return fmt.Errorf("failed to create custom templates: %v", err)
+	}
+	if err := d.createCustomSystemPrompts(); err != nil {
+		return fmt.Errorf("failed to create custom system_prompts: %v", err)
 	}
 
 	// Detect available devices if needed
@@ -317,7 +367,7 @@ func (d *driverImpl) exec() error {
 	// have a pipe to check the output and report progress
 	// lm-eval's outputs are in the stderr
 	pr, pw := io.Pipe()
-	mwriter := io.MultiWriter(stderr, pw)
+	mwriter := io.MultiWriter(stderr, PodLogAndPipeWriter{pw})
 	scanner := bufio.NewScanner(pr)
 
 	executor := exec.Command(d.Option.Args[0], args...)
@@ -454,6 +504,15 @@ func (d *driverImpl) createTaskRecipes() error {
 	return nil
 }
 
+func (d *driverImpl) prepDir4CustomArtifacts() error {
+	subDirs := []string{"cards", "templates", "system_prompts"}
+	var errs []error
+	for _, dir := range subDirs {
+		errs = append(errs, mkdirIfNotExist(filepath.Join(d.Option.CatalogPath, dir)))
+	}
+	return errors.Join(errs...)
+}
+
 func (d *driverImpl) createCustomCards() error {
 	for i, customCard := range d.Option.CustomCards {
 		err := os.WriteFile(
@@ -464,6 +523,47 @@ func (d *driverImpl) createCustomCards() error {
 		if err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (d *driverImpl) createCustomTemplates() error {
+	for _, customTemplate := range d.Option.CustomTemplates {
+		values := strings.SplitN(customTemplate, "|", 2)
+		err := os.WriteFile(
+			filepath.Join(d.Option.CatalogPath, "templates", fmt.Sprintf("%s.json", values[0])),
+			[]byte(values[1]),
+			0666,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *driverImpl) createCustomSystemPrompts() error {
+	for _, systemPrompt := range d.Option.CustomSystemPrompt {
+		values := strings.SplitN(systemPrompt, "|", 2)
+		err := os.WriteFile(
+			filepath.Join(d.Option.CatalogPath, "system_prompts", fmt.Sprintf("%s.json", values[0])),
+			[]byte(fmt.Sprintf(`{ "__type__": "textual_system_prompt", "text": "%s" }`, values[1])),
+			0666,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func mkdirIfNotExist(path string) error {
+	fi, err := os.Stat(path)
+	if err == nil && !fi.IsDir() {
+		return fmt.Errorf("%s is a file. can not create a directory", path)
+	}
+	if os.IsNotExist(err) {
+		return os.MkdirAll(path, 0770)
 	}
 	return nil
 }

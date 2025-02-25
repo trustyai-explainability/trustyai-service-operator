@@ -28,6 +28,7 @@ rules:
   - create
   - patch
   - update
+  - watch
 - apiGroups:
   - ""
   resources:
@@ -100,6 +101,41 @@ rules:
   - get
   - update
 - apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - resourceflavors
+  - workloadpriorityclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - workloads
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - workloads/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - workloads/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - monitoring.coreos.com
   resources:
   - servicemonitors
@@ -144,6 +180,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - scheduling.k8s.io
+  resources:
+  - priorityclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - serving.kserve.io
   resources:
   - inferenceservices
@@ -165,28 +209,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - serving.kserve.io
-  resources:
-  - servingruntimes
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - serving.kserve.io
-  resources:
-  - servingruntimes/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - guardrailsorchestrators
   - lmevaljobs
   - trustyaiservices
   verbs:
@@ -200,6 +225,7 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - guardrailsorchestrators/finalizers
   - lmevaljobs/finalizers
   - trustyaiservices/finalizers
   verbs:
@@ -207,6 +233,7 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - guardrailsorchestrators/status
   - lmevaljobs/status
   - trustyaiservices/status
   verbs:

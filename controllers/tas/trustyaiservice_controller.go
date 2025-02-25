@@ -21,14 +21,12 @@ import (
 	goerrors "errors"
 	"time"
 
-	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -36,7 +34,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 var ErrPVCNotReady = goerrors.New("PVC is not ready")
@@ -70,8 +67,6 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=list;get;watch
 //+kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=list;get;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=list;watch;get;create;update;patch;delete
 //+kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=list;watch;get;update;patch
 //+kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices/finalizers,verbs=list;watch;get;update;patch;delete
@@ -102,31 +97,32 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return RequeueWithError(err)
 	}
 
-	// Check if the CR is being deleted
-	if instance.DeletionTimestamp != nil {
-		// CR is being deleted
+	// Add the finalizer if it does not exist
+	if !utils.ContainsString(instance.Finalizers, finalizerName) {
+		log.FromContext(ctx).Info("Adding finalizer ", "finalizer", finalizerName)
+		instance.Finalizers = append(instance.Finalizers, finalizerName)
+		if err := r.Update(ctx, instance); err != nil {
+			return RequeueWithErrorMessage(ctx, err, "Failed to add finalizer.")
+		}
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	// CR is being deleted
+	if !instance.ObjectMeta.DeletionTimestamp.IsZero() {
 		if utils.ContainsString(instance.Finalizers, finalizerName) {
 			// The finalizer is present, so we handle external dependency deletion
 			if err := r.deleteExternalDependency(req.Name, instance, req.Namespace, ctx); err != nil {
-				// Log the error instead of returning it, so we proceed to remove the finalizer without blocking
 				log.FromContext(ctx).Error(err, "Failed to delete external dependencies, but proceeding with finalizer removal.")
+				return RequeueWithErrorMessage(ctx, err, "Failed to clean up external dependencies.")
 			}
-
 			// Remove the finalizer from the list and update it.
 			instance.Finalizers = utils.RemoveString(instance.Finalizers, finalizerName)
 			if err := r.Update(ctx, instance); err != nil {
-				return RequeueWithErrorMessage(ctx, err, "Failed to remove the finalizer.")
+				return RequeueWithErrorMessage(ctx, err, "Failed to remove finalizer.")
 			}
+			return Requeue()
 		}
 		return DoNotRequeue()
-	}
-
-	// Add the finalizer if it does not exist
-	if !utils.ContainsString(instance.Finalizers, finalizerName) {
-		instance.Finalizers = append(instance.Finalizers, finalizerName)
-		if err := r.Update(ctx, instance); err != nil {
-			return RequeueWithErrorMessage(ctx, err, "Failed to add the finalizer.")
-		}
 	}
 
 	err = r.createServiceAccount(ctx, instance)
@@ -281,27 +277,9 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// Watch ServingRuntime objects (not managed by this controller)
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &appsv1.Deployment{}, ".metadata.controller", func(rawObj client.Object) []string {
-		// Grab the deployment object and extract the owner
-		deployment := rawObj.(*appsv1.Deployment)
-		owner := metav1.GetControllerOf(deployment)
-		if owner == nil {
-			return nil
-		}
-		// Retain ServingRuntimes only
-		if owner.APIVersion != kservev1beta1.APIVersion || owner.Kind != "ServingRuntime" {
-			return nil
-		}
-		return []string{owner.Name}
-	}); err != nil {
-		return err
-	}
-
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&trustyaiopendatahubiov1alpha1.TrustyAIService{}).
 		Owns(&appsv1.Deployment{}).
-		Watches(&source.Kind{Type: &kservev1beta1.InferenceService{}}, &handler.EnqueueRequestForObject{}).
-		Watches(&source.Kind{Type: &kservev1alpha1.ServingRuntime{}}, &handler.EnqueueRequestForObject{}).
+		Watches(&kservev1beta1.InferenceService{}, &handler.EnqueueRequestForObject{}).
 		Complete(r)
 }

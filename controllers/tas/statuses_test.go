@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	routev1 "github.com/openshift/api/route/v1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -51,7 +52,10 @@ func setupAndTestStatusNoComponent(instance *trustyaiopendatahubiov1alpha1.Trust
 var _ = Describe("Status and condition tests", func() {
 
 	BeforeEach(func() {
-		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
+		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).WithStatusSubresource(
+			&routev1.Route{},
+			&trustyaiopendatahubiov1alpha1.TrustyAIService{},
+		).Build()
 		recorder = record.NewFakeRecorder(10)
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
@@ -323,7 +327,7 @@ var _ = Describe("Status and condition tests", func() {
 				return k8sClient.Create(ctx, inferenceService)
 			}, "failed to create InferenceService")
 
-			Expect(reconciler.patchKServe(ctx, instance, *inferenceService, namespace, instance.Name, false)).ToNot(HaveOccurred())
+			Expect(reconciler.patchKServe(ctx, instance, *inferenceService, namespace, instance.Name, false, false)).ToNot(HaveOccurred())
 
 			WaitFor(func() error {
 				return k8sClient.Create(ctx, instance)

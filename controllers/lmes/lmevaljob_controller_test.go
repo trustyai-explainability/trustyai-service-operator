@@ -31,9 +31,9 @@ import (
 )
 
 var (
-	isController             = true
-	allowPrivilegeEscalation = false
-	runAsNonRootUser         = true
+	isController       = true
+	runAsUser    int64 = 1000000
+	runAsGroup   int64 = 1000000
 )
 
 func Test_SimplePod(t *testing.T) {
@@ -93,14 +93,7 @@ func Test_SimplePod(t *testing.T) {
 					Image:           svcOpts.DriverImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -116,28 +109,63 @@ func Test_SimplePod(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
 							MountPath: "/opt/app-root/src/bin",
 						},
 					},
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+							Value: "False",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
+					},
 				},
 			},
-			SecurityContext: &corev1.PodSecurityContext{
-				RunAsNonRoot: &runAsNonRootUser,
-				SeccompProfile: &corev1.SeccompProfile{
-					Type: corev1.SeccompProfileTypeRuntimeDefault,
-				},
-			},
+			SecurityContext: defaultPodSecurityContext,
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
@@ -149,12 +177,12 @@ func Test_SimplePod(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
 
-func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
+func Test_WithCustomPod(t *testing.T) {
 	log := log.FromContext(context.Background())
 	svcOpts := &serviceOptions{
 		PodImage:        "podimage:latest",
@@ -200,6 +228,10 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 							MountPath: "/test",
 						},
 					},
+					SecurityContext: &corev1.SecurityContext{
+						RunAsUser:  &runAsUser,
+						RunAsGroup: &runAsGroup,
+					},
 				},
 				Volumes: []corev1.Volume{
 					{
@@ -210,6 +242,33 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 								ReadOnly:  true,
 							},
 						},
+					},
+				},
+				SecurityContext: &corev1.PodSecurityContext{
+					RunAsNonRoot: &runAsNonRootUser,
+				},
+				Affinity: &corev1.Affinity{
+					NodeAffinity: &corev1.NodeAffinity{
+						RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+							NodeSelectorTerms: []corev1.NodeSelectorTerm{
+								{
+									MatchFields: []corev1.NodeSelectorRequirement{
+										{
+											Key:      "node",
+											Operator: corev1.NodeSelectorOpIn,
+											Values:   []string{"test"},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				SideCars: []corev1.Container{
+					{
+						Name:    "sidecar1",
+						Image:   "busybox",
+						Command: []string{"sh", "-ec", "sleep 3600"},
 					},
 				},
 			},
@@ -250,14 +309,7 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 					Image:           svcOpts.DriverImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -274,11 +326,12 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
+						RunAsUser:  &runAsUser,
+						RunAsGroup: &runAsGroup,
+					},
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
 						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
@@ -296,13 +349,57 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 							corev1.ResourceCPU: resource.MustParse("1"),
 						},
 					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+							Value: "False",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
+					},
+				},
+				{
+					Name:    "sidecar1",
+					Image:   "busybox",
+					Command: []string{"sh", "-ec", "sleep 3600"},
 				},
 			},
 			SecurityContext: &corev1.PodSecurityContext{
 				RunAsNonRoot: &runAsNonRootUser,
-				SeccompProfile: &corev1.SeccompProfile{
-					Type: corev1.SeccompProfileTypeRuntimeDefault,
-				},
 			},
 			Volumes: []corev1.Volume{
 				{
@@ -320,11 +417,28 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 					},
 				},
 			},
+			Affinity: &corev1.Affinity{
+				NodeAffinity: &corev1.NodeAffinity{
+					RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+						NodeSelectorTerms: []corev1.NodeSelectorTerm{
+							{
+								MatchFields: []corev1.NodeSelectorRequirement{
+									{
+										Key:      "node",
+										Operator: corev1.NodeSelectorOpIn,
+										Values:   []string{"test"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 			RestartPolicy: corev1.RestartPolicyNever,
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 
@@ -339,7 +453,7 @@ func Test_WithLabelsAnnotationsResourcesVolumes(t *testing.T) {
 		"custom/annotation1": "annotation1",
 	}
 
-	newPod = createPod(svcOpts, job, log)
+	newPod = CreatePod(svcOpts, job, log)
 	assert.Equal(t, expect, newPod)
 }
 
@@ -416,14 +530,7 @@ func Test_EnvSecretsPod(t *testing.T) {
 					Image:           svcOpts.DriverImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -437,6 +544,11 @@ func Test_EnvSecretsPod(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
 					Env: []corev1.EnvVar{
 						{
 							Name: "my_env",
@@ -449,17 +561,50 @@ func Test_EnvSecretsPod(t *testing.T) {
 								},
 							},
 						},
-					},
-					Command: generateCmd(svcOpts, job),
-					Args:    generateArgs(svcOpts, job, log),
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+							Value: "False",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
 						},
 					},
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -468,12 +613,7 @@ func Test_EnvSecretsPod(t *testing.T) {
 					},
 				},
 			},
-			SecurityContext: &corev1.PodSecurityContext{
-				RunAsNonRoot: &runAsNonRootUser,
-				SeccompProfile: &corev1.SeccompProfile{
-					Type: corev1.SeccompProfileTypeRuntimeDefault,
-				},
-			},
+			SecurityContext: defaultPodSecurityContext,
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
@@ -485,7 +625,7 @@ func Test_EnvSecretsPod(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 	// maybe only verify the envs: Containers[0].Env
 	assert.Equal(t, expect, newPod)
 }
@@ -573,14 +713,7 @@ func Test_FileSecretsPod(t *testing.T) {
 					Image:           svcOpts.DriverImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -596,12 +729,52 @@ func Test_FileSecretsPod(t *testing.T) {
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         generateCmd(svcOpts, job),
 					Args:            generateArgs(svcOpts, job, log),
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
+					SecurityContext: defaultSecurityContext,
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+							Value: "False",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
 						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
@@ -617,12 +790,7 @@ func Test_FileSecretsPod(t *testing.T) {
 					},
 				},
 			},
-			SecurityContext: &corev1.PodSecurityContext{
-				RunAsNonRoot: &runAsNonRootUser,
-				SeccompProfile: &corev1.SeccompProfile{
-					Type: corev1.SeccompProfileTypeRuntimeDefault,
-				},
-			},
+			SecurityContext: defaultPodSecurityContext,
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
@@ -648,7 +816,7 @@ func Test_FileSecretsPod(t *testing.T) {
 		},
 	}
 
-	newPod := createPod(svcOpts, job, log)
+	newPod := CreatePod(svcOpts, job, log)
 	// maybe only verify the envs: Containers[0].Env
 	assert.Equal(t, expect, newPod)
 }
@@ -660,7 +828,7 @@ func Test_GenerateArgBatchSize(t *testing.T) {
 		DriverImage:      "driver:latest",
 		ImagePullPolicy:  corev1.PullAlways,
 		MaxBatchSize:     20,
-		DefaultBatchSize: 4,
+		DefaultBatchSize: "4",
 	}
 	var job = &lmesv1alpha1.LMEvalJob{
 		ObjectMeta: metav1.ObjectMeta{
@@ -686,11 +854,11 @@ func Test_GenerateArgBatchSize(t *testing.T) {
 	// no batchSize in the job, use default batchSize
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + strconv.Itoa(svcOpts.DefaultBatchSize),
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + svcOpts.DefaultBatchSize,
 	}, generateArgs(svcOpts, job, log))
 
 	// exceed the max-batch-size, use max-batch-size
-	var biggerBatchSize = 30
+	var biggerBatchSize = "30"
 	job.Spec.BatchSize = &biggerBatchSize
 	assert.Equal(t, []string{
 		"sh", "-ec",
@@ -698,7 +866,7 @@ func Test_GenerateArgBatchSize(t *testing.T) {
 	}, generateArgs(svcOpts, job, log))
 
 	// normal batchSize
-	var normalBatchSize = 16
+	var normalBatchSize = "16"
 	job.Spec.BatchSize = &normalBatchSize
 	assert.Equal(t, []string{
 		"sh", "-ec",
@@ -712,8 +880,8 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 		PodImage:         "podimage:latest",
 		DriverImage:      "driver:latest",
 		ImagePullPolicy:  corev1.PullAlways,
-		MaxBatchSize:     options.MaxBatchSize,
-		DefaultBatchSize: options.DefaultBatchSize,
+		MaxBatchSize:     Options.MaxBatchSize,
+		DefaultBatchSize: Options.DefaultBatchSize,
 	}
 	var format = "unitxt.format"
 	var numDemos = 5
@@ -738,7 +906,7 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 				TaskRecipes: []lmesv1alpha1.TaskRecipe{
 					{
 						Card:          lmesv1alpha1.Card{Name: "unitxt.card1"},
-						Template:      "unitxt.template",
+						Template:      &lmesv1alpha1.Template{Name: "unitxt.template"},
 						Format:        &format,
 						Metrics:       []string{"unitxt.metric1", "unitxt.metric2"},
 						NumDemos:      &numDemos,
@@ -752,7 +920,7 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 	// one TaskRecipe
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0 --include_path /opt/app-root/src/my_tasks --batch_size 8",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0 --include_path /opt/app-root/src/my_tasks --batch_size " + DefaultBatchSize,
 	}, generateArgs(svcOpts, job, log))
 
 	assert.Equal(t, []string{
@@ -765,7 +933,7 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 	job.Spec.TaskList.TaskRecipes = append(job.Spec.TaskList.TaskRecipes,
 		lmesv1alpha1.TaskRecipe{
 			Card:          lmesv1alpha1.Card{Name: "unitxt.card2"},
-			Template:      "unitxt.template2",
+			Template:      &lmesv1alpha1.Template{Name: "unitxt.template2"},
 			Format:        &format,
 			Metrics:       []string{"unitxt.metric3", "unitxt.metric4"},
 			NumDemos:      &numDemos,
@@ -777,7 +945,7 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 	// one TaskRecipe
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0,tr_1 --include_path /opt/app-root/src/my_tasks --batch_size 8",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0,tr_1 --include_path /opt/app-root/src/my_tasks --batch_size " + DefaultBatchSize,
 	}, generateArgs(svcOpts, job, log))
 
 	assert.Equal(t, []string{
@@ -795,8 +963,8 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 		PodImage:         "podimage:latest",
 		DriverImage:      "driver:latest",
 		ImagePullPolicy:  corev1.PullAlways,
-		MaxBatchSize:     options.MaxBatchSize,
-		DefaultBatchSize: options.DefaultBatchSize,
+		MaxBatchSize:     Options.MaxBatchSize,
+		DefaultBatchSize: Options.DefaultBatchSize,
 	}
 	var format = "unitxt.format"
 	var numDemos = 5
@@ -823,7 +991,7 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 						Card: lmesv1alpha1.Card{
 							Custom: `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 						},
-						Template:      "unitxt.template",
+						Template:      &lmesv1alpha1.Template{Name: "unitxt.template"},
 						Format:        &format,
 						Metrics:       []string{"unitxt.metric1", "unitxt.metric2"},
 						NumDemos:      &numDemos,
@@ -836,14 +1004,165 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0 --include_path /opt/app-root/src/my_tasks --batch_size 8",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0 --include_path /opt/app-root/src/my_tasks --batch_size " + DefaultBatchSize,
 	}, generateArgs(svcOpts, job, log))
 
 	assert.Equal(t, []string{
 		"/opt/app-root/src/bin/driver",
 		"--output-path", "/opt/app-root/src/output",
+		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--task-recipe", "card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--",
+	}, generateCmd(svcOpts, job))
+
+	// add second task using custom recipe + custom template
+	job.Spec.TaskList.TaskRecipes = append(job.Spec.TaskList.TaskRecipes,
+		lmesv1alpha1.TaskRecipe{
+			Card: lmesv1alpha1.Card{
+				Custom: `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+			},
+			Template: &lmesv1alpha1.Template{
+				Ref: "tp_0",
+			},
+			Format:        &format,
+			Metrics:       []string{"unitxt.metric3", "unitxt.metric4"},
+			NumDemos:      &numDemos,
+			DemosPoolSize: &demosPoolSize,
+		},
+	)
+
+	job.Spec.TaskList.CustomArtifacts = &lmesv1alpha1.CustomArtifacts{
+		Templates: []lmesv1alpha1.CustomArtifact{
+			{
+				Name:  "tp_0",
+				Value: `{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
+			},
+		},
+	}
+
+	assert.Equal(t, []string{
+		"/opt/app-root/src/bin/driver",
+		"--output-path", "/opt/app-root/src/output",
+		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		"--task-recipe", "card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--task-recipe", "card=cards.custom_1,template=templates.tp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--custom-template", `tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
+		"--",
+	}, generateCmd(svcOpts, job))
+
+	// add third task using normal card + custom system_prompt
+	job.Spec.TaskList.TaskRecipes = append(job.Spec.TaskList.TaskRecipes,
+		lmesv1alpha1.TaskRecipe{
+			Card: lmesv1alpha1.Card{Name: "unitxt.card"},
+			SystemPrompt: &lmesv1alpha1.SystemPrompt{
+				Ref: "sp_0",
+			},
+			Format:        &format,
+			Metrics:       []string{"unitxt.metric4", "unitxt.metric5"},
+			NumDemos:      &numDemos,
+			DemosPoolSize: &demosPoolSize,
+		},
+	)
+
+	job.Spec.TaskList.CustomArtifacts.SystemPrompts = []lmesv1alpha1.CustomArtifact{
+		{
+			Name:  "sp_0",
+			Value: "this is a custom system promp",
+		},
+	}
+
+	assert.Equal(t, []string{
+		"/opt/app-root/src/bin/driver",
+		"--output-path", "/opt/app-root/src/output",
+		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--task-recipe", "card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--task-recipe", "card=cards.custom_1,template=templates.tp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--task-recipe", "card=unitxt.card,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric4,unitxt.metric5],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--custom-template", `tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
+		"--custom-prompt", "sp_0|this is a custom system promp",
+		"--",
+	}, generateCmd(svcOpts, job))
+
+	// add forth task using custom card + custom template + custom system_prompt
+	// and reuse the template and system prompt
+	job.Spec.TaskList.TaskRecipes = append(job.Spec.TaskList.TaskRecipes,
+		lmesv1alpha1.TaskRecipe{
+			Card: lmesv1alpha1.Card{
+				Custom: `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+			},
+			Template: &lmesv1alpha1.Template{
+				Ref: "tp_0",
+			},
+			SystemPrompt: &lmesv1alpha1.SystemPrompt{
+				Ref: "sp_0",
+			},
+			Format:        &format,
+			Metrics:       []string{"unitxt.metric6", "unitxt.metric7"},
+			NumDemos:      &numDemos,
+			DemosPoolSize: &demosPoolSize,
+		},
+	)
+
+	assert.Equal(t, []string{
+		"/opt/app-root/src/bin/driver",
+		"--output-path", "/opt/app-root/src/output",
+		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--task-recipe", "card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--task-recipe", "card=cards.custom_1,template=templates.tp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--task-recipe", "card=unitxt.card,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric4,unitxt.metric5],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--task-recipe", "card=cards.custom_2,template=templates.tp_0,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric6,unitxt.metric7],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--custom-template", `tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
+		"--custom-prompt", "sp_0|this is a custom system promp",
+		"--",
+	}, generateCmd(svcOpts, job))
+
+	// add fifth task using regular card + custom template + custom system_prompt
+	// both template and system prompt are new
+	job.Spec.TaskList.TaskRecipes = append(job.Spec.TaskList.TaskRecipes,
+		lmesv1alpha1.TaskRecipe{
+			Card: lmesv1alpha1.Card{Name: "unitxt.card2"},
+			Template: &lmesv1alpha1.Template{
+				Ref: "tp_1",
+			},
+			SystemPrompt: &lmesv1alpha1.SystemPrompt{
+				Ref: "sp_1",
+			},
+			Format:        &format,
+			Metrics:       []string{"unitxt.metric6", "unitxt.metric7"},
+			NumDemos:      &numDemos,
+			DemosPoolSize: &demosPoolSize,
+		},
+	)
+
+	job.Spec.TaskList.CustomArtifacts.Templates = append(job.Spec.TaskList.CustomArtifacts.Templates, lmesv1alpha1.CustomArtifact{
+		Name:  "tp_1",
+		Value: `{ "__type__": "input_output_template", "instruction": "2In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
+	})
+
+	job.Spec.TaskList.CustomArtifacts.SystemPrompts = append(job.Spec.TaskList.CustomArtifacts.SystemPrompts, lmesv1alpha1.CustomArtifact{
+		Name:  "sp_1",
+		Value: "this is a custom system promp2",
+	})
+
+	assert.Equal(t, []string{
+		"/opt/app-root/src/bin/driver",
+		"--output-path", "/opt/app-root/src/output",
+		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--task-recipe", "card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--task-recipe", "card=cards.custom_1,template=templates.tp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--task-recipe", "card=unitxt.card,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric4,unitxt.metric5],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--task-recipe", "card=cards.custom_2,template=templates.tp_0,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric6,unitxt.metric7],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--task-recipe", "card=unitxt.card2,template=templates.tp_1,system_prompt=system_prompts.sp_1,metrics=[unitxt.metric6,unitxt.metric7],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--custom-template", `tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
+		"--custom-template", `tp_1|{ "__type__": "input_output_template", "instruction": "2In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
+		"--custom-prompt", "sp_0|this is a custom system promp",
+		"--custom-prompt", "sp_1|this is a custom system promp2",
 		"--",
 	}, generateCmd(svcOpts, job))
 }
@@ -880,7 +1199,7 @@ func Test_CustomCardValidation(t *testing.T) {
 		},
 	}
 
-	assert.ErrorContains(t, lmevalRec.validateCustomCard(job, log), "custom card is not a valid JSON string")
+	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "custom card is not a valid JSON string")
 
 	// no loader
 	job.Spec.TaskList.TaskRecipes[0].Card.Custom = `
@@ -908,7 +1227,7 @@ func Test_CustomCardValidation(t *testing.T) {
 			"task": "tasks.translation.directed",
 			"templates": "templates.translation.directed.all"
 		}`
-	assert.ErrorContains(t, lmevalRec.validateCustomCard(job, log), "no loader definition in the custom card")
+	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "no loader definition in the custom card")
 
 	// ok
 	job.Spec.TaskList.TaskRecipes[0].Card.Custom = `
@@ -942,16 +1261,1928 @@ func Test_CustomCardValidation(t *testing.T) {
 			"templates": "templates.translation.directed.all"
 		}`
 
-	assert.Nil(t, lmevalRec.validateCustomCard(job, log))
+	assert.Nil(t, lmevalRec.validateCustomRecipes(job, log))
+
+	job.Spec.TaskList.TaskRecipes[0].Template = &lmesv1alpha1.Template{
+		Ref: "tp_0",
+	}
+
+	// missing custom template
+	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "the reference name of the custom template is not defined: tp_0")
+
+	job.Spec.TaskList.CustomArtifacts = &lmesv1alpha1.CustomArtifacts{
+		Templates: []lmesv1alpha1.CustomArtifact{
+			{
+				Name: "tp_0",
+				Value: `
+					{
+						"__type__": "input_output_template",
+						"instruction": "In the following task, you translate a {text_type}.",
+						"input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.",
+						"target_prefix": "Translation: ",
+						"output_format": "{translation}",
+						"postprocessors": [
+							"processors.lower_case"
+						]
+					}
+				`,
+			},
+		},
+	}
+
+	// pass
+	assert.Nil(t, lmevalRec.validateCustomRecipes(job, log))
+
+	job.Spec.TaskList.CustomArtifacts.Templates = append(job.Spec.TaskList.CustomArtifacts.Templates, lmesv1alpha1.CustomArtifact{
+		Name: "tp_1",
+		Value: `
+			{
+				"__type__": "input_output_template",
+				"instruction": "In the following task, you translate a {text_type}.",
+				"input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.",
+				"target_prefix": "Translation: ",
+				"postprocessors": [
+					"processors.lower_case"
+				]
+			}
+		`,
+	})
+
+	job.Spec.TaskList.TaskRecipes[0].Template = &lmesv1alpha1.Template{
+		Ref: "tp_1",
+	}
+
+	// missing outout_format property
+	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "no output_format definition in the custom template")
 }
 
 func Test_ConcatTasks(t *testing.T) {
 	tasks := concatTasks(lmesv1alpha1.TaskList{
 		TaskNames: []string{"task1", "task2"},
 		TaskRecipes: []lmesv1alpha1.TaskRecipe{
-			{Template: "template3", Card: lmesv1alpha1.Card{Name: "format3"}},
+			{Template: &lmesv1alpha1.Template{Name: "template3"}, Card: lmesv1alpha1.Card{Name: "format3"}},
 		},
 	})
 
 	assert.Equal(t, []string{"task1", "task2", driver.TaskRecipePrefix + "_0"}, tasks)
+}
+
+func Test_ManagedPVC(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
+	}
+
+	jobName := "test"
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
+			Outputs: &lmesv1alpha1.Outputs{
+				PersistentVolumeClaimManaged: &lmesv1alpha1.PersistentVolumeClaimManaged{
+					Size: "5Gi",
+				},
+			},
+		},
+	}
+
+	expect := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "ta-lmes",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: lmesv1alpha1.Version,
+					Kind:       lmesv1alpha1.KindName,
+					Name:       "test",
+					Controller: &isController,
+					UID:        "for-testing",
+				},
+			},
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{
+					Name:            "driver",
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         []string{DriverPath, "--copy", DestDriverPath},
+					SecurityContext: defaultSecurityContext,
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+					},
+				},
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            "main",
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
+					SecurityContext: defaultSecurityContext,
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+							Value: "False",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
+					},
+
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+						{
+							Name:      "outputs",
+							MountPath: "/opt/app-root/src/output",
+						},
+					},
+				},
+			},
+			SecurityContext: defaultPodSecurityContext,
+			Volumes: []corev1.Volume{
+				{
+					Name: "shared", VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+				{
+					Name: "outputs", VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: jobName + "-pvc",
+							ReadOnly:  false,
+						},
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyNever,
+		},
+	}
+
+	newPod := CreatePod(svcOpts, job, log)
+
+	assert.Equal(t, expect, newPod)
+}
+
+func Test_ExistingPVC(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
+	}
+
+	jobName := "test"
+	pvcName := "my-pvc"
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
+			Outputs: &lmesv1alpha1.Outputs{
+				PersistentVolumeClaimName: &pvcName,
+			},
+		},
+	}
+
+	expect := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "ta-lmes",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: lmesv1alpha1.Version,
+					Kind:       lmesv1alpha1.KindName,
+					Name:       "test",
+					Controller: &isController,
+					UID:        "for-testing",
+				},
+			},
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{
+					Name:            "driver",
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         []string{DriverPath, "--copy", DestDriverPath},
+					SecurityContext: defaultSecurityContext,
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+					},
+				},
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            "main",
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
+					SecurityContext: defaultSecurityContext,
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+							Value: "False",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+						{
+							Name:      "outputs",
+							MountPath: "/opt/app-root/src/output",
+						},
+					},
+				},
+			},
+			SecurityContext: defaultPodSecurityContext,
+			Volumes: []corev1.Volume{
+				{
+					Name: "shared", VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+				{
+					Name: "outputs", VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyNever,
+		},
+	}
+
+	newPod := CreatePod(svcOpts, job, log)
+
+	assert.Equal(t, expect, newPod)
+}
+
+// Test_PVCPreference tests that if both PVC modes are specified, managed PVC will be preferred and existing PVC will be ignored
+func Test_PVCPreference(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
+	}
+
+	jobName := "test"
+	pvcName := "my-pvc"
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
+			Outputs: &lmesv1alpha1.Outputs{
+				PersistentVolumeClaimName: &pvcName,
+				PersistentVolumeClaimManaged: &lmesv1alpha1.PersistentVolumeClaimManaged{
+					Size: "5Gi",
+				},
+			},
+		},
+	}
+
+	expect := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "ta-lmes",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: lmesv1alpha1.Version,
+					Kind:       lmesv1alpha1.KindName,
+					Name:       "test",
+					Controller: &isController,
+					UID:        "for-testing",
+				},
+			},
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{
+					Name:            "driver",
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         []string{DriverPath, "--copy", DestDriverPath},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+					},
+				},
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            "main",
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+							Value: "False",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+						{
+							Name:      "outputs",
+							MountPath: "/opt/app-root/src/output",
+						},
+					},
+				},
+			},
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot: &runAsNonRootUser,
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "shared", VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+				{
+					Name: "outputs", VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: jobName + "-pvc",
+							ReadOnly:  false,
+						},
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyNever,
+		},
+	}
+
+	newPod := CreatePod(svcOpts, job, log)
+
+	assert.Equal(t, expect, newPod)
+}
+
+func Test_ValidateBatchSize(t *testing.T) {
+	maxBatchSize := 32
+	logger := log.Log.WithName("tests")
+	scenarios := []struct {
+		provided  string
+		validated string
+	}{
+		{"5", "5"},
+		{"auto", "auto"},
+		{"auto:3", "auto:3"},
+		{"auto:0", "auto:" + strconv.Itoa(maxBatchSize)},
+		{"auto:-5", "auto:" + strconv.Itoa(maxBatchSize)},
+		{"64", strconv.Itoa(maxBatchSize)},
+		{"-5", DefaultBatchSize},
+		{"invalid", DefaultBatchSize},
+		{"0", DefaultBatchSize},
+		{"auto:auto", "auto:" + strconv.Itoa(maxBatchSize)},
+	}
+
+	for _, scenario := range scenarios {
+		result := validateBatchSize(scenario.provided, maxBatchSize, logger)
+		if result != scenario.validated {
+			t.Errorf("validateBatchSize(%q) = %q; want %q", scenario.provided, result, scenario.validated)
+		}
+	}
+}
+
+// Test_OfflineMode tests that if the offline mode is set the configuration is correct
+func Test_OfflineMode(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
+	}
+
+	jobName := "test"
+	pvcName := "my-pvc"
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
+			Offline: &lmesv1alpha1.OfflineSpec{
+				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
+					PersistentVolumeClaimName: &pvcName,
+				},
+			},
+		},
+	}
+
+	expect := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "ta-lmes",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: lmesv1alpha1.Version,
+					Kind:       lmesv1alpha1.KindName,
+					Name:       "test",
+					Controller: &isController,
+					UID:        "for-testing",
+				},
+			},
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{
+					Name:            "driver",
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         []string{DriverPath, "--copy", DestDriverPath},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+					},
+				},
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            "main",
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+							Value: "False",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+						{
+							Name:      "offline",
+							MountPath: "/opt/app-root/src/hf_home",
+						},
+					},
+				},
+			},
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot: &runAsNonRootUser,
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "shared", VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+				{
+					Name: "offline", VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyNever,
+		},
+	}
+
+	newPod := CreatePod(svcOpts, job, log)
+
+	assert.Equal(t, expect, newPod)
+}
+
+// Test_ProtectedVars tests that if the protected env vars are set from spec.pod mode
+// they will not be changed in the pod
+func Test_ProtectedVars(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
+	}
+
+	jobName := "test"
+	pvcName := "my-pvc"
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
+			Offline: &lmesv1alpha1.OfflineSpec{
+				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
+					PersistentVolumeClaimName: &pvcName,
+				},
+			},
+			Pod: &lmesv1alpha1.LMEvalPodSpec{
+				Container: &lmesv1alpha1.LMEvalContainer{
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "0",
+						},
+						{
+							Name:  "NOT_PROTECTED",
+							Value: "True",
+						},
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "1",
+						},
+						{
+							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+							Value: "True",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	expect := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "ta-lmes",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: lmesv1alpha1.Version,
+					Kind:       lmesv1alpha1.KindName,
+					Name:       "test",
+					Controller: &isController,
+					UID:        "for-testing",
+				},
+			},
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{
+					Name:            "driver",
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         []string{DriverPath, "--copy", DestDriverPath},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+					},
+				},
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            "main",
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "NOT_PROTECTED",
+							Value: "True",
+						},
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+							Value: "False",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+						{
+							Name:      "offline",
+							MountPath: "/opt/app-root/src/hf_home",
+						},
+					},
+				},
+			},
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot: &runAsNonRootUser,
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "shared", VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+				{
+					Name: "offline", VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyNever,
+		},
+	}
+
+	newPod := CreatePod(svcOpts, job, log)
+
+	assert.Equal(t, expect, newPod)
+}
+
+// Test_OnlineModeDisabled tests that if the online mode is set, but the controller disables it
+// it will still run in offline mode
+func Test_OnlineModeDisabled(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:           "podimage:latest",
+		DriverImage:        "driver:latest",
+		ImagePullPolicy:    corev1.PullAlways,
+		AllowOnline:        false,
+		AllowCodeExecution: false,
+	}
+
+	jobName := "test"
+	pvcName := "my-pvc"
+	allowOnline := true
+	allowCodeExecution := true
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			AllowOnline:        &allowOnline,
+			AllowCodeExecution: &allowCodeExecution,
+			Model:              "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
+			Offline: &lmesv1alpha1.OfflineSpec{
+				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
+					PersistentVolumeClaimName: &pvcName,
+				},
+			},
+		},
+	}
+
+	expect := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "ta-lmes",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: lmesv1alpha1.Version,
+					Kind:       lmesv1alpha1.KindName,
+					Name:       "test",
+					Controller: &isController,
+					UID:        "for-testing",
+				},
+			},
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{
+					Name:            "driver",
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         []string{DriverPath, "--copy", DestDriverPath},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+					},
+				},
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            "main",
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+							Value: "False",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+						{
+							Name:      "offline",
+							MountPath: "/opt/app-root/src/hf_home",
+						},
+					},
+				},
+			},
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot: &runAsNonRootUser,
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "shared", VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+				{
+					Name: "offline", VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyNever,
+		},
+	}
+
+	newPod := CreatePod(svcOpts, job, log)
+
+	assert.Equal(t, expect, newPod)
+}
+
+// Test_OnlineMode tests that if the online mode is set the configuration is correct
+func Test_OnlineMode(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
+		AllowOnline:     true,
+	}
+
+	allowOnline := true
+	jobName := "test"
+	pvcName := "my-pvc"
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
+			Offline: &lmesv1alpha1.OfflineSpec{
+				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
+					PersistentVolumeClaimName: &pvcName,
+				},
+			},
+			AllowOnline: &allowOnline,
+		},
+	}
+
+	expect := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "ta-lmes",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: lmesv1alpha1.Version,
+					Kind:       lmesv1alpha1.KindName,
+					Name:       "test",
+					Controller: &isController,
+					UID:        "for-testing",
+				},
+			},
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{
+					Name:            "driver",
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         []string{DriverPath, "--copy", DestDriverPath},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+					},
+				},
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            "main",
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+							Value: "False",
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+						{
+							Name:      "offline",
+							MountPath: "/opt/app-root/src/hf_home",
+						},
+					},
+				},
+			},
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot: &runAsNonRootUser,
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "shared", VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+				{
+					Name: "offline", VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyNever,
+		},
+	}
+
+	newPod := CreatePod(svcOpts, job, log)
+
+	assert.Equal(t, expect, newPod)
+}
+
+// Test_AllowCodeOnlineMode tests that if the online mode and allow code is set the configuration is correct
+func Test_AllowCodeOnlineMode(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:           "podimage:latest",
+		DriverImage:        "driver:latest",
+		ImagePullPolicy:    corev1.PullAlways,
+		AllowOnline:        true,
+		AllowCodeExecution: true,
+	}
+
+	jobName := "test"
+	pvcName := "my-pvc"
+	allowOnline := true
+	allowCode := true
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
+			Offline: &lmesv1alpha1.OfflineSpec{
+				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
+					PersistentVolumeClaimName: &pvcName,
+				},
+			},
+			AllowOnline:        &allowOnline,
+			AllowCodeExecution: &allowCode,
+		},
+	}
+
+	expect := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "ta-lmes",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: lmesv1alpha1.Version,
+					Kind:       lmesv1alpha1.KindName,
+					Name:       "test",
+					Controller: &isController,
+					UID:        "for-testing",
+				},
+			},
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{
+					Name:            "driver",
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         []string{DriverPath, "--copy", DestDriverPath},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+					},
+				},
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            "main",
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "1",
+						},
+						{
+							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+							Value: "True",
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+						{
+							Name:      "offline",
+							MountPath: "/opt/app-root/src/hf_home",
+						},
+					},
+				},
+			},
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot: &runAsNonRootUser,
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "shared", VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+				{
+					Name: "offline", VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyNever,
+		},
+	}
+
+	newPod := CreatePod(svcOpts, job, log)
+
+	assert.Equal(t, expect, newPod)
+}
+
+// Test_AllowCodeOfflineMode tests that if the online mode is set the configuration is correct
+func Test_AllowCodeOfflineMode(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:           "podimage:latest",
+		DriverImage:        "driver:latest",
+		ImagePullPolicy:    corev1.PullAlways,
+		AllowOnline:        true,
+		AllowCodeExecution: true,
+	}
+
+	jobName := "test"
+	pvcName := "my-pvc"
+	allowCode := true
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
+			Offline: &lmesv1alpha1.OfflineSpec{
+				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
+					PersistentVolumeClaimName: &pvcName,
+				},
+			},
+			AllowCodeExecution: &allowCode,
+		},
+	}
+
+	expect := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "ta-lmes",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: lmesv1alpha1.Version,
+					Kind:       lmesv1alpha1.KindName,
+					Name:       "test",
+					Controller: &isController,
+					UID:        "for-testing",
+				},
+			},
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{
+					Name:            "driver",
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         []string{DriverPath, "--copy", DestDriverPath},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+					},
+				},
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            "main",
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "1",
+						},
+						{
+							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+							Value: "True",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+						{
+							Name:      "offline",
+							MountPath: "/opt/app-root/src/hf_home",
+						},
+					},
+				},
+			},
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot: &runAsNonRootUser,
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "shared", VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+				{
+					Name: "offline", VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyNever,
+		},
+	}
+
+	newPod := CreatePod(svcOpts, job, log)
+
+	assert.Equal(t, expect, newPod)
+}
+
+// Test_OfflineModeWithOutput tests that if the offline mode is set the configuration is correct, even when custom output is set
+func Test_OfflineModeWithOutput(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
+	}
+
+	jobName := "test"
+	offlinePvcName := "offline-pvc"
+	outputPvcName := "output-pvc"
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+			},
+			Offline: &lmesv1alpha1.OfflineSpec{
+				StorageSpec: lmesv1alpha1.OfflineStorageSpec{
+					PersistentVolumeClaimName: &offlinePvcName,
+				},
+			},
+			Outputs: &lmesv1alpha1.Outputs{
+				PersistentVolumeClaimName: &outputPvcName,
+			},
+		},
+	}
+
+	expect := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "ta-lmes",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: lmesv1alpha1.Version,
+					Kind:       lmesv1alpha1.KindName,
+					Name:       "test",
+					Controller: &isController,
+					UID:        "for-testing",
+				},
+			},
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{
+					Name:            "driver",
+					Image:           svcOpts.DriverImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         []string{DriverPath, "--copy", DestDriverPath},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+					},
+				},
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            "main",
+					Image:           svcOpts.PodImage,
+					ImagePullPolicy: svcOpts.ImagePullPolicy,
+					Command:         generateCmd(svcOpts, job),
+					Args:            generateArgs(svcOpts, job, log),
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: int32(svcOpts.DriverPort),
+						},
+					},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "HF_HUB_DISABLE_TELEMETRY",
+							Value: "1",
+						},
+						{
+							Name:  "DO_NOT_TRACK",
+							Value: "1",
+						},
+						{
+							Name:  "TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+							Value: "0",
+						},
+						{
+							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+							Value: "False",
+						},
+						{
+							Name:  "HF_DATASETS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_HUB_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "TRANSFORMERS_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "HF_EVALUATE_OFFLINE",
+							Value: "1",
+						},
+						{
+							Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+							Value: "True",
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "shared",
+							MountPath: "/opt/app-root/src/bin",
+						},
+						{
+							Name:      "outputs",
+							MountPath: "/opt/app-root/src/output",
+						},
+						{
+							Name:      "offline",
+							MountPath: "/opt/app-root/src/hf_home",
+						},
+					},
+				},
+			},
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot: &runAsNonRootUser,
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "shared", VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+				{
+					Name: "outputs", VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: outputPvcName,
+							ReadOnly:  false,
+						},
+					},
+				},
+				{
+					Name: "offline", VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: offlinePvcName,
+							ReadOnly:  false,
+						},
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyNever,
+		},
+	}
+
+	newPod := CreatePod(svcOpts, job, log)
+
+	assert.Equal(t, expect, newPod)
 }

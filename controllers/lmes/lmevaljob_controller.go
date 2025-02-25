@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -46,7 +47,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/go-logr/logr"
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
@@ -68,10 +68,30 @@ var (
 		"DefaultBatchSize":    DefaultBatchSizeKey,
 		"MaxBatchSize":        MaxBatchSizeKey,
 		"DetectDevice":        DetectDeviceKey,
+		"AllowOnline":         AllowOnline,
+		"AllowCodeExecution":  AllowCodeExecution,
+		"DriverPort":          DriverPort,
 	}
 
-	labelFilterPrefixes      = []string{}
-	annotationFilterPrefixes = []string{}
+	labelFilterPrefixes       = []string{}
+	annotationFilterPrefixes  = []string{}
+	allowPrivilegeEscalation  = false
+	runAsNonRootUser          = true
+	ownerRefController        = true
+	defaultPodSecurityContext = &corev1.PodSecurityContext{
+		RunAsNonRoot: &runAsNonRootUser,
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
+	defaultSecurityContext = &corev1.SecurityContext{
+		AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{
+				"ALL",
+			},
+		},
+	}
 )
 
 // maintain a list of key-time pair data.
@@ -148,6 +168,8 @@ func (q *syncedMap4Reconciler) remove(key string) {
 // +kubebuilder:rbac:groups="",resources=pods/exec,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;watch;list
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;watch;list
+// +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=list;get;watch
+// +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=list;get;watch;create;update;patch;delete
 
 func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
@@ -164,13 +186,43 @@ func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Treat this as NewJobState
-	if job.Status.LastScheduleTime == nil {
+	if job.Status.LastScheduleTime == nil && job.Status.CompleteTime == nil {
 		job.Status.State = lmesv1alpha1.NewJobState
 	}
 
-	if job.Spec.Suspend {
-		return r.handleSuspend(ctx, log, job)
+	if JobMgrEnabled && job.Status.State != lmesv1alpha1.CompleteJobState {
+		//the job requires kueue.x-k8s.io/queue-name label if Job Manager is enabled
+		if _, ok := job.ObjectMeta.GetLabels()["kueue.x-k8s.io/queue-name"]; !ok {
+			job.Status.State = lmesv1alpha1.CompleteJobState
+			job.Status.Reason = lmesv1alpha1.FailedReason
+			job.Status.Message = "job requires kueue.x-k8s.io/queue-name label"
+			log.Error(fmt.Errorf("job %s requires kueue.x-k8s.io/queue-name label", job.Name), "LMevalJob requires kueue.x-k8s.io/queue-name label when Job Manager is enabled")
+			return r.handleComplete(ctx, log, job)
+		} else if job.Spec.Suspend {
+			return r.handleSuspend(ctx, log, job)
+		}
 	}
+
+	// If outputs have been explicitly set
+	if job.Spec.HasCustomOutput() {
+		// If managed PVC is set
+		if job.Spec.Outputs.HasManagedPVC() {
+			if job.Spec.Outputs.HasExistingPVC() {
+				log.Info("LMEvalJob has both managed and existing PVCs defined. Existing PVC configuration will be ignored.")
+			}
+			err := r.handleManagedPVC(ctx, log, job)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		} else if job.Spec.Outputs.HasExistingPVC() {
+			err := r.handleExistingPVC(ctx, log, job)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	}
+
+	log.Info("Checking the job state")
 
 	// Handle the job based on its state
 	switch job.Status.State {
@@ -236,11 +288,8 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			},
 		})).
 		Watches(
-			&source.Kind{Type: &corev1.Pod{}},
-			&handler.EnqueueRequestForOwner{
-				OwnerType:    &lmesv1alpha1.LMEvalJob{},
-				IsController: true,
-			},
+			&corev1.Pod{},
+			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetClient().RESTMapper(), &lmesv1alpha1.LMEvalJob{}, handler.OnlyControllerOwner()),
 			builder.WithPredicates(predicate.Funcs{
 				// drop all events except deletion
 				CreateFunc: func(event.CreateEvent) bool {
@@ -298,10 +347,11 @@ func (r *LMEvalJobReconciler) remoteCommand(ctx context.Context, job *lmesv1alph
 		Name(job.GetName()).
 		SubResource("exec").
 		VersionedParams(&corev1.PodExecOptions{
-			Command: []string{"/bin/sh", "-c", command},
-			Stdin:   false,
-			Stdout:  true,
-			Stderr:  true,
+			Command:   []string{"/bin/sh", "-c", command},
+			Stdin:     false,
+			Stdout:    true,
+			Stderr:    true,
+			Container: "main",
 		}, scheme.ParameterCodec)
 
 	outBuff := &bytes.Buffer{}
@@ -366,21 +416,24 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 
 	// Validate the custom card if exists
 	// FIXME: Move the validation to the webhook once we enable it.
-	if err := r.validateCustomCard(job, log); err != nil {
+	if err := r.validateCustomRecipes(job, log); err != nil {
 		// custom card validation failed
 		job.Status.State = lmesv1alpha1.CompleteJobState
 		job.Status.Reason = lmesv1alpha1.FailedReason
 		job.Status.Message = err.Error()
+		// also update the complete time
+		current := v1.Now()
+		job.Status.CompleteTime = &current
 		if err := r.Status().Update(ctx, job); err != nil {
-			log.Error(err, "unable to update LMEvalJob status for custom card validation error")
+			log.Error(err, "unable to update LMEvalJob status for custom recipe validation error")
 		}
-		log.Error(err, "Contain invalid custom card in the LMEvalJob", "name", job.Name)
+		log.Error(err, "Contain invalid custom recipe in the LMEvalJob", "name", job.Name)
 		return ctrl.Result{}, err
 	}
 
 	// construct a new pod and create a pod for the job
 	currentTime := v1.Now()
-	pod := createPod(options, job, log)
+	pod := CreatePod(Options, job, log)
 	if err := r.Create(ctx, pod, &client.CreateOptions{}); err != nil {
 		// Failed to create the pod. Mark the status as complete with failed
 		job.Status.State = lmesv1alpha1.CompleteJobState
@@ -395,7 +448,7 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 
 	// Create the pod successfully. Wait for the driver to update the status
 	job.Status.State = lmesv1alpha1.ScheduledJobState
-	job.Status.PodName = pod.Name
+	job.Status.PodName = job.GetPodName()
 	job.Status.LastScheduleTime = &currentTime
 	if err := r.Status().Update(ctx, job); err != nil {
 		log.Error(err, "unable to update LMEvalJob status (pod creation done)")
@@ -407,7 +460,7 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 			job.Namespace))
 	log.Info("Successfully create a Pod for the Job")
 	// Check the pod after the config interval
-	return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+	return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 }
 
 func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
@@ -432,7 +485,7 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 
 	if mainIdx := getContainerByName(&pod.Status, "main"); mainIdx == -1 {
 		// waiting for the main container to be up
-		return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 	} else if podFailed, msg := isContainerFailed(&pod.Status.ContainerStatuses[mainIdx]); podFailed {
 		job.Status.State = lmesv1alpha1.CompleteJobState
 		job.Status.Reason = lmesv1alpha1.FailedReason
@@ -440,10 +493,10 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 		if err := r.Status().Update(ctx, job); err != nil {
 			log.Error(err, "unable to update LMEvalJob status for pod failure")
 		}
-		log.Info("detect an error on the job's pod. marked the job as done", "name", job.Name)
+		log.Info("detect an error on the job's pod. marked the job as done", "name", job.GetPodName())
 		return ctrl.Result{}, err
 	} else if pod.Status.ContainerStatuses[mainIdx].State.Running == nil {
-		return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 	}
 
 	// pull status from the driver
@@ -454,7 +507,7 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 	if err != nil {
 		log.Error(err, "unable to retrieve the status from the job's pod. retry after the pulling interval")
 	}
-	return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+	return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 }
 
 func (r *LMEvalJobReconciler) getPod(ctx context.Context, job *lmesv1alpha1.LMEvalJob) (*corev1.Pod, error) {
@@ -474,6 +527,10 @@ func (r *LMEvalJobReconciler) getPod(ctx context.Context, job *lmesv1alpha1.LMEv
 }
 
 func (r *LMEvalJobReconciler) deleteJobPod(ctx context.Context, job *lmesv1alpha1.LMEvalJob) error {
+	if job.Status.PodName == "" {
+		return nil
+	}
+
 	pod := corev1.Pod{
 		TypeMeta: v1.TypeMeta{
 			Kind:       "Pod",
@@ -497,18 +554,20 @@ func (r *LMEvalJobReconciler) deleteJobPod(ctx context.Context, job *lmesv1alpha
 func (r *LMEvalJobReconciler) handleComplete(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
 	if job.Status.CompleteTime == nil {
 		// make sure the pod is in the complete state. if not, run the shutdown command
-		pod, err := r.getPod(ctx, job)
-		if err == nil {
-			if getRunningContainerByName(&pod.Status, "main") != -1 {
-				// send shutdown command if the main container is running
-				if err := r.shutdownDriver(ctx, job); err != nil {
-					log.Error(err, "failed to shutdown the job pod. retry after the pulling interval")
-					return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+		if job.Status.PodName != "" {
+			pod, err := r.getPod(ctx, job)
+			if err == nil {
+				if getRunningContainerByName(&pod.Status, "main") != -1 {
+					// send shutdown command if the main container is running
+					if err := r.shutdownDriver(ctx, job); err != nil {
+						log.Error(err, "failed to shutdown the job pod. retry after the pulling interval")
+						return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
+					}
 				}
+			} else {
+				// the pod is gone ??
+				log.Error(err, "LMEvalJob is marked as Complete but the pod is gone")
 			}
-		} else {
-			// the pod is gone ??
-			log.Error(err, "LMEvalJob is marked as Complete but the pod is gone")
 		}
 
 		r.Recorder.Event(job, "Normal", "JobCompleted",
@@ -541,8 +600,8 @@ func (r *LMEvalJobReconciler) handleCancel(ctx context.Context, log logr.Logger,
 		job.Status.Reason = lmesv1alpha1.CancelledReason
 		if err := r.deleteJobPod(ctx, job); err != nil {
 			// leave the state as is and retry again
-			log.Error(err, "failed to delete pod. scheduled a retry", "interval", options.PodCheckingInterval.String())
-			return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), err
+			log.Error(err, "failed to delete pod. scheduled a retry", "interval", Options.PodCheckingInterval.String())
+			return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), err
 		}
 	}
 
@@ -564,7 +623,7 @@ func (r *LMEvalJobReconciler) handleSuspend(ctx context.Context, log logr.Logger
 		log.Info("Suspend job")
 		if err := r.deleteJobPod(ctx, job); err != nil && client.IgnoreNotFound(err) != nil {
 			log.Error(err, "failed to delete pod for suspended job")
-			return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+			return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 		}
 	} else {
 		log.Info("Create job in suspend state.")
@@ -580,10 +639,10 @@ func (r *LMEvalJobReconciler) handleSuspend(ctx context.Context, log logr.Logger
 
 func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
 	log.Info("Resume job")
-	pod := createPod(options, job, log)
+	pod := CreatePod(Options, job, log)
 	if err := r.Create(ctx, pod); err != nil {
 		log.Error(err, "failed to create pod to resume job")
-		return r.pullingJobs.addOrUpdate(string(job.GetUID()), options.PodCheckingInterval), nil
+		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 	}
 	job.Status.State = lmesv1alpha1.ScheduledJobState
 	err := r.Status().Update(ctx, job)
@@ -593,15 +652,17 @@ func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger,
 	return ctrl.Result{}, err
 }
 
-func (r *LMEvalJobReconciler) validateCustomCard(job *lmesv1alpha1.LMEvalJob, log logr.Logger) error {
+func (r *LMEvalJobReconciler) validateCustomRecipes(job *lmesv1alpha1.LMEvalJob, log logr.Logger) error {
 	if job.Spec.TaskList.TaskRecipes == nil {
 		return nil
 	}
 
+	var checkedTemplates []string
+	customArtifacts := job.Spec.TaskList.CustomArtifacts
 	for _, taskRecipe := range job.Spec.TaskList.TaskRecipes {
 		if taskRecipe.Card.Custom != "" {
-			var card map[string]interface{}
-			if err := json.Unmarshal([]byte(taskRecipe.Card.Custom), &card); err != nil {
+			card, err := unmarshal(taskRecipe.Card.Custom)
+			if err != nil {
 				log.Error(err, "failed to parse the custom card")
 				return fmt.Errorf("custom card is not a valid JSON string, %s", err.Error())
 			}
@@ -612,23 +673,92 @@ func (r *LMEvalJobReconciler) validateCustomCard(job *lmesv1alpha1.LMEvalJob, lo
 				return missKeyError
 			}
 		}
+
+		// validate the template JSON
+		if taskRecipe.Template != nil && taskRecipe.Template.Ref != "" &&
+			!slices.Contains(checkedTemplates, taskRecipe.Template.Ref) {
+
+			custom := getCustomArtifactByName(customArtifacts.GetTemplates(), taskRecipe.Template.Ref)
+			if custom == nil {
+				return fmt.Errorf("the reference name of the custom template is not defined: %s", taskRecipe.Template.Ref)
+			}
+
+			template, err := unmarshal(custom.Value)
+			if err != nil {
+				log.Error(err, "failed to parse the custom template")
+				return fmt.Errorf("custom template is not a valid JSON string, %s", err.Error())
+			}
+			// two mandatory fields: input_format and output_format
+			for _, fieldName := range []string{"input_format", "output_format"} {
+				if _, ok := template[fieldName]; !ok {
+					missKeyError := fmt.Errorf("no %s definition in the custom template", fieldName)
+					log.Error(missKeyError, "failed to parse the custom template")
+					return missKeyError
+				}
+			}
+			checkedTemplates = append(checkedTemplates, taskRecipe.Template.Ref)
+		}
+
+		// only check if the system prompt is defined in the custom section or not
+		if taskRecipe.SystemPrompt != nil && taskRecipe.SystemPrompt.Ref != "" {
+			if getCustomArtifactByName(customArtifacts.GetSystemPrompts(), taskRecipe.SystemPrompt.Ref) == nil {
+				return fmt.Errorf("the reference name of the custom system prompt is not defined: %s", taskRecipe.SystemPrompt.Ref)
+			}
+		}
 	}
 
 	return nil
 }
 
-func createPod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) *corev1.Pod {
-	var allowPrivilegeEscalation = false
-	var runAsNonRootUser = true
-	var ownerRefController = true
+func getCustomArtifactByName(customs []lmesv1alpha1.CustomArtifact, name string) *lmesv1alpha1.CustomArtifact {
+	if len(customs) == 0 {
+		return nil
+	}
+	for _, custom := range customs {
+		if custom.Name == name {
+			return &custom
+		}
+	}
+	return nil
+}
 
-	var envVars = job.Spec.Pod.GetContainer().GetEnv()
+func unmarshal(custom string) (map[string]interface{}, error) {
+	var obj map[string]interface{}
+	err := json.Unmarshal([]byte(custom), &obj)
+	return obj, err
+}
+
+func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) *corev1.Pod {
+
+	var envVars = removeProtectedEnvVars(job.Spec.Pod.GetContainer().GetEnv())
+
+	disableTelemetryEnvVars := []corev1.EnvVar{
+		{
+			Name:  "HF_HUB_DISABLE_TELEMETRY",
+			Value: "1",
+		},
+		{
+			Name:  "DO_NOT_TRACK",
+			Value: "1",
+		},
+	}
+
+	envVars = append(envVars, disableTelemetryEnvVars...)
 
 	var volumeMounts = []corev1.VolumeMount{
 		{
 			Name:      "shared",
 			MountPath: "/opt/app-root/src/bin",
 		},
+	}
+
+	if job.Spec.HasCustomOutput() {
+		outputPVCMount := corev1.VolumeMount{
+			Name:      "outputs",
+			MountPath: OutputPath,
+		}
+		volumeMounts = append(volumeMounts, outputPVCMount)
+
 	}
 
 	var volumes = []corev1.Volume{
@@ -639,11 +769,262 @@ func createPod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 		},
 	}
 
+	if job.Spec.HasCustomOutput() {
+
+		var claimName string
+		if job.Spec.Outputs.HasManagedPVC() {
+			claimName = generateManagedPVCName(job)
+		} else if job.Spec.Outputs.HasExistingPVC() {
+			claimName = *job.Spec.Outputs.PersistentVolumeClaimName
+		}
+
+		outputPVC := corev1.Volume{
+			Name: "outputs",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: claimName,
+					ReadOnly:  false,
+				},
+			},
+		}
+		volumes = append(volumes, outputPVC)
+	}
+
+	disallowRemoteCodeEnvVars := []corev1.EnvVar{
+		{
+			Name:  "TRUST_REMOTE_CODE",
+			Value: "0",
+		},
+		{
+			Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+			Value: "0",
+		},
+		{
+			Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+			Value: "False",
+		},
+	}
+	allowRemoteCodeEnvVars := []corev1.EnvVar{
+		{
+			Name:  "TRUST_REMOTE_CODE",
+			Value: "1",
+		},
+		{
+			Name:  "HF_DATASETS_TRUST_REMOTE_CODE",
+			Value: "1",
+		},
+		{
+			Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
+			Value: "True",
+		},
+	}
+	if job.Spec.AllowCodeExecution != nil && *job.Spec.AllowCodeExecution {
+		// Disable remote code execution by default
+
+		if !svcOpts.AllowCodeExecution {
+			log.Error(fmt.Errorf("code execution not allowed by the operator"), "change this setting and redeploy the operator")
+			envVars = append(envVars, disallowRemoteCodeEnvVars...)
+		} else {
+			log.Info("enabling code execution")
+			envVars = append(envVars, allowRemoteCodeEnvVars...)
+		}
+	} else {
+		envVars = append(envVars, disallowRemoteCodeEnvVars...)
+	}
+
+	offlineHuggingFaceEnvVars := []corev1.EnvVar{
+		{
+			Name:  "HF_DATASETS_OFFLINE",
+			Value: "1",
+		},
+		{
+			Name:  "HF_HUB_OFFLINE",
+			Value: "1",
+		},
+		{
+			Name:  "TRANSFORMERS_OFFLINE",
+			Value: "1",
+		},
+		{
+			Name:  "HF_EVALUATE_OFFLINE",
+			Value: "1",
+		},
+		{
+			Name:  "UNITXT_USE_ONLY_LOCAL_CATALOGS",
+			Value: "True",
+		},
+	}
+
+	// Enforce offline mode by default
+	if job.Spec.AllowOnline != nil && *job.Spec.AllowOnline {
+
+		if !svcOpts.AllowOnline {
+			log.Error(fmt.Errorf("online mode not allowed by the operator"), "change this setting and redeploy the operator")
+			envVars = append(envVars, offlineHuggingFaceEnvVars...)
+		}
+	} else {
+		envVars = append(envVars, offlineHuggingFaceEnvVars...)
+	}
+
+	if job.Spec.IsOffline() {
+
+		if job.Spec.HasOfflinePVC() {
+			offlinePVCMount := corev1.VolumeMount{
+				Name:      "offline",
+				MountPath: HuggingFaceHomePath,
+			}
+			volumeMounts = append(volumeMounts, offlinePVCMount)
+
+			offlinePVC := corev1.Volume{
+				Name: "offline",
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: *job.Spec.Offline.StorageSpec.PersistentVolumeClaimName,
+						ReadOnly:  false,
+					},
+				},
+			}
+			volumes = append(volumes, offlinePVC)
+		}
+
+		if job.Spec.HasOfflineS3() {
+
+			sslVerify := "true"
+
+			if job.Spec.Offline.StorageSpec.S3Spec.VerifySSL != nil {
+				sslVerify = strconv.FormatBool(*job.Spec.Offline.StorageSpec.S3Spec.VerifySSL)
+			}
+
+			s3EnvVars := []corev1.EnvVar{
+				{
+					Name: "AWS_ACCESS_KEY_ID",
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: job.Spec.Offline.StorageSpec.S3Spec.AccessKeyIdRef.Name,
+							},
+							Key: job.Spec.Offline.StorageSpec.S3Spec.AccessKeyIdRef.Key,
+						},
+					},
+				},
+				{
+					Name: "AWS_SECRET_ACCESS_KEY",
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: job.Spec.Offline.StorageSpec.S3Spec.SecretAccessKeyRef.Name,
+							},
+							Key: job.Spec.Offline.StorageSpec.S3Spec.SecretAccessKeyRef.Key,
+						},
+					},
+				},
+				{
+					Name: "AWS_DEFAULT_REGION",
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: job.Spec.Offline.StorageSpec.S3Spec.Region.Name,
+							},
+							Key: job.Spec.Offline.StorageSpec.S3Spec.Region.Key,
+						},
+					},
+				},
+				{
+					Name: "AWS_S3_BUCKET",
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: job.Spec.Offline.StorageSpec.S3Spec.Bucket.Name,
+							},
+							Key: job.Spec.Offline.StorageSpec.S3Spec.Bucket.Key,
+						},
+					},
+				},
+				{
+					Name: "AWS_S3_ENDPOINT",
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: job.Spec.Offline.StorageSpec.S3Spec.Endpoint.Name,
+							},
+							Key: job.Spec.Offline.StorageSpec.S3Spec.Endpoint.Key,
+						},
+					},
+				},
+				{
+					Name:  "AWS_PATH",
+					Value: job.Spec.Offline.StorageSpec.S3Spec.Path,
+				},
+				{
+					Name:  "S3_VERIFY_SSL",
+					Value: sslVerify,
+				},
+			}
+			envVars = append(envVars, s3EnvVars...)
+
+			// If certificates are specified, create volume to hold them
+			if job.Spec.Offline.StorageSpec.S3Spec.HasCertificates() {
+
+				s3CertificatesMount := corev1.VolumeMount{
+					Name:      "certificates-s3",
+					MountPath: "/etc/certificates/s3",
+				}
+				volumeMounts = append(volumeMounts, s3CertificatesMount)
+
+				s3CertificatesVolume := corev1.Volume{
+					Name: "certificates-s3",
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: job.Spec.Offline.StorageSpec.S3Spec.CABundle.Name,
+							},
+						},
+					},
+				}
+
+				volumes = append(volumes, s3CertificatesVolume)
+
+				s3CertificateEnvVars := []corev1.EnvVar{
+					{
+						Name:  "AWS_CA_BUNDLE",
+						Value: fmt.Sprintf("/etc/certificates/s3/%s", job.Spec.Offline.StorageSpec.S3Spec.CABundle.Key),
+					},
+				}
+
+				envVars = append(envVars, s3CertificateEnvVars...)
+			}
+
+		}
+
+	}
+
 	volumes = append(volumes, job.Spec.Pod.GetVolumes()...)
 	volumeMounts = append(volumeMounts, job.Spec.Pod.GetContainer().GetVolumMounts()...)
 	labels := getPodLabels(job.Labels, log)
 	annotations := getAnnotations(job.Annotations, log)
 	resources := getResources(job.Spec.Pod.GetContainer().GetResources())
+	affinity := job.Spec.Pod.GetAffinity()
+	podSecurityContext := getPodSecurityContext(job.Spec.Pod.GetSecurityContext())
+	mainSecurityContext := getMainSecurityContext(job.Spec.Pod.GetContainer().GetSecurityContext())
+	containers := []corev1.Container{
+		{
+			Name:            "main",
+			Image:           svcOpts.PodImage,
+			ImagePullPolicy: svcOpts.ImagePullPolicy,
+			Env:             envVars,
+			Command:         generateCmd(svcOpts, job),
+			Args:            generateArgs(svcOpts, job, log),
+			SecurityContext: mainSecurityContext,
+			VolumeMounts:    volumeMounts,
+			Resources:       *resources,
+			Ports: []corev1.ContainerPort{
+				{
+					ContainerPort: int32(svcOpts.DriverPort),
+				},
+			},
+		},
+	}
+	containers = append(containers, job.Spec.Pod.GetSideCards()...)
 
 	// Then compose the Pod CR
 	pod := corev1.Pod{
@@ -652,7 +1033,7 @@ func createPod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 			APIVersion: "v1",
 		},
 		ObjectMeta: v1.ObjectMeta{
-			Name:      job.Name,
+			Name:      job.GetPodName(),
 			Namespace: job.Namespace,
 			OwnerReferences: []v1.OwnerReference{
 				{
@@ -673,14 +1054,7 @@ func createPod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 					Image:           svcOpts.DriverImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
 					Command:         []string{DriverPath, "--copy", DestDriverPath},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
+					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "shared",
@@ -689,34 +1063,11 @@ func createPod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 					},
 				},
 			},
-			Containers: []corev1.Container{
-				{
-					Name:            "main",
-					Image:           svcOpts.PodImage,
-					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Env:             envVars,
-					Command:         generateCmd(svcOpts, job),
-					Args:            generateArgs(svcOpts, job, log),
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
-					VolumeMounts: volumeMounts,
-					Resources:    *resources,
-				},
-			},
-			SecurityContext: &corev1.PodSecurityContext{
-				RunAsNonRoot: &runAsNonRootUser,
-				SeccompProfile: &corev1.SeccompProfile{
-					Type: corev1.SeccompProfileTypeRuntimeDefault,
-				},
-			},
-			Volumes:       volumes,
-			RestartPolicy: corev1.RestartPolicyNever,
+			Containers:      containers,
+			SecurityContext: podSecurityContext,
+			Affinity:        affinity,
+			Volumes:         volumes,
+			RestartPolicy:   corev1.RestartPolicyNever,
 		},
 	}
 	return &pod
@@ -746,6 +1097,22 @@ func getResources(resources *corev1.ResourceRequirements) *corev1.ResourceRequir
 	return resources
 }
 
+func getPodSecurityContext(securityContext *corev1.PodSecurityContext) *corev1.PodSecurityContext {
+	// user config Overrides default config
+	if securityContext == nil {
+		return defaultPodSecurityContext
+	}
+	return securityContext
+}
+
+func getMainSecurityContext(securityContext *corev1.SecurityContext) *corev1.SecurityContext {
+	// user config Overrides default config
+	if securityContext == nil {
+		return defaultSecurityContext
+	}
+	return securityContext
+}
+
 // Merge the map based on the filters. If the names in the `src` map contains any prefixes
 // in the prefixFilters list, those KV will be discarded, otherwise, KV will be merge into
 // `dest` map.
@@ -764,6 +1131,42 @@ func mergeMapWithFilters(dest, src map[string]string, prefixFilters []string, lo
 			}
 		}
 	}
+}
+
+func validateBatchSize(input string, maxBatchSize int, log logr.Logger) string {
+
+	maxBatchSizeString := strconv.Itoa(maxBatchSize)
+
+	if input == "auto" {
+		// No validation needed, return original
+		return input
+	}
+
+	// Validate "auto:N" style batch size
+	if strings.HasPrefix(input, "auto:") {
+		autoN := strings.TrimPrefix(input, "auto:")
+		if n, err := strconv.Atoi(autoN); err == nil && n > 0 {
+			// If N is a positive integer, use it and ignore maxBatchSize, since is now the maximum batch size
+			return input
+		}
+		// If N is an invalid integer, use "auto:maxBatchSize"
+		log.Info(input + " not supported. Using auto:" + maxBatchSizeString)
+		return "auto:" + maxBatchSizeString
+	}
+
+	// Validate N batch size
+	if n, err := strconv.Atoi(input); err == nil && n > 0 {
+		// If N is valid, but larger than maxBatchSize, set it to maximum batch size
+		if n > maxBatchSize {
+			log.Info("batchSize is greater than max-batch-size of the controller's configuration, use the max-batch-size instead")
+			return maxBatchSizeString
+		}
+		// If N is valid, use it
+		return strconv.Itoa(n)
+	}
+
+	log.Info("invalid batchSize " + input + " using batch size " + DefaultBatchSize)
+	return DefaultBatchSize
 }
 
 func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) []string {
@@ -801,15 +1204,12 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 	}
 	// --batch_size
 	var batchSize = svcOpts.DefaultBatchSize
-	if job.Spec.BatchSize != nil && *job.Spec.BatchSize > 0 {
-		batchSize = *job.Spec.BatchSize
+	if job.Spec.BatchSize != nil {
+		// This could be done in the webhook if it's enabled.
+		batchSize = validateBatchSize(*job.Spec.BatchSize, svcOpts.MaxBatchSize, log)
 	}
-	// This could be done in the webhook if it's enabled.
-	if batchSize > svcOpts.MaxBatchSize {
-		batchSize = svcOpts.MaxBatchSize
-		log.Info("batchSize is greater than max-batch-size of the controller's configuration, use the max-batch-size instead")
-	}
-	cmds = append(cmds, "--batch_size", fmt.Sprintf("%d", batchSize))
+
+	cmds = append(cmds, "--batch_size", batchSize)
 
 	return []string{"sh", "-ec", strings.Join(cmds, " ")}
 }
@@ -835,23 +1235,45 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 		"--output-path", "/opt/app-root/src/output",
 	}
 
+	if job.Spec.HasOfflineS3() {
+		cmds = append(cmds, "--download-assets-s3")
+	}
+
 	if svcOpts.DetectDevice {
 		cmds = append(cmds, "--detect-device")
 	}
 
+	if svcOpts.DriverPort != 0 && svcOpts.DriverPort != driver.DefaultPort {
+		cmds = append(cmds, "--listen-port", fmt.Sprintf("%d", svcOpts.DriverPort))
+	}
+
+	if svcOpts.DriverPort != 0 && svcOpts.DriverPort != driver.DefaultPort {
+		cmds = append(cmds, "--listen-port", fmt.Sprintf("%d", svcOpts.DriverPort))
+	}
+
 	cr_idx := 0
 	for _, recipe := range job.Spec.TaskList.TaskRecipes {
-		if recipe.Card.Name != "" {
-			// built-in card, regular recipe
-			cmds = append(cmds, "--task-recipe", recipe.String())
-		} else if recipe.Card.Custom != "" {
+		// duplicate the TaskRecipe and update its content to generate proper recipe string
+		dupRecipe := recipe.DeepCopy()
+
+		if recipe.Card.Custom != "" {
 			// custom card, need to inject --custom-card arg as well
-			dupRecipe := recipe.DeepCopy()
 			// the format of a custom card's name: custom_<index>
 			dupRecipe.Card.Name = fmt.Sprintf("cards.%s_%d", driver.CustomCardPrefix, cr_idx)
-			cmds = append(cmds, "--task-recipe", dupRecipe.String())
 			cmds = append(cmds, "--custom-card", dupRecipe.Card.Custom)
 			cr_idx++
+		}
+
+		cmds = append(cmds, "--task-recipe", dupRecipe.String())
+	}
+
+	// go through custom artificats and add corresponding arguments
+	if job.Spec.TaskList.CustomArtifacts != nil {
+		for _, template := range job.Spec.TaskList.CustomArtifacts.GetTemplates() {
+			cmds = append(cmds, "--custom-template", template.String())
+		}
+		for _, prompt := range job.Spec.TaskList.CustomArtifacts.GetSystemPrompts() {
+			cmds = append(cmds, "--custom-prompt", prompt.String())
 		}
 	}
 
@@ -898,4 +1320,34 @@ func getContainerByName(status *corev1.PodStatus, name string) int {
 	return slices.IndexFunc(status.ContainerStatuses, func(s corev1.ContainerStatus) bool {
 		return s.Name == name
 	})
+}
+
+var ProtectedEnvVarNames = []string{
+	"TRUST_REMOTE_CODE",
+	"HF_DATASETS_TRUST_REMOTE_CODE",
+	"HF_DATASETS_OFFLINE",
+	"HF_HUB_OFFLINE",
+	"TRANSFORMERS_OFFLINE",
+	"HF_EVALUATE_OFFLINE",
+	"UNITXT_ALLOW_UNVERIFIED_CODE",
+}
+
+// removeProtectedEnvVars removes protected EnvVars from a list of EnvVars
+func removeProtectedEnvVars(envVars []corev1.EnvVar) []corev1.EnvVar {
+	var allowedEnvVars []corev1.EnvVar
+
+	for _, env := range envVars {
+		exclude := false
+		for _, name := range ProtectedEnvVarNames {
+			if env.Name == name {
+				exclude = true
+				break
+			}
+		}
+		if !exclude {
+			allowedEnvVars = append(allowedEnvVars, env)
+		}
+	}
+
+	return allowedEnvVars
 }

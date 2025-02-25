@@ -211,7 +211,7 @@ func generateEnvVarValue(currentValue, newValue string, remove bool) string {
 	return currentValue
 }
 
-func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, namespace string, labelKey string, labelValue string, envVarName string, crName string, remove bool) (bool, error) {
+func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, namespace string, labelKey, labelValue, envVarName, crName string, remove bool) (bool, error) {
 	var inferenceServices kservev1beta1.InferenceServiceList
 
 	if err := r.List(ctx, &inferenceServices, client.InNamespace(namespace)); err != nil {
@@ -231,36 +231,51 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 
 	for _, infService := range inferenceServices.Items {
 		annotations := infService.GetAnnotations()
+		deploymentMode := annotations["serving.kserve.io/deploymentMode"]
 
-		// Check the annotation "serving.kserve.io/deploymentMode"
-		if val, ok := annotations["serving.kserve.io/deploymentMode"]; ok {
-			if val == DEPLOYMENT_MODE_RAW {
-				log.FromContext(ctx).Info("RawDeployment mode not supported by TrustyAI")
-				continue
-			} else if val == DEPLOYMENT_MODE_MODELMESH {
-				shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, instance, namespace, labelKey, labelValue, envVarName, crName, remove)
-				if err != nil {
-					log.FromContext(ctx).Error(err, "could not patch environment variables for ModelMesh deployments")
-					return shouldContinue, err
-				}
-				continue
-			}
-		}
-		if kServeServerlessEnabled {
-			err := r.patchKServe(ctx, instance, infService, namespace, crName, remove)
+		switch deploymentMode {
+		case DEPLOYMENT_MODE_MODELMESH:
+			// Handle ModelMesh deployments
+			shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, instance, namespace, labelKey, labelValue, envVarName, crName, remove)
 			if err != nil {
-				log.FromContext(ctx).Error(err, "could not patch InferenceLogger for KServe deployment")
+				log.FromContext(ctx).Error(err, "Could not patch environment variables for ModelMesh deployments")
+				return shouldContinue, err
+			}
+			continue
+
+		case DEPLOYMENT_MODE_RAW:
+			// Handle KServe Raw deployments
+			err := r.patchKServe(ctx, instance, infService, namespace, crName, remove, true)
+			if err != nil {
+				log.FromContext(ctx).Error(err, "Could not patch InferenceLogger for KServe Raw deployment")
 				return false, err
 			}
+			continue
+
+		default:
+			// Handle KServe Serverless deployments
+			if kServeServerlessEnabled {
+				err := r.patchKServe(ctx, instance, infService, namespace, crName, remove, false)
+				if err != nil {
+					log.FromContext(ctx).Error(err, "Could not patch InferenceLogger for KServe Serverless deployment")
+					return false, err
+				}
+			}
+			continue
 		}
 	}
 	return true, nil
 }
 
 // patchKServe adds a TrustyAI service as an InferenceLogger to a KServe InferenceService
-func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, infService kservev1beta1.InferenceService, namespace string, crName string, remove bool) error {
+func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, infService kservev1beta1.InferenceService, namespace string, crName string, remove bool, useHTTPS bool) error {
 
-	url := utils.GenerateKServeLoggerURL(crName, namespace)
+	var url string
+	if useHTTPS {
+		url = utils.GenerateHTTPSKServeLoggerURL(crName, namespace)
+	} else {
+		url = utils.GenerateKServeLoggerURL(crName, namespace)
+	}
 
 	if remove {
 		if infService.Spec.Predictor.Logger == nil || *infService.Spec.Predictor.Logger.URL != url {

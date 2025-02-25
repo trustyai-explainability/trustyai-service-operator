@@ -76,6 +76,57 @@ type Card struct {
 	Custom string `json:"custom,omitempty"`
 }
 
+type Template struct {
+	// Unitxt template ID
+	// +optional
+	Name string `json:"name,omitempty"`
+	// The name of the custom template in the custom field. Its value is a JSON string
+	// for a custom Unitxt template. Use the documentation here: https://www.unitxt.ai/en/latest/docs/adding_template.html
+	// to compose a custom template, store it as a JSON file by calling the
+	// add_to_catalog API: https://www.unitxt.ai/en/latest/docs/saving_and_loading_from_catalog.html#adding-assets-to-the-catalog,
+	// and use the JSON content as the value here.
+	// +optional
+	Ref string `json:"ref,omitempty"`
+}
+
+type SystemPrompt struct {
+	// Unitxt System Prompt id
+	Name string `json:"name,omitempty"`
+	// The name of the custom systemPrompt in the custom field. Its value is a custom system prompt string
+	Ref string `json:"ref,omitempty"`
+}
+
+type CustomArtifact struct {
+	// Name of the custom artifact
+	Name string `json:"name"`
+	// Value of the custom artifact. It could be a JSON string or plain text
+	// depending on the artifact type
+	Value string `json:"value"`
+}
+
+func (c *CustomArtifact) String() string {
+	return fmt.Sprintf("%s|%s", c.Name, c.Value)
+}
+
+type CustomArtifacts struct {
+	Templates     []CustomArtifact `json:"templates,omitempty"`
+	SystemPrompts []CustomArtifact `json:"systemPrompts,omitempty"`
+}
+
+func (c *CustomArtifacts) GetTemplates() []CustomArtifact {
+	if c == nil {
+		return nil
+	}
+	return c.Templates
+}
+
+func (c *CustomArtifacts) GetSystemPrompts() []CustomArtifact {
+	if c == nil {
+		return nil
+	}
+	return c.SystemPrompts
+}
+
 // Use a task recipe to form a custom task. It maps to the Unitxt Recipe
 // Find details of the Unitxt Recipe here:
 // https://www.unitxt.ai/en/latest/unitxt.standard.html#unitxt.standard.StandardRecipe
@@ -83,7 +134,11 @@ type TaskRecipe struct {
 	// The Unitxt dataset card
 	Card Card `json:"card"`
 	// The Unitxt template
-	Template string `json:"template"`
+	// +optional
+	Template *Template `json:"template,omitempty"`
+	// The Unitxt System Prompt
+	// +optional
+	SystemPrompt *SystemPrompt `json:"systemPrompt,omitempty"`
 	// The Unitxt Task
 	// +optional
 	Task *string `json:"task,omitempty"`
@@ -109,11 +164,31 @@ type TaskList struct {
 	TaskNames []string `json:"taskNames,omitempty"`
 	// Task Recipes specifically for Unitxt
 	TaskRecipes []TaskRecipe `json:"taskRecipes,omitempty"`
+	// Custom Unitxt artifacts that can be used in a TaskRecipe
+	CustomArtifacts *CustomArtifacts `json:"custom,omitempty"`
 }
 
+// Use the tp_idx and sp_idx to point to the corresponding custom template
+// and custom system_prompt
 func (t *TaskRecipe) String() string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("card=%s,template=%s", t.Card.Name, t.Template))
+	b.WriteString(fmt.Sprintf("card=%s", t.Card.Name))
+	if t.Template != nil {
+		if t.Template.Name != "" {
+			b.WriteString(fmt.Sprintf(",template=%s", t.Template.Name))
+		} else {
+			// refer to a custom template. add "templates." prefix
+			b.WriteString(fmt.Sprintf(",template=templates.%s", t.Template.Ref))
+		}
+	}
+	if t.SystemPrompt != nil {
+		if t.SystemPrompt.Name != "" {
+			b.WriteString(fmt.Sprintf(",system_prompt=%s", t.SystemPrompt.Name))
+		} else {
+			// refer to custom system prompt. add "system_prompts." prefix
+			b.WriteString(fmt.Sprintf(",system_prompt=system_prompts.%s", t.SystemPrompt.Ref))
+		}
+	}
 	if t.Task != nil {
 		b.WriteString(fmt.Sprintf(",task=%s", *t.Task))
 	}
@@ -146,6 +221,11 @@ type LMEvalContainer struct {
 	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	// SecurityContext defines the security options the container should be run with.
+	// If set, the fields of SecurityContext override the equivalent fields of PodSecurityContext.
+	// More info: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+	// +optional
+	SecurityContext *corev1.SecurityContext `json:"securityContext,omitempty"`
 }
 
 // The following Getter-ish functions avoid nil pointer panic
@@ -170,6 +250,26 @@ func (c *LMEvalContainer) GetResources() *corev1.ResourceRequirements {
 	return c.Resources
 }
 
+type PersistentVolumeClaimManaged struct {
+	Size string `json:"size,omitempty"`
+}
+
+type Outputs struct {
+	// Use an existing PVC to store the outputs
+	// +optional
+	PersistentVolumeClaimName *string `json:"pvcName,omitempty"`
+	// Create an operator managed PVC
+	// +optional
+	PersistentVolumeClaimManaged *PersistentVolumeClaimManaged `json:"pvcManaged,omitempty"`
+}
+
+func (c *LMEvalContainer) GetSecurityContext() *corev1.SecurityContext {
+	if c == nil {
+		return nil
+	}
+	return c.SecurityContext
+}
+
 type LMEvalPodSpec struct {
 	// Extra container data for the lm-eval container
 	// +optional
@@ -181,6 +281,13 @@ type LMEvalPodSpec struct {
 	// FIXME: aggregate the sidecar containers into the pod
 	// +optional
 	SideCars []corev1.Container `json:"sideCars,omitempty"`
+	// If specified, the pod's scheduling constraints
+	// +optional
+	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+	// SecurityContext holds pod-level security attributes and common container settings.
+	// Optional: Defaults to empty.  See type description for default values of each field.
+	// +optional
+	SecurityContext *corev1.PodSecurityContext `json:"securityContext,omitempty"`
 }
 
 // The following Getter-ish functions avoid nil pointer panic
@@ -203,6 +310,42 @@ func (p *LMEvalPodSpec) GetSideCards() []corev1.Container {
 		return nil
 	}
 	return p.SideCars
+}
+
+type OfflineS3Spec struct {
+	AccessKeyIdRef     corev1.SecretKeySelector  `json:"accessKeyId"`
+	SecretAccessKeyRef corev1.SecretKeySelector  `json:"secretAccessKey"`
+	Bucket             corev1.SecretKeySelector  `json:"bucket"`
+	Path               string                    `json:"path"`
+	Region             corev1.SecretKeySelector  `json:"region"`
+	Endpoint           corev1.SecretKeySelector  `json:"endpoint"`
+	VerifySSL          *bool                     `json:"verifySSL,omitempty"`
+	CABundle           *corev1.SecretKeySelector `json:"caBundle,omitempty"`
+}
+
+// OfflineStorageSpec defines the storage configuration for LMEvalJob's offline mode
+type OfflineStorageSpec struct {
+	PersistentVolumeClaimName *string        `json:"pvcName,omitempty"`
+	S3Spec                    *OfflineS3Spec `json:"s3,omitempty"`
+}
+
+// OfflineSpec defined the configuration for LMEvalJob's offline mode
+type OfflineSpec struct {
+	StorageSpec OfflineStorageSpec `json:"storage"`
+}
+
+func (p *LMEvalPodSpec) GetAffinity() *corev1.Affinity {
+	if p == nil {
+		return nil
+	}
+	return p.Affinity
+}
+
+func (p *LMEvalPodSpec) GetSecurityContext() *corev1.PodSecurityContext {
+	if p == nil {
+		return nil
+	}
+	return p.SecurityContext
 }
 
 // LMEvalJobSpec defines the desired state of LMEvalJob
@@ -234,13 +377,59 @@ type LMEvalJobSpec struct {
 	LogSamples *bool `json:"logSamples,omitempty"`
 	// Batch size for the evaluation. This is used by the models that run and are loaded
 	// locally and not apply for the commercial APIs.
-	BatchSize *int `json:"batchSize,omitempty"`
+	BatchSize *string `json:"batchSize,omitempty"`
 	// Specify extra information for the lm-eval job's pod
 	// +optional
 	Pod *LMEvalPodSpec `json:"pod,omitempty"`
 	// Suspend keeps the job but without pods. This is intended to be used by the Kueue integration
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
+	// Outputs specifies storage for evaluation results
+	// +optional
+	Outputs *Outputs `json:"outputs,omitempty"`
+	// Offline specifies settings for running LMEvalJobs in an offline mode
+	// +optional
+	Offline *OfflineSpec `json:"offline,omitempty"`
+	// AllowOnly specifies whether the LMEvalJob can directly download remote code, datasets and metrics. Default is false.
+	// +optional
+	// +kubebuilder:default:=false
+	AllowOnline *bool `json:"allowOnline,omitempty"`
+	// AllowCodeExecution specifies whether the LMEvalJob can execute remote code. Default is false.
+	// +optional
+	// +kubebuilder:default:=false
+	AllowCodeExecution *bool `json:"allowCodeExecution,omitempty"`
+}
+
+// IsOffline returns whether this LMEvalJob is configured to run offline
+func (s *LMEvalJobSpec) IsOffline() bool {
+	return s.Offline != nil
+}
+
+func (s *LMEvalJobSpec) HasOfflinePVC() bool {
+	return s.Offline != nil && s.Offline.StorageSpec.PersistentVolumeClaimName != nil
+}
+
+func (s *LMEvalJobSpec) HasOfflineS3() bool {
+	return s.Offline != nil && s.Offline.StorageSpec.S3Spec != nil
+}
+
+func (s *OfflineS3Spec) HasCertificates() bool {
+	return s.CABundle != nil
+}
+
+// HasCustomOutput returns whether an LMEvalJobSpec defines custom outputs or not
+func (s *LMEvalJobSpec) HasCustomOutput() bool {
+	return s.Outputs != nil
+}
+
+// HasManagedPVC returns whether the outputs define a managed PVC
+func (o *Outputs) HasManagedPVC() bool {
+	return o.PersistentVolumeClaimManaged != nil
+}
+
+// HasExistingPVC returns whether the outputs define an existing PVC
+func (o *Outputs) HasExistingPVC() bool {
+	return o.PersistentVolumeClaimName != nil
 }
 
 // LMEvalJobStatus defines the observed state of LMEvalJob
@@ -280,6 +469,11 @@ type LMEvalJob struct {
 
 	Spec   LMEvalJobSpec   `json:"spec,omitempty"`
 	Status LMEvalJobStatus `json:"status,omitempty"`
+}
+
+// generate pod name for the job
+func (j *LMEvalJob) GetPodName() string {
+	return j.Name
 }
 
 // +kubebuilder:object:root=true

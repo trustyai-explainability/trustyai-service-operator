@@ -11,4 +11,4 @@ spec:
           args:
             - --leader-elect
             - --enable-services
-            - "TAS"
+            - "TAS,LMES,JOB_MGR"

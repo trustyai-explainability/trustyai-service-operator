@@ -61,6 +61,8 @@ jobs:
           echo "MAIN IMAGE AT: ${{ vars.QUAY_RELEASE_REPO }}:latest"
           echo "LMES DRIVER IMAGE AT: ${{ vars.QUAY_RELEASE_LMES_DRIVER_REPO }}:latest"
           echo "LMES JOB IMAGE AT: ${{ vars.QUAY_RELEASE_LMES_JOB_REPO }}:latest"
+          echo "GUARDRAILS ORCH IMAGE AT: ${{ vars.QUAY_RELEASE_GUARDRAILS_REPO }}:latest"
+
           echo "CI IMAGE AT: quay.io/trustyai/trustyai-service-operator-ci:${{ github.event.pull_request.head.sha }}"
       #
       # Set environments depending on context
@@ -71,6 +73,8 @@ jobs:
           echo "IMAGE_NAME=quay.io/trustyai/trustyai-service-operator-ci" >> $GITHUB_ENV
           echo "DRIVER_IMAGE_NAME=quay.io/trustyai/ta-lmes-driver-ci" >> $GITHUB_ENV
           echo "JOB_IMAGE_NAME=quay.io/trustyai/ta-lmes-job-ci" >> $GITHUB_ENV
+          echo "ORCH_IMAGE_NAME=quay.io/trustyai/ta-guardrails-orchestrator-ci" >> $GITHUB_ENV
+
       - name: Set main-branch environment
         if:  env.BUILD_CONTEXT == 'main'
         run: |
@@ -78,6 +82,8 @@ jobs:
           echo "IMAGE_NAME=${{ vars.QUAY_RELEASE_REPO }}" >> $GITHUB_ENV
           echo "DRIVER_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_DRIVER_REPO }}" >> $GITHUB_ENV
           echo "JOB_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_JOB_REPO }}" >> $GITHUB_ENV
+          echo "ORCH_IMAGE_NAME=${{ vars.QUAY_RELEASE_GUARDRAILS_REPO }}" >> $GITHUB_ENV
+
       - name: Set tag environment
         if: env.BUILD_CONTEXT == 'tag'
         run: |
@@ -85,6 +91,7 @@ jobs:
           echo "IMAGE_NAME=${{ vars.QUAY_RELEASE_REPO }}" >> $GITHUB_ENV
           echo "DRIVER_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_DRIVER_REPO }}" >> $GITHUB_ENV
           echo "JOB_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_JOB_REPO }}" >> $GITHUB_ENV
+          echo "ORCH_IMAGE_NAME=${{ vars.QUAY_RELEASE_GUARDRAILS_REPO }}" >> $GITHUB_ENV
 
       # Run docker commands
       - name: Put expiry date on CI-tagged image
@@ -104,6 +111,10 @@ jobs:
         run: docker build -f Dockerfile.lmes-job -t ${{ env.JOB_IMAGE_NAME }}:$TAG .
       - name: Push LMES job image to Quay
         run: docker push ${{ env.JOB_IMAGE_NAME }}:$TAG
+      - name: Build Guardrails orchestrator image
+        run: docker build -f Dockerfile.orchestrator -t ${{ env.ORCH_IMAGE_NAME }}:$TAG .
+      - name: Push Guardrails orchestrator image to Quay
+        run: docker push ${{ env.ORCH_IMAGE_NAME }}:$TAG
 
       # Create CI Manifests
       - name: Set up manifests for CI
@@ -150,8 +161,10 @@ jobs:
 
             📦 [LMES job image](https://quay.io/trustyai/ta-lmes-job:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/ta-lmes-job:${{ github.event.pull_request.head.sha }}`
 
+            📦 [Guardrails orchestrator image](https://quay.io/trustyai/ta-guardrails-orchestrator:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/ta-guardrails-orchestrator:${{ github.event.pull_request.head.sha }}`
+
             🗂️ [CI manifests](https://github.com/trustyai-explainability/trustyai-service-operator-ci/tree/operator-${{ env.TAG }})
-            
+
             ```
             devFlags:
               manifests:
@@ -174,4 +187,3 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'            ```
-

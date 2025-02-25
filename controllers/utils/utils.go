@@ -55,3 +55,8 @@ func GenerateNonTLSServiceURL(crName string, namespace string) string {
 func GenerateKServeLoggerURL(crName string, namespace string) string {
 	return "http://" + crName + "." + namespace + ".svc.cluster.local"
 }
+
+// generateHTTPSKServeLoggerURL generates an HTTPS logger url for KServe Inference Loggers
+func GenerateHTTPSKServeLoggerURL(crName string, namespace string) string {
+	return "https://" + crName + "." + namespace + ".svc.cluster.local"
+}

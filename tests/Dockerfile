@@ -1,13 +1,13 @@
 FROM registry.access.redhat.com/ubi8:8.10-1020
-ARG ORG=trustyai-explainability
-ARG BRANCH=main
-ARG ODS_CI_REPO=https://github.com/red-hat-data-services/ods-ci
 ARG OC_CLI_URL=https://mirror.openshift.com/pub/openshift-v4/amd64/clients/ocp/4.14.33/openshift-client-linux.tar.gz
+ARG TRUSTYAI_TESTS_ORG=trustyai-explainability
+ARG TRUSTYAI_TESTS_REPO=trustyai-tests
+ARG TRUSTYAI_TESTS_BRANCH=main
 
 ENV HOME /root
 WORKDIR /root
 
-RUN dnf install -y jq bc git go-toolset python3.11 python3.11-devel python3.11-pip unzip && \
+RUN dnf install -y jq bc git go-toolset python3.11 python3.11-devel python3.11-pip unzip wget && \
     dnf clean all && \
     git clone https://github.com/opendatahub-io/peak $HOME/peak && \
     cd $HOME/peak && \
@@ -17,11 +17,6 @@ RUN dnf install -y jq bc git go-toolset python3.11 python3.11-devel python3.11-p
 RUN curl -L https://github.com/mikefarah/yq/releases/download/v4.25.1/yq_linux_amd64 -o /usr/bin/yq &&\
     chmod +x /usr/bin/yq
 
-RUN mkdir -p $HOME/src && \
-    cd $HOME/src && \
-    git clone --depth=1 --branch ${BRANCH} https://github.com/${ORG}/trustyai-explainability && \
-    chmod -R 777 $HOME/src
-
 # Use a specific destination file name in case the url download name changes
 ADD ${OC_CLI_URL} $HOME/peak/oc-cli.tar.gz
 RUN tar -C /usr/local/bin -xvf $HOME/peak/oc-cli.tar.gz && \
@@ -29,25 +24,26 @@ RUN tar -C /usr/local/bin -xvf $HOME/peak/oc-cli.tar.gz && \
 
 COPY Pipfile Pipfile.lock $HOME/peak/
 
-## Grab CI scripts from single-source-of-truth
-RUN mkdir -p $HOME/peak/operator-tests/trustyai-explainability/ &&\
-    mkdir $HOME/kfdef/ &&\
-    cp -r $HOME/src/trustyai-explainability/tests/setup/odh-*.yaml $HOME/kfdef/ &&\
-    cp -r $HOME/src/trustyai-explainability/tests/setup/*setup $HOME/peak/ &&\
-    cp -r $HOME/src/trustyai-explainability/tests/scripts/installandtest.sh $HOME/peak/
+## Grab CI script from single-source-of-truth, modify for operator usage
+RUN wget -O installandtest.sh "https://raw.githubusercontent.com/trustyai-explainability/trustyai-explainability/refs/heads/main/tests/installandtest.sh" && \
+    sed -i 's/$REPO_NAME != "trustyai-explainability"/$REPO_NAME != "trustyai-service-operator"/g' installandtest.sh && \
+    sed -i 's%trustyai-explainability/pulls/%trustyai-service-operator/pulls/%g' installandtest.sh && \
+    sed -i 's%tarball/service%tarball/operator%g' installandtest.sh && \
+    cp installandtest.sh $HOME/peak
 
 # Install poetry to support the exeuction of trustyai-tests
 RUN curl -sSL https://install.python-poetry.org | python3 -
 ENV PATH="${PATH}:$HOME/.local/bin"
+
+# break cache if the repo has changed
+ADD https://api.github.com/repos/${TRUSTYAI_TESTS_ORG}/${TRUSTYAI_TESTS_REPO}/git/refs/heads/${TRUSTYAI_TESTS_BRANCH} version.json
 RUN cd $HOME/peak && \
-    git clone https://github.com/trustyai-explainability/trustyai-tests.git && \
+    git clone -b ${TRUSTYAI_TESTS_BRANCH} https://github.com/${TRUSTYAI_TESTS_ORG}/${TRUSTYAI_TESTS_REPO}.git && \
     cd trustyai-tests && \
     poetry install
 
-COPY scripts/install.sh $HOME/peak/
 
-RUN chmod -R 777 $HOME/kfdef && \
-    mkdir -p $HOME/.kube && \
+RUN mkdir -p $HOME/.kube && \
     chmod -R 777 $HOME/.kube && \
     chmod -R 777 $HOME/peak && \
     mkdir -p /peak && \

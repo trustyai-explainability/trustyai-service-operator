@@ -11,10 +11,6 @@ PVC_NAME="trustyai-service-pvc"
 SERVICE_NAME_1="trustyai-service"
 SERVICE_NAME_2="trustyai-service-tls"
 
-# Apply the CRD
-kubectl create namespace "$NAMESPACE"
-kubectl apply -f "$CRD_PATH" -n "$NAMESPACE"
-
 log_success() {
     local message=$1
     echo "✅ $message"
@@ -38,6 +34,18 @@ check_resource() {
         log_success "$resource_type: $resource_name found in namespace $namespace"
     fi
 }
+
+gen_cert() {
+    openssl req -x509 -nodes -newkey rsa:2048 -keyout tls.key -days 365 -out tls.crt -subj '/CN=trustyai-service-tls'
+    oc create secret generic trustyai-service-internal  --from-file=./tls.crt --from-file=./tls.key -n "$NAMESPACE"
+    oc create secret generic trustyai-service-tls  --from-file=./tls.crt --from-file=./tls.key -n "$NAMESPACE"
+    rm tls.key tls.crt
+}
+
+# Apply the CRD
+kubectl create namespace "$NAMESPACE"
+gen_cert
+kubectl apply -f "$CRD_PATH" -n "$NAMESPACE"
 
 sleep 10
 

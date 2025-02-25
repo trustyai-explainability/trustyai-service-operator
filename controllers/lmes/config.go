@@ -24,10 +24,13 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes/driver"
 	corev1 "k8s.io/api/core/v1"
 )
 
-var options *serviceOptions = &serviceOptions{
+// set by job_mgr controllerSetup func
+var JobMgrEnabled bool
+var Options *serviceOptions = &serviceOptions{
 	DriverImage:         DefaultDriverImage,
 	PodImage:            DefaultPodImage,
 	PodCheckingInterval: DefaultPodCheckingInterval,
@@ -35,6 +38,9 @@ var options *serviceOptions = &serviceOptions{
 	MaxBatchSize:        DefaultMaxBatchSize,
 	DetectDevice:        DefaultDetectDevice,
 	DefaultBatchSize:    DefaultBatchSize,
+	AllowOnline:         false,
+	AllowCodeExecution:  false,
+	DriverPort:          driver.DefaultPort,
 }
 
 type serviceOptions struct {
@@ -43,13 +49,16 @@ type serviceOptions struct {
 	PodCheckingInterval time.Duration
 	ImagePullPolicy     corev1.PullPolicy
 	MaxBatchSize        int
-	DefaultBatchSize    int
+	DefaultBatchSize    string
 	DetectDevice        bool
+	AllowOnline         bool
+	AllowCodeExecution  bool
+	DriverPort          int
 }
 
 func constructOptionsFromConfigMap(log *logr.Logger, configmap *corev1.ConfigMap) error {
 
-	rv := reflect.ValueOf(options).Elem()
+	rv := reflect.ValueOf(Options).Elem()
 	var msgs []string
 
 	for idx, cap := 0, rv.NumField(); idx < cap; idx++ {

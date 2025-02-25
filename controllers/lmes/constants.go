@@ -25,6 +25,8 @@ import (
 const (
 	DriverPath                 = "/bin/driver"
 	DestDriverPath             = "/opt/app-root/src/bin/driver"
+	OutputPath                 = "/opt/app-root/src/output"
+	HuggingFaceHomePath        = "/opt/app-root/src/hf_home"
 	PodImageKey                = "lmes-pod-image"
 	DriverImageKey             = "lmes-driver-image"
 	PodCheckingIntervalKey     = "lmes-pod-checking-interval"
@@ -32,12 +34,15 @@ const (
 	MaxBatchSizeKey            = "lmes-max-batch-size"
 	DefaultBatchSizeKey        = "lmes-default-batch-size"
 	DetectDeviceKey            = "lmes-detect-device"
+	AllowOnline                = "lmes-allow-online"
+	AllowCodeExecution         = "lmes-allow-code-execution"
+	DriverPort                 = "lmes-driver-port"
 	DefaultPodImage            = "quay.io/trustyai/ta-lmes-job:latest"
 	DefaultDriverImage         = "quay.io/trustyai/ta-lmes-driver:latest"
 	DefaultPodCheckingInterval = time.Second * 10
 	DefaultImagePullPolicy     = corev1.PullAlways
 	DefaultMaxBatchSize        = 24
-	DefaultBatchSize           = 8
+	DefaultBatchSize           = "1"
 	DefaultDetectDevice        = true
 	ServiceName                = "LMES"
 )
