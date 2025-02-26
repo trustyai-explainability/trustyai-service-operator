@@ -37,8 +37,8 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 )
 
-func createGuardrailsOrchestrator(ctx context.Context, orchestratorConfigMap string) error {
-	typedNamespacedName := types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}
+func createGuardrailsOrchestrator(ctx context.Context, orchestratorConfigMap string, name string, namespace string) error {
+	typedNamespacedName := types.NamespacedName{Name: name, Namespace: namespace}
 	err := k8sClient.Get(ctx, typedNamespacedName, &gorchv1alpha1.GuardrailsOrchestrator{})
 	if err != nil && errors.IsNotFound(err) {
 		gorch := &gorchv1alpha1.GuardrailsOrchestrator{
@@ -102,8 +102,8 @@ func createGuardrailsOrchestratorOtelExporter(ctx context.Context, orchestratorC
 	return err
 }
 
-func deleteGuardrailsOrchestrator(ctx context.Context, namespace string) error {
-	typedNamespacedName := types.NamespacedName{Name: orchestratorName, Namespace: namespace}
+func deleteGuardrailsOrchestrator(ctx context.Context, name string, namespace string) error {
+	typedNamespacedName := types.NamespacedName{Name: name, Namespace: namespace}
 	err := k8sClient.Get(ctx, typedNamespacedName, &gorchv1alpha1.GuardrailsOrchestrator{})
 	if err == nil {
 		gorch := &gorchv1alpha1.GuardrailsOrchestrator{
@@ -130,7 +130,7 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 		By("Creating a custom resource for the GuardrailsOrchestrator")
 		ctx := context.Background()
 		typedNamespacedName := types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}
-		err := createGuardrailsOrchestrator(ctx, orchestratorName+"-config")
+		err := createGuardrailsOrchestrator(ctx, orchestratorName+"-config", orchestratorName, namespaceName)
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Checking if the custom resource was successfully created")
@@ -195,7 +195,7 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 		}, time.Second*10, time.Millisecond*10).Should(Succeed())
 
 		By("Deleting the custom resource for the GuardrailsOrchestrator")
-		err = deleteGuardrailsOrchestrator(ctx, namespaceName)
+		err = deleteGuardrailsOrchestrator(ctx, orchestratorName, namespaceName)
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Deleting the TrustyAI configmap")
@@ -297,7 +297,7 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 		}, time.Second*10, time.Millisecond*10).Should(Succeed())
 
 		By("Deleting the custom resource for the GuardrailsOrchestrator")
-		err = deleteGuardrailsOrchestrator(ctx, namespaceName)
+		err = deleteGuardrailsOrchestrator(ctx, orchestratorName, namespaceName)
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Deleting the orchestrator configmap")
@@ -395,7 +395,7 @@ func testCreateDeleteGuardrailsOrchestratorOtelExporter(namespaceName string) {
 		}, time.Second*10, time.Millisecond*10).Should(Succeed())
 
 		By("Deleting the custom resource for the GuardrailsOrchestrator")
-		err = deleteGuardrailsOrchestrator(ctx, namespaceName)
+		err = deleteGuardrailsOrchestrator(ctx, orchestratorName, namespaceName)
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Deleting the orchestrator configmap")
@@ -408,6 +408,355 @@ func testCreateDeleteGuardrailsOrchestratorOtelExporter(namespaceName string) {
 
 		By("Reconciling the custom resource that was deleted")
 		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typedNamespacedName})
+		Expect(err).ToNot(HaveOccurred())
+	})
+}
+
+func testCreateTwoGuardrailsOrchestratorsInSameNamespace(namespaceName string) {
+	It("Should successfully reconcile two custom resources for the GuardrailsOrchestrator in the same namespace", func() {
+		By("Creating the first custom resource for the GuardrailsOrchestrator")
+		ctx := context.Background()
+		firstOrchestratorName := "first-orchestrator"
+		firstConfigMapName := firstOrchestratorName + "-config"
+		firstTypedNamespacedName := types.NamespacedName{Name: firstOrchestratorName, Namespace: namespaceName}
+
+		firstOrchConfig := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      firstConfigMapName,
+				Namespace: namespaceName,
+			},
+			Data: map[string]string{
+				orchestratorImageKey:  "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
+				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
+			},
+		}
+		err := k8sClient.Create(ctx, firstOrchConfig)
+		if err != nil && !errors.IsAlreadyExists(err) {
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		err = createGuardrailsOrchestrator(ctx, firstConfigMapName, firstOrchestratorName, namespaceName)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Checking if the first custom resource was successfully created")
+		err = k8sClient.Get(ctx, firstTypedNamespacedName, &gorchv1alpha1.GuardrailsOrchestrator{})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Creating the second custom resource for the GuardrailsOrchestrator")
+		secondOrchestratorName := "second-orchestrator"
+		secondConfigMapName := secondOrchestratorName + "-config"
+		secondTypedNamespacedName := types.NamespacedName{Name: secondOrchestratorName, Namespace: namespaceName}
+
+		secondOrchConfig := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secondConfigMapName,
+				Namespace: namespaceName,
+			},
+			Data: map[string]string{
+				orchestratorImageKey:  "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
+				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
+			},
+		}
+		err = k8sClient.Create(ctx, secondOrchConfig)
+		if err != nil && !errors.IsAlreadyExists(err) {
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		err = createGuardrailsOrchestrator(ctx, secondConfigMapName, secondOrchestratorName, namespaceName)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Checking if the second custom resource was successfully created")
+		err = k8sClient.Get(ctx, secondTypedNamespacedName, &gorchv1alpha1.GuardrailsOrchestrator{})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Reconciling the first custom resource")
+		reconciler := &GuardrailsOrchestratorReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: namespaceName,
+		}
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: firstTypedNamespacedName})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Reconciling the second custom resource")
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: secondTypedNamespacedName})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Checking if resources for the first orchestrator were successfully created")
+		Eventually(func() error {
+			firstDeployment := &appsv1.Deployment{}
+			if err = k8sClient.Get(ctx, types.NamespacedName{Name: firstOrchestratorName, Namespace: namespaceName}, firstDeployment); err != nil {
+				return err
+			}
+			Expect(firstDeployment.Name).Should(Equal(firstOrchestratorName))
+			Expect(firstDeployment.Namespace).Should(Equal(namespaceName))
+
+			firstService := &corev1.Service{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: firstOrchestratorName + "-service", Namespace: namespaceName}, firstService); err != nil {
+				return err
+			}
+			Expect(firstService.Name).Should(Equal(firstOrchestratorName + "-service"))
+
+			return nil
+		}, time.Second*10, time.Millisecond*250).Should(Succeed())
+
+		By("Checking if resources for the second orchestrator were successfully created")
+		Eventually(func() error {
+			secondDeployment := &appsv1.Deployment{}
+			if err = k8sClient.Get(ctx, types.NamespacedName{Name: secondOrchestratorName, Namespace: namespaceName}, secondDeployment); err != nil {
+				return err
+			}
+			Expect(secondDeployment.Name).Should(Equal(secondOrchestratorName))
+			Expect(secondDeployment.Namespace).Should(Equal(namespaceName))
+
+			secondService := &corev1.Service{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secondOrchestratorName + "-service", Namespace: namespaceName}, secondService); err != nil {
+				return err
+			}
+			Expect(secondService.Name).Should(Equal(secondOrchestratorName + "-service"))
+
+			return nil
+		}, time.Second*10, time.Millisecond*250).Should(Succeed())
+
+		By("Verifying routes for both orchestrators")
+		if err := routev1.AddToScheme(scheme.Scheme); err != nil {
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		Eventually(func() error {
+			route1 := &routev1.Route{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: firstOrchestratorName + "-http", Namespace: namespaceName}, route1); err != nil {
+				return err
+			}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: firstOrchestratorName + "-health", Namespace: namespaceName}, route1); err != nil {
+				return err
+			}
+
+			route2 := &routev1.Route{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secondOrchestratorName + "-http", Namespace: namespaceName}, route2); err != nil {
+				return err
+			}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secondOrchestratorName + "-health", Namespace: namespaceName}, route2); err != nil {
+				return err
+			}
+			return nil
+		}, time.Second*10, time.Millisecond*250).Should(Succeed())
+
+		By("Cleaning up the first custom resource and its resources")
+		err = deleteGuardrailsOrchestrator(ctx, firstOrchestratorName, namespaceName)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Cleaning up the second custom resource and its resources")
+		err = deleteGuardrailsOrchestrator(ctx, secondOrchestratorName, namespaceName)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Deleting the first orchestrator configmap")
+		err = k8sClient.Delete(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: firstConfigMapName, Namespace: namespaceName}})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Deleting the second orchestrator configmap")
+		err = k8sClient.Delete(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: secondConfigMapName, Namespace: namespaceName}})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Deleting the TrustyAI configmap")
+		err = k8sClient.Delete(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: constants.ConfigMap, Namespace: namespaceName}})
+		Expect(err).ToNot(HaveOccurred())
+	})
+}
+
+func testCreateTwoGuardrailsOrchestratorsInDifferentNamespaces(firstNamespace string, secondNamespace string) {
+	It("Should successfully reconcile two custom resources for the GuardrailsOrchestrator in different namespaces", func() {
+		By("Creating a second namespace")
+		secondNamespaceObj := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: secondNamespace,
+			},
+		}
+		err := k8sClient.Create(context.Background(), secondNamespaceObj)
+		if err != nil && !errors.IsAlreadyExists(err) {
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		By("Creating TrustyAI ConfigMap in both namespaces")
+		ctx := context.Background()
+
+		// Create TrustyAI ConfigMap in first namespace (if not exists)
+		firstTrustyConfigMap := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      constants.ConfigMap,
+				Namespace: firstNamespace,
+			},
+			Data: map[string]string{
+				orchestratorImageKey:  "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
+				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
+			},
+		}
+		err = k8sClient.Create(ctx, firstTrustyConfigMap)
+		if err != nil && !errors.IsAlreadyExists(err) {
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		secondTrustyConfigMap := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      constants.ConfigMap,
+				Namespace: secondNamespace,
+			},
+			Data: map[string]string{
+				orchestratorImageKey:  "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
+				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
+			},
+		}
+		err = k8sClient.Create(ctx, secondTrustyConfigMap)
+		if err != nil && !errors.IsAlreadyExists(err) {
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		By("Creating the first orchestrator in the first namespace")
+		firstOrchConfigName := orchestratorName + "-config-ns1"
+
+		firstOrchConfig := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      firstOrchConfigName,
+				Namespace: firstNamespace,
+			},
+			Data: map[string]string{
+				orchestratorImageKey:  "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
+				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
+			},
+		}
+		err = k8sClient.Create(ctx, firstOrchConfig)
+		if err != nil && !errors.IsAlreadyExists(err) {
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		typedNamespacedName1 := types.NamespacedName{Name: orchestratorName, Namespace: firstNamespace}
+		err = createGuardrailsOrchestrator(ctx, firstOrchConfigName, orchestratorName, firstNamespace)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Creating the second orchestrator in the second namespace")
+		secondOrchConfigName := orchestratorName + "-config-ns2"
+
+		secondOrchConfig := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secondOrchConfigName,
+				Namespace: secondNamespace,
+			},
+			Data: map[string]string{
+				orchestratorImageKey:  "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
+				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
+			},
+		}
+		err = k8sClient.Create(ctx, secondOrchConfig)
+		if err != nil && !errors.IsAlreadyExists(err) {
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		typedNamespacedName2 := types.NamespacedName{Name: orchestratorName, Namespace: secondNamespace}
+		err = createGuardrailsOrchestrator(ctx, secondOrchConfigName, orchestratorName, secondNamespace)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Reconciling the first orchestrator in namespace 1")
+		firstReconciler := &GuardrailsOrchestratorReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: firstNamespace,
+		}
+		_, err = firstReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typedNamespacedName1})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Reconciling the second orchestrator in namespace 2")
+		secondReconciler := &GuardrailsOrchestratorReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: secondNamespace,
+		}
+		_, err = secondReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typedNamespacedName2})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Verifying the first orchestrator's resources in namespace 1")
+		Eventually(func() error {
+			firstDeployment := &appsv1.Deployment{}
+			if err = k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName, Namespace: firstNamespace}, firstDeployment); err != nil {
+				return err
+			}
+			Expect(firstDeployment.Namespace).Should(Equal(firstNamespace))
+
+			firstService := &corev1.Service{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-service", Namespace: firstNamespace}, firstService); err != nil {
+				return err
+			}
+			Expect(firstService.Namespace).Should(Equal(firstNamespace))
+
+			return nil
+		}, time.Second*10, time.Millisecond*250).Should(Succeed())
+
+		By("Verifying the second orchestrator's resources in namespace 2")
+		Eventually(func() error {
+			secondDeployment := &appsv1.Deployment{}
+			if err = k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName, Namespace: secondNamespace}, secondDeployment); err != nil {
+				return err
+			}
+			Expect(secondDeployment.Namespace).Should(Equal(secondNamespace))
+
+			secondService := &corev1.Service{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-service", Namespace: secondNamespace}, secondService); err != nil {
+				return err
+			}
+			Expect(secondService.Namespace).Should(Equal(secondNamespace))
+
+			return nil
+		}, time.Second*10, time.Millisecond*250).Should(Succeed())
+
+		By("Cleaning up orchestrator in namespace 1")
+		err = deleteGuardrailsOrchestrator(ctx, orchestratorName, firstNamespace)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Cleaning up orchestrator in namespace 2")
+		err = deleteGuardrailsOrchestrator(ctx, orchestratorName, secondNamespace)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Cleaning up ConfigMaps in both namespaces")
+		err = k8sClient.Delete(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: firstOrchConfigName, Namespace: firstNamespace}})
+		Expect(err).ToNot(HaveOccurred())
+
+		err = k8sClient.Delete(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: secondOrchConfigName, Namespace: secondNamespace}})
+		Expect(err).ToNot(HaveOccurred())
+
+		err = k8sClient.Delete(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: constants.ConfigMap, Namespace: firstNamespace}})
+		Expect(err).ToNot(HaveOccurred())
+
+		err = k8sClient.Delete(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: constants.ConfigMap, Namespace: secondNamespace}})
 		Expect(err).ToNot(HaveOccurred())
 	})
 }
@@ -460,5 +809,7 @@ var _ = Describe("GuardrailsOrchestrator Controller", func() {
 		testCreateDeleteGuardrailsOrchestrator(namespaceName)
 		testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName)
 		testCreateDeleteGuardrailsOrchestratorOtelExporter(namespaceName)
+		testCreateTwoGuardrailsOrchestratorsInSameNamespace(namespaceName)
+		testCreateTwoGuardrailsOrchestratorsInDifferentNamespaces(namespaceName, secondNamespaceName)
 	})
 })
