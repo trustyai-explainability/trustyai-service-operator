@@ -51,6 +51,7 @@ var ctx context.Context
 var cancel context.CancelFunc
 
 const namespaceName = "test"
+const secondNamespaceName = "second-test"
 
 func getContainers(containerName string, containers []corev1.Container) *corev1.Container {
 	for _, container := range containers {
