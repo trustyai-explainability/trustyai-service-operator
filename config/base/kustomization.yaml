@@ -33,6 +33,6 @@ replacements:
       - select:
           group: apps
           kind: Deployment
-          name: controller-manager
+          name: trustyai-service-operator-controller-manager
         fieldPaths:
           - spec.template.spec.containers.0.image
