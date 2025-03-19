@@ -34,7 +34,7 @@ spec:
             - --leader-elect
             - --enable-services
             - "TAS,LMES,GORCH"
-          image: "quay.io/trustyai/trustyai-service-operator:latest"
+          image: $(trustyaiOperatorImage)
           name: manager
           securityContext:
             runAsNonRoot: true
