@@ -1,5 +1,5 @@
 resources:
   - ../../base
 
-patches:
-  - path: image-pull-policy.yaml
+patchesStrategicMerge:
+  - image-pull-policy.yaml
