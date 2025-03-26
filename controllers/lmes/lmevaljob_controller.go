@@ -818,6 +818,7 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 			Value: "True",
 		},
 	}
+
 	if job.Spec.AllowCodeExecution != nil && *job.Spec.AllowCodeExecution {
 		// Disable remote code execution by default
 
@@ -1174,34 +1175,44 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 		return nil
 	}
 
-	cmds := make([]string, 0, 10)
-	cmds = append(cmds, "python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output")
-	// --model
-	cmds = append(cmds, "--model", job.Spec.Model)
+	var cmd strings.Builder
+	cmd.WriteString("python -m lm_eval ")
+	cmd.WriteString("--output_path /opt/app-root/src/output ")
+	cmd.WriteString("--model " + job.Spec.Model + " ")
+
 	// --model_args
 	if job.Spec.ModelArgs != nil {
-		cmds = append(cmds, "--model_args", argsToString(job.Spec.ModelArgs))
+		cmd.WriteString("--model_args " + argsToString(job.Spec.ModelArgs) + " ")
 	}
+
+	combinedTasks := strings.Join(concatTasks(job.Spec.TaskList), ",")
+
 	// --tasks
-	cmds = append(cmds, "--tasks", strings.Join(concatTasks(job.Spec.TaskList), ","))
+	cmd.WriteString("--tasks " + combinedTasks + " ")
+
 	// --include
-	cmds = append(cmds, "--include_path", driver.DefaultTaskRecipesPath)
+	cmd.WriteString("--include_path " + driver.DefaultTaskRecipesPath + " ")
+
 	// --num_fewshot
 	if job.Spec.NumFewShot != nil {
-		cmds = append(cmds, "--num_fewshot", fmt.Sprintf("%d", *job.Spec.NumFewShot))
+		cmd.WriteString("--num_fewshot " + fmt.Sprintf("%d", *job.Spec.NumFewShot) + " ")
 	}
+
 	// --limit
 	if job.Spec.Limit != "" {
-		cmds = append(cmds, "--limit", job.Spec.Limit)
+		cmd.WriteString("--limit " + job.Spec.Limit + " ")
 	}
+
 	// --gen_kwargs
 	if job.Spec.GenArgs != nil {
-		cmds = append(cmds, "--gen_kwargs", argsToString(job.Spec.GenArgs))
+		cmd.WriteString("--gen_kwargs " + argsToString(job.Spec.GenArgs) + " ")
 	}
+
 	// --log_samples
 	if job.Spec.LogSamples != nil && *job.Spec.LogSamples {
-		cmds = append(cmds, "--log_samples")
+		cmd.WriteString("--log_samples ")
 	}
+
 	// --batch_size
 	var batchSize = svcOpts.DefaultBatchSize
 	if job.Spec.BatchSize != nil {
@@ -1209,31 +1220,41 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 		batchSize = validateBatchSize(*job.Spec.BatchSize, svcOpts.MaxBatchSize, log)
 	}
 
-	cmds = append(cmds, "--batch_size", batchSize)
+	cmd.WriteString("--batch_size " + batchSize)
 
-	return []string{"sh", "-ec", strings.Join(cmds, " ")}
+	return []string{"sh", "-ec", cmd.String()}
 }
 
 func concatTasks(tasks lmesv1alpha1.TaskList) []string {
-	if len(tasks.TaskRecipes) == 0 {
-		return tasks.TaskNames
+	var allTasks []string
+
+	// Built-in tasks
+	allTasks = append(allTasks, tasks.TaskNames...)
+
+	// Custom tasks, if present
+	if tasks.HasCustomTasksWithGit() && len(tasks.CustomTasks.TaskNames) > 0 {
+		allTasks = append(allTasks, tasks.CustomTasks.TaskNames...)
 	}
-	recipesName := make([]string, len(tasks.TaskRecipes))
-	for i := range tasks.TaskRecipes {
-		// assign internal used task name
-		recipesName[i] = fmt.Sprintf("%s_%d", driver.TaskRecipePrefix, i)
+
+	// Add task recipes if present
+	if len(tasks.TaskRecipes) > 0 {
+		recipesName := make([]string, len(tasks.TaskRecipes))
+		for i := range tasks.TaskRecipes {
+			// assign internal used task name
+			recipesName[i] = fmt.Sprintf("%s_%d", driver.TaskRecipePrefix, i)
+		}
+		allTasks = append(allTasks, recipesName...)
 	}
-	return append(tasks.TaskNames, recipesName...)
+
+	return allTasks
 }
 
 func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string {
 	if job == nil {
 		return nil
 	}
-	cmds := []string{
-		DestDriverPath,
-		"--output-path", "/opt/app-root/src/output",
-	}
+	cmds := make([]string, 0, 10)
+	cmds = append(cmds, DestDriverPath, "--output-path", "/opt/app-root/src/output")
 
 	if job.Spec.HasOfflineS3() {
 		cmds = append(cmds, "--download-assets-s3")
@@ -1247,8 +1268,28 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 		cmds = append(cmds, "--listen-port", fmt.Sprintf("%d", svcOpts.DriverPort))
 	}
 
-	if svcOpts.DriverPort != 0 && svcOpts.DriverPort != driver.DefaultPort {
-		cmds = append(cmds, "--listen-port", fmt.Sprintf("%d", svcOpts.DriverPort))
+	if job.Spec.AllowOnline != nil && *job.Spec.AllowOnline && svcOpts.AllowOnline {
+		cmds = append(cmds, "--allow-online")
+	}
+
+	if job.Spec.TaskList.HasCustomTasksWithGit() {
+		cmds = append(cmds, "--custom-task-git-url", job.Spec.TaskList.CustomTasks.Source.GitSource.URL)
+
+		if job.Spec.TaskList.CustomTasks.Source.GitSource.Branch != nil {
+			cmds = append(cmds, "--custom-task-git-branch", *job.Spec.TaskList.CustomTasks.Source.GitSource.Branch)
+		}
+
+		if job.Spec.TaskList.CustomTasks.Source.GitSource.Commit != nil {
+			cmds = append(cmds, "--custom-task-git-commit", *job.Spec.TaskList.CustomTasks.Source.GitSource.Commit)
+		}
+
+		if job.Spec.TaskList.CustomTasks.Source.GitSource.Path != "" {
+			cmds = append(cmds, "--custom-task-git-path", job.Spec.TaskList.CustomTasks.Source.GitSource.Path)
+		}
+
+		for _, taskName := range job.Spec.TaskList.CustomTasks.TaskNames {
+			cmds = append(cmds, "--task-name", taskName)
+		}
 	}
 
 	cr_idx := 0
@@ -1286,9 +1327,11 @@ func argsToString(args []lmesv1alpha1.Arg) string {
 		return ""
 	}
 	var equalForms []string
+
 	for _, arg := range args {
 		equalForms = append(equalForms, fmt.Sprintf("%s=%s", arg.Name, arg.Value))
 	}
+
 	return strings.Join(equalForms, ",")
 }
 

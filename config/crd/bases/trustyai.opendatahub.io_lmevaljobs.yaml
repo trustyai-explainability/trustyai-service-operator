@@ -4757,6 +4757,38 @@ spec:
                           type: object
                         type: array
                     type: object
+                  customTasks:
+                    description: CustomTasks is a list of external tasks
+                    properties:
+                      source:
+                        description: Source specifies the source location of custom
+                          tasks
+                        properties:
+                          git:
+                            description: GitSource specifies the git location of external
+                              tasks
+                            properties:
+                              branch:
+                                description: Branch specifies the git branch to use
+                                type: string
+                              commit:
+                                description: Commit specifies the git commit to use
+                                type: string
+                              path:
+                                description: Path specifies the path to the task file
+                                type: string
+                              url:
+                                description: URL specifies the git repository URL
+                                type: string
+                            type: object
+                        type: object
+                      taskNames:
+                        description: TaskNames specifies the names of the external
+                          tasks to use
+                        items:
+                          type: string
+                        type: array
+                    type: object
                   taskNames:
                     description: TaskNames from lm-eval's task list
                     items:

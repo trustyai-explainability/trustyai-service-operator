@@ -159,6 +159,35 @@ type TaskRecipe struct {
 	DemosPoolSize *int `json:"demosPoolSize,omitempty"`
 }
 
+// GitSource specifies the git location of external tasks
+type GitSource struct {
+	// URL specifies the git repository URL
+	URL string `json:"url,omitempty"`
+	// Branch specifies the git branch to use
+	// +optional
+	Branch *string `json:"branch,omitempty"`
+	// Commit specifies the git commit to use
+	// +optional
+	Commit *string `json:"commit,omitempty"`
+	// Path specifies the path to the task file
+	// +optional
+	Path string `json:"path,omitempty"`
+}
+
+// CustomTaskSource specifies the source of custom tasks
+type CustomTaskSource struct {
+	// GitSource specifies the git location of external tasks
+	GitSource GitSource `json:"git,omitempty"`
+}
+
+// CustomTasks specifies the custom (external) tasks to use
+type CustomTasks struct {
+	// Source specifies the source location of custom tasks
+	Source CustomTaskSource `json:"source,omitempty"`
+	// TaskNames specifies the names of the external tasks to use
+	TaskNames []string `json:"taskNames,omitempty"`
+}
+
 type TaskList struct {
 	// TaskNames from lm-eval's task list
 	TaskNames []string `json:"taskNames,omitempty"`
@@ -166,6 +195,16 @@ type TaskList struct {
 	TaskRecipes []TaskRecipe `json:"taskRecipes,omitempty"`
 	// Custom Unitxt artifacts that can be used in a TaskRecipe
 	CustomArtifacts *CustomArtifacts `json:"custom,omitempty"`
+	// CustomTasks is a list of external tasks
+	CustomTasks *CustomTasks `json:"customTasks,omitempty"`
+}
+
+func (t *TaskList) HasCustomTasks() bool {
+	return t.CustomTasks != nil
+}
+
+func (t *TaskList) HasCustomTasksWithGit() bool {
+	return t.CustomTasks != nil && t.CustomTasks.Source.GitSource.URL != ""
 }
 
 // Use the tp_idx and sp_idx to point to the corresponding custom template

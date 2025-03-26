@@ -54,6 +54,7 @@ var (
 	customCards         strArrayArg
 	customTemplates     strArrayArg
 	customSystemPrompts strArrayArg
+	taskNames           strArrayArg
 	copy                = flag.String("copy", "", "copy this binary to specified destination path")
 	getStatus           = flag.Bool("get-status", false, "Get current status")
 	shutdown            = flag.Bool("shutdown", false, "Shutdown the driver")
@@ -61,6 +62,11 @@ var (
 	detectDevice        = flag.Bool("detect-device", false, "detect available device(s), CUDA or CPU")
 	commPort            = flag.Int("listen-port", driver.DefaultPort, "driver serves APIs on the port")
 	downloadAssetsS3    = flag.Bool("download-assets-s3", false, "Download assets from S3")
+	customTaskGitURL    = flag.String("custom-task-git-url", "", "Git repository URL for custom tasks")
+	customTaskGitBranch = flag.String("custom-task-git-branch", "", "Git repository branch for custom tasks")
+	customTaskGitCommit = flag.String("custom-task-git-commit", "", "Git commit for custom tasks")
+	customTaskGitPath   = flag.String("custom-task-git-path", "", "Custom task path")
+	allowOnline         = flag.Bool("allow-online", false, "Allow LMEval online access")
 	driverLog           = ctrl.Log.WithName("driver")
 )
 
@@ -69,6 +75,7 @@ func init() {
 	flag.Var(&customCards, "custom-card", "A JSON string represents a custom card")
 	flag.Var(&customTemplates, "custom-template", "A JSON string represents a custom template")
 	flag.Var(&customSystemPrompts, "custom-prompt", "A string represents a custom system_prompt")
+	flag.Var(&taskNames, "task-name", "A task name for custom tasks")
 }
 
 func main() {
@@ -111,17 +118,23 @@ func main() {
 	}
 
 	driverOpt := driver.DriverOption{
-		Context:            ctx,
-		OutputPath:         *outputPath,
-		DetectDevice:       *detectDevice,
-		Logger:             driverLog,
-		TaskRecipes:        taskRecipes,
-		CustomCards:        customCards,
-		CustomTemplates:    customTemplates,
-		CustomSystemPrompt: customSystemPrompts,
-		Args:               args,
-		CommPort:           *commPort,
-		DownloadAssetsS3:   *downloadAssetsS3,
+		Context:             ctx,
+		OutputPath:          *outputPath,
+		DetectDevice:        *detectDevice,
+		Logger:              driverLog,
+		TaskRecipes:         taskRecipes,
+		CustomCards:         customCards,
+		CustomTemplates:     customTemplates,
+		CustomSystemPrompt:  customSystemPrompts,
+		Args:                args,
+		CommPort:            *commPort,
+		DownloadAssetsS3:    *downloadAssetsS3,
+		CustomTaskGitURL:    *customTaskGitURL,
+		CustomTaskGitBranch: *customTaskGitBranch,
+		CustomTaskGitCommit: *customTaskGitCommit,
+		CustomTaskGitPath:   *customTaskGitPath,
+		TaskNames:           taskNames,
+		AllowOnline:         *allowOnline,
 	}
 
 	driver, err := driver.NewDriver(&driverOpt)
