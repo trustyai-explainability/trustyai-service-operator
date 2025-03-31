@@ -1226,27 +1226,16 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 }
 
 func concatTasks(tasks lmesv1alpha1.TaskList) []string {
-	var allTasks []string
-
-	// Built-in tasks
-	allTasks = append(allTasks, tasks.TaskNames...)
-
-	// Custom tasks, if present
-	if tasks.HasCustomTasksWithGit() && len(tasks.CustomTasks.TaskNames) > 0 {
-		allTasks = append(allTasks, tasks.CustomTasks.TaskNames...)
+	if len(tasks.TaskRecipes) == 0 {
+		return tasks.TaskNames
+	}
+	recipesName := make([]string, len(tasks.TaskRecipes))
+	for i := range tasks.TaskRecipes {
+		// assign internal used task name
+		recipesName[i] = fmt.Sprintf("%s_%d", driver.TaskRecipePrefix, i)
 	}
 
-	// Add task recipes if present
-	if len(tasks.TaskRecipes) > 0 {
-		recipesName := make([]string, len(tasks.TaskRecipes))
-		for i := range tasks.TaskRecipes {
-			// assign internal used task name
-			recipesName[i] = fmt.Sprintf("%s_%d", driver.TaskRecipePrefix, i)
-		}
-		allTasks = append(allTasks, recipesName...)
-	}
-
-	return allTasks
+	return append(tasks.TaskNames, recipesName...)
 }
 
 func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string {
@@ -1287,7 +1276,7 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 			cmds = append(cmds, "--custom-task-git-path", job.Spec.TaskList.CustomTasks.Source.GitSource.Path)
 		}
 
-		for _, taskName := range job.Spec.TaskList.CustomTasks.TaskNames {
+		for _, taskName := range job.Spec.TaskList.TaskNames {
 			cmds = append(cmds, "--task-name", taskName)
 		}
 	}

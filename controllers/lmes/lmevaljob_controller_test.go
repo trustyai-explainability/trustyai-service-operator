@@ -3284,6 +3284,7 @@ func Test_CustomTasksGitSource(t *testing.T) {
 				Spec: lmesv1alpha1.LMEvalJobSpec{
 					Model: "test-model",
 					TaskList: lmesv1alpha1.TaskList{
+						TaskNames: tc.taskNames,
 						CustomTasks: &lmesv1alpha1.CustomTasks{
 							Source: lmesv1alpha1.CustomTaskSource{
 								GitSource: lmesv1alpha1.GitSource{
@@ -3293,7 +3294,6 @@ func Test_CustomTasksGitSource(t *testing.T) {
 									Path:   tc.customTaskGitPath,
 								},
 							},
-							TaskNames: tc.taskNames,
 						},
 					},
 				},
@@ -3375,6 +3375,7 @@ func Test_CustomTasksGitSourceOfflineMode(t *testing.T) {
 			},
 			AllowOnline: &allowOnline,
 			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"custom_task1", "custom_task2"},
 				CustomTasks: &lmesv1alpha1.CustomTasks{
 					Source: lmesv1alpha1.CustomTaskSource{
 						GitSource: lmesv1alpha1.GitSource{
@@ -3382,7 +3383,6 @@ func Test_CustomTasksGitSourceOfflineMode(t *testing.T) {
 							Path: "tasks",
 						},
 					},
-					TaskNames: []string{"custom_task1", "custom_task2"},
 				},
 			},
 		},
@@ -3442,10 +3442,10 @@ func Test_CustomTasksGitSourceOfflineMode(t *testing.T) {
 		t.Error("Expected task name custom_task2 in command args not found")
 	}
 
-	if !ContainsStr(job.Spec.TaskList.CustomTasks.TaskNames, "custom_task1") {
+	if !ContainsStr(job.Spec.TaskList.TaskNames, "custom_task1") {
 		t.Error("Expected custom task name custom_task1 in job spec not found")
 	}
-	if !ContainsStr(job.Spec.TaskList.CustomTasks.TaskNames, "custom_task2") {
+	if !ContainsStr(job.Spec.TaskList.TaskNames, "custom_task2") {
 		t.Error("Expected custom task name custom_task2 in job spec not found")
 	}
 }

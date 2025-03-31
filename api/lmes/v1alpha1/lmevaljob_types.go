@@ -184,12 +184,10 @@ type CustomTaskSource struct {
 type CustomTasks struct {
 	// Source specifies the source location of custom tasks
 	Source CustomTaskSource `json:"source,omitempty"`
-	// TaskNames specifies the names of the external tasks to use
-	TaskNames []string `json:"taskNames,omitempty"`
 }
 
 type TaskList struct {
-	// TaskNames from lm-eval's task list
+	// TaskNames from lm-eval's task list and/or from custom tasks if CustomTasks is defined
 	TaskNames []string `json:"taskNames,omitempty"`
 	// Task Recipes specifically for Unitxt
 	TaskRecipes []TaskRecipe `json:"taskRecipes,omitempty"`
@@ -200,11 +198,11 @@ type TaskList struct {
 }
 
 func (t *TaskList) HasCustomTasks() bool {
-	return t.CustomTasks != nil
+	return t.CustomTasks != nil && len(t.TaskNames) > 0
 }
 
 func (t *TaskList) HasCustomTasksWithGit() bool {
-	return t.CustomTasks != nil && t.CustomTasks.Source.GitSource.URL != ""
+	return t.CustomTasks != nil && t.CustomTasks.Source.GitSource.URL != "" && len(t.TaskNames) > 0
 }
 
 // Use the tp_idx and sp_idx to point to the corresponding custom template

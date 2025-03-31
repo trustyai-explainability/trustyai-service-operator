@@ -586,7 +586,7 @@ func (d *driverImpl) fetchGitCustomTasks() error {
 		return nil
 	}
 
-	// If online is disable, also disable fetching external tasks
+	// If online is disabled, also disable fetching external tasks
 	if !d.Option.AllowOnline {
 		return fmt.Errorf("fetching external git tasks is not allowed when allowOnline is false")
 	}

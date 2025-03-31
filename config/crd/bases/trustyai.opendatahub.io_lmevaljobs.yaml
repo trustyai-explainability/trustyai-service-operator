@@ -4782,15 +4782,10 @@ spec:
                                 type: string
                             type: object
                         type: object
-                      taskNames:
-                        description: TaskNames specifies the names of the external
-                          tasks to use
-                        items:
-                          type: string
-                        type: array
                     type: object
                   taskNames:
-                    description: TaskNames from lm-eval's task list
+                    description: TaskNames from lm-eval's task list and/or from custom
+                      tasks if CustomTasks is defined
                     items:
                       type: string
                     type: array
