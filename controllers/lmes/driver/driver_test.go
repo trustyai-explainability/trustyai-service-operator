@@ -316,16 +316,14 @@ func Test_CustomCards(t *testing.T) {
 		CatalogPath:     info.catalogPath,
 		TaskRecipes: []string{
 			"card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
-			"card=cards.unitxt.card1,template=templates.tp_0,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
+			"card=cards.unitxt.card1,template=templates.mytemplate.tp_0,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		},
-		CustomCards: []string{
-			`{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "deutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
-		},
-		CustomTemplates: []string{
-			`tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
-		},
-		CustomSystemPrompt: []string{
-			"sp_0|this is a custom system prompt",
+		CustomArtifacts: []CustomArtifact{
+			{Type: Card, Name: "custom_0", Value: `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "deutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`},
+			{Type: Template, Name: "mytemplate.tp_0", Value: `{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`},
+			{Type: SystemPrompt, Name: "sp_0", Value: "this is a custom system prompt"},
+			{Type: Metric, Name: "llm_as_judge.rating.mistral_7b_instruct_v0_2_huggingface_template_mt_bench_single_turn", Value: `{"__type__": "llm_as_judge", "inference_model": { "__type__": "hf_pipeline_based_inference_engine", "model_name": "mistralai/Mistral-7B-Instruct-v0.2", "max_new_tokens": 256, "use_fp16": true }, "template": "templates.response_assessment.rating.mt_bench_single_turn", "task": "rating.single_turn", "format": "formats.models.mistral.instruction", "main_score": "mistral_7b_instruct_v0_2_huggingface_template_mt_bench_single_turn"}`},
+			{Type: Task, Name: "generation", Value: `{ "__type__": "task", "input_fields": { "input": "str", "type_of_input": "str", "type_of_output": "str" }, "reference_fields": { "output": "str" }, "prediction_type": "str", "metrics": [ "metrics.normalized_sacrebleu" ], "augmentable_inputs": [ "input" ], "defaults": { "type_of_output": "Text" } }`},
 		},
 		Args:     []string{"sh", "-ec", "sleep 1; echo 'testing progress: 100%|' >&2; sleep 3"},
 		CommPort: info.port,
@@ -351,7 +349,7 @@ func Test_CustomCards(t *testing.T) {
 	tr1, err := os.ReadFile(filepath.Join(info.taskPath, "tr_1.yaml"))
 	assert.Nil(t, err)
 	assert.Equal(t,
-		"task: tr_1\ninclude: unitxt\nrecipe: card=cards.unitxt.card1,template=templates.tp_0,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"task: tr_1\ninclude: unitxt\nrecipe: card=cards.unitxt.card1,template=templates.mytemplate.tp_0,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		string(tr1),
 	)
 	custom0, err := os.ReadFile(filepath.Join(info.catalogPath, "cards", "custom_0.json"))
@@ -360,7 +358,7 @@ func Test_CustomCards(t *testing.T) {
 		`{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "deutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		string(custom0),
 	)
-	template0, err := os.ReadFile(filepath.Join(info.catalogPath, "templates", "tp_0.json"))
+	template0, err := os.ReadFile(filepath.Join(info.catalogPath, "templates", "mytemplate", "tp_0.json"))
 	assert.Nil(t, err)
 	assert.Equal(t,
 		`{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
@@ -371,6 +369,20 @@ func Test_CustomCards(t *testing.T) {
 	assert.Equal(t,
 		`{ "__type__": "textual_system_prompt", "text": "this is a custom system prompt" }`,
 		string(prompt0),
+	)
+	// multi-level custom metric
+	metric, err := os.ReadFile(filepath.Join(info.catalogPath, "metrics", "llm_as_judge", "rating", "mistral_7b_instruct_v0_2_huggingface_template_mt_bench_single_turn.json"))
+	assert.Nil(t, err)
+	assert.Equal(t,
+		`{"__type__": "llm_as_judge", "inference_model": { "__type__": "hf_pipeline_based_inference_engine", "model_name": "mistralai/Mistral-7B-Instruct-v0.2", "max_new_tokens": 256, "use_fp16": true }, "template": "templates.response_assessment.rating.mt_bench_single_turn", "task": "rating.single_turn", "format": "formats.models.mistral.instruction", "main_score": "mistral_7b_instruct_v0_2_huggingface_template_mt_bench_single_turn"}`,
+		string(metric),
+	)
+	//task
+	task, err := os.ReadFile(filepath.Join(info.catalogPath, "tasks", "generation.json"))
+	assert.Nil(t, err)
+	assert.Equal(t,
+		`{ "__type__": "task", "input_fields": { "input": "str", "type_of_input": "str", "type_of_output": "str" }, "reference_fields": { "output": "str" }, "prediction_type": "str", "metrics": [ "metrics.normalized_sacrebleu" ], "augmentable_inputs": [ "input" ], "defaults": { "type_of_output": "Text" } }`,
+		string(task),
 	)
 }
 

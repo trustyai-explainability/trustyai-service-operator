@@ -51,9 +51,7 @@ func (t *strArrayArg) String() string {
 
 var (
 	taskRecipes         strArrayArg
-	customCards         strArrayArg
-	customTemplates     strArrayArg
-	customSystemPrompts strArrayArg
+	customArtifactArgs  strArrayArg
 	taskNames           strArrayArg
 	copy                = flag.String("copy", "", "copy this binary to specified destination path")
 	getStatus           = flag.Bool("get-status", false, "Get current status")
@@ -72,9 +70,7 @@ var (
 
 func init() {
 	flag.Var(&taskRecipes, "task-recipe", "task recipe")
-	flag.Var(&customCards, "custom-card", "A JSON string represents a custom card")
-	flag.Var(&customTemplates, "custom-template", "A JSON string represents a custom template")
-	flag.Var(&customSystemPrompts, "custom-prompt", "A string represents a custom system_prompt")
+	flag.Var(&customArtifactArgs, "custom-artifact", "A string contains an artifact's type, name and value. Use | as separator")
 	flag.Var(&taskNames, "task-name", "A task name for custom tasks")
 }
 
@@ -117,15 +113,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	customArtifacts := make([]driver.CustomArtifact, 0, len(customArtifactArgs))
+	for _, artifact := range customArtifactArgs {
+		values := strings.SplitN(artifact, "|", 3)
+		customArtifacts = append(customArtifacts, driver.CustomArtifact{Type: driver.ArtifactType(values[0]), Name: values[1], Value: values[2]})
+	}
+
 	driverOpt := driver.DriverOption{
 		Context:             ctx,
 		OutputPath:          *outputPath,
 		DetectDevice:        *detectDevice,
 		Logger:              driverLog,
 		TaskRecipes:         taskRecipes,
-		CustomCards:         customCards,
-		CustomTemplates:     customTemplates,
-		CustomSystemPrompt:  customSystemPrompts,
+		CustomArtifacts:     customArtifacts,
 		Args:                args,
 		CommPort:            *commPort,
 		DownloadAssetsS3:    *downloadAssetsS3,

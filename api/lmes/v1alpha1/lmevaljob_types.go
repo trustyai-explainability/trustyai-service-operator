@@ -96,6 +96,32 @@ type SystemPrompt struct {
 	Ref string `json:"ref,omitempty"`
 }
 
+type Metric struct {
+	// Unitxt metric id
+	// +optional
+	Name string `json:"name,omitempty"`
+	// The name of the custom metric in the custom field. Its value is a JSON string
+	// for a custom Unitxt metric. Use the documentation here: https://www.unitxt.ai/en/latest/docs/adding_metric.html#adding-a-new-instance-metric
+	// to compose a custom metric, store it as a JSON file by calling the
+	// add_to_catalog API: https://www.unitxt.ai/en/latest/docs/saving_and_loading_from_catalog.html#adding-assets-to-the-catalog,
+	// and use the JSON content as the value here.
+	// +optional
+	Ref string `json:"ref,omitempty"`
+}
+
+type Task struct {
+	// Unitxt task id
+	// +optional
+	Name string `json:"name,omitempty"`
+	// The name of the custom task in the custom field. Its value is a JSON string
+	// for a custom Unitxt task. Use the documentation here: https://www.unitxt.ai/en/latest/docs/adding_task.html
+	// to compose a custom task, store it as a JSON file by calling the
+	// add_to_catalog API: https://www.unitxt.ai/en/latest/docs/saving_and_loading_from_catalog.html#adding-assets-to-the-catalog,
+	// and use the JSON content as the value here.
+	// +optional
+	Ref string `json:"ref,omitempty"`
+}
+
 type CustomArtifact struct {
 	// Name of the custom artifact
 	Name string `json:"name"`
@@ -109,8 +135,18 @@ func (c *CustomArtifact) String() string {
 }
 
 type CustomArtifacts struct {
-	Templates     []CustomArtifact `json:"templates,omitempty"`
+	// The Unitxt custom templates
+	// +optional
+	Templates []CustomArtifact `json:"templates,omitempty"`
+	// The Unitxt custom System Prompts
+	// +optional
 	SystemPrompts []CustomArtifact `json:"systemPrompts,omitempty"`
+	// The Unitxt custom metrics
+	// +optional
+	Metrics []CustomArtifact `json:"metrics,omitempty"`
+	// The Unitxt custom tasks
+	// +optional
+	Tasks []CustomArtifact `json:"tasks,omitempty"`
 }
 
 func (c *CustomArtifacts) GetTemplates() []CustomArtifact {
@@ -127,6 +163,20 @@ func (c *CustomArtifacts) GetSystemPrompts() []CustomArtifact {
 	return c.SystemPrompts
 }
 
+func (c *CustomArtifacts) GetMetrics() []CustomArtifact {
+	if c == nil {
+		return nil
+	}
+	return c.Metrics
+}
+
+func (c *CustomArtifacts) GetTasks() []CustomArtifact {
+	if c == nil {
+		return nil
+	}
+	return c.Tasks
+}
+
 // Use a task recipe to form a custom task. It maps to the Unitxt Recipe
 // Find details of the Unitxt Recipe here:
 // https://www.unitxt.ai/en/latest/unitxt.standard.html#unitxt.standard.StandardRecipe
@@ -141,10 +191,10 @@ type TaskRecipe struct {
 	SystemPrompt *SystemPrompt `json:"systemPrompt,omitempty"`
 	// The Unitxt Task
 	// +optional
-	Task *string `json:"task,omitempty"`
+	Task *Task `json:"task,omitempty"`
 	// Metrics
 	// +optional
-	Metrics []string `json:"metrics,omitempty"`
+	Metrics []Metric `json:"metrics,omitempty"`
 	// The Unitxt format
 	// +optional
 	Format *string `json:"format,omitempty"`
@@ -205,32 +255,78 @@ func (t *TaskList) HasCustomTasksWithGit() bool {
 	return t.CustomTasks != nil && t.CustomTasks.Source.GitSource.URL != "" && len(t.TaskNames) > 0
 }
 
+func (m *Metric) String() string {
+	if m == nil {
+		return ""
+	}
+	if m.Name != "" {
+		return m.Name
+	}
+	if m.Ref != "" {
+		return fmt.Sprintf("metrics.%s", m.Ref)
+	}
+	return ""
+}
+
+func (t *Template) String() string {
+	if t == nil {
+		return ""
+	}
+	if t.Name != "" {
+		return t.Name
+	}
+	if t.Ref != "" {
+		return fmt.Sprintf("templates.%s", t.Ref)
+	}
+	return ""
+}
+
+func (s *SystemPrompt) String() string {
+	if s == nil {
+		return ""
+	}
+	if s.Name != "" {
+		return s.Name
+	}
+	if s.Ref != "" {
+		return fmt.Sprintf("system_prompts.%s", s.Ref)
+	}
+	return ""
+}
+
+func (t *Task) String() string {
+	if t == nil {
+		return ""
+	}
+	if t.Name != "" {
+		return t.Name
+	}
+	if t.Ref != "" {
+		return fmt.Sprintf("tasks.%s", t.Ref)
+	}
+	return ""
+}
+
 // Use the tp_idx and sp_idx to point to the corresponding custom template
 // and custom system_prompt
 func (t *TaskRecipe) String() string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("card=%s", t.Card.Name))
 	if t.Template != nil {
-		if t.Template.Name != "" {
-			b.WriteString(fmt.Sprintf(",template=%s", t.Template.Name))
-		} else {
-			// refer to a custom template. add "templates." prefix
-			b.WriteString(fmt.Sprintf(",template=templates.%s", t.Template.Ref))
-		}
+		b.WriteString(fmt.Sprintf(",template=%s", t.Template.String()))
 	}
 	if t.SystemPrompt != nil {
-		if t.SystemPrompt.Name != "" {
-			b.WriteString(fmt.Sprintf(",system_prompt=%s", t.SystemPrompt.Name))
-		} else {
-			// refer to custom system prompt. add "system_prompts." prefix
-			b.WriteString(fmt.Sprintf(",system_prompt=system_prompts.%s", t.SystemPrompt.Ref))
-		}
+		b.WriteString(fmt.Sprintf(",system_prompt=%s", t.SystemPrompt.String()))
 	}
 	if t.Task != nil {
-		b.WriteString(fmt.Sprintf(",task=%s", *t.Task))
+		b.WriteString(fmt.Sprintf(",task=%s", t.Task.String()))
 	}
 	if len(t.Metrics) > 0 {
-		b.WriteString(fmt.Sprintf(",metrics=[%s]", strings.Join(t.Metrics, ",")))
+		var metrics []string
+		for _, metric := range t.Metrics {
+			metrics = append(metrics, metric.String())
+		}
+		b.WriteString(fmt.Sprintf(",metrics=[%s]", strings.Join(metrics, ",")))
 	}
 	if t.Format != nil {
 		b.WriteString(fmt.Sprintf(",format=%s", *t.Format))
