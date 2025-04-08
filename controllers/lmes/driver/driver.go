@@ -51,22 +51,29 @@ const (
 	CustomCardPrefix       = "custom"
 	ShutdownURI            = "/Shutdown"
 	GetStatusURI           = "/GetStatus"
+	DefaultGitBranch       = "main"
 )
 
 type DriverOption struct {
-	Context            context.Context
-	OutputPath         string
-	DetectDevice       bool
-	TaskRecipesPath    string
-	TaskRecipes        []string
-	CatalogPath        string
-	CustomCards        []string
-	CustomTemplates    []string
-	CustomSystemPrompt []string
-	Logger             logr.Logger
-	Args               []string
-	CommPort           int
-	DownloadAssetsS3   bool
+	Context             context.Context
+	OutputPath          string
+	DetectDevice        bool
+	TaskRecipesPath     string
+	TaskRecipes         []string
+	CatalogPath         string
+	CustomCards         []string
+	CustomTemplates     []string
+	CustomSystemPrompt  []string
+	Logger              logr.Logger
+	Args                []string
+	CommPort            int
+	DownloadAssetsS3    bool
+	CustomTaskGitURL    string
+	CustomTaskGitBranch string
+	CustomTaskGitCommit string
+	CustomTaskGitPath   string
+	TaskNames           []string
+	AllowOnline         bool
 }
 
 type Driver interface {
@@ -332,6 +339,10 @@ func (d *driverImpl) exec() error {
 		return fmt.Errorf("failed to create custom cards: %v", err)
 	}
 
+	if err := d.fetchGitCustomTasks(); err != nil {
+		return fmt.Errorf("failed to set up custom tasks: %v", err)
+	}
+
 	// Copy S3 assets if needed
 	if err := d.downloadS3Assets(); err != nil {
 		return err
@@ -377,9 +388,10 @@ func (d *driverImpl) exec() error {
 	}
 	executor.Stdout = stdout
 	executor.Stderr = mwriter
-	executor.Env = append(os.Environ(),
-		"UNITXT_ALLOW_UNVERIFIED_CODE=True",
-	)
+
+	env := append(os.Environ(), "UNITXT_ALLOW_UNVERIFIED_CODE=True")
+
+	executor.Env = env
 
 	var freeRes = func() {
 		stdin.Close()
@@ -508,7 +520,7 @@ func (d *driverImpl) prepDir4CustomArtifacts() error {
 	subDirs := []string{"cards", "templates", "system_prompts"}
 	var errs []error
 	for _, dir := range subDirs {
-		errs = append(errs, mkdirIfNotExist(filepath.Join(d.Option.CatalogPath, dir)))
+		errs = append(errs, createDirectory(filepath.Join(d.Option.CatalogPath, dir)))
 	}
 	return errors.Join(errs...)
 }
@@ -557,7 +569,7 @@ func (d *driverImpl) createCustomSystemPrompts() error {
 	return nil
 }
 
-func mkdirIfNotExist(path string) error {
+func createDirectory(path string) error {
 	fi, err := os.Stat(path)
 	if err == nil && !fi.IsDir() {
 		return fmt.Errorf("%s is a file. can not create a directory", path)
@@ -565,5 +577,76 @@ func mkdirIfNotExist(path string) error {
 	if os.IsNotExist(err) {
 		return os.MkdirAll(path, 0770)
 	}
+	return nil
+}
+
+func (d *driverImpl) fetchGitCustomTasks() error {
+	// No-op if git url not set
+	if d.Option.CustomTaskGitURL == "" {
+		return nil
+	}
+
+	// If online is disabled, also disable fetching external tasks
+	if !d.Option.AllowOnline {
+		return fmt.Errorf("fetching external git tasks is not allowed when allowOnline is false")
+	}
+
+	repositoryDestination := filepath.Join("/tmp", "custom_tasks")
+	if err := createDirectory(repositoryDestination); err != nil {
+		return err
+	}
+
+	cloneCommand := exec.Command("git", "clone", d.Option.CustomTaskGitURL, repositoryDestination)
+	if output, err := cloneCommand.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to clone git repository: %v, output: %s", err, string(output))
+	}
+
+	clonedDirectory := fmt.Sprintf("--git-dir=%s", filepath.Join(repositoryDestination, ".git"))
+	workTree := fmt.Sprintf("--work-tree=%s", repositoryDestination)
+
+	// Checkout a specific branch, if specified
+	if d.Option.CustomTaskGitBranch != "" {
+		checkoutCommand := exec.Command("git", clonedDirectory, workTree, "checkout", d.Option.CustomTaskGitBranch)
+		if output, err := checkoutCommand.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to checkout branch %s: %v, output: %s",
+				d.Option.CustomTaskGitBranch, err, string(output))
+		}
+	} else {
+		checkoutCmd := exec.Command("git", clonedDirectory, workTree, "checkout", DefaultGitBranch)
+		if output, err := checkoutCmd.CombinedOutput(); err != nil {
+			d.Option.Logger.Info("failed to checkout main branch, using default branch from clone",
+				"error", err, "output", string(output))
+		}
+	}
+
+	// Checkout a specific commit, if specified
+	if d.Option.CustomTaskGitCommit != "" {
+		checkoutCommand := exec.Command("git", clonedDirectory, workTree, "checkout", d.Option.CustomTaskGitCommit)
+		if output, err := checkoutCommand.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to checkout commit %s: %v, output: %s",
+				d.Option.CustomTaskGitCommit, err, string(output))
+		}
+	}
+
+	// Use the specified repository path for copying
+	taskPath := repositoryDestination
+	if d.Option.CustomTaskGitPath != "" {
+		taskPath = filepath.Join(repositoryDestination, d.Option.CustomTaskGitPath)
+		if _, err := os.Stat(taskPath); os.IsNotExist(err) {
+			return fmt.Errorf("specified path '%s' does not exist in the repository", d.Option.CustomTaskGitPath)
+		}
+	}
+
+	// Create destination path for copy
+	if err := createDirectory(d.Option.TaskRecipesPath); err != nil {
+		return err
+	}
+
+	copyCmd := exec.Command("cp", "-r", taskPath+"/.", d.Option.TaskRecipesPath)
+	output, err := copyCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to copy tasks to %s: %v, output: %s", d.Option.TaskRecipesPath, err, string(output))
+	}
+
 	return nil
 }

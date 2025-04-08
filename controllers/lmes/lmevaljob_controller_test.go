@@ -18,15 +18,22 @@ package lmes
 
 import (
 	"context"
+	"fmt"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes/driver"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -3185,4 +3192,278 @@ func Test_OfflineModeWithOutput(t *testing.T) {
 	newPod := CreatePod(svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
+}
+
+func Test_CustomTasksGitSource(t *testing.T) {
+	const namespace = "default"
+
+	// Create service options
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
+	}
+
+	testCases := []struct {
+		name                string
+		customTaskGitURL    string
+		customTaskGitBranch *string
+		customTaskGitCommit *string
+		customTaskGitPath   string
+		taskNames           []string
+		expectedBranch      string
+		expectedCommit      string
+		expectError         bool
+		errorContains       string
+	}{
+		{
+			name:                "Complete git example",
+			customTaskGitURL:    "https://github.com/trustyai-explainability/repo.git",
+			customTaskGitBranch: ptr.To("lmeval-tasks"),
+			customTaskGitCommit: ptr.To("abcdef1234567890abcdef1234567890abcdef12"),
+			customTaskGitPath:   "path/to/tasks",
+			taskNames:           []string{"custom_task1", "custom_task2"},
+			expectedBranch:      "lmeval-tasks",
+			expectedCommit:      "abcdef1234567890abcdef1234567890abcdef12",
+			expectError:         false,
+		},
+		{
+			name:                "Default branch",
+			customTaskGitURL:    "https://github.com/trustyai-explainability/repo.git",
+			customTaskGitBranch: nil,
+			customTaskGitCommit: ptr.To("abcdef1234567890abcdef1234567890abcdef12"),
+			customTaskGitPath:   "path/to/tasks",
+			taskNames:           []string{"custom_task1"},
+			expectedBranch:      "",
+			expectedCommit:      "abcdef1234567890abcdef1234567890abcdef12",
+			expectError:         false,
+		},
+		{
+			name:                "Default commit",
+			customTaskGitURL:    "https://github.com/trustyai-explainability/repo.git",
+			customTaskGitBranch: ptr.To("lmeval-tasks"),
+			customTaskGitCommit: nil,
+			customTaskGitPath:   "path/to/tasks",
+			taskNames:           []string{"custom_task1"},
+			expectedBranch:      "lmeval-tasks",
+			expectedCommit:      "",
+			expectError:         false,
+		},
+		{
+			name:                "Default branch and commit",
+			customTaskGitURL:    "https://github.com/trustyai-explainability/repo.git",
+			customTaskGitBranch: nil,
+			customTaskGitCommit: nil,
+			customTaskGitPath:   "path/to/tasks",
+			taskNames:           []string{"custom_task1"},
+			expectedBranch:      "",
+			expectedCommit:      "",
+			expectError:         false,
+		},
+		{
+			name:                "Short commit hash",
+			customTaskGitURL:    "https://github.com/trustyai-explainability/repo.git",
+			customTaskGitBranch: ptr.To("main"),
+			customTaskGitCommit: ptr.To("abcdef1"),
+			customTaskGitPath:   "path/to/tasks",
+			taskNames:           []string{"custom_task1"},
+			expectedBranch:      "main",
+			expectedCommit:      "abcdef1",
+			expectError:         false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			job := &lmesv1alpha1.LMEvalJob{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-custom-tasks-job",
+					Namespace: namespace,
+				},
+				Spec: lmesv1alpha1.LMEvalJobSpec{
+					Model: "test-model",
+					TaskList: lmesv1alpha1.TaskList{
+						TaskNames: tc.taskNames,
+						CustomTasks: &lmesv1alpha1.CustomTasks{
+							Source: lmesv1alpha1.CustomTaskSource{
+								GitSource: lmesv1alpha1.GitSource{
+									URL:    tc.customTaskGitURL,
+									Branch: tc.customTaskGitBranch,
+									Commit: tc.customTaskGitCommit,
+									Path:   tc.customTaskGitPath,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			pod := CreatePod(svcOpts, job, log)
+
+			require.NotNil(t, pod)
+
+			assert.Equal(t, job.Name, pod.Name)
+
+			found := false
+			for _, container := range pod.Spec.Containers {
+				if container.Name == "main" {
+					cmdLine := strings.Join(container.Command, " ")
+					if strings.Contains(cmdLine, "--custom-task-git-url") {
+						found = true
+					}
+
+					argsLine := strings.Join(container.Args, " ")
+					for _, taskName := range tc.taskNames {
+						assert.Contains(t, argsLine, taskName, "Task name should be included in command args")
+					}
+
+					break
+				}
+			}
+			assert.True(t, found, "Custom task git configuration should be included in container command")
+
+			volumeMountFound := false
+			for _, container := range pod.Spec.Containers {
+				if container.Name == "main" {
+					for _, volumeMount := range container.VolumeMounts {
+						if volumeMount.Name == "shared" {
+							volumeMountFound = true
+							break
+						}
+					}
+					break
+				}
+			}
+			assert.True(t, volumeMountFound, "Container should have a volume mount for git operations")
+		})
+	}
+}
+
+func Test_CustomTasksGitSourceOfflineMode(t *testing.T) {
+	svcOpts := &serviceOptions{
+		PodImage:            "test/pod:latest",
+		DriverImage:         "test/driver:latest",
+		PodCheckingInterval: 5 * time.Second,
+		ImagePullPolicy:     corev1.PullIfNotPresent,
+		DefaultBatchSize:    DefaultBatchSize,
+		MaxBatchSize:        DefaultMaxBatchSize,
+		DetectDevice:        false,
+		AllowOnline:         false, // Offline mode
+		AllowCodeExecution:  false,
+		DriverPort:          driver.DefaultPort,
+	}
+
+	origOptions := Options
+	Options = svcOpts
+	defer func() { Options = origOptions }()
+
+	allowOnline := false
+	job := &lmesv1alpha1.LMEvalJob{
+		TypeMeta: v1.TypeMeta{
+			Kind:       "LMEvalJob",
+			APIVersion: "trustyai.opendatahub.io/v1alpha1",
+		},
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "test-job",
+			Namespace: "test-ns",
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "hf",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "pretrained", Value: "hf/model"},
+			},
+			AllowOnline: &allowOnline,
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"custom_task1", "custom_task2"},
+				CustomTasks: &lmesv1alpha1.CustomTasks{
+					Source: lmesv1alpha1.CustomTaskSource{
+						GitSource: lmesv1alpha1.GitSource{
+							URL:  "https://github.com/trustyai-explainability/custom-tasks.git",
+							Path: "tasks",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	logger := logr.Discard()
+
+	pod := CreatePod(Options, job, logger)
+
+	if pod == nil {
+		t.Fatal("pod should not be nil")
+	}
+
+	mainContainer := getContainer(pod)
+	if mainContainer == nil {
+		t.Fatal("Main container not found")
+	}
+
+	if len(mainContainer.Command) == 0 || mainContainer.Command[0] != DestDriverPath {
+		t.Fatalf("Expected main container command to start with %s, got %v", DestDriverPath, mainContainer.Command)
+	}
+
+	hasGitURL := ContainsStr(mainContainer.Command, "--custom-task-git-url")
+	if !hasGitURL {
+		t.Fatal("Expected --custom-task-git-url parameter not found")
+	}
+
+	expectedOfflineVars := []string{
+		"HF_DATASETS_OFFLINE=1",
+		"HF_HUB_OFFLINE=1",
+		"TRANSFORMERS_OFFLINE=1",
+		"HF_EVALUATE_OFFLINE=1",
+		"UNITXT_USE_ONLY_LOCAL_CATALOGS=True",
+	}
+
+	for _, expectedVar := range expectedOfflineVars {
+		found := false
+		for _, envVar := range mainContainer.Env {
+			if fmt.Sprintf("%s=%s", envVar.Name, envVar.Value) == expectedVar {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected environment variable %s not found", expectedVar)
+		}
+	}
+
+	cmdArgs := strings.Join(mainContainer.Command, " ")
+	if !strings.Contains(cmdArgs, "--custom-task-git-url") {
+		t.Error("Expected git URL in command args not found")
+	}
+	if !strings.Contains(cmdArgs, "--task-name custom_task1") {
+		t.Error("Expected task name custom_task1 in command args not found")
+	}
+	if !strings.Contains(cmdArgs, "--task-name custom_task2") {
+		t.Error("Expected task name custom_task2 in command args not found")
+	}
+
+	if !ContainsStr(job.Spec.TaskList.TaskNames, "custom_task1") {
+		t.Error("Expected custom task name custom_task1 in job spec not found")
+	}
+	if !ContainsStr(job.Spec.TaskList.TaskNames, "custom_task2") {
+		t.Error("Expected custom task name custom_task2 in job spec not found")
+	}
+}
+
+func getContainer(pod *corev1.Pod) *corev1.Container {
+	for i := range pod.Spec.Containers {
+		if pod.Spec.Containers[i].Name == "main" {
+			return &pod.Spec.Containers[i]
+		}
+	}
+	return nil
+}
+
+func ContainsStr(slice []string, str string) bool {
+	for _, s := range slice {
+		if s == str {
+			return true
+		}
+	}
+	return false
 }
