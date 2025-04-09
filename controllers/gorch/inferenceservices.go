@@ -2,6 +2,7 @@ package gorch
 
 import (
 	"context"
+	"fmt"
 
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -13,5 +14,9 @@ func (r *GuardrailsOrchestratorReconciler) checkGeneratorPresent(ctx context.Con
 		return false, err
 	}
 
-	return len(isvcList.Items) > 0, nil
+	if len(isvcList.Items) == 0 {
+		return false, fmt.Errorf("no inference services found in namespace '%s'", namespace)
+	}
+
+	return true, nil
 }

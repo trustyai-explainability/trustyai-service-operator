@@ -2,6 +2,8 @@ package gorch
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
@@ -126,47 +128,137 @@ func (r *GuardrailsOrchestratorReconciler) updateStatus(ctx context.Context, ori
 }
 
 func (r *GuardrailsOrchestratorReconciler) reconcileStatuses(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (ctrl.Result, error) {
-	generatorReady, _ = r.checkGeneratorPresent(ctx, orchestrator.Namespace)
-	deploymentReady, _ = r.checkDeploymentReady(ctx, orchestrator)
-	httpRouteReady, _ := r.checkRouteReady(ctx, orchestrator, "-http")
-	healthRouteReady, _ := r.checkRouteReady(ctx, orchestrator, "-health")
+	logger := log.FromContext(ctx)
+	generatorReady, generatorErr := r.checkGeneratorPresent(ctx, orchestrator.Namespace)
+	deploymentReady, deploymentErr := r.checkDeploymentReady(ctx, orchestrator)
+	httpRouteReady, httpRouteErr := r.checkRouteReady(ctx, orchestrator, "-http")
+	healthRouteReady, healthRouteErr := r.checkRouteReady(ctx, orchestrator, "-health")
 	routeReady = httpRouteReady && healthRouteReady
+
+	if generatorErr != nil {
+		logger.Error(generatorErr, "Error checking inference service readiness")
+	}
+	if deploymentErr != nil {
+		logger.Error(deploymentErr, "Error checking deployment readiness")
+	}
+	if httpRouteErr != nil {
+		logger.Error(httpRouteErr, "Error checking HTTP route readiness")
+	}
+	if healthRouteErr != nil {
+		logger.Error(healthRouteErr, "Error checking Health route readiness")
+	}
+
 	if generatorReady && deploymentReady && routeReady {
 		_, updateErr := r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
-			SetResourceCondition(&saved.Status.Conditions, "InferenceService", "InferenceServiceReady", "Inference service is ready", corev1.ConditionTrue)
-			SetResourceCondition(&saved.Status.Conditions, "Deployment", "DeploymentReady", "Deployment is ready", corev1.ConditionTrue)
-			SetResourceCondition(&saved.Status.Conditions, "Route", "RouteReady", "Route is ready", corev1.ConditionTrue)
-			SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionTrue, ReconcileCompleted, ReconcileCompletedMessage)
+			SetResourceCondition(&saved.Status.Conditions, "InferenceService", "InferenceServiceReady",
+				"Inference service is ready and operational", corev1.ConditionTrue)
+
+			SetResourceCondition(&saved.Status.Conditions, "Deployment", "DeploymentReady",
+				fmt.Sprintf("Deployment '%s' is ready with all %d replicas available",
+					orchestrator.Name, orchestrator.Spec.Replicas), corev1.ConditionTrue)
+
+			SetResourceCondition(&saved.Status.Conditions, "Route", "RouteReady",
+				fmt.Sprintf("Routes '%s-http' and '%s-health' are ready and accessible",
+					orchestrator.Name, orchestrator.Name), corev1.ConditionTrue)
+
+			SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionTrue, ReconcileCompleted,
+				"All components have been successfully reconciled and are operational")
+
 			saved.Status.Phase = PhaseReady
 		})
 		if updateErr != nil {
-			log.FromContext(ctx).Error(updateErr, "Failed to update status")
+			logger.Error(updateErr, "Failed to update status")
 			return ctrl.Result{}, updateErr
 		}
 	} else {
 		_, updateErr := r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
 			if generatorReady {
-				SetResourceCondition(&saved.Status.Conditions, "InferenceService", "InferenceServiceReady", "Inference service is ready", corev1.ConditionTrue)
+				SetResourceCondition(&saved.Status.Conditions, "InferenceService", "InferenceServiceReady",
+					"Inference service is ready and operational", corev1.ConditionTrue)
 			} else {
-				SetResourceCondition(&saved.Status.Conditions, "InferenceService", "InferenceServiceNotReady", "Inference service is not ready", corev1.ConditionFalse)
-			}
-			if deploymentReady {
-				SetResourceCondition(&saved.Status.Conditions, "Deployment", "DeploymentReady", "Deployment is ready", corev1.ConditionTrue)
-			} else {
-				SetResourceCondition(&saved.Status.Conditions, "Deployment", "DeploymentNotReady", "Deployment is not ready", corev1.ConditionFalse)
-			}
-			if routeReady {
-				SetResourceCondition(&saved.Status.Conditions, "Route", "RouteReady", "Route is ready", corev1.ConditionTrue)
-			} else {
-				SetResourceCondition(&saved.Status.Conditions, "Route", "RouteNotReady", "Route is not ready", corev1.ConditionFalse)
+				errorDetail := ""
+				if generatorErr != nil {
+					errorDetail = fmt.Sprintf(": %s", generatorErr.Error())
+				}
+				SetResourceCondition(&saved.Status.Conditions, "InferenceService", "InferenceServiceNotReady",
+					fmt.Sprintf("Inference service is not ready in namespace '%s'%s. Verify that an InferenceService exists.",
+						orchestrator.Namespace, errorDetail), corev1.ConditionFalse)
 			}
 
-			SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionFalse, ReconcileFailed, ReconcileFailedMessage)
+			if deploymentReady {
+				SetResourceCondition(&saved.Status.Conditions, "Deployment", "DeploymentReady",
+					fmt.Sprintf("Deployment '%s' is ready with all %d replicas available",
+						orchestrator.Name, orchestrator.Spec.Replicas), corev1.ConditionTrue)
+			} else {
+				configMapName := ""
+				if orchestrator.Spec.OrchestratorConfig != nil {
+					configMapName = *orchestrator.Spec.OrchestratorConfig
+				}
+
+				errorDetail := ""
+				if deploymentErr != nil {
+					errorDetail = fmt.Sprintf(": %s", deploymentErr.Error())
+				}
+
+				SetResourceCondition(&saved.Status.Conditions, "Deployment", "DeploymentNotReady",
+					fmt.Sprintf("Deployment '%s' is not ready%s. Verify ConfigMap '%s' exists and contains required image references.",
+						orchestrator.Name, errorDetail, configMapName), corev1.ConditionFalse)
+			}
+
+			if routeReady {
+				SetResourceCondition(&saved.Status.Conditions, "Route", "RouteReady",
+					fmt.Sprintf("Routes '%s-http' and '%s-health' are ready and accessible",
+						orchestrator.Name, orchestrator.Name), corev1.ConditionTrue)
+			} else {
+				routeErrorDetail := ""
+				if !httpRouteReady && !healthRouteReady {
+					if httpRouteErr != nil || healthRouteErr != nil {
+						routeErrorDetail = fmt.Sprintf(": %s", getErrorMessage(httpRouteErr, healthRouteErr))
+					}
+					SetResourceCondition(&saved.Status.Conditions, "Route", "RouteNotReady",
+						fmt.Sprintf("Both routes '%s-http' and '%s-health' are not ready%s. Verify service '%s-service' exists and is properly configured.",
+							orchestrator.Name, orchestrator.Name, routeErrorDetail, orchestrator.Name), corev1.ConditionFalse)
+				} else if !httpRouteReady {
+					routeErrorMsg := ""
+					if httpRouteErr != nil {
+						routeErrorMsg = fmt.Sprintf(": %s", httpRouteErr.Error())
+					}
+					SetResourceCondition(&saved.Status.Conditions, "Route", "RouteNotReady",
+						fmt.Sprintf("HTTP route '%s-http' is not ready%s. Health route is operational.",
+							orchestrator.Name, routeErrorMsg), corev1.ConditionFalse)
+				} else {
+					routeErrorMsg := ""
+					if healthRouteErr != nil {
+						routeErrorMsg = fmt.Sprintf(": %s", healthRouteErr.Error())
+					}
+					SetResourceCondition(&saved.Status.Conditions, "Route", "RouteNotReady",
+						fmt.Sprintf("Health route '%s-health' is not ready%s. HTTP route is operational.",
+							orchestrator.Name, routeErrorMsg), corev1.ConditionFalse)
+				}
+			}
+
+			SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionFalse, ReconcileFailed,
+				"Reconciliation failed. Check individual component statuses for specific issues that need to be addressed.")
 		})
 		if updateErr != nil {
-			log.FromContext(ctx).Error(updateErr, "Failed to update status")
+			logger.Error(updateErr, "Failed to update status")
 			return ctrl.Result{}, updateErr
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+func getErrorMessage(errors ...error) string {
+	var messages []string
+	for _, err := range errors {
+		if err != nil {
+			messages = append(messages, err.Error())
+		}
+	}
+	if len(messages) == 1 {
+		return messages[0]
+	} else if len(messages) > 1 {
+		return "Multiple issues detected: " + strings.Join(messages, "; ")
+	}
+	return "Unknown error"
 }
