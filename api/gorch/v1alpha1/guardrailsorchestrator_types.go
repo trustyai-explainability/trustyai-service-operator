@@ -34,6 +34,12 @@ type GuardrailsOrchestratorSpec struct {
 	Replicas int32 `json:"replicas"`
 	// Name of configmap containing generator,detector,and chunker arguments
 	OrchestratorConfig *string `json:"orchestratorConfig"`
+	// Boolean flag to enable/disable detectors
+	// +optional
+	EnableDetectors bool `json:"enableDetectors,omitempty"`
+	// Boolean flag to enable/disable the vLLM gateway
+	// +optional
+	EnableVLLMGateway bool `json:"enableVllmGateway,omitempty"`
 	//  Name of the configmap containg vLLM gateway arguments
 	// +optional
 	VLLMGatewayConfig *string `json:"vllmGatewayConfig,omitempty"`

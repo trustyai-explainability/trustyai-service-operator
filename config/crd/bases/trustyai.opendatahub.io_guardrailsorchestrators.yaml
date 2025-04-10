@@ -40,6 +40,12 @@ spec:
           spec:
             description: GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator.
             properties:
+              enableDetectors:
+                description: Boolean flag to enable/disable detectors
+                type: boolean
+              enableVllmGateway:
+                description: Boolean flag to enable/disable the vLLM gateway
+                type: boolean
               orchestratorConfig:
                 description: Name of configmap containing generator,detector,and chunker
                   arguments
