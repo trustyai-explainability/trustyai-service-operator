@@ -107,8 +107,8 @@ func (in *GuardrailsOrchestratorSpec) DeepCopyInto(out *GuardrailsOrchestratorSp
 		*out = new(string)
 		**out = **in
 	}
-	if in.VLLMGatewayConfig != nil {
-		in, out := &in.VLLMGatewayConfig, &out.VLLMGatewayConfig
+	if in.SidecarGatewayConfig != nil {
+		in, out := &in.SidecarGatewayConfig, &out.SidecarGatewayConfig
 		*out = new(string)
 		**out = **in
 	}

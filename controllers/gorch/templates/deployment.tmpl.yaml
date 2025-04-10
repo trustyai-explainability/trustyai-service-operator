@@ -39,10 +39,10 @@ spec:
           configMap:
             name: {{.Orchestrator.Spec.OrchestratorConfig}}
             defaultMode: 420
-        {{if .Orchestrator.Spec.VLLMGatewayConfig}}
-        - name: {{.Orchestrator.Name}}-vllm-config
+        {{if .Orchestrator.Spec.SidecarGatewayConfig}}
+        - name: {{.Orchestrator.Name}}-sidecar-gateway-config
           configMap:
-            name: {{.Orchestrator.Spec.VLLMGatewayConfig}}
+            name: {{.Orchestrator.Spec.SidecarGatewayConfig}}
             defaultMode: 420
         {{end}}
       serviceAccountName: {{.Orchestrator.Name}}-serviceaccount
@@ -52,7 +52,7 @@ spec:
           env:
             - name: ORCHESTRATOR_CONFIG
               value: /config/config.yaml
-            {{if .Orchestrator.Spec.VLLMGatewayConfig}}
+            {{if .Orchestrator.Spec.SidecarGatewayConfig}}
             - name: HTTP_PORT
               value: '8032'
             {{else}}
@@ -97,7 +97,7 @@ spec:
               mountPath: /config/config.yaml
               subPath: config.yaml
           ports:
-            {{if .Orchestrator.Spec.VLLMGatewayConfig}}
+            {{if .Orchestrator.Spec.SidecarGatewayConfig}}
             - name: http
               containerPort: 8032
               protocol: TCP
@@ -138,19 +138,21 @@ spec:
             terminationMessagePath: /dev/termination-log
             command:
               - /app/bin/fms-guardrails-orchestr8
-        {{if .Orchestrator.Spec.VLLMGatewayConfig}}
+        {{if .Orchestrator.Spec.EnableGuardrailsGateway}}
         - name: {{.Orchestrator.Name}}-gateway
-          image : {{.ContainerImages.GatewayImage}}
+          image : {{.ContainerImages.GuardrailsGatewayImage}}
           command: ["/app/bin/vllm-orchestrator-gateway"]
           volumeMounts:
-            - name: {{.Orchestrator.Name}}-vllm-config
+            - name: {{.Orchestrator.Name}}-sidecar-gateway-config
               readOnly: true
               mountPath: /config/config.yaml
               subPath: config.yaml
           env:
             - name: GATEWAY_CONFIG
               value: /config/config.yaml
+        {{end}}
+        {{if .Orchestrator.Spec.EnableBuiltInDetectors}}
         - name: {{.Orchestrator.Name}}-detectors
-          image : {{.ContainerImages.RegexDetectorImage}}
+          image : {{.ContainerImages.DetectorImage}}
           command: ["/app/bin/regex-detector"]
         {{end}}
