@@ -70,6 +70,8 @@ func createGuardrailsOrchestratorSidecar(ctx context.Context, orchestratorConfig
 				Replicas:           1,
 				OrchestratorConfig: &orchestratorConfigMap,
 				VLLMGatewayConfig:  &vllmGatewayConfigMap,
+				EnableDetectors:    true,
+				EnableVLLMGateway:  true,
 			},
 		}
 		err = k8sClient.Create(ctx, gorch)
@@ -214,7 +216,6 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 
 func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 	It("Should sucessfully reconcile creating a custom resource for the GuardrailsOrchestrator", func() {
-
 		By("Creating an VLLM Gateway configmap")
 		configMap := &corev1.ConfigMap{
 			TypeMeta: metav1.TypeMeta{
@@ -429,11 +430,6 @@ func testCreateTwoGuardrailsOrchestratorsInSameNamespace(namespaceName string) {
 				Name:      firstConfigMapName,
 				Namespace: namespaceName,
 			},
-			Data: map[string]string{
-				orchestratorImageKey:  "quay.io/trustyai/ta-guardrails-orchestrator:latest",
-				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
-				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
-			},
 		}
 		err := k8sClient.Create(ctx, firstOrchConfig)
 		if err != nil && !errors.IsAlreadyExists(err) {
@@ -460,11 +456,6 @@ func testCreateTwoGuardrailsOrchestratorsInSameNamespace(namespaceName string) {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      secondConfigMapName,
 				Namespace: namespaceName,
-			},
-			Data: map[string]string{
-				orchestratorImageKey:  "quay.io/trustyai/ta-guardrails-orchestrator:latest",
-				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
-				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
 			},
 		}
 		err = k8sClient.Create(ctx, secondOrchConfig)
@@ -592,7 +583,7 @@ func testCreateTwoGuardrailsOrchestratorsInDifferentNamespaces(firstNamespace st
 		ctx := context.Background()
 
 		// Create TrustyAI ConfigMap in first namespace (if not exists)
-		firstTrustyConfigMap := &corev1.ConfigMap{
+		firstTrustyAIConfigMap := &corev1.ConfigMap{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "ConfigMap",
 				APIVersion: "v1",
@@ -602,17 +593,17 @@ func testCreateTwoGuardrailsOrchestratorsInDifferentNamespaces(firstNamespace st
 				Namespace: firstNamespace,
 			},
 			Data: map[string]string{
-				orchestratorImageKey:  "quay.io/trustyai/ta-guardrails-orchestrator:latest",
-				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
-				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
+				orchestratorImageKey: "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+				vllmGatewayImageKey:  "quay.io/trustyai/ta-guardrails-gateway:latest",
+				detectorImageKey:     "quay.io/trustyai/ta-guardrails-regex:latest",
 			},
 		}
-		err = k8sClient.Create(ctx, firstTrustyConfigMap)
+		err = k8sClient.Create(ctx, firstTrustyAIConfigMap)
 		if err != nil && !errors.IsAlreadyExists(err) {
 			Expect(err).ToNot(HaveOccurred())
 		}
 
-		secondTrustyConfigMap := &corev1.ConfigMap{
+		secondTrustyAIConfigMap := &corev1.ConfigMap{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "ConfigMap",
 				APIVersion: "v1",
@@ -622,12 +613,12 @@ func testCreateTwoGuardrailsOrchestratorsInDifferentNamespaces(firstNamespace st
 				Namespace: secondNamespace,
 			},
 			Data: map[string]string{
-				orchestratorImageKey:  "quay.io/trustyai/ta-guardrails-orchestrator:latest",
-				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
-				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
+				orchestratorImageKey: "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+				vllmGatewayImageKey:  "quay.io/trustyai/ta-guardrails-gateway:latest",
+				detectorImageKey:     "quay.io/trustyai/ta-guardrails-regex:latest",
 			},
 		}
-		err = k8sClient.Create(ctx, secondTrustyConfigMap)
+		err = k8sClient.Create(ctx, secondTrustyAIConfigMap)
 		if err != nil && !errors.IsAlreadyExists(err) {
 			Expect(err).ToNot(HaveOccurred())
 		}
@@ -643,11 +634,6 @@ func testCreateTwoGuardrailsOrchestratorsInDifferentNamespaces(firstNamespace st
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      firstOrchConfigName,
 				Namespace: firstNamespace,
-			},
-			Data: map[string]string{
-				orchestratorImageKey:  "quay.io/trustyai/ta-guardrails-orchestrator:latest",
-				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
-				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
 			},
 		}
 		err = k8sClient.Create(ctx, firstOrchConfig)
@@ -670,11 +656,6 @@ func testCreateTwoGuardrailsOrchestratorsInDifferentNamespaces(firstNamespace st
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      secondOrchConfigName,
 				Namespace: secondNamespace,
-			},
-			Data: map[string]string{
-				orchestratorImageKey:  "quay.io/trustyai/ta-guardrails-orchestrator:latest",
-				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
-				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
 			},
 		}
 		err = k8sClient.Create(ctx, secondOrchConfig)
@@ -776,6 +757,8 @@ var _ = Describe("GuardrailsOrchestrator Controller", func() {
 			},
 			Data: map[string]string{
 				orchestratorImageKey: "quay.io/trustyai/ta-guardrails-orchestrator:latest",
+				vllmGatewayImageKey:  "quay.io/trustyai/ta-guardrails-gateway:latest",
+				detectorImageKey:     "quay.io/trustyai/ta-guardrails-regex:latest",
 			},
 		}
 		err := k8sClient.Create(ctx, configMap)
@@ -794,8 +777,20 @@ var _ = Describe("GuardrailsOrchestrator Controller", func() {
 				Namespace: namespaceName,
 			},
 			Data: map[string]string{
-				vllmGatewayImageKey:   "quay.io/trustyai/ta-guardrails-gateway:latest",
-				regexDetectorImageKey: "quay.io/trustyai/ta-guardrails-regex:latest",
+				"config.yaml": `
+					chat_generation:
+				  		service:
+						hostname: llm-predictor.guardrails-test.svc.cluster.local
+						port: 8032
+				  	detectors:
+						regex:
+							type: text_contents
+							service:
+								hostname: "127.0.0.1"
+								port: 8080
+							chunker_id: whole_doc_chunker
+							default_threshold: 0.5
+				`,
 			},
 		}
 		err = k8sClient.Create(ctx, orchConfig)

@@ -24,9 +24,9 @@ import (
 const deploymentTemplatePath = "deployment.tmpl.yaml"
 
 type ContainerImages struct {
-	OrchestratorImage  string
-	RegexDetectorImage string
-	GatewayImage       string
+	OrchestratorImage string
+	DetectorImage     string
+	VLLMGatewayImage  string
 }
 
 type DeploymentConfig struct {
@@ -36,29 +36,32 @@ type DeploymentConfig struct {
 
 func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *appsv1.Deployment {
 	var containerImages ContainerImages
-	// Get orchestrator image
-	orchestratorConfigMapName := orchestrator.Name + "-config"
+
 	orchestratorImage, err := r.getImageFromConfigMap(ctx, orchestratorImageKey, constants.ConfigMap, r.Namespace)
 	if orchestratorImage == "" || err != nil {
 		log.FromContext(ctx).Error(err, "Error getting container image from ConfigMap.")
 	}
 	containerImages.OrchestratorImage = orchestratorImage
-	log.FromContext(ctx).Info("using orchestratorImage " + orchestratorImage + "from config map " + r.Namespace + ":" + constants.ConfigMap)
+	log.FromContext(ctx).Info("using OrchestratorImage " + orchestratorImage + " " + "from config map " + r.Namespace + ":" + constants.ConfigMap)
+
+	// Check if the regex detectors are enabled
+	if orchestrator.Spec.EnableDetectors {
+		detectorImage, err := r.getImageFromConfigMap(ctx, detectorImageKey, constants.ConfigMap, r.Namespace)
+		if detectorImage == "" || err != nil {
+			log.FromContext(ctx).Error(err, "Error getting detectors image from ConfigMap.")
+		}
+		log.FromContext(ctx).Info("Using regex detectors image " + detectorImage + " " + "from configmap " + r.Namespace + ":" + constants.ConfigMap)
+		containerImages.DetectorImage = detectorImage
+	}
 	// Check if the vLLM gateway is enabled
-	if orchestrator.Spec.VLLMGatewayConfig != nil {
-		//  Get the gateway and regex detector container images
-		vllmGatewayImage, err := r.getImageFromConfigMap(ctx, vllmGatewayImageKey, orchestratorConfigMapName, orchestrator.Namespace)
+	if orchestrator.Spec.EnableVLLMGateway {
+		vllmGatewayImage, err := r.getImageFromConfigMap(ctx, vllmGatewayImageKey, constants.ConfigMap, r.Namespace)
 		if vllmGatewayImage == "" || err != nil {
 			log.FromContext(ctx).Error(err, "Error getting vLLM gateway image from ConfigMap.")
 		}
-		log.FromContext(ctx).Info("using vLLM gateway image " + vllmGatewayImage + "from config map " + orchestrator.Namespace + ":" + orchestratorConfigMapName)
-		regexDetectorImage, err := r.getImageFromConfigMap(ctx, regexDetectorImageKey, orchestratorConfigMapName, orchestrator.Namespace)
-		if regexDetectorImage == "" || err != nil {
-			log.FromContext(ctx).Error(err, "Error getting regex detectors image from ConfigMap.")
-		}
-		log.FromContext(ctx).Info("using regex detectors image " + regexDetectorImage + "from config map " + orchestrator.Namespace + ":" + orchestratorConfigMapName)
-		containerImages.GatewayImage = vllmGatewayImage
-		containerImages.RegexDetectorImage = regexDetectorImage
+		log.FromContext(ctx).Info("Using vLLM gateway image " + vllmGatewayImage + " " + "from configmap " + r.Namespace + ":" + constants.ConfigMap)
+
+		containerImages.VLLMGatewayImage = vllmGatewayImage
 	}
 
 	deploymentConfig := DeploymentConfig{

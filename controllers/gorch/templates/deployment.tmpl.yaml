@@ -138,9 +138,9 @@ spec:
             terminationMessagePath: /dev/termination-log
             command:
               - /app/bin/fms-guardrails-orchestr8
-        {{if .Orchestrator.Spec.VLLMGatewayConfig}}
+        {{if .Orchestrator.Spec.EnableVLLMGateway}}
         - name: {{.Orchestrator.Name}}-gateway
-          image : {{.ContainerImages.GatewayImage}}
+          image : {{.ContainerImages.VLLMGatewayImage}}
           command: ["/app/bin/vllm-orchestrator-gateway"]
           volumeMounts:
             - name: {{.Orchestrator.Name}}-vllm-config
@@ -150,7 +150,9 @@ spec:
           env:
             - name: GATEWAY_CONFIG
               value: /config/config.yaml
+        {{end}}
+        {{if .Orchestrator.Spec.EnableDetectors}}
         - name: {{.Orchestrator.Name}}-detectors
-          image : {{.ContainerImages.RegexDetectorImage}}
+          image : {{.ContainerImages.DetectorImage}}
           command: ["/app/bin/regex-detector"]
         {{end}}
