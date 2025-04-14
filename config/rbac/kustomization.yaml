@@ -10,3 +10,6 @@ resources:
   - auth_proxy_client_clusterrole.yaml
   - trustyaiservice_editor_role.yaml
   - trustyaiservice_viewer_role.yaml
+  - non_admin_lmeval_role.yaml
+  - non_admin_lmeval_rolebinding.yaml
+  - default_lmeval_user_rolebinding.yaml
