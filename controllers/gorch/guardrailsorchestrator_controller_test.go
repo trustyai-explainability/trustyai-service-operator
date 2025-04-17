@@ -182,6 +182,8 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 				return err
 			}
 			Expect(service.Namespace).Should(Equal(namespaceName))
+			Expect((service.Spec.Ports[0].Name)).Should(Equal("http"))
+			Expect((service.Spec.Ports[0].Port)).Should(Equal(int32(8033)))
 
 			route := &routev1.Route{}
 			if err := routev1.AddToScheme(scheme.Scheme); err != nil {
@@ -283,6 +285,8 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 				return err
 			}
 			Expect(service.Namespace).Should(Equal(namespaceName))
+			Expect(service.Spec.Ports[0].Name).Should(Equal("http"))
+			Expect(service.Spec.Ports[0].Port).Should(Equal(int32(8090)))
 
 			route := &routev1.Route{}
 			if err := routev1.AddToScheme(scheme.Scheme); err != nil {
