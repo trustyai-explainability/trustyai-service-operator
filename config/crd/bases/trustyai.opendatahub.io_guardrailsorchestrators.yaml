@@ -40,6 +40,17 @@ spec:
           spec:
             description: GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator.
             properties:
+              enableBuiltInDetectors:
+                description: Boolean flag to enable/disable built-in detectors
+                type: boolean
+              enableGuardrailsGateway:
+                description: Boolean flag to enable/disable the guardrails sidecar
+                  gateway
+                type: boolean
+              guardrailsGatewayConfig:
+                description: ' Name of the configmap containing guadrails sidecar
+                  gateway arguments'
+                type: string
               orchestratorConfig:
                 description: Name of configmap containing generator,detector,and chunker
                   arguments
@@ -74,9 +85,6 @@ spec:
                 description: Number of replicas
                 format: int32
                 type: integer
-              vllmGatewayConfig:
-                description: ' Name of the configmap containg vLLM gateway arguments'
-                type: string
             required:
             - orchestratorConfig
             - replicas

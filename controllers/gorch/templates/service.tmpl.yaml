@@ -10,7 +10,7 @@ spec:
   ipFamilies:
     - IPv4
   ports:
-    {{if .Orchestrator.Spec.VLLMGatewayConfig}}
+    {{if .Orchestrator.Spec.SidecarGatewayConfig}}
     - name: http
       protocol: TCP
       port: 8032
