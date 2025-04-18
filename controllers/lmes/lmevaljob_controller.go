@@ -657,53 +657,80 @@ func (r *LMEvalJobReconciler) validateCustomRecipes(job *lmesv1alpha1.LMEvalJob,
 		return nil
 	}
 
-	var checkedTemplates []string
 	customArtifacts := job.Spec.TaskList.CustomArtifacts
 	for _, taskRecipe := range job.Spec.TaskList.TaskRecipes {
 		if taskRecipe.Card.Custom != "" {
-			card, err := unmarshal(taskRecipe.Card.Custom)
+			_, err := unmarshal(taskRecipe.Card.Custom, []string{"loader"})
 			if err != nil {
 				log.Error(err, "failed to parse the custom card")
-				return fmt.Errorf("custom card is not a valid JSON string, %s", err.Error())
-			}
-			// at least the custom card shall define its loader
-			if _, ok := card["loader"]; !ok {
-				missKeyError := fmt.Errorf("no loader definition in the custom card")
-				log.Error(missKeyError, "failed to parse the custom card")
-				return missKeyError
+				return fmt.Errorf("failed to parse the custom card. %s", err.Error())
 			}
 		}
 
-		// validate the template JSON
-		if taskRecipe.Template != nil && taskRecipe.Template.Ref != "" &&
-			!slices.Contains(checkedTemplates, taskRecipe.Template.Ref) {
-
+		// check if the reference custom template is defined under the custom section
+		if taskRecipe.Template != nil && taskRecipe.Template.Ref != "" {
 			custom := getCustomArtifactByName(customArtifacts.GetTemplates(), taskRecipe.Template.Ref)
 			if custom == nil {
 				return fmt.Errorf("the reference name of the custom template is not defined: %s", taskRecipe.Template.Ref)
 			}
-
-			template, err := unmarshal(custom.Value)
-			if err != nil {
-				log.Error(err, "failed to parse the custom template")
-				return fmt.Errorf("custom template is not a valid JSON string, %s", err.Error())
-			}
-			// two mandatory fields: input_format and output_format
-			for _, fieldName := range []string{"input_format", "output_format"} {
-				if _, ok := template[fieldName]; !ok {
-					missKeyError := fmt.Errorf("no %s definition in the custom template", fieldName)
-					log.Error(missKeyError, "failed to parse the custom template")
-					return missKeyError
-				}
-			}
-			checkedTemplates = append(checkedTemplates, taskRecipe.Template.Ref)
 		}
 
-		// only check if the system prompt is defined in the custom section or not
+		// check if the system prompt is defined in the custom section or not
 		if taskRecipe.SystemPrompt != nil && taskRecipe.SystemPrompt.Ref != "" {
 			if getCustomArtifactByName(customArtifacts.GetSystemPrompts(), taskRecipe.SystemPrompt.Ref) == nil {
 				return fmt.Errorf("the reference name of the custom system prompt is not defined: %s", taskRecipe.SystemPrompt.Ref)
 			}
+		}
+
+		// check if there any custom metric and check if it is defined in the custom section
+		if len(taskRecipe.Metrics) > 0 {
+			customMetrics := customArtifacts.GetMetrics()
+			for _, metric := range taskRecipe.Metrics {
+				if metric.Ref != "" {
+					customMetric := getCustomArtifactByName(customMetrics, metric.Ref)
+					if customMetric == nil {
+						return fmt.Errorf("the reference name of the custom metric is not defined: %s", metric.Ref)
+					}
+				}
+			}
+		}
+
+		// check if the task is defined in the custom section or not
+		if taskRecipe.Task != nil && taskRecipe.Task.Ref != "" {
+			if getCustomArtifactByName(customArtifacts.GetTasks(), taskRecipe.Task.Ref) == nil {
+				return fmt.Errorf("the reference name of the custom task is not defined: %s", taskRecipe.Task.Ref)
+			}
+		}
+	}
+
+	// Check the format of each CustomArtifact
+	for _, customT := range customArtifacts.GetTemplates() {
+		_, err := unmarshal(customT.Value, []string{"input_format", "output_format"})
+		if err != nil {
+			log.Error(err, "failed to parse the custom template")
+			return fmt.Errorf("failed to parse the custom template: %s. %s", customT.Name, err.Error())
+		}
+	}
+
+	for _, customM := range customArtifacts.GetMetrics() {
+		_, err := unmarshal(customM.Value, []string{"__type__"})
+		if err != nil {
+			log.Error(err, "failed to parse the custom metric.")
+			return fmt.Errorf("failed to parse the custom metric: %s. %s", customM.Name, err.Error())
+		}
+	}
+
+	for _, customTask := range customArtifacts.GetTasks() {
+		metricObj, err := unmarshal(customTask.Value, []string{"__type__", "input_fields"})
+		if err != nil {
+			log.Error(err, "failed to parse the custom task")
+			return fmt.Errorf("failed to parse the custom task:%s. %s", customTask.Name, err.Error())
+		}
+
+		if metricObj["__type__"] != "task" {
+			err := fmt.Errorf("custom task's type is incorrect")
+			log.Error(err, "task %s validation failed", customTask.Name)
+			return err
 		}
 	}
 
@@ -722,10 +749,19 @@ func getCustomArtifactByName(customs []lmesv1alpha1.CustomArtifact, name string)
 	return nil
 }
 
-func unmarshal(custom string) (map[string]interface{}, error) {
+func unmarshal(custom string, props []string) (map[string]interface{}, error) {
 	var obj map[string]interface{}
-	err := json.Unmarshal([]byte(custom), &obj)
-	return obj, err
+	if err := json.Unmarshal([]byte(custom), &obj); err != nil {
+		return nil, err
+	}
+
+	for _, prop := range props {
+		if _, ok := obj[prop]; !ok {
+			err := fmt.Errorf("missing %s definition", prop)
+			return nil, err
+		}
+	}
+	return obj, nil
 }
 
 func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) *corev1.Pod {
@@ -1281,16 +1317,22 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 		}
 	}
 
+	appendArtifactCmd := func(taskName string, artifacts []lmesv1alpha1.CustomArtifact) {
+		for _, artifact := range artifacts {
+			cmds = append(cmds, "--custom-artifact", fmt.Sprintf("%s|%s", taskName, artifact.String()))
+		}
+	}
+
 	cr_idx := 0
 	for _, recipe := range job.Spec.TaskList.TaskRecipes {
 		// duplicate the TaskRecipe and update its content to generate proper recipe string
 		dupRecipe := recipe.DeepCopy()
 
 		if recipe.Card.Custom != "" {
-			// custom card, need to inject --custom-card arg as well
+			// custom card, need to inject --custom-artifact arg as well
 			// the format of a custom card's name: custom_<index>
 			dupRecipe.Card.Name = fmt.Sprintf("cards.%s_%d", driver.CustomCardPrefix, cr_idx)
-			cmds = append(cmds, "--custom-card", dupRecipe.Card.Custom)
+			cmds = append(cmds, "--custom-artifact", fmt.Sprintf("card|%s_%d|%s", driver.CustomCardPrefix, cr_idx, dupRecipe.Card.Custom))
 			cr_idx++
 		}
 
@@ -1299,12 +1341,10 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 
 	// go through custom artificats and add corresponding arguments
 	if job.Spec.TaskList.CustomArtifacts != nil {
-		for _, template := range job.Spec.TaskList.CustomArtifacts.GetTemplates() {
-			cmds = append(cmds, "--custom-template", template.String())
-		}
-		for _, prompt := range job.Spec.TaskList.CustomArtifacts.GetSystemPrompts() {
-			cmds = append(cmds, "--custom-prompt", prompt.String())
-		}
+		appendArtifactCmd("template", job.Spec.TaskList.CustomArtifacts.GetTemplates())
+		appendArtifactCmd("system_prompt", job.Spec.TaskList.CustomArtifacts.GetSystemPrompts())
+		appendArtifactCmd("metric", job.Spec.TaskList.CustomArtifacts.GetMetrics())
+		appendArtifactCmd("task", job.Spec.TaskList.CustomArtifacts.GetTasks())
 	}
 
 	cmds = append(cmds, "--")

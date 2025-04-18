@@ -61,9 +61,7 @@ type DriverOption struct {
 	TaskRecipesPath     string
 	TaskRecipes         []string
 	CatalogPath         string
-	CustomCards         []string
-	CustomTemplates     []string
-	CustomSystemPrompt  []string
+	CustomArtifacts     []CustomArtifact
 	Logger              logr.Logger
 	Args                []string
 	CommPort            int
@@ -74,6 +72,22 @@ type DriverOption struct {
 	CustomTaskGitPath   string
 	TaskNames           []string
 	AllowOnline         bool
+}
+
+type ArtifactType string
+
+const (
+	Card         ArtifactType = "card"
+	Template     ArtifactType = "template"
+	Metric       ArtifactType = "metric"
+	Task         ArtifactType = "task"
+	SystemPrompt ArtifactType = "system_prompt"
+)
+
+type CustomArtifact struct {
+	Type  ArtifactType
+	Name  string
+	Value string
 }
 
 type Driver interface {
@@ -335,10 +349,6 @@ func (d *driverImpl) exec() error {
 		return fmt.Errorf("failed to create the directories for custom artifacts: %v", err)
 	}
 
-	if err := d.createCustomCards(); err != nil {
-		return fmt.Errorf("failed to create custom cards: %v", err)
-	}
-
 	if err := d.fetchGitCustomTasks(); err != nil {
 		return fmt.Errorf("failed to set up custom tasks: %v", err)
 	}
@@ -347,11 +357,9 @@ func (d *driverImpl) exec() error {
 	if err := d.downloadS3Assets(); err != nil {
 		return err
 	}
-	if err := d.createCustomTemplates(); err != nil {
-		return fmt.Errorf("failed to create custom templates: %v", err)
-	}
-	if err := d.createCustomSystemPrompts(); err != nil {
-		return fmt.Errorf("failed to create custom system_prompts: %v", err)
+
+	if err := d.createCustomArtifacts(); err != nil {
+		return fmt.Errorf("failed to create custom artifact: %v", err)
 	}
 
 	// Detect available devices if needed
@@ -525,48 +533,42 @@ func (d *driverImpl) prepDir4CustomArtifacts() error {
 	return errors.Join(errs...)
 }
 
-func (d *driverImpl) createCustomCards() error {
-	for i, customCard := range d.Option.CustomCards {
-		err := os.WriteFile(
-			filepath.Join(d.Option.CatalogPath, "cards", fmt.Sprintf("%s_%d.json", CustomCardPrefix, i)),
-			[]byte(customCard),
-			0666,
-		)
-		if err != nil {
-			return err
+func (d *driverImpl) createCustomArtifacts() error {
+	for _, customArtifact := range d.Option.CustomArtifacts {
+		switch customArtifact.Type {
+		case Card, Metric, Template, Task:
+			if err := createCustomArtifact(filepath.Join(d.Option.CatalogPath, fmt.Sprintf("%ss", customArtifact.Type)),
+				customArtifact.Name, customArtifact.Value); err != nil {
+				return err
+			}
+		case SystemPrompt:
+			if err := createCustomArtifact(filepath.Join(d.Option.CatalogPath, fmt.Sprintf("%ss", customArtifact.Type)),
+				customArtifact.Name,
+				fmt.Sprintf(`{ "__type__": "textual_system_prompt", "text": "%s" }`, customArtifact.Value)); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("invalid custom artifact type:%s", customArtifact.Type)
 		}
 	}
 	return nil
 }
 
-func (d *driverImpl) createCustomTemplates() error {
-	for _, customTemplate := range d.Option.CustomTemplates {
-		values := strings.SplitN(customTemplate, "|", 2)
-		err := os.WriteFile(
-			filepath.Join(d.Option.CatalogPath, "templates", fmt.Sprintf("%s.json", values[0])),
-			[]byte(values[1]),
-			0666,
-		)
-		if err != nil {
-			return err
-		}
+func createCustomArtifact(rootDir, artifactName, artifactValue string) error {
+	dirs := []string{rootDir}
+	tokens := strings.Split(artifactName, ".")
+	if len(tokens) > 1 {
+		dirs = append(dirs, tokens[0:len(tokens)-1]...)
 	}
-	return nil
-}
-
-func (d *driverImpl) createCustomSystemPrompts() error {
-	for _, systemPrompt := range d.Option.CustomSystemPrompt {
-		values := strings.SplitN(systemPrompt, "|", 2)
-		err := os.WriteFile(
-			filepath.Join(d.Option.CatalogPath, "system_prompts", fmt.Sprintf("%s.json", values[0])),
-			[]byte(fmt.Sprintf(`{ "__type__": "textual_system_prompt", "text": "%s" }`, values[1])),
-			0666,
-		)
-		if err != nil {
-			return err
-		}
+	fullPath := filepath.Join(dirs...)
+	if err := os.MkdirAll(fullPath, 0770); err != nil {
+		return err
 	}
-	return nil
+	return os.WriteFile(
+		filepath.Join(fullPath, fmt.Sprintf("%s.json", tokens[len(tokens)-1])),
+		[]byte(artifactValue),
+		0666,
+	)
 }
 
 func createDirectory(path string) error {

@@ -4724,7 +4724,42 @@ spec:
                   custom:
                     description: Custom Unitxt artifacts that can be used in a TaskRecipe
                     properties:
+                      metrics:
+                        description: The Unitxt custom metrics
+                        items:
+                          properties:
+                            name:
+                              description: Name of the custom artifact
+                              type: string
+                            value:
+                              description: |-
+                                Value of the custom artifact. It could be a JSON string or plain text
+                                depending on the artifact type
+                              type: string
+                          required:
+                          - name
+                          - value
+                          type: object
+                        type: array
                       systemPrompts:
+                        description: The Unitxt custom System Prompts
+                        items:
+                          properties:
+                            name:
+                              description: Name of the custom artifact
+                              type: string
+                            value:
+                              description: |-
+                                Value of the custom artifact. It could be a JSON string or plain text
+                                depending on the artifact type
+                              type: string
+                          required:
+                          - name
+                          - value
+                          type: object
+                        type: array
+                      tasks:
+                        description: The Unitxt custom tasks
                         items:
                           properties:
                             name:
@@ -4741,6 +4776,7 @@ spec:
                           type: object
                         type: array
                       templates:
+                        description: The Unitxt custom templates
                         items:
                           properties:
                             name:
@@ -4822,7 +4858,19 @@ spec:
                         metrics:
                           description: Metrics
                           items:
-                            type: string
+                            properties:
+                              name:
+                                description: Unitxt metric id
+                                type: string
+                              ref:
+                                description: |-
+                                  The name of the custom metric in the custom field. Its value is a JSON string
+                                  for a custom Unitxt metric. Use the documentation here: https://www.unitxt.ai/en/latest/docs/adding_metric.html#adding-a-new-instance-metric
+                                  to compose a custom metric, store it as a JSON file by calling the
+                                  add_to_catalog API: https://www.unitxt.ai/en/latest/docs/saving_and_loading_from_catalog.html#adding-assets-to-the-catalog,
+                                  and use the JSON content as the value here.
+                                type: string
+                            type: object
                           type: array
                         numDemos:
                           description: Number of fewshot
@@ -4841,7 +4889,19 @@ spec:
                           type: object
                         task:
                           description: The Unitxt Task
-                          type: string
+                          properties:
+                            name:
+                              description: Unitxt task id
+                              type: string
+                            ref:
+                              description: |-
+                                The name of the custom task in the custom field. Its value is a JSON string
+                                for a custom Unitxt task. Use the documentation here: https://www.unitxt.ai/en/latest/docs/adding_task.html
+                                to compose a custom task, store it as a JSON file by calling the
+                                add_to_catalog API: https://www.unitxt.ai/en/latest/docs/saving_and_loading_from_catalog.html#adding-assets-to-the-catalog,
+                                and use the JSON content as the value here.
+                              type: string
+                          type: object
                         template:
                           description: The Unitxt template
                           properties:
