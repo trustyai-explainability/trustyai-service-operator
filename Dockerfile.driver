@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi8/go-toolset:1.21 AS builder
+FROM registry.access.redhat.com/ubi8/go-toolset:1.23 AS builder
 
 WORKDIR /go/src/github.com/trustyai-explainability/trustyai-service-operator
 # Copy the Go Modules manifests

@@ -1,6 +1,6 @@
 module github.com/trustyai-explainability/trustyai-service-operator
 
-go 1.21
+go 1.23.0
 
 require (
 	github.com/kserve/kserve v0.12.1
@@ -54,8 +54,7 @@ require (
 
 require (
 	cloud.google.com/go v0.112.1 // indirect
-	cloud.google.com/go/compute v1.25.1 // indirect
-	cloud.google.com/go/compute/metadata v0.2.3 // indirect
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	cloud.google.com/go/iam v1.1.6 // indirect
 	cloud.google.com/go/storage v1.38.0 // indirect
 	github.com/aws/aws-sdk-go v1.48.0 // indirect
@@ -113,7 +112,6 @@ require (
 	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/api v0.171.0 // indirect
-	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto v0.0.0-20240213162025-012b6fc9bca9 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240318140521-94a12d6c2237 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240318140521-94a12d6c2237 // indirect
@@ -141,10 +139,12 @@ replace (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp => go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.44.0
 	// Fixes CVE-2023-48795 - golang.org/x/crypto Authentication Bypass by Capture-replay
 	golang.org/x/net => golang.org/x/net v0.33.0
-// remove when upgrade to controller-runtime 0.15.x or apimachinery to 0.27.x
-// Fixes github.com/elazarl/goproxy Denial of Service (DoS)
-// This dependency was removed from apimachinery 0.27.0
-// k8s.io/apimachinery => k8s.io/apimachinery v0.27.0
+	// remove when upgrade to controller-runtime 0.15.x or apimachinery to 0.27.x
+	// Fixes github.com/elazarl/goproxy Denial of Service (DoS)
+	// This dependency was removed from apimachinery 0.27.0
+	// k8s.io/apimachinery => k8s.io/apimachinery v0.27.0
+
+	golang.org/x/oauth2 => golang.org/x/oauth2 v0.27.0
 )
 
 exclude github.com/openshift/api v3.9.0+incompatible
