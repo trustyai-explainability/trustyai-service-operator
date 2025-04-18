@@ -2,6 +2,7 @@ package tas
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strconv"
 
@@ -99,17 +100,18 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 
 // reconcileDeployment returns a Deployment object with the same name/namespace as the cr
 func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, imageName string, caBundle CustomCertificatesBundle) error {
-
-	if !cr.Spec.Storage.IsDatabaseConfigurationsSet() {
-
+	// For PVC mode or migration mode, check that the PVC exists
+	if cr.Spec.Storage.IsStoragePVC() || cr.IsMigration() {
 		pvcName := generatePVCName(cr)
-
 		pvc := &corev1.PersistentVolumeClaim{}
 		pvcerr := r.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: cr.Namespace}, pvc)
 		if pvcerr != nil {
 			log.FromContext(ctx).Error(pvcerr, "PVC not found")
 			return pvcerr
 		}
+	} else if !cr.Spec.Storage.IsDatabaseConfigurationsSet() {
+		// database mode without configurations set
+		return fmt.Errorf("database configurations must be set for database storage mode")
 	}
 
 	// We can now create the Deployment.
@@ -131,22 +133,22 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 	}
 	// Created successfully
 	return nil
-
 }
 
 // updateDeployment returns a Deployment object with the same name/namespace as the cr
 func (r *TrustyAIServiceReconciler) updateDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, imageName string, caBundle CustomCertificatesBundle) error {
-
-	if !cr.Spec.Storage.IsDatabaseConfigurationsSet() {
-
+	// For PVC mode or migration mode, check that the PVC exists
+	if cr.Spec.Storage.IsStoragePVC() || cr.IsMigration() {
 		pvcName := generatePVCName(cr)
-
 		pvc := &corev1.PersistentVolumeClaim{}
 		pvcerr := r.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: cr.Namespace}, pvc)
 		if pvcerr != nil {
 			log.FromContext(ctx).Error(pvcerr, "PVC not found")
 			return pvcerr
 		}
+	} else if !cr.Spec.Storage.IsDatabaseConfigurationsSet() {
+		// Pure database mode without configurations set
+		return fmt.Errorf("database configurations must be set for database storage mode")
 	}
 
 	// We can now create the Deployment object.
@@ -168,7 +170,6 @@ func (r *TrustyAIServiceReconciler) updateDeployment(ctx context.Context, cr *tr
 	}
 	// Created successfully
 	return nil
-
 }
 
 func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, caBundle CustomCertificatesBundle, migration bool) error {

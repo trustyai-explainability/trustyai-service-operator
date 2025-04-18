@@ -149,7 +149,7 @@ func createDefaultMigrationCustomResource(namespaceCurrent string) *trustyaiopen
 				Format:                 STORAGE_DATABASE,
 				DatabaseConfigurations: defaultDatabaseConfigurationName,
 				Folder:                 "/data",
-				Size:                   "1Gi",
+				// Size not set as it's ignored in database mode
 			},
 			Data: trustyaiopendatahubiov1alpha1.DataSpec{
 				Filename: "data.csv",
