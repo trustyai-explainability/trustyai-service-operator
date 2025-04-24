@@ -915,7 +915,7 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 						Card:          lmesv1alpha1.Card{Name: "unitxt.card1"},
 						Template:      &lmesv1alpha1.Template{Name: "unitxt.template"},
 						Format:        &format,
-						Metrics:       []string{"unitxt.metric1", "unitxt.metric2"},
+						Metrics:       []lmesv1alpha1.Metric{{Name: "unitxt.metric1"}, {Name: "unitxt.metric2"}},
 						NumDemos:      &numDemos,
 						DemosPoolSize: &demosPoolSize,
 					},
@@ -942,14 +942,13 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 			Card:          lmesv1alpha1.Card{Name: "unitxt.card2"},
 			Template:      &lmesv1alpha1.Template{Name: "unitxt.template2"},
 			Format:        &format,
-			Metrics:       []string{"unitxt.metric3", "unitxt.metric4"},
+			Metrics:       []lmesv1alpha1.Metric{{Name: "unitxt.metric3"}, {Name: "unitxt.metric4"}},
 			NumDemos:      &numDemos,
 			DemosPoolSize: &demosPoolSize,
 		},
 	)
 
 	// two task recipes
-	// one TaskRecipe
 	assert.Equal(t, []string{
 		"sh", "-ec",
 		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2,tr_0,tr_1 --include_path /opt/app-root/src/my_tasks --batch_size " + DefaultBatchSize,
@@ -1000,7 +999,7 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 						},
 						Template:      &lmesv1alpha1.Template{Name: "unitxt.template"},
 						Format:        &format,
-						Metrics:       []string{"unitxt.metric1", "unitxt.metric2"},
+						Metrics:       []lmesv1alpha1.Metric{{Name: "unitxt.metric1"}, {Name: "unitxt.metric2"}},
 						NumDemos:      &numDemos,
 						DemosPoolSize: &demosPoolSize,
 					},
@@ -1017,7 +1016,7 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 	assert.Equal(t, []string{
 		"/opt/app-root/src/bin/driver",
 		"--output-path", "/opt/app-root/src/output",
-		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--custom-artifact", `card|custom_0|{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		"--task-recipe", "card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		"--",
 	}, generateCmd(svcOpts, job))
@@ -1032,7 +1031,7 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 				Ref: "tp_0",
 			},
 			Format:        &format,
-			Metrics:       []string{"unitxt.metric3", "unitxt.metric4"},
+			Metrics:       []lmesv1alpha1.Metric{{Name: "unitxt.metric3"}, {Name: "unitxt.metric4"}},
 			NumDemos:      &numDemos,
 			DemosPoolSize: &demosPoolSize,
 		},
@@ -1050,11 +1049,11 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 	assert.Equal(t, []string{
 		"/opt/app-root/src/bin/driver",
 		"--output-path", "/opt/app-root/src/output",
-		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--custom-artifact", `card|custom_0|{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		"--task-recipe", "card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
-		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--custom-artifact", `card|custom_1|{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		"--task-recipe", "card=cards.custom_1,template=templates.tp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
-		"--custom-template", `tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
+		"--custom-artifact", `template|tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
 		"--",
 	}, generateCmd(svcOpts, job))
 
@@ -1066,7 +1065,7 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 				Ref: "sp_0",
 			},
 			Format:        &format,
-			Metrics:       []string{"unitxt.metric4", "unitxt.metric5"},
+			Metrics:       []lmesv1alpha1.Metric{{Name: "unitxt.metric4"}, {Name: "unitxt.metric5"}},
 			NumDemos:      &numDemos,
 			DemosPoolSize: &demosPoolSize,
 		},
@@ -1082,13 +1081,13 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 	assert.Equal(t, []string{
 		"/opt/app-root/src/bin/driver",
 		"--output-path", "/opt/app-root/src/output",
-		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--custom-artifact", `card|custom_0|{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		"--task-recipe", "card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
-		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--custom-artifact", `card|custom_1|{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		"--task-recipe", "card=cards.custom_1,template=templates.tp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		"--task-recipe", "card=unitxt.card,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric4,unitxt.metric5],format=unitxt.format,num_demos=5,demos_pool_size=10",
-		"--custom-template", `tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
-		"--custom-prompt", "sp_0|this is a custom system promp",
+		"--custom-artifact", `template|tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
+		"--custom-artifact", "system_prompt|sp_0|this is a custom system promp",
 		"--",
 	}, generateCmd(svcOpts, job))
 
@@ -1106,7 +1105,7 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 				Ref: "sp_0",
 			},
 			Format:        &format,
-			Metrics:       []string{"unitxt.metric6", "unitxt.metric7"},
+			Metrics:       []lmesv1alpha1.Metric{{Name: "unitxt.metric6"}, {Name: "unitxt.metric7"}},
 			NumDemos:      &numDemos,
 			DemosPoolSize: &demosPoolSize,
 		},
@@ -1115,15 +1114,15 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 	assert.Equal(t, []string{
 		"/opt/app-root/src/bin/driver",
 		"--output-path", "/opt/app-root/src/output",
-		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--custom-artifact", `card|custom_0|{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		"--task-recipe", "card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
-		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--custom-artifact", `card|custom_1|{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		"--task-recipe", "card=cards.custom_1,template=templates.tp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		"--task-recipe", "card=unitxt.card,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric4,unitxt.metric5],format=unitxt.format,num_demos=5,demos_pool_size=10",
-		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--custom-artifact", `card|custom_2|{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		"--task-recipe", "card=cards.custom_2,template=templates.tp_0,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric6,unitxt.metric7],format=unitxt.format,num_demos=5,demos_pool_size=10",
-		"--custom-template", `tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
-		"--custom-prompt", "sp_0|this is a custom system promp",
+		"--custom-artifact", `template|tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
+		"--custom-artifact", "system_prompt|sp_0|this is a custom system promp",
 		"--",
 	}, generateCmd(svcOpts, job))
 
@@ -1139,7 +1138,7 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 				Ref: "sp_1",
 			},
 			Format:        &format,
-			Metrics:       []string{"unitxt.metric6", "unitxt.metric7"},
+			Metrics:       []lmesv1alpha1.Metric{{Name: "unitxt.metric6"}, {Name: "unitxt.metric7"}},
 			NumDemos:      &numDemos,
 			DemosPoolSize: &demosPoolSize,
 		},
@@ -1158,18 +1157,18 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 	assert.Equal(t, []string{
 		"/opt/app-root/src/bin/driver",
 		"--output-path", "/opt/app-root/src/output",
-		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--custom-artifact", `card|custom_0|{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		"--task-recipe", "card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
-		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--custom-artifact", `card|custom_1|{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		"--task-recipe", "card=cards.custom_1,template=templates.tp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		"--task-recipe", "card=unitxt.card,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric4,unitxt.metric5],format=unitxt.format,num_demos=5,demos_pool_size=10",
-		"--custom-card", `{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
+		"--custom-artifact", `card|custom_2|{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		"--task-recipe", "card=cards.custom_2,template=templates.tp_0,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric6,unitxt.metric7],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		"--task-recipe", "card=unitxt.card2,template=templates.tp_1,system_prompt=system_prompts.sp_1,metrics=[unitxt.metric6,unitxt.metric7],format=unitxt.format,num_demos=5,demos_pool_size=10",
-		"--custom-template", `tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
-		"--custom-template", `tp_1|{ "__type__": "input_output_template", "instruction": "2In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
-		"--custom-prompt", "sp_0|this is a custom system promp",
-		"--custom-prompt", "sp_1|this is a custom system promp2",
+		"--custom-artifact", `template|tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
+		"--custom-artifact", `template|tp_1|{ "__type__": "input_output_template", "instruction": "2In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
+		"--custom-artifact", "system_prompt|sp_0|this is a custom system promp",
+		"--custom-artifact", "system_prompt|sp_1|this is a custom system promp2",
 		"--",
 	}, generateCmd(svcOpts, job))
 }
@@ -1206,7 +1205,7 @@ func Test_CustomCardValidation(t *testing.T) {
 		},
 	}
 
-	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "custom card is not a valid JSON string")
+	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "failed to parse the custom card")
 
 	// no loader
 	job.Spec.TaskList.TaskRecipes[0].Card.Custom = `
@@ -1234,7 +1233,7 @@ func Test_CustomCardValidation(t *testing.T) {
 			"task": "tasks.translation.directed",
 			"templates": "templates.translation.directed.all"
 		}`
-	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "no loader definition in the custom card")
+	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "missing loader definition")
 
 	// ok
 	job.Spec.TaskList.TaskRecipes[0].Card.Custom = `
@@ -1320,7 +1319,181 @@ func Test_CustomCardValidation(t *testing.T) {
 	}
 
 	// missing outout_format property
-	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "no output_format definition in the custom template")
+	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "missing output_format definition")
+}
+
+func Test_CustomMetrics(t *testing.T) {
+	log := log.FromContext(context.Background())
+	lmevalRec := LMEvalJobReconciler{
+		Namespace: "test",
+	}
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskRecipes: []lmesv1alpha1.TaskRecipe{
+					{
+						Card: lmesv1alpha1.Card{
+							Name: "cards.wnli",
+						},
+						Template: &lmesv1alpha1.Template{
+							Name: "templates.classification.multi_class.relation.default",
+						},
+						Metrics: []lmesv1alpha1.Metric{
+							{
+								Ref: "my-metric",
+							},
+						},
+					},
+				},
+				CustomArtifacts: &lmesv1alpha1.CustomArtifacts{
+					Metrics: []lmesv1alpha1.CustomArtifact{
+						{Name: "no-my-metric", Value: "invalid"},
+					},
+				},
+			},
+		},
+	}
+
+	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "the reference name of the custom metric is not defined: my-metric")
+
+	// invalid JSON object
+	job.Spec.TaskList.CustomArtifacts.Metrics[0].Name = "my-metric"
+
+	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "failed to parse the custom metric: my-metric")
+
+	// no loader
+	job.Spec.TaskList.CustomArtifacts.Metrics[0].Value = `
+		{
+			"missing": "__type__ property"
+		}`
+
+	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "missing __type__ definition")
+
+	// ok
+	job.Spec.TaskList.CustomArtifacts.Metrics[0].Value = `
+		{
+			"__type__": "llm_as_judge",
+			"inference_model": {
+				"__type__": "hf_pipeline_based_inference_engine",
+				"model_name": "mistralai/Mistral-7B-Instruct-v0.2",
+				"max_new_tokens": 256,
+				"use_fp16": true
+			},
+			"template": "templates.response_assessment.rating.mt_bench_single_turn",
+			"task": "rating.single_turn",
+			"format": "formats.models.mistral.instruction",
+			"main_score": "mistral_7b_instruct_v0_2_huggingface_template_mt_bench_single_turn"
+		}`
+
+	//ok
+	assert.Nil(t, lmevalRec.validateCustomRecipes(job, log))
+}
+
+func Test_CustomTask(t *testing.T) {
+	log := log.FromContext(context.Background())
+	lmevalRec := LMEvalJobReconciler{
+		Namespace: "test",
+	}
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskRecipes: []lmesv1alpha1.TaskRecipe{
+					{
+						Card: lmesv1alpha1.Card{
+							Name: "cards.wnli",
+						},
+						Template: &lmesv1alpha1.Template{
+							Name: "templates.classification.multi_class.relation.default",
+						},
+						Task: &lmesv1alpha1.Task{
+							Ref: "mytask",
+						},
+					},
+				},
+				CustomArtifacts: &lmesv1alpha1.CustomArtifacts{
+					Tasks: []lmesv1alpha1.CustomArtifact{
+						{Name: "mytask-noexist", Value: "invalid"},
+					},
+				},
+			},
+		},
+	}
+
+	// no custom task
+	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "the reference name of the custom task is not defined: mytask")
+
+	job.Spec.TaskList.CustomArtifacts.Tasks[0].Name = "mytask"
+	// invalid JSON object
+	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "failed to parse the custom task:mytask")
+
+	// no __type__
+	job.Spec.TaskList.CustomArtifacts.Tasks[0].Value = `
+		{
+			"missing": "__type__ property"
+		}`
+
+	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "missing __type__ definition")
+
+	// no input_fields
+	job.Spec.TaskList.CustomArtifacts.Tasks[0].Value = `
+		{
+			"__type__": "task"
+		}`
+
+	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "missing input_fields definition")
+
+	// ok
+	job.Spec.TaskList.CustomArtifacts.Tasks[0].Value = `
+		{
+			"__type__": "task",
+			"input_fields": {
+				"input": "str",
+				"type_of_input": "str",
+				"type_of_output": "str"
+			},
+			"reference_fields": {
+				"output": "str"
+			},
+			"prediction_type": "str",
+			"metrics": [
+				"metrics.normalized_sacrebleu"
+			],
+			"augmentable_inputs": [
+				"input"
+			],
+			"defaults": {
+				"type_of_output": "Text"
+			}
+		}`
+
+	//ok
+	assert.Nil(t, lmevalRec.validateCustomRecipes(job, log))
 }
 
 func Test_ConcatTasks(t *testing.T) {
