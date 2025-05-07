@@ -1,64 +1,64 @@
 name: Smoke test
 
 on:
-    pull_request:
-        branches:
-            - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
-    deploy:
-        runs-on: ubuntu-latest
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v2
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number || 'default-pr-number' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
 
-            - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@v1
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
 
-            - name: Build and push operator container image
-              uses: docker/build-push-action@v2
-              with:
-                  context: .
-                  file: ./Dockerfile
-                  load: true
-                  tags: smoke/operator:pr-${{ github.event.pull_request.number || env.PR_NUMBER }}
+      - name: Build and push operator container image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          tags: smoke/operator:pr-${{ github.event.pull_request.number || env.PR_NUMBER }}
 
-            - name: Create k8s Kind Cluster
-              uses: helm/kind-action@v1
-              with:
-                  node_image: kindest/node:v1.24.17
-                  cluster_name: kind
+      - name: Create k8s Kind Cluster
+        uses: helm/kind-action@v1
+        with:
+          node_image: kindest/node:v1.24.17
+          cluster_name: kind
 
-            - name: Load the operator image into Kind
-              run: |
-                  kind load docker-image smoke/operator:pr-${{ github.event.pull_request.number || env.PR_NUMBER }}
+      - name: Load the operator image into Kind
+        run: |
+          kind load docker-image smoke/operator:pr-${{ github.event.pull_request.number || env.PR_NUMBER }}
 
-            - name: Install kustomize
-              run: |
-                  curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-                  sudo mv kustomize /usr/local/bin/
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
 
-            - name: Apply CRDs
-              run: |
-                  kubectl apply -f tests/crds/monitoring.coreos.com_servicemonitors.yaml
-                  kubectl apply -f tests/crds/route_crd.yaml
-                  kubectl apply -f tests/crds/serving.kserve.io_inferenceservices.yaml
-                  kubectl apply -f tests/crds/serving.kserve.io_servingruntimes.yaml
-                  kustomize build config/crd | kubectl apply -f -
+      - name: Apply CRDs
+        run: |
+          kubectl apply -f tests/crds/monitoring.coreos.com_servicemonitors.yaml
+          kubectl apply -f tests/crds/route_crd.yaml
+          kubectl apply -f tests/crds/serving.kserve.io_inferenceservices.yaml
+          kustomize build config/crd | kubectl apply -f -
 
-            - name: Update params.env file
-              run: |
-                  sed -i 's|trustyaiOperatorImage=quay.io/trustyai/trustyai-service-operator:latest|trustyaiOperatorImage=smoke/operator:pr-${{ github.event.pull_request.number || env.PR_NUMBER }}|' config/base/params.env
+      - name: Update params.env file
+        run: |
+          sed -i 's|trustyaiOperatorImage=quay.io/trustyai/trustyai-service-operator:latest|trustyaiOperatorImage=smoke/operator:pr-${{ github.event.pull_request.number || env.PR_NUMBER }}|' config/base/params.env
 
-            - name: Deploy the operator with kustomize
-              run: |
-                  kubectl create namespace system
-                  kustomize build config/base | kubectl apply -f -
+      - name: Deploy the operator with kustomize
+        run: |
+          kubectl create namespace system
+          kustomize build config/base | kubectl apply -n system -f -
 
-            - name: Run smoke tests
-              run: ./tests/smoke/test_smoke.sh
-
+      - name: Run smoke tests
+        run: ./tests/smoke/test_smoke.sh
 
 env:
-    PR_NUMBER: "default-pr-number"
-    KUBECONFIG: "${HOME}/.kube/config"
+  PR_NUMBER: "default-pr-number"
+  KUBECONFIG: "${HOME}/.kube/config"

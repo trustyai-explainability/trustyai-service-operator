@@ -32,6 +32,8 @@ spec:
             - /manager
           args:
             - --leader-elect
+            - --enable-services
+            - "TAS,LMES,GORCH"
           image: $(trustyaiOperatorImage)
           name: manager
           securityContext:
@@ -56,8 +58,8 @@ spec:
             periodSeconds: 10
           resources:
             limits:
-              cpu: 500m
-              memory: 128Mi
+              cpu: 900m
+              memory: 700Mi
             requests:
               cpu: 10m
               memory: 64Mi

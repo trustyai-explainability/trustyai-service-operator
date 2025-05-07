@@ -1,0 +1,122 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.3
+  name: guardrailsorchestrators.trustyai.opendatahub.io
+spec:
+  group: trustyai.opendatahub.io
+  names:
+    kind: GuardrailsOrchestrator
+    listKind: GuardrailsOrchestratorList
+    plural: guardrailsorchestrators
+    singular: guardrailsorchestrator
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GuardrailsOrchestrator is the Schema for the guardrailsorchestrators
+          API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator.
+            properties:
+              enableBuiltInDetectors:
+                description: Boolean flag to enable/disable built-in detectors
+                type: boolean
+              enableGuardrailsGateway:
+                description: Boolean flag to enable/disable the guardrails sidecar
+                  gateway
+                type: boolean
+              guardrailsGatewayConfig:
+                description: ' Name of the configmap containing guadrails sidecar
+                  gateway arguments'
+                type: string
+              orchestratorConfig:
+                description: Name of configmap containing generator,detector,and chunker
+                  arguments
+                type: string
+              otelExporter:
+                description: List of orchestrator enviroment variables for configuring
+                  the OTLP exporter
+                properties:
+                  metricsEndpoint:
+                    description: Overrides the OTLP endpoint for metrics
+                    type: string
+                  metricsProtocol:
+                    description: Overrides the protocol for traces
+                    type: string
+                  otlpEndpoint:
+                    description: Sets the OTLP endpoint
+                    type: string
+                  otlpExport:
+                    description: Specifies which data types to export
+                    type: string
+                  protocol:
+                    description: Sets the protocol for all the OTLP endpoints
+                    type: string
+                  tracesEndpoint:
+                    description: Overrides the OTLP endpoint for traces
+                    type: string
+                  tracesProtocol:
+                    description: Overrides the protocol for traces
+                    type: string
+                type: object
+              replicas:
+                description: Number of replicas
+                format: int32
+                type: integer
+            required:
+            - orchestratorConfig
+            - replicas
+            type: object
+          status:
+            properties:
+              conditions:
+                description: Conditions describes the state of the GuardrailsOrchestrator
+                  resource.
+                items:
+                  properties:
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
+              phase:
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

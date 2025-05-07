@@ -1,0 +1,29 @@
+FROM registry.access.redhat.com/ubi9/python-311@sha256:fccda5088dd13d2a3f2659e4c904beb42fc164a0c909e765f01af31c58affae3
+
+USER root
+RUN sed -i.bak 's/include-system-site-packages = false/include-system-site-packages = true/' /opt/app-root/pyvenv.cfg
+
+USER default
+WORKDIR /opt/app-root/src
+RUN mkdir /opt/app-root/src/hf_home && chmod g+rwx /opt/app-root/src/hf_home
+RUN mkdir /opt/app-root/src/output && chmod g+rwx /opt/app-root/src/output
+RUN mkdir /opt/app-root/src/my_tasks && chmod g+rwx /opt/app-root/src/my_tasks
+RUN mkdir -p /opt/app-root/src/my_catalogs/cards && chmod -R g+rwx /opt/app-root/src/my_catalogs
+RUN mkdir -p /opt/app-root/src/.cache
+ENV PATH="/opt/app-root/bin:/opt/app-root/src/.local/bin/:/opt/app-root/src/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+RUN curl -L https://github.com/opendatahub-io/lm-evaluation-harness/archive/refs/heads/release-0.4.8.zip -o repo.zip && \
+    unzip repo.zip && \
+    cp -r lm-evaluation-harness-release-0.4.8/* . && \
+    rm -rf lm-evaluation-harness-release-0.4.8 repo.zip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -e .
+
+RUN python -c 'from lm_eval.tasks.unitxt import task; import os.path; print("class: !function " + task.__file__.replace("task.py", "task.Unitxt"))' > ./my_tasks/unitxt
+
+ENV PYTHONPATH=/opt/app-root/src/.local/lib/python3.11/site-packages:/opt/app-root/src:/opt/app-root/src/server
+ENV HF_HOME=/opt/app-root/src/hf_home
+ENV UNITXT_CATALOGS=/opt/app-root/src/my_catalogs
+
+USER 65532:65532
+CMD ["/opt/app-root/bin/python"]

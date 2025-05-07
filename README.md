@@ -1,5 +1,8 @@
-[![Controller Tests](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/controller-tests.yaml/badge.svg)](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/controller-tests.yaml)[![YAML lint](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/lint-yaml.yaml/badge.svg)](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/lint-yaml.yaml)
 # TrustyAI Kubernetes Operator
+[![Controller Tests](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/controller-tests.yaml/badge.svg)](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/controller-tests.yaml)
+[![YAML lint](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/lint-yaml.yaml/badge.svg)](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/lint-yaml.yaml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/trustyai-explainability/trustyai-service-operator)](https://goreportcard.com/report/github.com/trustyai-explainability/trustyai-service-operator)
+
 
 ## Overview
 
@@ -151,10 +154,20 @@ through its `status` field. Below are the status types and reasons that are avai
 | `PVCAvailable`   | `PVCNotFound`   | `PersistentVolumeClaim` not found.  |
 | `PVCAvailable`   | `PVCFound`      | `PersistentVolumeClaim` found.      |
 
+#### Database Status
+
+| Status Type   | Status Reason           | Description                                       |
+|---------------|-------------------------|---------------------------------------------------|
+| `DBAvailable` | `DBCredentialsNotFound` | Database credentials secret not found             |
+| `DBAvailable` | `DBCredentialsError`    | Database credentials malformed (e.g. missing key) |
+| `DBAvailable` | `DBConnectionError`     | Service error connecting to the database          |
+| `DBAvailable` | `DBAvailable`           | Successfully connected to the database            |
+
 
 #### Status Behavior
 
 - If a PVC is not available, the `Ready` status of `TrustyAIService` will be set to `False`.
+- If on database mode, any `DBAvailable` reason other than `DBAvailable` will set the `TrustyAIService` to `Not Ready`
 - However, if `InferenceServices` are not found, the `Ready` status of `TrustyAIService` will not be affected, _i.e._, it is `Ready` by all other conditions, it will remain so.
 
 ## Contributing
