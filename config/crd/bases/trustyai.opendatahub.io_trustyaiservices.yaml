@@ -72,6 +72,10 @@ spec:
                     - DATABASE
                     type: string
                   size:
+                    description: |-
+                      Size specifies the storage size when using PVC format
+                      If not specified, a default size of DefaultPVCSize will be used (when in PVC mode)
+                      Size is ignored when in database mode and for migration, the existing PVC will be used if found
                     type: string
                 required:
                 - format
