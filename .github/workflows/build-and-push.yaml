@@ -100,22 +100,53 @@ jobs:
         run: sed -i 's#summary="odh-trustyai-service-operator\"#summary="odh-trustyai-service-operator" \\ \n      quay.expires-after=7d#' Dockerfile
       - name: Log in to Quay
         run: docker login -u ${{ secrets.QUAY_ROBOT_USERNAME }} -p ${{ secrets.QUAY_ROBOT_SECRET }} quay.io
-      - name: Build main image
-        run: docker build -t ${{ env.IMAGE_NAME }}:$TAG .
-      - name: Push main image to Quay
-        run: docker push ${{ env.IMAGE_NAME }}:$TAG
-      - name: Build LMES driver image
-        run: docker build -f Dockerfile.driver -t ${{ env.DRIVER_IMAGE_NAME }}:$TAG .
-      - name: Push LMES driver image to Quay
-        run: docker push ${{ env.DRIVER_IMAGE_NAME }}:$TAG
-      - name: Build LMES job image
-        run: docker build -f Dockerfile.lmes-job -t ${{ env.JOB_IMAGE_NAME }}:$TAG .
-      - name: Push LMES job image to Quay
-        run: docker push ${{ env.JOB_IMAGE_NAME }}:$TAG
-      - name: Build Guardrails orchestrator image
-        run: docker build -f Dockerfile.orchestrator -t ${{ env.ORCH_IMAGE_NAME }}:$TAG .
-      - name: Push Guardrails orchestrator image to Quay
-        run: docker push ${{ env.ORCH_IMAGE_NAME }}:$TAG
+
+      - name: Set up QEMU
+        if: env.BUILD_CONTEXT == 'main' || env.BUILD_CONTEXT == 'tag'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker buildx
+        if: env.BUILD_CONTEXT == 'main' || env.BUILD_CONTEXT == 'tag'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and Push Main Image (multi-arch)
+        if: env.BUILD_CONTEXT == 'main' || env.BUILD_CONTEXT == 'tag'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/s390x,linux/ppc64le
+          tags: ${{ env.IMAGE_NAME }}:${{ env.TAG }}
+          push: true
+
+      - name: Build and Push LMES Driver Image (multi-arch)
+        if: env.BUILD_CONTEXT == 'main' || env.BUILD_CONTEXT == 'tag'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.driver
+          platforms: linux/amd64,linux/s390x,linux/ppc64le
+          tags: ${{ env.DRIVER_IMAGE_NAME }}:${{ env.TAG }}
+          push: true
+
+      - name: Build and Push LMES Job Image (multi-arch)
+        if: env.BUILD_CONTEXT == 'main' || env.BUILD_CONTEXT == 'tag'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.lmes-job
+          platforms: linux/amd64,linux/s390x,linux/ppc64le
+          tags: ${{ env.JOB_IMAGE_NAME }}:${{ env.TAG }}
+          push: true
+
+      - name: Build and Push Guardrails Orchestrator Image (multi-arch)
+        if: env.BUILD_CONTEXT == 'main' || env.BUILD_CONTEXT == 'tag'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.orchestrator
+          platforms: linux/amd64,linux/s390x,linux/ppc64le
+          tags: ${{ env.ORCH_IMAGE_NAME }}:${{ env.TAG }}
+          push: true
 
       # Create CI Manifests
       - name: Set up manifests for CI
