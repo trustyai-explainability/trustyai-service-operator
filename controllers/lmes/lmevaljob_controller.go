@@ -669,12 +669,20 @@ func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger,
 }
 
 func (r *LMEvalJobReconciler) validateCustomRecipes(job *lmesv1alpha1.LMEvalJob, log logr.Logger) error {
-	if job.Spec.TaskList.TaskRecipes == nil {
-		return nil
-	}
-
 	customArtifacts := job.Spec.TaskList.CustomArtifacts
-	for _, taskRecipe := range job.Spec.TaskList.TaskRecipes {
+	var taskRecipeNames []string
+	var taskRecipeIndex = 0
+	var validateTaskRecipe = func(taskRecipe *lmesv1alpha1.TaskRecipe) error {
+		taskName := fmt.Sprintf("%s_%d", driver.TaskRecipePrefix, taskRecipeIndex)
+		if taskRecipe.Name != nil && *taskRecipe.Name != "" {
+			taskName = *taskRecipe.Name
+		} else {
+			taskRecipeIndex++
+		}
+		if slices.Index(taskRecipeNames, taskName) != -1 {
+			return fmt.Errorf("failed to parse the custom card: duplicate task name %s", taskName)
+		}
+		taskRecipeNames = append(taskRecipeNames, taskName)
 		if taskRecipe.Card.Custom != "" {
 			_, err := unmarshal(taskRecipe.Card.Custom, []string{"loader"})
 			if err != nil {
@@ -715,6 +723,25 @@ func (r *LMEvalJobReconciler) validateCustomRecipes(job *lmesv1alpha1.LMEvalJob,
 		if taskRecipe.Task != nil && taskRecipe.Task.Ref != "" {
 			if getCustomArtifactByName(customArtifacts.GetTasks(), taskRecipe.Task.Ref) == nil {
 				return fmt.Errorf("the reference name of the custom task is not defined: %s", taskRecipe.Task.Ref)
+			}
+		}
+		return nil
+	}
+
+	for _, taskRecipe := range job.Spec.TaskList.TaskRecipes {
+		if err := validateTaskRecipe(&taskRecipe); err != nil {
+			return err
+		}
+	}
+
+	for _, taskGroup := range job.Spec.TaskList.TaskGroups {
+		if len(taskGroup.TaskNames) == 0 && len(taskGroup.TaskRecipes) == 0 {
+			return fmt.Errorf("either TaskNames or TaskReceipes should be defined")
+		}
+
+		for _, taskRecipe := range taskGroup.TaskRecipes {
+			if err := validateTaskRecipe(&taskRecipe); err != nil {
+				return err
 			}
 		}
 	}
@@ -1291,17 +1318,23 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 	return cmds
 }
 
-func concatTasks(tasks lmesv1alpha1.TaskList) []string {
-	if len(tasks.TaskRecipes) == 0 {
-		return tasks.TaskNames
-	}
-	recipesName := make([]string, len(tasks.TaskRecipes))
-	for i := range tasks.TaskRecipes {
+func concatTasks(taskList lmesv1alpha1.TaskList) []string {
+	tasks := make([]string, 0, len(taskList.TaskNames)+len(taskList.TaskRecipes)+len(taskList.TaskGroups))
+	tasks = append(tasks, taskList.TaskNames...)
+	for i, tr := range taskList.TaskRecipes {
 		// assign internal used task name
-		recipesName[i] = fmt.Sprintf("%s_%d", driver.TaskRecipePrefix, i)
+		if tr.Name != nil && *tr.Name != "" {
+			tasks = append(tasks, *tr.Name)
+		} else {
+			tasks = append(tasks, fmt.Sprintf("%s_%d", driver.TaskRecipePrefix, i))
+		}
 	}
 
-	return append(tasks.TaskNames, recipesName...)
+	for _, g := range taskList.TaskGroups {
+		tasks = append(tasks, g.Name)
+	}
+
+	return tasks
 }
 
 func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string {
@@ -1356,7 +1389,8 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 	}
 
 	cr_idx := 0
-	for _, recipe := range job.Spec.TaskList.TaskRecipes {
+	tr_idx := 0
+	var handleTaskRecipe = func(recipe *lmesv1alpha1.TaskRecipe, taskNames *[]string) {
 		// duplicate the TaskRecipe and update its content to generate proper recipe string
 		dupRecipe := recipe.DeepCopy()
 
@@ -1369,6 +1403,27 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 		}
 
 		cmds = append(cmds, "--task-recipe", dupRecipe.String())
+		if taskNames != nil {
+			if recipe.Name != nil {
+				*taskNames = append(*taskNames, *recipe.Name)
+			} else {
+				*taskNames = append(*taskNames, fmt.Sprintf("%s_%d", driver.TaskRecipePrefix, tr_idx))
+				tr_idx++
+			}
+		}
+	}
+
+	for _, recipe := range job.Spec.TaskList.TaskRecipes {
+		handleTaskRecipe(&recipe, nil)
+	}
+
+	for _, group := range job.Spec.TaskList.TaskGroups {
+		taskReceipeNames := []string{}
+		for _, recipe := range group.TaskRecipes {
+			handleTaskRecipe(&recipe, &taskReceipeNames)
+		}
+		// create task group command
+		cmds = append(cmds, "--task-group", taskGroupString(&group, taskReceipeNames))
 	}
 
 	// go through custom artificats and add corresponding arguments
@@ -1381,6 +1436,29 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 
 	cmds = append(cmds, "--")
 	return cmds
+}
+
+func taskGroupString(group *lmesv1alpha1.TaskGroup, taskRecipeNames []string) string {
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("%s|task:\n", group.Name))
+	for _, task := range group.TaskNames {
+		buf.WriteString(fmt.Sprintf("  - %s\n", task))
+	}
+	for _, taskRecipe := range taskRecipeNames {
+		buf.WriteString(fmt.Sprintf("  - %s\n", taskRecipe))
+	}
+	if len(group.AggregateMetrics) > 0 {
+		buf.WriteString("aggregate_metric_list:\n")
+		for _, metric := range group.AggregateMetrics {
+			weightBySize := "true"
+			if metric.WeightBySize != nil && !*metric.WeightBySize {
+				weightBySize = "false"
+			}
+			buf.WriteString(fmt.Sprintf("  - metric: %s\n    aggregation: mean\n    weight_by_size: %s\n", metric.MetricName, weightBySize))
+		}
+	}
+	return buf.String()
+
 }
 
 func argsToString(args []lmesv1alpha1.Arg) string {

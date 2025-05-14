@@ -184,6 +184,10 @@ func (c *CustomArtifacts) GetTasks() []CustomArtifact {
 // Find details of the Unitxt Recipe here:
 // https://www.unitxt.ai/en/latest/unitxt.standard.html#unitxt.standard.StandardRecipe
 type TaskRecipe struct {
+	// The name of the TaskRecipe
+	// +optional
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._]+$`
+	Name *string `json:"name,omitempty"`
 	// The Unitxt dataset card
 	Card Card `json:"card"`
 	// The Unitxt template
@@ -241,12 +245,44 @@ type CustomTasks struct {
 	Source CustomTaskSource `json:"source,omitempty"`
 }
 
+// Define an aggregate metric using 'mean' aggregation.
+type AggregateMetric struct {
+	// The name of the metric to aggregate
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._]+$`
+	MetricName string `json:"metricName"`
+	// Weight by size or not. Default value is True
+	// +optional
+	// +kubebuilder:default=true
+	WeightBySize *bool `json:"weightBySize,omitempty"`
+}
+
+// +kubebuilder:validation:XValidation:rule="has(self.taskNames) || has(self.taskRecipes)", message="One of taskNames or taskRecipes must be defined"
+type TaskGroup struct {
+	// The name of the task group
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._]+$`
+	Name string `json:"name"`
+	// TaskNames from lm-eval's task list and/or from custom tasks if CustomTasks is defined
+	// +optional
+	// +kubebuilder:validation:items:Pattern=`^[a-zA-Z0-9._]+$`
+	TaskNames []string `json:"taskNames,omitempty"`
+	// Task Recipes specifically for the Unitxt tasks
+	// +optional
+	TaskRecipes []TaskRecipe `json:"taskRecipes,omitempty"`
+	// A list of aggregate metrics to calculate for the task group
+	// +optional
+	AggregateMetrics []AggregateMetric `json:"aggregateMetrics,omitempty"`
+}
+
+// +kubebuilder:validation:XValidation:rule="has(self.taskNames) || has(self.taskRecipes) || has(self.taskGroups)", message="One of taskNames, taskRecipes, or taskGroups must be defined"
+
 type TaskList struct {
 	// TaskNames from lm-eval's task list and/or from custom tasks if CustomTasks is defined
-	// +kubebuilder:validation:items:Pattern=`^[a-zA-Z0-9._-]+$`
+	// +kubebuilder:validation:items:Pattern=`^[a-zA-Z0-9._]+$`
 	TaskNames []string `json:"taskNames,omitempty"`
 	// Task Recipes specifically for Unitxt
 	TaskRecipes []TaskRecipe `json:"taskRecipes,omitempty"`
+	// Task Groups are a list of tasks that their metrics are aggregated in the result
+	TaskGroups []TaskGroup `json:"taskGroups,omitempty"`
 	// Custom Unitxt artifacts that can be used in a TaskRecipe
 	CustomArtifacts *CustomArtifacts `json:"custom,omitempty"`
 	// CustomTasks is a list of external tasks
@@ -345,6 +381,9 @@ func (t *TaskRecipe) String() string {
 	}
 	if t.DemosPoolSize != nil {
 		b.WriteString(fmt.Sprintf(",demos_pool_size=%d", *t.DemosPoolSize))
+	}
+	if t.Name != nil && *t.Name != "" {
+		b.WriteString(fmt.Sprintf("|%s", *t.Name))
 	}
 	return b.String()
 }
