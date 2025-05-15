@@ -189,7 +189,7 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 			if err := routev1.AddToScheme(scheme.Scheme); err != nil {
 				return err
 			}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-http", Namespace: namespaceName}, route); err != nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}, route); err != nil {
 				return err
 			}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-health", Namespace: namespaceName}, route); err != nil {
@@ -292,7 +292,7 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 			if err := routev1.AddToScheme(scheme.Scheme); err != nil {
 				return err
 			}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-http", Namespace: namespaceName}, route); err != nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}, route); err != nil {
 				return err
 			}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-health", Namespace: namespaceName}, route); err != nil {
@@ -390,7 +390,7 @@ func testCreateDeleteGuardrailsOrchestratorOtelExporter(namespaceName string) {
 			if err := routev1.AddToScheme(scheme.Scheme); err != nil {
 				return err
 			}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-http", Namespace: namespaceName}, route); err != nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}, route); err != nil {
 				return err
 			}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-health", Namespace: namespaceName}, route); err != nil {
@@ -531,7 +531,7 @@ func testCreateTwoGuardrailsOrchestratorsInSameNamespace(namespaceName string) {
 
 		Eventually(func() error {
 			route1 := &routev1.Route{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: firstOrchestratorName + "-http", Namespace: namespaceName}, route1); err != nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: firstOrchestratorName, Namespace: namespaceName}, route1); err != nil {
 				return err
 			}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: firstOrchestratorName + "-health", Namespace: namespaceName}, route1); err != nil {
@@ -539,7 +539,7 @@ func testCreateTwoGuardrailsOrchestratorsInSameNamespace(namespaceName string) {
 			}
 
 			route2 := &routev1.Route{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secondOrchestratorName + "-http", Namespace: namespaceName}, route2); err != nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secondOrchestratorName, Namespace: namespaceName}, route2); err != nil {
 				return err
 			}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secondOrchestratorName + "-health", Namespace: namespaceName}, route2); err != nil {

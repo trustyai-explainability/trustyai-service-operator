@@ -22,11 +22,11 @@ type RouteConfig struct {
 }
 
 func (r *GuardrailsOrchestratorReconciler) createRoute(ctx context.Context, routeTemplatePath string, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *routev1.Route {
-	routeHttpConfig := RouteConfig{
+	routeHttpsConfig := RouteConfig{
 		Orchestrator: orchestrator,
 	}
 	var route *routev1.Route
-	route, err := templateParser.ParseResource[routev1.Route](routeTemplatePath, routeHttpConfig, reflect.TypeOf(&routev1.Route{}))
+	route, err := templateParser.ParseResource[routev1.Route](routeTemplatePath, routeHttpsConfig, reflect.TypeOf(&routev1.Route{}))
 
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to parse route template")

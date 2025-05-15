@@ -1,7 +1,7 @@
 kind: Route
 apiVersion: route.openshift.io/v1
 metadata:
-  name: {{.Orchestrator.Name}}-http
+  name: {{.Orchestrator.Name}}
   namespace: {{.Orchestrator.Namespace}}
   labels:
     app: {{.Orchestrator.Name}}

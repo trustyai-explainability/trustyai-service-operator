@@ -196,10 +196,10 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	existingRoute := &routev1.Route{}
-	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-http", Namespace: orchestrator.Namespace}, existingRoute)
+	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingRoute)
 	if err != nil && errors.IsNotFound(err) {
 		// Define a new route
-		httpRoute := r.createRoute(ctx, "http-route.tmpl.yaml", orchestrator)
+		httpRoute := r.createRoute(ctx, "https-route.tmpl.yaml", orchestrator)
 		log.Info("Creating a new Route", "Route.Namespace", httpRoute.Namespace, "Route.Name", httpRoute.Name)
 		err = r.Create(ctx, httpRoute)
 		if err != nil {
