@@ -28,6 +28,7 @@ RUN rustup component add rustfmt
 ## Orchestrator builder #########################################################
 FROM rust-builder as fms-guardrails-orchestr8-builder
 ARG ORCH_REPO=/midstream
+ARG CONFIG_FILE=config/config.yaml
 COPY --from=rust-builder $ORCH_REPO/build.rs /midstream/*.toml /midstream/LICENSE /app/
 COPY --from=rust-builder $ORCH_REPO/${CONFIG_FILE} /app/config/config.yaml
 COPY --from=rust-builder $ORCH_REPO/protos/ /app/protos/
