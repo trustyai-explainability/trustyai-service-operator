@@ -15,6 +15,7 @@ COPY controllers/ controllers/
 # Copy license
 COPY LICENSE /licenses/ta-lmes-driver.md
 
+USER root
 RUN GO111MODULE=on CGO_ENABLED=1 GOOS=linux GOEXPERIMENT=strictfipsruntime \
     go build -tags 'strictfipsruntime netgo' -o /bin/driver ./cmd/lmes_driver/*.go
 
