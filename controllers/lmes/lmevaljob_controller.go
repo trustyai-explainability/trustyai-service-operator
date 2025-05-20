@@ -1256,7 +1256,24 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 		batchSize = validateBatchSize(*job.Spec.BatchSize, svcOpts.MaxBatchSize, log)
 	}
 
-	cmd.WriteString("--batch_size " + batchSize)
+	cmd.WriteString("--batch_size " + batchSize + " ")
+
+	// --system_instruction
+	if job.Spec.SystemInstruction != "" {
+		cmd.WriteString("--system_instruction " + job.Spec.SystemInstruction + " ")
+	}
+
+	// --apply_chat_template
+	// check for the default string value of "false"
+	if job.Spec.ApplyChatTemplate != "" {
+		if job.Spec.ApplyChatTemplate == "false" {
+
+		} else if job.Spec.ApplyChatTemplate == "true" {
+			cmd.WriteString("--apply_chat_template")
+		} else {
+			cmd.WriteString("--apply_chat_template " + job.Spec.ApplyChatTemplate)
+		}
+	}
 
 	return []string{"sh", "-ec", cmd.String()}
 }
