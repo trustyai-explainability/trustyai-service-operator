@@ -536,7 +536,6 @@ type LMEvalJobSpec struct {
 	SystemInstruction string `json:"systemInstruction,omitempty"`
 	// ApplyChatTemplate will apply the specified chat template to prompts. This is required for chat-completions models.
 	// +optional
-	// +kubebuilder:default:=false
 	ApplyChatTemplate string `json:"applyChatTemplate,omitempty"`
 }
 
