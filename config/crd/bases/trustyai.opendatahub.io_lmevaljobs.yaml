@@ -53,6 +53,10 @@ spec:
                 description: AllowOnly specifies whether the LMEvalJob can directly
                   download remote code, datasets and metrics. Default is false.
                 type: boolean
+              applyChatTemplate:
+                description: ApplyChatTemplate will apply the specified chat template
+                  to prompts. This is required for chat-completions models.
+                type: string
               batchSize:
                 description: |-
                   Batch size for the evaluation. This is used by the models that run and are loaded
@@ -4718,6 +4722,10 @@ spec:
                 description: Suspend keeps the job but without pods. This is intended
                   to be used by the Kueue integration
                 type: boolean
+              systemInstruction:
+                description: SystemInstruction will set the system instruction for
+                  all prompts passed to the evaluated model
+                type: string
               taskList:
                 description: Evaluation task list
                 properties:
