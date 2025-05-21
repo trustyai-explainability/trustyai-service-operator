@@ -1260,7 +1260,7 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 
 	// --system_instruction
 	if job.Spec.SystemInstruction != "" {
-		cmd.WriteString("--system_instruction " + job.Spec.SystemInstruction + " ")
+		cmd.WriteString("--system_instruction \"" + job.Spec.SystemInstruction + "\" ")
 	}
 
 	// --apply_chat_template
