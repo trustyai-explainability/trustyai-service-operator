@@ -542,7 +542,7 @@ type LMEvalJobSpec struct {
 	SystemInstruction string `json:"systemInstruction,omitempty"`
 	// ChatTemplate defines whether to apply the default or specified chat template to prompts. This is required for chat-completions models.
 	// +optional
-	ChatTemplate *ChatTemplate `json:"ChatTemplate,omitempty"`
+	ChatTemplate *ChatTemplate `json:"chatTemplate,omitempty"`
 }
 
 // IsOffline returns whether this LMEvalJob is configured to run offline

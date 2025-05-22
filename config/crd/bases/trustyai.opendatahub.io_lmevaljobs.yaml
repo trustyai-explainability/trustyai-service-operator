@@ -43,18 +43,6 @@ spec:
           spec:
             description: LMEvalJobSpec defines the desired state of LMEvalJob
             properties:
-              ChatTemplate:
-                description: ChatTemplate defines whether to apply the default or
-                  specified chat template to prompts. This is required for chat-completions
-                  models.
-                properties:
-                  enabled:
-                    type: boolean
-                  name:
-                    type: string
-                required:
-                - enabled
-                type: object
               allowCodeExecution:
                 default: false
                 description: AllowCodeExecution specifies whether the LMEvalJob can
@@ -70,6 +58,18 @@ spec:
                   Batch size for the evaluation. This is used by the models that run and are loaded
                   locally and not apply for the commercial APIs.
                 type: string
+              chatTemplate:
+                description: ChatTemplate defines whether to apply the default or
+                  specified chat template to prompts. This is required for chat-completions
+                  models.
+                properties:
+                  enabled:
+                    type: boolean
+                  name:
+                    type: string
+                required:
+                - enabled
+                type: object
               genArgs:
                 description: Map to `--gen_kwargs` parameter for the underlying library.
                 items:
