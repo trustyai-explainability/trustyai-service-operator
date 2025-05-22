@@ -176,8 +176,8 @@ func Test_SimplePod(t *testing.T) {
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
 				},
 			},
 			RestartPolicy: corev1.RestartPolicyNever,
@@ -411,8 +411,8 @@ func Test_WithCustomPod(t *testing.T) {
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
 				},
 				{
 					Name: "additionalVolume",
@@ -624,8 +624,8 @@ func Test_EnvSecretsPod(t *testing.T) {
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
 				},
 			},
 			RestartPolicy: corev1.RestartPolicyNever,
@@ -801,8 +801,8 @@ func Test_FileSecretsPod(t *testing.T) {
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
 				},
 				{
 					Name: "secVol1",
@@ -918,24 +918,31 @@ func Test_ChatTemplate(t *testing.T) {
 	}, generateArgs(svcOpts, job, log))
 
 	// chat template == false
-	job.Spec.ApplyChatTemplate = "false"
+	job.Spec.ChatTemplate = &lmesv1alpha1.ChatTemplate{Enabled: false}
 	assert.Equal(t, []string{
 		"sh", "-ec",
 		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + svcOpts.DefaultBatchSize + " ",
 	}, generateArgs(svcOpts, job, log))
 
 	// chat template == true
-	job.Spec.ApplyChatTemplate = "true"
+	job.Spec.ChatTemplate = &lmesv1alpha1.ChatTemplate{Enabled: true}
 	assert.Equal(t, []string{
 		"sh", "-ec",
 		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + svcOpts.DefaultBatchSize + " --apply_chat_template",
 	}, generateArgs(svcOpts, job, log))
 
 	// chat template == some_template
-	job.Spec.ApplyChatTemplate = "some_template"
+	job.Spec.ChatTemplate = &lmesv1alpha1.ChatTemplate{Enabled: true, Name: "some_template"}
 	assert.Equal(t, []string{
 		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + svcOpts.DefaultBatchSize + " --apply_chat_template some_template",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + svcOpts.DefaultBatchSize + " --apply_chat_template \"some_template\"",
+	}, generateArgs(svcOpts, job, log))
+
+	// chat template == some with spaces template
+	job.Spec.ChatTemplate = &lmesv1alpha1.ChatTemplate{Enabled: true, Name: "some template with spaces"}
+	assert.Equal(t, []string{
+		"sh", "-ec",
+		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + svcOpts.DefaultBatchSize + " --apply_chat_template \"some template with spaces\"",
 	}, generateArgs(svcOpts, job, log))
 }
 
@@ -1760,16 +1767,16 @@ func Test_ManagedPVC(t *testing.T) {
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
 				},
 				{
 					Name: "outputs", VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: jobName + "-pvc",
-						ReadOnly:  false,
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: jobName + "-pvc",
+							ReadOnly:  false,
+						},
 					},
-				},
 				},
 			},
 			RestartPolicy: corev1.RestartPolicyNever,
@@ -1923,16 +1930,16 @@ func Test_ExistingPVC(t *testing.T) {
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
 				},
 				{
 					Name: "outputs", VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: pvcName,
-						ReadOnly:  false,
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
 					},
-				},
 				},
 			},
 			RestartPolicy: corev1.RestartPolicyNever,
@@ -2109,16 +2116,16 @@ func Test_PVCPreference(t *testing.T) {
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
 				},
 				{
 					Name: "outputs", VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: jobName + "-pvc",
-						ReadOnly:  false,
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: jobName + "-pvc",
+							ReadOnly:  false,
+						},
 					},
-				},
 				},
 			},
 			RestartPolicy: corev1.RestartPolicyNever,
@@ -2321,16 +2328,16 @@ func Test_OfflineMode(t *testing.T) {
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
 				},
 				{
 					Name: "offline", VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: pvcName,
-						ReadOnly:  false,
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
 					},
-				},
 				},
 			},
 			RestartPolicy: corev1.RestartPolicyNever,
@@ -2534,16 +2541,16 @@ func Test_ProtectedVars(t *testing.T) {
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
 				},
 				{
 					Name: "offline", VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: pvcName,
-						ReadOnly:  false,
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
 					},
-				},
 				},
 			},
 			RestartPolicy: corev1.RestartPolicyNever,
@@ -2726,16 +2733,16 @@ func Test_OnlineModeDisabled(t *testing.T) {
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
 				},
 				{
 					Name: "offline", VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: pvcName,
-						ReadOnly:  false,
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
 					},
-				},
 				},
 			},
 			RestartPolicy: corev1.RestartPolicyNever,
@@ -2894,16 +2901,16 @@ func Test_OnlineMode(t *testing.T) {
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
 				},
 				{
 					Name: "offline", VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: pvcName,
-						ReadOnly:  false,
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
 					},
-				},
 				},
 			},
 			RestartPolicy: corev1.RestartPolicyNever,
@@ -3065,16 +3072,16 @@ func Test_AllowCodeOnlineMode(t *testing.T) {
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
 				},
 				{
 					Name: "offline", VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: pvcName,
-						ReadOnly:  false,
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
 					},
-				},
 				},
 			},
 			RestartPolicy: corev1.RestartPolicyNever,
@@ -3254,16 +3261,16 @@ func Test_AllowCodeOfflineMode(t *testing.T) {
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
 				},
 				{
 					Name: "offline", VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: pvcName,
-						ReadOnly:  false,
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+							ReadOnly:  false,
+						},
 					},
-				},
 				},
 			},
 			RestartPolicy: corev1.RestartPolicyNever,
@@ -3447,24 +3454,24 @@ func Test_OfflineModeWithOutput(t *testing.T) {
 			Volumes: []corev1.Volume{
 				{
 					Name: "shared", VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
 				},
 				{
 					Name: "outputs", VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: outputPvcName,
-						ReadOnly:  false,
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: outputPvcName,
+							ReadOnly:  false,
+						},
 					},
-				},
 				},
 				{
 					Name: "offline", VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: offlinePvcName,
-						ReadOnly:  false,
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: offlinePvcName,
+							ReadOnly:  false,
+						},
 					},
-				},
 				},
 			},
 			RestartPolicy: corev1.RestartPolicyNever,
