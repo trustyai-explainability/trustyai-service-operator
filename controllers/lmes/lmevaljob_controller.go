@@ -1265,13 +1265,13 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 
 	// --apply_chat_template
 	// check for the default string value of "false"
-	if job.Spec.ApplyChatTemplate != "" {
-		if job.Spec.ApplyChatTemplate == "false" {
+	if job.Spec.ChatTemplate != nil {
+		if !job.Spec.ChatTemplate.Enabled {
 
-		} else if job.Spec.ApplyChatTemplate == "true" {
+		} else if job.Spec.ChatTemplate.Enabled && job.Spec.ChatTemplate.Name == "" {
 			cmd.WriteString("--apply_chat_template")
 		} else {
-			cmd.WriteString("--apply_chat_template " + job.Spec.ApplyChatTemplate)
+			cmd.WriteString("--apply_chat_template \"" + job.Spec.ChatTemplate.Name + "\"")
 		}
 	}
 
