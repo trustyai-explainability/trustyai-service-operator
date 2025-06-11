@@ -117,24 +117,6 @@ jobs:
       - name: Push Guardrails orchestrator image to Quay
         run: docker push ${{ env.ORCH_IMAGE_NAME }}:$TAG
 
-      # Run Trivy scan before cleaning up git repository
-      - name: Trivy scan
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: 'image'
-          image-ref: "${{ env.IMAGE_NAME }}:${{ env.TAG }}"
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'MEDIUM,HIGH,CRITICAL'
-          exit-code: '0'
-          ignore-unfixed: false
-          vuln-type: 'os,library'
-
-      - name: Update Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-results.sarif'
-
       # Create CI Manifests
       - name: Set up manifests for CI
         if: env.BUILD_CONTEXT == 'ci'
