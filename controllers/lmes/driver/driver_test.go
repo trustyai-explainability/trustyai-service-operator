@@ -161,7 +161,7 @@ func Test_ProgressUpdate(t *testing.T) {
 		OutputPath:  info.outputPath,
 		CatalogPath: info.catalogPath,
 		Logger:      driverLog,
-		Args:        []string{"sh", "-ec", "sleep 2; echo 'testing progress: 100%|' >&2; sleep 4"},
+		Args:        []string{"sh", "-ec", "sleep 2; echo 'Requesting API:   0%|▏                                                                                                                                                                                                               | 1367/1200000 [09:27<134:30:31,  2.48it/s]' >&2; sleep 4"},
 		CommPort:    info.port,
 	})
 	assert.Nil(t, err)
@@ -170,7 +170,7 @@ func Test_ProgressUpdate(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"initializing the evaluation job",
-		"testing progress: 100%",
+		"0%",
 		"job completed",
 	}, msgs)
 

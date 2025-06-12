@@ -39,7 +39,8 @@ import (
 )
 
 var (
-	progressMegPattern = regexp.MustCompile(`^(.*?:\s*?\d*?%)\|`)
+	// from https://gist.github.com/andenacitelli/20a98f8c45499fe21d55266b776d3071 -> regex pattern to extract tqdm fields
+	progressMsgPattern = regexp.MustCompile(`(.*): *(\d+%).*(\d+\/\d+) +\[(\d+:\d+:?\d+)<(\d+:\d+:?\d+), +(\d+.\d+.*\/s)\]`)
 )
 
 const (
@@ -104,12 +105,19 @@ type driverComm struct {
 	port       int
 }
 
+type progressInfo struct {
+	lastProgressPercent               string
+	lastProgressElapsedTime           string
+	lastProgressRemainingTimeEstimate string
+	lastProgressCount                 string
+}
+
 type driverImpl struct {
-	Option          *DriverOption
-	lastProgressMsg string
-	status          lmesv1alpha1.LMEvalJobStatus
-	err             error
-	comm            *driverComm
+	Option       *DriverOption
+	lastProgress progressInfo
+	status       lmesv1alpha1.LMEvalJobStatus
+	err          error
+	comm         *driverComm
 }
 
 func NewDriver(opt *DriverOption) (Driver, error) {
@@ -498,10 +506,26 @@ func (d *driverImpl) updateProgress(msg string) {
 	// get multiple lines and only use the last one
 	msglist := strings.Split(msg, "\n")
 
-	if matches := progressMegPattern.FindStringSubmatch(msglist[len(msglist)-1]); len(matches) == 2 {
-		if matches[1] != d.lastProgressMsg {
-			d.lastProgressMsg = strings.Trim(matches[1], " \r")
-			d.updateStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, d.lastProgressMsg)
+	// gather tqdm fields
+	if matches := progressMsgPattern.FindStringSubmatch(msglist[len(msglist)-1]); len(matches) == 7 {
+		percent := strings.Trim(matches[2], " \r")
+		count := strings.Trim(matches[3], " \r")
+		elapsedTime := strings.Trim(matches[4], "\r")
+		remainingTimeEstimate := strings.Trim(matches[5], "\r")
+
+		newPercent := percent != d.lastProgress.lastProgressPercent
+		newCount := count != d.lastProgress.lastProgressCount
+
+		// if either the run percent or run count has changed, update the CR status
+		if newPercent || newCount {
+			d.lastProgress.lastProgressPercent = percent
+			d.lastProgress.lastProgressCount = count
+			d.lastProgress.lastProgressElapsedTime = elapsedTime
+			d.lastProgress.lastProgressRemainingTimeEstimate = remainingTimeEstimate
+
+			if newPercent {
+				d.updateStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, d.lastProgress.lastProgressPercent)
+			}
 		}
 	}
 }
