@@ -464,13 +464,13 @@ func (d *driverImpl) updateCompleteStatus(err error) {
 func (d *driverImpl) updateStatus(state lmesv1alpha1.JobState, reason lmesv1alpha1.Reason, msg string) {
 	d.status.State = state
 	d.status.Reason = reason
-	d.status.Message = "option1: " + msg
+	d.status.Message = msg
 }
 
 func (d *driverImpl) updateProgressStatus(state lmesv1alpha1.JobState, reason lmesv1alpha1.Reason, info progressInfo) {
 	d.status.State = state
 	d.status.Reason = reason
-	d.status.Message = "option2 :" + info.lastProgressPercent // for backwards compatibility
+	d.status.Message = info.lastProgressPercent + " : " + info.lastProgressCount + " : " + info.lastProgressRemainingTimeEstimate + " : " + info.lastProgressElapsedTime // for backwards compatibility
 
 	// more detailed progress info
 	d.status.Progress.Count = info.lastProgressCount
