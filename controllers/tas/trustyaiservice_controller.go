@@ -82,12 +82,14 @@ type TrustyAIServiceReconciler struct {
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
-	// Fetch the AppService instance
+	log := log.FromContext(ctx)
+
+	// Fetch the resource
+	// Kubernetes convert automatically between versions
+	// This is the controller for the storage version (v1) so we'll get the canonical representation
 	instance := &trustyaiopendatahubiov1alpha1.TrustyAIService{}
-	err := r.Get(context.TODO(), req.NamespacedName, instance)
+	err := r.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
-		// Handle error
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
@@ -99,7 +101,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// Add the finalizer if it does not exist
 	if !utils.ContainsString(instance.Finalizers, finalizerName) {
-		log.FromContext(ctx).Info("Adding finalizer ", "finalizer", finalizerName)
+		log.Info("Adding finalizer ", "finalizer", finalizerName)
 		instance.Finalizers = append(instance.Finalizers, finalizerName)
 		if err := r.Update(ctx, instance); err != nil {
 			return RequeueWithErrorMessage(ctx, err, "Failed to add finalizer.")
@@ -112,7 +114,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if utils.ContainsString(instance.Finalizers, finalizerName) {
 			// The finalizer is present, so we handle external dependency deletion
 			if err := r.deleteExternalDependency(req.Name, instance, req.Namespace, ctx); err != nil {
-				log.FromContext(ctx).Error(err, "Failed to delete external dependencies, but proceeding with finalizer removal.")
+				log.Error(err, "Failed to delete external dependencies, but proceeding with finalizer removal.")
 				return RequeueWithErrorMessage(ctx, err, "Failed to clean up external dependencies.")
 			}
 			// Remove the finalizer from the list and update it.
@@ -152,7 +154,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		err = r.ensurePVC(ctx, instance)
 		if err != nil {
 			// PVC not found condition
-			log.FromContext(ctx).Error(err, "Error creating PVC storage.")
+			log.Error(err, "Error creating PVC storage.")
 			_, updateErr := r.updateStatus(ctx, instance, UpdatePVCNotAvailable)
 			if updateErr != nil {
 				return RequeueWithErrorMessage(ctx, err, "Failed to update status")
@@ -195,7 +197,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// Check for migration annotation
 	if _, ok := instance.Annotations[migrationAnnotationKey]; ok {
-		log.FromContext(ctx).Info("Found migration annotation. Migrating.")
+		log.Info("Found migration annotation. Migrating.")
 		err = r.ensureDeployment(ctx, instance, caBundle, true)
 		//err = r.redeployForMigration(ctx, instance)
 
@@ -205,14 +207,14 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 		// Remove the migration annotation after processing to avoid restarts
 		delete(instance.Annotations, migrationAnnotationKey)
-		log.FromContext(ctx).Info("Deleting annotation")
+		log.Info("Deleting annotation")
 		if err := r.Update(ctx, instance); err != nil {
 			return RequeueWithErrorMessage(ctx, err, "Failed to remove migration annotation.")
 		}
 	} else {
 		// Ensure Deployment object
 		err = r.ensureDeployment(ctx, instance, caBundle, false)
-		log.FromContext(ctx).Info("No annotation found")
+		log.Info("No annotation found")
 		if err != nil {
 			return RequeueWithError(err)
 		}
@@ -277,6 +279,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// v1alpha1 as primary, but handle both versions
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&trustyaiopendatahubiov1alpha1.TrustyAIService{}).
 		Owns(&appsv1.Deployment{}).
