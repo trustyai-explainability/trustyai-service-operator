@@ -39,7 +39,8 @@ import (
 )
 
 var (
-	progressMegPattern = regexp.MustCompile(`^(.*?:\s*?\d*?%)\|`)
+	// from https://gist.github.com/andenacitelli/20a98f8c45499fe21d55266b776d3071 -> regex pattern to extract tqdm fields
+	progressMsgPattern = regexp.MustCompile(`(.*): *(\d+%).*(\d+\/\d+) +\[(\d+:\d+:?\d+)<(\d+:\d+:?\d+), +(\d+.\d+.*\/s)\]`)
 )
 
 const (
@@ -105,11 +106,11 @@ type driverComm struct {
 }
 
 type driverImpl struct {
-	Option          *DriverOption
-	lastProgressMsg string
-	status          lmesv1alpha1.LMEvalJobStatus
-	err             error
-	comm            *driverComm
+	Option       *DriverOption
+	lastProgress lmesv1alpha1.Progress
+	status       lmesv1alpha1.LMEvalJobStatus
+	err          error
+	comm         *driverComm
 }
 
 func NewDriver(opt *DriverOption) (Driver, error) {
@@ -140,7 +141,7 @@ func NewDriver(opt *DriverOption) (Driver, error) {
 
 // Run implements Driver.
 func (d *driverImpl) Run() error {
-	d.updateStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, "initializing the evaluation job")
+	d.updateStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, "Initializing the evaluation job")
 
 	if err := d.setupComm(); err != nil {
 		d.err = err
@@ -459,6 +460,15 @@ func (d *driverImpl) updateStatus(state lmesv1alpha1.JobState, reason lmesv1alph
 	d.status.Message = msg
 }
 
+func (d *driverImpl) updateProgressStatus(state lmesv1alpha1.JobState, reason lmesv1alpha1.Reason, latestProgress lmesv1alpha1.Progress) {
+	d.status.State = state
+	d.status.Reason = reason
+	d.status.Message = latestProgress.Percent // for backwards compatibility
+
+	// more detailed progress info
+	d.status.Progress = &latestProgress
+}
+
 func (d *driverImpl) getResults() (string, error) {
 	var results string
 	pattern := "*result*.json"
@@ -498,10 +508,24 @@ func (d *driverImpl) updateProgress(msg string) {
 	// get multiple lines and only use the last one
 	msglist := strings.Split(msg, "\n")
 
-	if matches := progressMegPattern.FindStringSubmatch(msglist[len(msglist)-1]); len(matches) == 2 {
-		if matches[1] != d.lastProgressMsg {
-			d.lastProgressMsg = strings.Trim(matches[1], " \r")
-			d.updateStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, d.lastProgressMsg)
+	// gather tqdm fields
+	if matches := progressMsgPattern.FindStringSubmatch(msglist[len(msglist)-1]); len(matches) == 7 {
+		percent := strings.Trim(matches[2], " \r")
+		count := strings.Trim(matches[3], " \r")
+		elapsedTime := strings.Trim(matches[4], "\r")
+		remainingTimeEstimate := strings.Trim(matches[5], "\r")
+
+		newPercent := percent != d.lastProgress.Percent
+		newCount := count != d.lastProgress.Count
+
+		// if either the run percent or run count has changed, update the CR status
+		if newPercent || newCount {
+			d.lastProgress.Percent = percent
+			d.lastProgress.Count = count
+			d.lastProgress.ElapsedTime = elapsedTime
+			d.lastProgress.RemainingTimeEstimate = remainingTimeEstimate
+
+			d.updateProgressStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, d.lastProgress)
 		}
 	}
 }
