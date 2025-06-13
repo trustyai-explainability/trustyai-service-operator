@@ -467,6 +467,18 @@ func (d *driverImpl) updateStatus(state lmesv1alpha1.JobState, reason lmesv1alph
 	d.status.Message = msg
 }
 
+func (d *driverImpl) updateProgressStatus(state lmesv1alpha1.JobState, reason lmesv1alpha1.Reason, info progressInfo) {
+	d.status.State = state
+	d.status.Reason = reason
+	d.status.Message = info.lastProgressPercent // for backwards compatibility
+
+	// more detailed progress info
+	d.status.Progress.Count = info.lastProgressCount
+	d.status.Progress.Percent = info.lastProgressPercent
+	d.status.Progress.ElapsedTime = info.lastProgressElapsedTime
+	d.status.Progress.RemainingTimeEstimate = info.lastProgressRemainingTimeEstimate
+}
+
 func (d *driverImpl) getResults() (string, error) {
 	var results string
 	pattern := "*result*.json"
@@ -523,8 +535,8 @@ func (d *driverImpl) updateProgress(msg string) {
 			d.lastProgress.lastProgressElapsedTime = elapsedTime
 			d.lastProgress.lastProgressRemainingTimeEstimate = remainingTimeEstimate
 
-			if newPercent {
-				d.updateStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, d.lastProgress.lastProgressPercent)
+			if newPercent || newCount {
+				d.updateProgressStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, d.lastProgress)
 			}
 		}
 	}

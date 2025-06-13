@@ -473,6 +473,14 @@ type ChatTemplate struct {
 	Name    string `json:"name,omitempty"`
 }
 
+// Progress stores information about the progress of a running evaluation task
+type Progress struct {
+	Percent               string `json:"percent"`
+	ElapsedTime           string `json:"elapsedTime"`
+	RemainingTimeEstimate string `json:"remainingTimeEstimate"`
+	Count                 string `json:"count"`
+}
+
 func (p *LMEvalPodSpec) GetAffinity() *corev1.Affinity {
 	if p == nil {
 		return nil
@@ -593,6 +601,10 @@ type LMEvalJobStatus struct {
 	// Message about the current/final status
 	// +optional
 	Message string `json:"message,omitempty"`
+
+	// Progress
+	Progress Progress `json:"progress,omitempty"`
+
 	// Information when was the last time the job was successfully scheduled.
 	// +optional
 	LastScheduleTime *metav1.Time `json:"lastScheduleTime,omitempty"`
