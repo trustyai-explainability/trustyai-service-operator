@@ -174,11 +174,11 @@ jobs:
 
             📦 [PR image](https://quay.io/trustyai/trustyai-service-operator-ci:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/trustyai-service-operator-ci:${{ github.event.pull_request.head.sha }}`
 
-            📦 [LMES driver image](https://quay.io/trustyai/ta-lmes-driver:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/ta-lmes-driver:${{ github.event.pull_request.head.sha }}`
+            📦 [LMES driver image](https://quay.io/trustyai/ta-lmes-driver-ci:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/ta-lmes-driver-ci:${{ github.event.pull_request.head.sha }}`
 
-            📦 [LMES job image](https://quay.io/trustyai/ta-lmes-job:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/ta-lmes-job:${{ github.event.pull_request.head.sha }}`
+            📦 [LMES job image](https://quay.io/trustyai/ta-lmes-job-ci:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/ta-lmes-job-ci:${{ github.event.pull_request.head.sha }}`
 
-            📦 [Guardrails orchestrator image](https://quay.io/trustyai/ta-guardrails-orchestrator:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/ta-guardrails-orchestrator:${{ github.event.pull_request.head.sha }}`
+            📦 [Guardrails orchestrator image](https://quay.io/trustyai/ta-guardrails-orchestrator-ci:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/ta-guardrails-orchestrator-ci:${{ github.event.pull_request.head.sha }}`
 
             🗂️ [CI manifests](https://github.com/trustyai-explainability/trustyai-service-operator-ci/tree/operator-${{ env.TAG }})
 
