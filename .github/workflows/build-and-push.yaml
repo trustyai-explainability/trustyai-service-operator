@@ -125,17 +125,17 @@ jobs:
           sed -i "s#quay.io/trustyai/trustyai-service-operator:latest#${{ env.IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
           sed -i "s#quay.io/trustyai/trustyai-service-operator:latest#${{ env.IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
           
-          sed -i "s#lmes-driver-image=quay.io/trustyai/ta-lmes-driver:latest#${{ env.DRIVER_IMAGE_NAME }}:$TAG#" ./config/base/params.env
-          sed -i "s#lmes-driver-image=quay.io/trustyai/ta-lmes-driver:latest#${{ env.DRIVER_IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
-          sed -i "s#lmes-driver-image=quay.io/trustyai/ta-lmes-driver:latest#${{ env.DRIVER_IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-driver:latest#${{ env.DRIVER_IMAGE_NAME }}:$TAG#" ./config/base/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-driver:latest#${{ env.DRIVER_IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-driver:latest#${{ env.DRIVER_IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
           
-          sed -i "s#lmes-pod-image=quay.io/trustyai/ta-lmes-job:latest#${{ env.JOB_IMAGE_NAME }}:$TAG#" ./config/base/params.env
-          sed -i "s#lmes-pod-image=quay.io/trustyai/ta-lmes-job:latest#${{ env.JOB_IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
-          sed -i "s#lmes-pod-image=quay.io/trustyai/ta-lmes-job:latest#${{ env.JOB_IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-job:latest#${{ env.JOB_IMAGE_NAME }}:$TAG#" ./config/base/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-job:latest#${{ env.JOB_IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-job:latest#${{ env.JOB_IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
           
-          sed -i "s#guardrails-orchestrator-image=quay.io/trustyai/ta-guardrails-orchestrator:latest#${{ env.ORCH_IMAGE_NAME }}:$TAG#" ./config/base/params.env
-          sed -i "s#guardrails-orchestrator-image=quay.io/trustyai/ta-guardrails-orchestrator:latest#${{ env.ORCH_IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
-          sed -i "s#guardrails-orchestrator-image=quay.io/trustyai/ta-guardrails-orchestrator:latest#${{ env.ORCH_IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
+          sed -i "s#quay.io/trustyai/ta-guardrails-orchestrator:latest#${{ env.ORCH_IMAGE_NAME }}:$TAG#" ./config/base/params.env
+          sed -i "s#quay.io/trustyai/ta-guardrails-orchestrator:latest#${{ env.ORCH_IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
+          sed -i "s#quay.io/trustyai/ta-guardrails-orchestrator:latest#${{ env.ORCH_IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
           
           
           rm -Rf $(ls . | grep -v config)
@@ -183,9 +183,9 @@ jobs:
             🗂️ [CI manifests](https://github.com/trustyai-explainability/trustyai-service-operator-ci/tree/operator-${{ env.TAG }})
 
             ```
-            devFlags:
-              manifests:
-                - contextDir: config
-                  sourcePath: ''
-                  uri: https://api.github.com/repos/trustyai-explainability/trustyai-service-operator-ci/tarball/operator-${{ env.TAG }}
+                  devFlags:
+                    manifests:
+                      - contextDir: config
+                        sourcePath: ''
+                        uri: https://api.github.com/repos/trustyai-explainability/trustyai-service-operator-ci/tarball/operator-${{ env.TAG }}
             ```
