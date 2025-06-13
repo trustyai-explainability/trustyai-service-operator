@@ -148,7 +148,7 @@ func NewDriver(opt *DriverOption) (Driver, error) {
 
 // Run implements Driver.
 func (d *driverImpl) Run() error {
-	d.updateStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, "initializing the evaluation job")
+	d.updateStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, "Initializing the evaluation job")
 
 	if err := d.setupComm(); err != nil {
 		d.err = err
@@ -464,13 +464,13 @@ func (d *driverImpl) updateCompleteStatus(err error) {
 func (d *driverImpl) updateStatus(state lmesv1alpha1.JobState, reason lmesv1alpha1.Reason, msg string) {
 	d.status.State = state
 	d.status.Reason = reason
-	d.status.Message = msg
+	d.status.Message = "option1: " + msg
 }
 
 func (d *driverImpl) updateProgressStatus(state lmesv1alpha1.JobState, reason lmesv1alpha1.Reason, info progressInfo) {
 	d.status.State = state
 	d.status.Reason = reason
-	d.status.Message = info.lastProgressPercent // for backwards compatibility
+	d.status.Message = "option2 :" + info.lastProgressPercent // for backwards compatibility
 
 	// more detailed progress info
 	d.status.Progress.Count = info.lastProgressCount
