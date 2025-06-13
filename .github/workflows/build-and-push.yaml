@@ -124,6 +124,20 @@ jobs:
           sed -i "s#quay.io/trustyai/trustyai-service-operator:latest#${{ env.IMAGE_NAME }}:$TAG#" ./config/base/params.env
           sed -i "s#quay.io/trustyai/trustyai-service-operator:latest#${{ env.IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
           sed -i "s#quay.io/trustyai/trustyai-service-operator:latest#${{ env.IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
+          
+          sed -i "s#lmes-driver-image=quay.io/trustyai/ta-lmes-driver:latest#${{ env.DRIVER_IMAGE_NAME }}:$TAG#" ./config/base/params.env
+          sed -i "s#lmes-driver-image=quay.io/trustyai/ta-lmes-driver:latest#${{ env.DRIVER_IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
+          sed -i "s#lmes-driver-image=quay.io/trustyai/ta-lmes-driver:latest#${{ env.DRIVER_IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
+          
+          sed -i "s#lmes-pod-image=quay.io/trustyai/ta-lmes-job:latest#${{ env.JOB_IMAGE_NAME }}:$TAG#" ./config/base/params.env
+          sed -i "s#lmes-pod-image=quay.io/trustyai/ta-lmes-job:latest#${{ env.JOB_IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
+          sed -i "s#lmes-pod-image=quay.io/trustyai/ta-lmes-job:latest#${{ env.JOB_IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
+          
+          sed -i "s#guardrails-orchestrator-image=quay.io/trustyai/ta-guardrails-orchestrator:latest#${{ env.ORCH_IMAGE_NAME }}:$TAG#" ./config/base/params.env
+          sed -i "s#guardrails-orchestrator-image=quay.io/trustyai/ta-guardrails-orchestrator:latest#${{ env.ORCH_IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
+          sed -i "s#guardrails-orchestrator-image=quay.io/trustyai/ta-guardrails-orchestrator:latest#${{ env.ORCH_IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
+          
+          
           rm -Rf $(ls . | grep -v config)
           rm -Rf .gitignore .dockerignore .github .git .yamllint.yaml
       # pysh to ci-manifest repo
