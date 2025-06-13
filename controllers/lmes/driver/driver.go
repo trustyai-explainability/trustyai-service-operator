@@ -470,7 +470,7 @@ func (d *driverImpl) updateStatus(state lmesv1alpha1.JobState, reason lmesv1alph
 func (d *driverImpl) updateProgressStatus(state lmesv1alpha1.JobState, reason lmesv1alpha1.Reason, info progressInfo) {
 	d.status.State = state
 	d.status.Reason = reason
-	d.status.Message = "lala: " + info.lastProgressPercent // for backwards compatibility
+	d.status.Message = info.lastProgressPercent // for backwards compatibility
 
 	// more detailed progress info
 	d.status.Progress.Count = info.lastProgressCount
