@@ -604,7 +604,7 @@ type LMEvalJobStatus struct {
 
 	// Progress
 	// +optional
-	Progress Progress `json:"progress,omitempty"`
+	Progress *Progress `json:"progress,omitempty"`
 
 	// Information when was the last time the job was successfully scheduled.
 	// +optional

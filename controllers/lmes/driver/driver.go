@@ -105,16 +105,9 @@ type driverComm struct {
 	port       int
 }
 
-type progressInfo struct {
-	lastProgressPercent               string
-	lastProgressElapsedTime           string
-	lastProgressRemainingTimeEstimate string
-	lastProgressCount                 string
-}
-
 type driverImpl struct {
 	Option       *DriverOption
-	lastProgress progressInfo
+	lastProgress lmesv1alpha1.Progress
 	status       lmesv1alpha1.LMEvalJobStatus
 	err          error
 	comm         *driverComm
@@ -467,16 +460,13 @@ func (d *driverImpl) updateStatus(state lmesv1alpha1.JobState, reason lmesv1alph
 	d.status.Message = msg
 }
 
-func (d *driverImpl) updateProgressStatus(state lmesv1alpha1.JobState, reason lmesv1alpha1.Reason, info progressInfo) {
+func (d *driverImpl) updateProgressStatus(state lmesv1alpha1.JobState, reason lmesv1alpha1.Reason, latestProgress lmesv1alpha1.Progress) {
 	d.status.State = state
 	d.status.Reason = reason
-	d.status.Message = info.lastProgressPercent + " : " + info.lastProgressCount + " : " + info.lastProgressRemainingTimeEstimate + " : " + info.lastProgressElapsedTime // for backwards compatibility
+	d.status.Message = latestProgress.Percent // for backwards compatibility
 
 	// more detailed progress info
-	d.status.Progress.Count = info.lastProgressCount
-	d.status.Progress.Percent = info.lastProgressPercent
-	d.status.Progress.ElapsedTime = info.lastProgressElapsedTime
-	d.status.Progress.RemainingTimeEstimate = info.lastProgressRemainingTimeEstimate
+	d.status.Progress = &latestProgress
 }
 
 func (d *driverImpl) getResults() (string, error) {
@@ -525,19 +515,17 @@ func (d *driverImpl) updateProgress(msg string) {
 		elapsedTime := strings.Trim(matches[4], "\r")
 		remainingTimeEstimate := strings.Trim(matches[5], "\r")
 
-		newPercent := percent != d.lastProgress.lastProgressPercent
-		newCount := count != d.lastProgress.lastProgressCount
+		newPercent := percent != d.lastProgress.Percent
+		newCount := count != d.lastProgress.Count
 
 		// if either the run percent or run count has changed, update the CR status
 		if newPercent || newCount {
-			d.lastProgress.lastProgressPercent = percent
-			d.lastProgress.lastProgressCount = count
-			d.lastProgress.lastProgressElapsedTime = elapsedTime
-			d.lastProgress.lastProgressRemainingTimeEstimate = remainingTimeEstimate
+			d.lastProgress.Percent = percent
+			d.lastProgress.Count = count
+			d.lastProgress.ElapsedTime = elapsedTime
+			d.lastProgress.RemainingTimeEstimate = remainingTimeEstimate
 
-			if newPercent || newCount {
-				d.updateProgressStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, d.lastProgress)
-			}
+			d.updateProgressStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, d.lastProgress)
 		}
 	}
 }
