@@ -414,6 +414,22 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 		return ctrl.Result{}, nil
 	}
 
+	// Validate user input
+	if err := ValidateUserInput(job); err != nil {
+		// Input validation failed
+		job.Status.State = lmesv1alpha1.CompleteJobState
+		job.Status.Reason = lmesv1alpha1.FailedReason
+		job.Status.Message = fmt.Sprintf("Input validation failed: %s", err.Error())
+
+		current := v1.Now()
+		job.Status.CompleteTime = &current
+		if err := r.Status().Update(ctx, job); err != nil {
+			log.Error(err, "unable to update LMEvalJob status for input validation error")
+		}
+		log.Error(err, "Input validation failed for LMEvalJob", "name", job.Name)
+		return ctrl.Result{}, err
+	}
+
 	// Validate the custom card if exists
 	// FIXME: Move the validation to the webhook once we enable it.
 	if err := r.validateCustomRecipes(job, log); err != nil {
@@ -1211,42 +1227,40 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 		return nil
 	}
 
-	var cmd strings.Builder
-	cmd.WriteString("python -m lm_eval ")
-	cmd.WriteString("--output_path /opt/app-root/src/output ")
-	cmd.WriteString("--model " + job.Spec.Model + " ")
+	// Use argument escaping
+	cmds := []string{
+		"python", "-m", "lm_eval",
+		"--output_path", "/opt/app-root/src/output",
+		"--model", job.Spec.Model,
+	}
 
 	// --model_args
 	if job.Spec.ModelArgs != nil {
-		cmd.WriteString("--model_args " + argsToString(job.Spec.ModelArgs) + " ")
+		cmds = append(cmds, "--model_args", argsToString(job.Spec.ModelArgs))
 	}
 
-	combinedTasks := strings.Join(concatTasks(job.Spec.TaskList), ",")
-
 	// --tasks
-	cmd.WriteString("--tasks " + combinedTasks + " ")
-
+	cmds = append(cmds, "--tasks", strings.Join(concatTasks(job.Spec.TaskList), ","))
 	// --include
-	cmd.WriteString("--include_path " + driver.DefaultTaskRecipesPath + " ")
-
+	cmds = append(cmds, "--include_path", driver.DefaultTaskRecipesPath)
 	// --num_fewshot
 	if job.Spec.NumFewShot != nil {
-		cmd.WriteString("--num_fewshot " + fmt.Sprintf("%d", *job.Spec.NumFewShot) + " ")
+		cmds = append(cmds, "--num_fewshot", fmt.Sprintf("%d", *job.Spec.NumFewShot))
 	}
 
 	// --limit
 	if job.Spec.Limit != "" {
-		cmd.WriteString("--limit " + job.Spec.Limit + " ")
+		cmds = append(cmds, "--limit", job.Spec.Limit)
 	}
 
 	// --gen_kwargs
 	if job.Spec.GenArgs != nil {
-		cmd.WriteString("--gen_kwargs " + argsToString(job.Spec.GenArgs) + " ")
+		cmds = append(cmds, "--gen_kwargs", argsToString(job.Spec.GenArgs))
 	}
 
 	// --log_samples
 	if job.Spec.LogSamples != nil && *job.Spec.LogSamples {
-		cmd.WriteString("--log_samples ")
+		cmds = append(cmds, "--log_samples")
 	}
 
 	// --batch_size
@@ -1256,11 +1270,10 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 		batchSize = validateBatchSize(*job.Spec.BatchSize, svcOpts.MaxBatchSize, log)
 	}
 
-	cmd.WriteString("--batch_size " + batchSize + " ")
-
+	cmds = append(cmds, "--batch_size", batchSize)
 	// --system_instruction
 	if job.Spec.SystemInstruction != "" {
-		cmd.WriteString("--system_instruction \"" + job.Spec.SystemInstruction + "\" ")
+		cmds = append(cmds, "--system_instruction", job.Spec.SystemInstruction)
 	}
 
 	// --apply_chat_template
@@ -1269,13 +1282,13 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 		if !job.Spec.ChatTemplate.Enabled {
 
 		} else if job.Spec.ChatTemplate.Enabled && job.Spec.ChatTemplate.Name == "" {
-			cmd.WriteString("--apply_chat_template")
+			cmds = append(cmds, "--apply_chat_template")
 		} else {
-			cmd.WriteString("--apply_chat_template \"" + job.Spec.ChatTemplate.Name + "\"")
+			cmds = append(cmds, "--apply_chat_template", job.Spec.ChatTemplate.Name)
 		}
 	}
 
-	return []string{"sh", "-ec", cmd.String()}
+	return cmds
 }
 
 func concatTasks(tasks lmesv1alpha1.TaskList) []string {
@@ -1295,8 +1308,10 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 	if job == nil {
 		return nil
 	}
-	cmds := make([]string, 0, 10)
-	cmds = append(cmds, DestDriverPath, "--output-path", "/opt/app-root/src/output")
+	cmds := []string{
+		DestDriverPath,
+		"--output-path", "/opt/app-root/src/output",
+	}
 
 	if job.Spec.HasOfflineS3() {
 		cmds = append(cmds, "--download-assets-s3")
