@@ -910,36 +910,31 @@ func Test_ChatTemplate(t *testing.T) {
 
 	// no chat template
 	assert.Equal(t, []string{
-		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + svcOpts.DefaultBatchSize + " ",
+		"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "test", "--model_args", "arg1=value1", "--tasks", "task1,task2", "--include_path", "/opt/app-root/src/my_tasks", "--batch_size", svcOpts.DefaultBatchSize,
 	}, generateArgs(svcOpts, job, log))
 
 	// chat template == false
 	job.Spec.ChatTemplate = &lmesv1alpha1.ChatTemplate{Enabled: false}
 	assert.Equal(t, []string{
-		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + svcOpts.DefaultBatchSize + " ",
+		"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "test", "--model_args", "arg1=value1", "--tasks", "task1,task2", "--include_path", "/opt/app-root/src/my_tasks", "--batch_size", svcOpts.DefaultBatchSize,
 	}, generateArgs(svcOpts, job, log))
 
 	// chat template == true
 	job.Spec.ChatTemplate = &lmesv1alpha1.ChatTemplate{Enabled: true}
 	assert.Equal(t, []string{
-		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + svcOpts.DefaultBatchSize + " --apply_chat_template",
+		"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "test", "--model_args", "arg1=value1", "--tasks", "task1,task2", "--include_path", "/opt/app-root/src/my_tasks", "--batch_size", svcOpts.DefaultBatchSize, "--apply_chat_template",
 	}, generateArgs(svcOpts, job, log))
 
 	// chat template == some_template
 	job.Spec.ChatTemplate = &lmesv1alpha1.ChatTemplate{Enabled: true, Name: "some_template"}
 	assert.Equal(t, []string{
-		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + svcOpts.DefaultBatchSize + " --apply_chat_template \"some_template\"",
+		"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "test", "--model_args", "arg1=value1", "--tasks", "task1,task2", "--include_path", "/opt/app-root/src/my_tasks", "--batch_size", svcOpts.DefaultBatchSize, "--apply_chat_template", "some_template",
 	}, generateArgs(svcOpts, job, log))
 
 	// chat template == some with spaces template
 	job.Spec.ChatTemplate = &lmesv1alpha1.ChatTemplate{Enabled: true, Name: "some template with spaces"}
 	assert.Equal(t, []string{
-		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + svcOpts.DefaultBatchSize + " --apply_chat_template \"some template with spaces\"",
+		"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "test", "--model_args", "arg1=value1", "--tasks", "task1,task2", "--include_path", "/opt/app-root/src/my_tasks", "--batch_size", svcOpts.DefaultBatchSize, "--apply_chat_template", "some template with spaces",
 	}, generateArgs(svcOpts, job, log))
 }
 
@@ -975,22 +970,19 @@ func Test_SystemInstruction(t *testing.T) {
 
 	// no system instruction
 	assert.Equal(t, []string{
-		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + svcOpts.DefaultBatchSize + " ",
+		"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "test", "--model_args", "arg1=value1", "--tasks", "task1,task2", "--include_path", "/opt/app-root/src/my_tasks", "--batch_size", svcOpts.DefaultBatchSize,
 	}, generateArgs(svcOpts, job, log))
 
 	// system instruction == something
 	job.Spec.SystemInstruction = "something"
 	assert.Equal(t, []string{
-		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + svcOpts.DefaultBatchSize + " --system_instruction \"something\" ",
+		"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "test", "--model_args", "arg1=value1", "--tasks", "task1,task2", "--include_path", "/opt/app-root/src/my_tasks", "--batch_size", svcOpts.DefaultBatchSize, "--system_instruction", "something",
 	}, generateArgs(svcOpts, job, log))
 
 	// system instruction == something with spaces
 	job.Spec.SystemInstruction = "something with spaces"
 	assert.Equal(t, []string{
-		"sh", "-ec",
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --include_path /opt/app-root/src/my_tasks --batch_size " + svcOpts.DefaultBatchSize + " --system_instruction \"something with spaces\" ",
+		"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "test", "--model_args", "arg1=value1", "--tasks", "task1,task2", "--include_path", "/opt/app-root/src/my_tasks", "--batch_size", svcOpts.DefaultBatchSize, "--system_instruction", "something with spaces",
 	}, generateArgs(svcOpts, job, log))
 }
 
