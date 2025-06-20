@@ -218,7 +218,7 @@ func (d *driverImpl) detectDevice() error {
 		return fmt.Errorf("failed to find the matched output")
 	}
 
-	patchDevice(d.Option.Args, matches[1] == "True")
+	d.Option.Args = patchDevice(d.Option.Args, matches[1] == "True")
 
 	return nil
 }
@@ -241,21 +241,21 @@ func (d *driverImpl) downloadS3Assets() error {
 	return nil
 }
 
-func patchDevice(args []string, hasCuda bool) {
-	var device = "cpu"
+func patchDevice(args []string, hasCuda bool) []string {
+	device := "cpu"
 	if hasCuda {
 		device = "cuda"
 	}
-	// patch the python command in the Option.Arg by adding the `--device cuda` option
-	// find the string with the `python -m lm_eval` prefix. usually it should be the last one
-	for idx, arg := range args {
-		if strings.HasPrefix(arg, "python -m lm_eval") {
-			if !strings.Contains(arg, "--device") {
-				args[idx] = fmt.Sprintf("%s --device %s", arg, device)
-			}
-			break
+
+	// Check if --device already exists
+	for _, arg := range args {
+		if arg == "--device" {
+			return args // already has device specified
 		}
 	}
+
+	// If we reach here, --device doesn't exist, so add it
+	return append(args, "--device", device)
 }
 
 // Create a domain socket and use HTTP protocal to handle communication
