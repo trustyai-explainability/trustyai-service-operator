@@ -93,37 +93,6 @@ func ValidateUserInput(job *lmesv1alpha1.LMEvalJob) error {
 		return fmt.Errorf("invalid task names: %w", err)
 	}
 
-	// Validate task recipes
-	if len(job.Spec.TaskList.TaskRecipes) > 0 {
-		if err := ValidateTaskRecipes(job.Spec.TaskList.TaskRecipes, "task recipe"); err != nil {
-			return fmt.Errorf("invalid task recipes: %w", err)
-		}
-	}
-
-	// Validate custom artifacts
-	if job.Spec.TaskList.CustomArtifacts != nil {
-		if len(job.Spec.TaskList.CustomArtifacts.Templates) > 0 {
-			for _, temp := range job.Spec.TaskList.CustomArtifacts.Templates {
-				if err := ValidateArgName(temp.Name); err != nil {
-					return fmt.Errorf("invalid template name: %w", err)
-				}
-				if err := ValidateCustomArtifactValue(temp.Value); err != nil {
-					return fmt.Errorf("invalid template value: %w", err)
-				}
-			}
-		}
-		if len(job.Spec.TaskList.CustomArtifacts.SystemPrompts) > 0 {
-			for _, prompt := range job.Spec.TaskList.CustomArtifacts.SystemPrompts {
-				if err := ValidateArgName(prompt.Name); err != nil {
-					return fmt.Errorf("invalid system prompt name: %w", err)
-				}
-				if err := ValidateCustomArtifactValue(prompt.Value); err != nil {
-					return fmt.Errorf("invalid system prompt value: %w", err)
-				}
-			}
-		}
-	}
-
 	// Validate generation arguments (genArgs)
 	if err := ValidateArgs(job.Spec.GenArgs, "generation argument"); err != nil {
 		return fmt.Errorf("invalid generation arguments: %w", err)
@@ -147,20 +116,6 @@ func ValidateUserInput(job *lmesv1alpha1.LMEvalJob) error {
 	if job.Spec.BatchSize != nil {
 		if err := ValidateBatchSizeInput(*job.Spec.BatchSize); err != nil {
 			return fmt.Errorf("invalid batch size: %w", err)
-		}
-	}
-
-	// Validate system instruction
-	if job.Spec.SystemInstruction != "" {
-		if err := ValidateSystemInstruction(job.Spec.SystemInstruction); err != nil {
-			return fmt.Errorf("invalid system instruction: %w", err)
-		}
-	}
-
-	// Validate chat template name
-	if job.Spec.ChatTemplate != nil && job.Spec.ChatTemplate.Name != "" {
-		if err := ValidateChatTemplateName(job.Spec.ChatTemplate.Name); err != nil {
-			return fmt.Errorf("invalid chat template name: %w", err)
 		}
 	}
 
