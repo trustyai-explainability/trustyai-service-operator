@@ -75,8 +75,10 @@ spec:
                 items:
                   properties:
                     name:
+                      pattern: ^[a-zA-Z0-9._-]+$
                       type: string
                     value:
+                      pattern: ^[a-zA-Z0-9._/:\- ]*$
                       type: string
                   required:
                   - name
@@ -87,6 +89,7 @@ spec:
                   Accepts an integer, or a float between 0.0 and 1.0 . If passed, will limit
                   the number of documents to evaluate to the first X documents (if an integer)
                   per task or first X% of documents per task
+                pattern: ^(\d+\.?\d*|\d*\.\d+)$
                 type: string
               logSamples:
                 description: |-
@@ -95,14 +98,24 @@ spec:
                 type: boolean
               model:
                 description: Model name
+                enum:
+                - hf
+                - openai-completions
+                - openai-chat-completions
+                - local-completions
+                - local-chat-completions
+                - watsonx_llm
+                - textsynth
                 type: string
               modelArgs:
                 description: Args for the model
                 items:
                   properties:
                     name:
+                      pattern: ^[a-zA-Z0-9._-]+$
                       type: string
                     value:
+                      pattern: ^[a-zA-Z0-9._/:\- ]*$
                       type: string
                   required:
                   - name
@@ -204,6 +217,7 @@ spec:
                             type: object
                             x-kubernetes-map-type: atomic
                           path:
+                            pattern: ^[a-zA-Z0-9._/-]*$
                             type: string
                           region:
                             description: SecretKeySelector selects a key of a Secret.
@@ -4828,9 +4842,11 @@ spec:
                                 type: string
                               path:
                                 description: Path specifies the path to the task file
+                                pattern: ^[a-zA-Z0-9._/-]*$
                                 type: string
                               url:
                                 description: URL specifies the git repository URL
+                                pattern: ^https://[a-zA-Z0-9._/-]+$
                                 type: string
                             type: object
                         type: object
@@ -4839,6 +4855,7 @@ spec:
                     description: TaskNames from lm-eval's task list and/or from custom
                       tasks if CustomTasks is defined
                     items:
+                      pattern: ^[a-zA-Z0-9._-]+$
                       type: string
                     type: array
                   taskRecipes:
@@ -4860,6 +4877,7 @@ spec:
                               type: string
                             name:
                               description: Unitxt card's ID
+                              pattern: ^[a-zA-Z0-9._-]+$
                               type: string
                           type: object
                         demosPoolSize:

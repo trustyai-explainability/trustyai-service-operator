@@ -234,31 +234,26 @@ func Test_PatchDevice(t *testing.T) {
 		OutputPath:   ".",
 		DetectDevice: true,
 		Logger:       driverLog,
-		Args:         []string{"sh", "-ec", "python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2"},
+		Args:         []string{"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "test", "--model_args", "arg1=value1", "--tasks", "task1,task2"},
 	}
 
 	// append `--device cuda`
-	patchDevice(driverOpt.Args, true)
-	assert.Equal(t,
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --device cuda",
-		driverOpt.Args[2],
-	)
+	driverOpt.Args = patchDevice(driverOpt.Args, true)
+	expected := []string{"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "test", "--model_args", "arg1=value1", "--tasks", "task1,task2", "--device", "cuda"}
+	assert.Equal(t, expected, driverOpt.Args)
 
 	// append `--device cpu`
-	driverOpt.Args = []string{"sh", "-ec", "python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2"}
-	patchDevice(driverOpt.Args, false)
-	assert.Equal(t,
-		"python -m lm_eval --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2 --device cpu",
-		driverOpt.Args[2],
-	)
+	driverOpt.Args = []string{"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "test", "--model_args", "arg1=value1", "--tasks", "task1,task2"}
+	driverOpt.Args = patchDevice(driverOpt.Args, false)
+	expected = []string{"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "test", "--model_args", "arg1=value1", "--tasks", "task1,task2", "--device", "cpu"}
+	assert.Equal(t, expected, driverOpt.Args)
 
-	// no change because `--device cpu` exists
-	driverOpt.Args = []string{"sh", "-ec", "python -m lm_eval --device cpu --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2"}
-	patchDevice(driverOpt.Args, true)
-	assert.Equal(t,
-		"python -m lm_eval --device cpu --output_path /opt/app-root/src/output --model test --model_args arg1=value1 --tasks task1,task2",
-		driverOpt.Args[2],
-	)
+	// no change because `--device` already exists
+	driverOpt.Args = []string{"python", "-m", "lm_eval", "--device", "cpu", "--output_path", "/opt/app-root/src/output", "--model", "test", "--model_args", "arg1=value1", "--tasks", "task1,task2"}
+	originalArgs := make([]string, len(driverOpt.Args))
+	copy(originalArgs, driverOpt.Args)
+	driverOpt.Args = patchDevice(driverOpt.Args, true)
+	assert.Equal(t, originalArgs, driverOpt.Args)
 }
 
 func Test_TaskRecipes(t *testing.T) {
