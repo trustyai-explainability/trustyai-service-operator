@@ -186,7 +186,7 @@ func Test_MultipleProgressUpdate(t *testing.T) {
 		OutputPath:  info.outputPath,
 		CatalogPath: info.catalogPath,
 		Logger:      driverLog,
-		Args:        []string{"sh", "-ec", "sleep 2; echo 'Requesting API:   0%|▏       | 1367/1200000 [09:27<134:30:31,  2.48it/s]' >&2; sleep 2; echo 'Evaluating responses:   1%|▏       | 1000/100000 [09:28<0:30:31,  2.48it/s]' >&2; sleep 4"},
+		Args:        []string{"sh", "-ec", "sleep 2; echo 'Requesting API:   0%|▏       | 1367/1200000 [09:27<134:30:31,  2.48it/s]' >&2; sleep 2; echo 'Evaluating responses:   1%|▏       | 1000/100000 [09:28<30:31,  2.48it/s]' >&2; sleep 4"},
 		CommPort:    info.port,
 	})
 	assert.Nil(t, err)
@@ -200,14 +200,14 @@ func Test_MultipleProgressUpdate(t *testing.T) {
 			Message:               "Requesting API",
 			Percent:               "0%",
 			Count:                 "1367/1200000",
-			ElapsedTime:           "09:27",
+			ElapsedTime:           "0:09:27",
 			RemainingTimeEstimate: "134:30:31",
 		},
 		{
 			Message:               "Evaluating responses",
 			Percent:               "1%",
 			Count:                 "1000/100000",
-			ElapsedTime:           "09:28",
+			ElapsedTime:           "0:09:28",
 			RemainingTimeEstimate: "0:30:31",
 		},
 	}

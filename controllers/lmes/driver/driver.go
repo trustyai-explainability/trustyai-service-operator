@@ -530,6 +530,14 @@ func (d *driverImpl) updateProgress(msg string) {
 		elapsedTime := strings.Trim(matches[4], "\r")
 		remainingTimeEstimate := strings.Trim(matches[5], "\r")
 
+		// standardize time format
+		if strings.Count(elapsedTime, ":") == 1 {
+			elapsedTime = "0:" + elapsedTime
+		}
+		if strings.Count(remainingTimeEstimate, ":") == 1 {
+			remainingTimeEstimate = "0:" + remainingTimeEstimate
+		}
+
 		newMessage := message != d.lastProgress.Message
 		newPercent := percent != d.lastProgress.Percent
 		newCount := count != d.lastProgress.Count
