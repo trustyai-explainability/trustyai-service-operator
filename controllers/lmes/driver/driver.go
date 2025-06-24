@@ -52,6 +52,8 @@ const (
 	ShutdownURI            = "/Shutdown"
 	GetStatusURI           = "/GetStatus"
 	DefaultGitBranch       = "main"
+	UnitxtPath             = "/opt/app-root/src/lm_eval/tasks/unitxt"
+	UnitxtPattern          = "###UNITXT_PATH###"
 )
 
 type DriverOption struct {
@@ -513,7 +515,7 @@ func (d *driverImpl) createTaskRecipes() error {
 			[]byte(fmt.Sprintf(
 				"task: %s\ninclude: unitxt\nrecipe: %s",
 				fmt.Sprintf("%s_%d", TaskRecipePrefix, i),
-				taskRecipe,
+				strings.Replace(taskRecipe, UnitxtPattern, UnitxtPath, -1),
 			)),
 			0666,
 		)

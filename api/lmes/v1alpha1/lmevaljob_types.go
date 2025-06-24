@@ -152,6 +152,41 @@ type CustomArtifacts struct {
 	Tasks []CustomArtifact `json:"tasks,omitempty"`
 }
 
+// MCP settings for the retrieval system to support end-to-end RAG. It mainly leverages
+// the tools API to search the context information including contexts_id and contexts.
+// Check the contexts and contexts_id information in this page:
+// https://www.unitxt.ai/en/latest/docs/rag_support.html
+type MCP struct {
+	// The endpoint of the MCP server. For example:
+	// http://localhost:3000/mcp
+	// +kubebuilder:validation:Pattern=`^https?://[a-zA-Z0-9._/-]+$`
+	URL string `json:"url"`
+	// The Tool name of the MCP tool. Or the API name of the MCP tool.
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._-]+$`
+	Tool string `json:"tool"`
+	// The field name in the MCP payload that contains the JSON string of the context information.
+	// Since the MCP payload may contain multiple records, each record is a JSON object contains the
+	// specified field name as the key and its value is the JSON string of the context information.
+	// The underlying process parses each JSON string of the context information and aggregate them
+	// into an array.
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._-]+$`
+	PayloadField string `json:"payloadField"`
+	// The jsonpath to the context field in the array of the context information objects
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._-]+$`
+	ContextField string `json:"contextField"`
+	// The jsonpath to the id field in the array of the context information objects
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._-]+$`
+	IdField string `json:"idField"`
+	// Verify server's certificate if the server is using HTTPS.
+	// +kubebuilder:default:=true
+	VerifyCertificate bool `json:"verifyCertificate"`
+}
+
+type RAG struct {
+	// The MCP settings. Currently, this is the only option for the end-to-end RAG,
+	MCP MCP `json:"mcp"`
+}
+
 func (c *CustomArtifacts) GetTemplates() []CustomArtifact {
 	if c == nil {
 		return nil
@@ -210,6 +245,9 @@ type TaskRecipe struct {
 	// The pool size for the fewshot
 	// +optional
 	DemosPoolSize *int `json:"demosPoolSize,omitempty"`
+	// Specify the RAG information if needed
+	// +optional
+	RAG *RAG `json:"rag,omitempty"`
 }
 
 // GitSource specifies the git location of external tasks
@@ -313,6 +351,30 @@ func (t *Task) String() string {
 	return ""
 }
 
+func (r *RAG) String() string {
+	if r == nil {
+		return ""
+	}
+	return r.MCP.String()
+}
+
+// compose the MCP settings like the following format:
+//
+//	session: url=http://localhost:3002/mcp
+//	request: tool=search,query_field=text,context_field=context,id_field=id
+func (m *MCP) String() string {
+	if m == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("  session: url=%s\n", m.URL))
+	b.WriteString(fmt.Sprintf("  request: tool=%s,query_field=%s,context_field=%s,id_field=%s,verify_cert=%t",
+		m.Tool, m.PayloadField, m.ContextField, m.IdField, m.VerifyCertificate))
+	// End-2-end RAG requires the following settings:
+	b.WriteString("\nprocess_docs: !function ###UNITXT_PATH###/utils.process_docs\nprocess_results: !function ###UNITXT_PATH###/utils.postprocess_docs")
+	return b.String()
+}
+
 // Use the tp_idx and sp_idx to point to the corresponding custom template
 // and custom system_prompt
 func (t *TaskRecipe) String() string {
@@ -345,6 +407,9 @@ func (t *TaskRecipe) String() string {
 	}
 	if t.DemosPoolSize != nil {
 		b.WriteString(fmt.Sprintf(",demos_pool_size=%d", *t.DemosPoolSize))
+	}
+	if t.RAG != nil {
+		b.WriteString(fmt.Sprintf("\nrag:\n%s", t.RAG.String()))
 	}
 	return b.String()
 }
