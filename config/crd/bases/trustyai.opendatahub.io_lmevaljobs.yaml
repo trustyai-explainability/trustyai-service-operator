@@ -4851,6 +4851,145 @@ spec:
                             type: object
                         type: object
                     type: object
+                  taskGroups:
+                    description: Task Groups are a list of tasks that their metrics
+                      are aggregated in the result
+                    items:
+                      properties:
+                        aggregateMetrics:
+                          description: A list of aggregate metrics to calculate for
+                            the task group
+                          items:
+                            description: Define an aggregate metric using 'mean' aggregation.
+                            properties:
+                              metricName:
+                                description: The name of the metric to aggregate
+                                type: string
+                              weightBySize:
+                                default: true
+                                description: Weight by size or not. Default value
+                                  is True
+                                type: boolean
+                            required:
+                            - metricName
+                            type: object
+                          type: array
+                        name:
+                          description: The name of the task group
+                          type: string
+                        taskNames:
+                          description: TaskNames from lm-eval's task list and/or from
+                            custom tasks if CustomTasks is defined
+                          items:
+                            type: string
+                          type: array
+                        taskRecipes:
+                          description: Task Recipes specifically for the Unitxt tasks
+                          items:
+                            description: |-
+                              Use a task recipe to form a custom task. It maps to the Unitxt Recipe
+                              Find details of the Unitxt Recipe here:
+                              https://www.unitxt.ai/en/latest/unitxt.standard.html#unitxt.standard.StandardRecipe
+                            properties:
+                              card:
+                                description: The Unitxt dataset card
+                                properties:
+                                  custom:
+                                    description: |-
+                                      A JSON string for a custom unitxt card which contains the custom dataset.
+                                      Use the documentation here: https://www.unitxt.ai/en/latest/docs/adding_dataset.html#adding-to-the-catalog
+                                      to compose a custom card, store it as a JSON file, and use the JSON content as the value here.
+                                    type: string
+                                  name:
+                                    description: Unitxt card's ID
+                                    pattern: ^[a-zA-Z0-9._-]+$
+                                    type: string
+                                type: object
+                              demosPoolSize:
+                                description: The pool size for the fewshot
+                                type: integer
+                              format:
+                                description: The Unitxt format
+                                type: string
+                              loaderLimit:
+                                description: A limit number of records to load
+                                type: integer
+                              metrics:
+                                description: Metrics
+                                items:
+                                  properties:
+                                    name:
+                                      description: Unitxt metric id
+                                      type: string
+                                    ref:
+                                      description: |-
+                                        The name of the custom metric in the custom field. Its value is a JSON string
+                                        for a custom Unitxt metric. Use the documentation here: https://www.unitxt.ai/en/latest/docs/adding_metric.html#adding-a-new-instance-metric
+                                        to compose a custom metric, store it as a JSON file by calling the
+                                        add_to_catalog API: https://www.unitxt.ai/en/latest/docs/saving_and_loading_from_catalog.html#adding-assets-to-the-catalog,
+                                        and use the JSON content as the value here.
+                                      type: string
+                                  type: object
+                                type: array
+                              name:
+                                description: The name of the TaskRecipe
+                                type: string
+                              numDemos:
+                                description: Number of fewshot
+                                type: integer
+                              systemPrompt:
+                                description: The Unitxt System Prompt
+                                properties:
+                                  name:
+                                    description: Unitxt System Prompt id
+                                    type: string
+                                  ref:
+                                    description: The name of the custom systemPrompt
+                                      in the custom field. Its value is a custom system
+                                      prompt string
+                                    type: string
+                                type: object
+                              task:
+                                description: The Unitxt Task
+                                properties:
+                                  name:
+                                    description: Unitxt task id
+                                    type: string
+                                  ref:
+                                    description: |-
+                                      The name of the custom task in the custom field. Its value is a JSON string
+                                      for a custom Unitxt task. Use the documentation here: https://www.unitxt.ai/en/latest/docs/adding_task.html
+                                      to compose a custom task, store it as a JSON file by calling the
+                                      add_to_catalog API: https://www.unitxt.ai/en/latest/docs/saving_and_loading_from_catalog.html#adding-assets-to-the-catalog,
+                                      and use the JSON content as the value here.
+                                    type: string
+                                type: object
+                              template:
+                                description: The Unitxt template
+                                properties:
+                                  name:
+                                    description: Unitxt template ID
+                                    type: string
+                                  ref:
+                                    description: |-
+                                      The name of the custom template in the custom field. Its value is a JSON string
+                                      for a custom Unitxt template. Use the documentation here: https://www.unitxt.ai/en/latest/docs/adding_template.html
+                                      to compose a custom template, store it as a JSON file by calling the
+                                      add_to_catalog API: https://www.unitxt.ai/en/latest/docs/saving_and_loading_from_catalog.html#adding-assets-to-the-catalog,
+                                      and use the JSON content as the value here.
+                                    type: string
+                                type: object
+                            required:
+                            - card
+                            type: object
+                          type: array
+                      required:
+                      - name
+                      type: object
+                      x-kubernetes-validations:
+                      - message: One of taskNames or taskRecipes must be defined
+                        rule: has(self.taskNames) || has(self.taskRecipes)
+                    type: array
                   taskNames:
                     description: TaskNames from lm-eval's task list and/or from custom
                       tasks if CustomTasks is defined
@@ -4906,6 +5045,9 @@ spec:
                                 type: string
                             type: object
                           type: array
+                        name:
+                          description: The name of the TaskRecipe
+                          type: string
                         numDemos:
                           description: Number of fewshot
                           type: integer
@@ -4956,6 +5098,9 @@ spec:
                       type: object
                     type: array
                 type: object
+                x-kubernetes-validations:
+                - message: One of taskNames, taskRecipes, or taskGroups must be defined
+                  rule: has(self.taskNames) || has(self.taskRecipes) || has(self.taskGroups)
             required:
             - model
             - taskList

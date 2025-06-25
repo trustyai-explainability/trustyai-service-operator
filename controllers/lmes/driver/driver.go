@@ -60,6 +60,7 @@ type DriverOption struct {
 	DetectDevice        bool
 	TaskRecipesPath     string
 	TaskRecipes         []string
+	TaskGroups          []string
 	CatalogPath         string
 	CustomArtifacts     []CustomArtifact
 	Logger              logr.Logger
@@ -344,6 +345,9 @@ func (d *driverImpl) exec() error {
 	if err := d.createTaskRecipes(); err != nil {
 		return fmt.Errorf("failed to create task recipes: %v", err)
 	}
+	if err := d.createTaskGroups(); err != nil {
+		return fmt.Errorf("failed to create task groups: %v", err)
+	}
 
 	if err := d.prepDir4CustomArtifacts(); err != nil {
 		return fmt.Errorf("failed to create the directories for custom artifacts: %v", err)
@@ -507,13 +511,43 @@ func (d *driverImpl) updateProgress(msg string) {
 }
 
 func (d *driverImpl) createTaskRecipes() error {
-	for i, taskRecipe := range d.Option.TaskRecipes {
+	id := 0
+	for _, rString := range d.Option.TaskRecipes {
+		tokens := strings.SplitN(rString, "|", 2)
+		taskRecipe := tokens[0]
+		taskName := fmt.Sprintf("%s_%d", TaskRecipePrefix, id)
+		if len(tokens) == 2 {
+			taskName = tokens[1]
+		} else {
+			id++
+		}
 		err := os.WriteFile(
-			filepath.Join(d.Option.TaskRecipesPath, fmt.Sprintf("%s_%d.yaml", TaskRecipePrefix, i)),
+			filepath.Join(d.Option.TaskRecipesPath, fmt.Sprintf("%s.yaml", taskName)),
 			[]byte(fmt.Sprintf(
 				"task: %s\ninclude: unitxt\nrecipe: %s",
-				fmt.Sprintf("%s_%d", TaskRecipePrefix, i),
+				taskName,
 				taskRecipe,
+			)),
+			0666,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *driverImpl) createTaskGroups() error {
+	for _, rString := range d.Option.TaskGroups {
+		tokens := strings.SplitN(rString, "|", 2)
+		taskGroupName := tokens[0]
+		definition := tokens[1]
+		err := os.WriteFile(
+			filepath.Join(d.Option.TaskRecipesPath, fmt.Sprintf("%s.yaml", taskGroupName)),
+			[]byte(fmt.Sprintf(
+				"group: %s\n%s",
+				taskGroupName,
+				definition,
 			)),
 			0666,
 		)

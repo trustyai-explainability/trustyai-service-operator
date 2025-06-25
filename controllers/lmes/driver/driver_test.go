@@ -268,7 +268,11 @@ func Test_TaskRecipes(t *testing.T) {
 		TaskRecipesPath: info.taskPath,
 		TaskRecipes: []string{
 			"card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
-			"card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
+			"card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10|my_task",
+			"card=unitxt.card3,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		},
+		TaskGroups: []string{
+			"mygroup|task:\n  - tr_0\n  - my_task\n  - tr_1\naggregate_metric_list:\n  - metric: acc_norm\n    aggregation: mean\n    weight_by_size: true\n",
 		},
 		Args:     []string{"sh", "-ec", "sleep 2; echo 'testing progress: 100%|' >&2; sleep 4"},
 		CommPort: info.port,
@@ -291,11 +295,23 @@ func Test_TaskRecipes(t *testing.T) {
 		"task: tr_0\ninclude: unitxt\nrecipe: card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		string(tr0),
 	)
+	mytask, err := os.ReadFile(filepath.Join(info.taskPath, "my_task.yaml"))
+	assert.Nil(t, err)
+	assert.Equal(t,
+		"task: my_task\ninclude: unitxt\nrecipe: card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		string(mytask),
+	)
 	tr1, err := os.ReadFile(filepath.Join(info.taskPath, "tr_1.yaml"))
 	assert.Nil(t, err)
 	assert.Equal(t,
-		"task: tr_1\ninclude: unitxt\nrecipe: card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"task: tr_1\ninclude: unitxt\nrecipe: card=unitxt.card3,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		string(tr1),
+	)
+	tg, err := os.ReadFile(filepath.Join(info.taskPath, "mygroup.yaml"))
+	assert.Nil(t, err)
+	assert.Equal(t,
+		"group: mygroup\ntask:\n  - tr_0\n  - my_task\n  - tr_1\naggregate_metric_list:\n  - metric: acc_norm\n    aggregation: mean\n    weight_by_size: true\n",
+		string(tg),
 	)
 }
 
