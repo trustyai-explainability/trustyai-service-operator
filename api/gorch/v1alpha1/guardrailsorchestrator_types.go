@@ -25,6 +25,10 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+type AutoConfig struct {
+	InferenceServiceToGuardrail string `json:"inferenceServiceToGuardrail"`
+}
+
 // GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator.
 type GuardrailsOrchestratorSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -33,7 +37,11 @@ type GuardrailsOrchestratorSpec struct {
 	// Number of replicas
 	Replicas int32 `json:"replicas"`
 	// Name of configmap containing generator,detector,and chunker arguments
-	OrchestratorConfig *string `json:"orchestratorConfig"`
+	OrchestratorConfig *string `json:"orchestratorConfig,omitempty"`
+
+	// Autoconfiguration of orchestrator config
+	AutoConfig *AutoConfig `json:"autoConfig,omitempty"`
+
 	// Boolean flag to enable/disable built-in detectors
 	// +optional
 	EnableBuiltInDetectors bool `json:"enableBuiltInDetectors,omitempty"`

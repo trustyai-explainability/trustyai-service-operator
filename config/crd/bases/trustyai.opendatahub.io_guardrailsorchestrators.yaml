@@ -40,6 +40,14 @@ spec:
           spec:
             description: GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator.
             properties:
+              autoConfig:
+                description: Autoconfiguration of orchestrator config
+                properties:
+                  inferenceServiceToGuardrail:
+                    type: string
+                required:
+                - inferenceServiceToGuardrail
+                type: object
               enableBuiltInDetectors:
                 description: Boolean flag to enable/disable built-in detectors
                 type: boolean
@@ -86,7 +94,6 @@ spec:
                 format: int32
                 type: integer
             required:
-            - orchestratorConfig
             - replicas
             type: object
           status:

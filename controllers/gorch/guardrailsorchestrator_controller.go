@@ -46,6 +46,8 @@ type GuardrailsOrchestratorReconciler struct {
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=guardrailsorchestrators,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=guardrailsorchestrators/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=guardrailsorchestrators/finalizers,verbs=update
+// +kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes,verbs=get;list
+// +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=get;list
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=list;watch;get;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=apps,resources=deployments/finalizers,verbs=update
@@ -154,13 +156,35 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	existingConfigMap := &corev1.ConfigMap{}
-	err = r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.OrchestratorConfig, Namespace: orchestrator.Namespace}, existingConfigMap)
-	if err != nil {
-		if client.IgnoreNotFound(err) != nil {
+	if orchestrator.Spec.AutoConfig != nil {
+		cm, err := r.GenerateOrchestratorConfigMap(ctx, orchestrator.Name, orchestrator.Namespace, orchestrator, orchestrator.Spec.AutoConfig.InferenceServiceToGuardrail, orchestrator.Spec.EnableBuiltInDetectors)
+		if err != nil {
+			log.Error(err, "Failed to automatically generate orchestrator configmap")
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, nil
+		if err := r.Create(ctx, cm); err != nil && !errors.IsAlreadyExists(err) {
+			log.Error(err, "Failed to create orchestrator configmap")
+			return ctrl.Result{}, err
+		}
+		log.Info("Automatically generated an OrchestratorConfig from resources in namespace")
+
+		// Set orchestrator.Spec.OrchestratorConfig to use the automatically generated config
+		orchestrator.Spec.OrchestratorConfig = &cm.Name
+		if err := r.Update(ctx, orchestrator); err != nil {
+			log.Error(err, "Failed to update OrchestratorConfig in CR")
+			return ctrl.Result{}, err
+		}
+	} else {
+		log.Info("Using manually-configured OrchestratorConfig")
+		existingConfigMap := &corev1.ConfigMap{}
+		err = r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.OrchestratorConfig, Namespace: orchestrator.Namespace}, existingConfigMap)
+		if err != nil {
+			log.Error(err, "Failed to get existing ConfigMap", "ConfigMap.Name", *orchestrator.Spec.OrchestratorConfig, "ConfigMap.Namespace", orchestrator.Namespace)
+			if client.IgnoreNotFound(err) != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, nil
+		}
 	}
 
 	existingDeployment := &appsv1.Deployment{}
