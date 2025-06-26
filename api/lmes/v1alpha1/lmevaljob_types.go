@@ -480,6 +480,24 @@ type ChatTemplate struct {
 	Name    string `json:"name,omitempty"`
 }
 
+// ProgressBar stores information about progress of various steps within an evaluation task.
+type ProgressBar struct {
+	// The title of the step being performed
+	Message string `json:"message"`
+
+	// The percent completion of this evaluation step
+	Percent string `json:"percent"`
+
+	// The elapsed time that this step has been running
+	ElapsedTime string `json:"elapsedTime"`
+
+	// The estimated time remaining for this evaluation step
+	RemainingTimeEstimate string `json:"remainingTimeEstimate"`
+
+	// Fractional progress through the evaluation step, presented as "$completed_items/$total_items"
+	Count string `json:"count"`
+}
+
 func (p *LMEvalPodSpec) GetAffinity() *corev1.Affinity {
 	if p == nil {
 		return nil
@@ -602,6 +620,11 @@ type LMEvalJobStatus struct {
 	// Message about the current/final status
 	// +optional
 	Message string `json:"message,omitempty"`
+
+	// Information about the current job progress
+	// +optional
+	ProgressBars []ProgressBar `json:"progressBars,omitempty"`
+
 	// Information when was the last time the job was successfully scheduled.
 	// +optional
 	LastScheduleTime *metav1.Time `json:"lastScheduleTime,omitempty"`

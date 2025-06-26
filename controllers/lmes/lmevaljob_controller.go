@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"maps"
 	"slices"
 	"strconv"
@@ -317,15 +318,18 @@ func (r *LMEvalJobReconciler) updateStatus(ctx context.Context, log logr.Logger,
 	}
 
 	// driver only provides updates for these fields
+	// only update is progress bar percent-complete or message has varied
 	if newStatus.State != job.Status.State ||
 		newStatus.Message != job.Status.Message ||
 		newStatus.Reason != job.Status.Reason ||
-		newStatus.Results != job.Status.Results {
+		newStatus.Results != job.Status.Results ||
+		!utils.ProgressArrayTriggeredChange(newStatus.ProgressBars, job.Status.ProgressBars) {
 
 		job.Status.State = newStatus.State
 		job.Status.Message = newStatus.Message
 		job.Status.Reason = newStatus.Reason
 		job.Status.Results = newStatus.Results
+		job.Status.ProgressBars = newStatus.ProgressBars
 
 		err = r.Status().Update(ctx, job)
 		if err != nil {

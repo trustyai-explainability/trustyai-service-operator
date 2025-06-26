@@ -1,6 +1,7 @@
 package utils
 
 import (
+	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
 	"os"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -59,4 +60,26 @@ func GenerateKServeLoggerURL(crName string, namespace string) string {
 // generateHTTPSKServeLoggerURL generates an HTTPS logger url for KServe Inference Loggers
 func GenerateHTTPSKServeLoggerURL(crName string, namespace string) string {
 	return "https://" + crName + "." + namespace + ".svc.cluster.local"
+}
+
+func ProgressTriggeredChange(a, b *lmesv1alpha1.ProgressBar) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Percent == b.Percent && a.Message == b.Message
+}
+
+func ProgressArrayTriggeredChange(a, b []lmesv1alpha1.ProgressBar) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !ProgressTriggeredChange(&a[i], &b[i]) {
+			return false
+		}
+	}
+	return true
 }

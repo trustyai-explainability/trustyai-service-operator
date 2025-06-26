@@ -161,7 +161,7 @@ func Test_ProgressUpdate(t *testing.T) {
 		OutputPath:  info.outputPath,
 		CatalogPath: info.catalogPath,
 		Logger:      driverLog,
-		Args:        []string{"sh", "-ec", "sleep 2; echo 'testing progress: 100%|' >&2; sleep 4"},
+		Args:        []string{"sh", "-ec", "sleep 2; echo 'Requesting API:   0%|▏                                                                                                                                                                                                               | 1367/1200000 [09:27<134:30:31,  2.48it/s]' >&2; sleep 4"},
 		CommPort:    info.port,
 	})
 	assert.Nil(t, err)
@@ -170,11 +170,50 @@ func Test_ProgressUpdate(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"initializing the evaluation job",
-		"testing progress: 100%",
+		"Requesting API",
 		"job completed",
 	}, msgs)
 
 	assert.Nil(t, driver.Shutdown())
+}
+
+func Test_MultipleProgressUpdate(t *testing.T) {
+	info := setupTest(t, true)
+	defer info.tearDown(t)
+
+	driver, err := NewDriver(&DriverOption{
+		Context:     context.Background(),
+		OutputPath:  info.outputPath,
+		CatalogPath: info.catalogPath,
+		Logger:      driverLog,
+		Args:        []string{"sh", "-ec", "sleep 2; echo 'Requesting API:   0%|▏       | 1367/1200000 [09:27<134:30:31,  2.48it/s]' >&2; sleep 2; echo 'Evaluating responses:   1%|▏       | 1000/100000 [09:28<30:31,  2.48it/s]' >&2; sleep 4"},
+		CommPort:    info.port,
+	})
+	assert.Nil(t, err)
+
+	_, _ = runDriverAndWait4Complete(t, driver, false)
+	status, err := driver.GetStatus()
+	assert.Nil(t, err)
+
+	expected := []v1alpha1.ProgressBar{
+		{
+			Message:               "Requesting API",
+			Percent:               "0%",
+			Count:                 "1367/1200000",
+			ElapsedTime:           "0:09:27",
+			RemainingTimeEstimate: "134:30:31",
+		},
+		{
+			Message:               "Evaluating responses",
+			Percent:               "1%",
+			Count:                 "1000/100000",
+			ElapsedTime:           "0:09:28",
+			RemainingTimeEstimate: "0:30:31",
+		},
+	}
+	assert.Equal(t, expected, status.ProgressBars)
+	assert.Nil(t, driver.Shutdown())
+
 }
 
 func Test_DetectDeviceError(t *testing.T) {
@@ -270,7 +309,7 @@ func Test_TaskRecipes(t *testing.T) {
 			"card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 			"card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		},
-		Args:     []string{"sh", "-ec", "sleep 2; echo 'testing progress: 100%|' >&2; sleep 4"},
+		Args:     []string{"sh", "-ec", "sleep 2; echo 'testing progress:   100%|▏       | 1367/1200000 [09:27<134:30:31,  2.48it/s]' >&2; sleep 4"},
 		CommPort: info.port,
 	})
 	assert.Nil(t, err)
@@ -279,7 +318,7 @@ func Test_TaskRecipes(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"initializing the evaluation job",
-		"testing progress: 100%",
+		"testing progress",
 		"job completed",
 	}, msgs)
 
@@ -320,7 +359,7 @@ func Test_CustomCards(t *testing.T) {
 			{Type: Metric, Name: "llm_as_judge.rating.mistral_7b_instruct_v0_2_huggingface_template_mt_bench_single_turn", Value: `{"__type__": "llm_as_judge", "inference_model": { "__type__": "hf_pipeline_based_inference_engine", "model_name": "mistralai/Mistral-7B-Instruct-v0.2", "max_new_tokens": 256, "use_fp16": true }, "template": "templates.response_assessment.rating.mt_bench_single_turn", "task": "rating.single_turn", "format": "formats.models.mistral.instruction", "main_score": "mistral_7b_instruct_v0_2_huggingface_template_mt_bench_single_turn"}`},
 			{Type: Task, Name: "generation", Value: `{ "__type__": "task", "input_fields": { "input": "str", "type_of_input": "str", "type_of_output": "str" }, "reference_fields": { "output": "str" }, "prediction_type": "str", "metrics": [ "metrics.normalized_sacrebleu" ], "augmentable_inputs": [ "input" ], "defaults": { "type_of_output": "Text" } }`},
 		},
-		Args:     []string{"sh", "-ec", "sleep 1; echo 'testing progress: 100%|' >&2; sleep 3"},
+		Args:     []string{"sh", "-ec", "sleep 1; echo 'testing progress:   100%|▏       | 1367/1200000 [09:27<134:30:31,  2.48it/s]' >&2; sleep 3"},
 		CommPort: info.port,
 	})
 	assert.Nil(t, err)
@@ -329,7 +368,7 @@ func Test_CustomCards(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"initializing the evaluation job",
-		"testing progress: 100%",
+		"testing progress",
 		"job completed",
 	}, msgs)
 

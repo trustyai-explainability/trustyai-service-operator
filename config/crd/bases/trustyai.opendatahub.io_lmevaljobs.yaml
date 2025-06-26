@@ -4978,6 +4978,37 @@ spec:
               podName:
                 description: The name of the Pod that runs the evaluation job
                 type: string
+              progressBars:
+                description: Information about the current job progress
+                items:
+                  description: ProgressBar stores information about progress of various
+                    steps within an evaluation task.
+                  properties:
+                    count:
+                      description: Fractional progress through the evaluation step,
+                        presented as "$completed_items/$total_items"
+                      type: string
+                    elapsedTime:
+                      description: The elapsed time that this step has been running
+                      type: string
+                    message:
+                      description: The title of the step being performed
+                      type: string
+                    percent:
+                      description: The percent completion of this evaluation step
+                      type: string
+                    remainingTimeEstimate:
+                      description: The estimated time remaining for this evaluation
+                        step
+                      type: string
+                  required:
+                  - count
+                  - elapsedTime
+                  - message
+                  - percent
+                  - remainingTimeEstimate
+                  type: object
+                type: array
               reason:
                 description: Final result of the job
                 enum:
