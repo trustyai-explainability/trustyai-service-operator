@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes"
 	"io"
 	"io/fs"
 	"net"
@@ -480,7 +481,7 @@ func (d *driverImpl) updateProgressStatus(state lmesv1alpha1.JobState, reason lm
 			// if it's a new bar, append it to the progress bar list
 			d.status.ProgressBars = append(d.status.ProgressBars, latestProgress)
 			// Ensure ProgressBars is never longer than 10 items
-			if len(d.status.ProgressBars) > 10 {
+			if len(d.status.ProgressBars) > lmes.MaxProgressBars {
 				d.status.ProgressBars = d.status.ProgressBars[1:]
 			}
 		}
