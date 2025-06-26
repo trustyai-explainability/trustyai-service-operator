@@ -157,7 +157,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	if orchestrator.Spec.AutoConfig != nil {
-		cm, err := r.GenerateOrchestratorConfigMap(ctx, orchestrator.Name, orchestrator.Namespace, orchestrator, orchestrator.Spec.AutoConfig.InferenceServiceToGuardrail, orchestrator.Spec.EnableBuiltInDetectors)
+		cm, err := r.GenerateOrchestratorConfigMap(ctx, orchestrator)
 		if err != nil {
 			log.Error(err, "Failed to automatically generate orchestrator configmap")
 			return ctrl.Result{}, err

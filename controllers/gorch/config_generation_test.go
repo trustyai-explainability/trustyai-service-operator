@@ -16,27 +16,17 @@ import (
 	"testing"
 )
 
-func TestGenerateOrchestratorConfigMap(t *testing.T) {
-	ctx := context.Background()
-	ns := "test-ns"
-	orchestratorName := "test-orch"
-
-	// Register the kserve InferenceService type with the scheme
-	s := runtime.NewScheme()
-	_ = kservev1beta1.AddToScheme(s)
-	_ = gorchv1alpha1.AddToScheme(s)
-	_ = v1alpha1.AddToScheme(s)
-
-	// Create five test InferenceServices
+func setupTestObjects(ns string, labelFunc func(i int) string) ([]client.Object, []client.Object) {
 	var isvcs []client.Object
 	var srs []client.Object
 	for i := 1; i <= 5; i++ {
 		runtimeName := fmt.Sprintf("my-serving-runtime-%d", i)
+		label := labelFunc(i)
 		isvc := &kservev1beta1.InferenceService{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      fmt.Sprintf("my-inference-service-%d", i),
 				Namespace: ns,
-				Labels:    map[string]string{"trustyai/guardrails": "true"},
+				Labels:    map[string]string{label: "true"},
 			},
 			Spec: kservev1beta1.InferenceServiceSpec{
 				Predictor: kservev1beta1.PredictorSpec{
@@ -52,7 +42,6 @@ func TestGenerateOrchestratorConfigMap(t *testing.T) {
 				},
 			},
 		}
-
 		sr := &v1alpha1.ServingRuntime{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      fmt.Sprintf("my-serving-runtime-%d", i),
@@ -75,42 +64,157 @@ func TestGenerateOrchestratorConfigMap(t *testing.T) {
 			},
 			Status: v1alpha1.ServingRuntimeStatus{},
 		}
-
 		isvcs = append(isvcs, isvc)
 		srs = append(srs, sr)
 	}
 	genIsvc := &kservev1beta1.InferenceService{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("my-generation-service"),
+			Name:      "my-generation-service",
 			Namespace: ns,
 		},
 		Status: kservev1beta1.InferenceServiceStatus{
 			URL: &apis.URL{
 				Scheme: "https",
-				Host:   "my-generation-service-%d.test-ns.svc.cluster.local:8080",
+				Host:   "my-generation-service.test-ns.svc.cluster.local:8080",
 			},
 		},
 	}
 	isvcs = append(isvcs, genIsvc)
+	return isvcs, srs
+}
 
+func setupTestReconcilerAndOrchestrator(ns, orchestratorName string, autoConfig gorchv1alpha1.AutoConfig, isvcs, srs []client.Object) (*GuardrailsOrchestratorReconciler, *gorchv1alpha1.GuardrailsOrchestrator) {
+	s := runtime.NewScheme()
+	_ = kservev1beta1.AddToScheme(s)
+	_ = gorchv1alpha1.AddToScheme(s)
+	_ = v1alpha1.AddToScheme(s)
 	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(isvcs...).WithObjects(srs...).Build()
-
 	reconciler := &GuardrailsOrchestratorReconciler{
 		Client: fakeClient,
 		Scheme: s,
 	}
-
 	orchestrator := &gorchv1alpha1.GuardrailsOrchestrator{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      orchestratorName,
 			Namespace: ns,
 		},
+		Spec: gorchv1alpha1.GuardrailsOrchestratorSpec{
+			AutoConfig: &autoConfig,
+		},
 	}
+	return reconciler, orchestrator
+}
 
-	cm, err := reconciler.GenerateOrchestratorConfigMap(ctx, orchestratorName, ns, orchestrator, "my-generation-service", true)
+func TestGenerateOrchestratorConfigMap(t *testing.T) {
+	ctx := context.Background()
+	ns := "test-ns"
+	orchestratorName := "test-orch"
+
+	isvcs, srs := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" })
+	autoConfig := gorchv1alpha1.AutoConfig{
+		InferenceServiceToGuardrail: "my-generation-service",
+	}
+	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs)
+
+	cm, err := reconciler.GenerateOrchestratorConfigMap(ctx, orchestrator)
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)
-	// Check that the configmap contains expected data
 	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
 	assert.Equal(t, ns, cm.Namespace)
+
+	expectedData := `chat_generation:
+  service:
+    hostname: my-generation-service.test-ns.svc.cluster.local
+    port: 8080
+detectors:
+  my-inference-service-1:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-1.test-ns.svc.cluster.local"
+      port: 8001
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-2:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-2.test-ns.svc.cluster.local"
+      port: 8002
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-3:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-3.test-ns.svc.cluster.local"
+      port: 8003
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-4:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-4.test-ns.svc.cluster.local"
+      port: 8004
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-5:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-5.test-ns.svc.cluster.local"
+      port: 8005
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+`
+	assert.Equal(t, expectedData, cm.Data["config.yaml"])
+}
+
+func TestGenerateOrchestratorConfigMapDetectorLabels(t *testing.T) {
+	ctx := context.Background()
+	ns := "test-ns"
+	orchestratorName := "test-orch"
+
+	isvcs, srs := setupTestObjects(ns, func(i int) string {
+		if i < 3 {
+			return "trustyai/guardrails/groupA"
+		}
+		return "trustyai/guardrails/groupB"
+	})
+	autoConfig := gorchv1alpha1.AutoConfig{
+		InferenceServiceToGuardrail: "my-generation-service",
+		DetectorServiceLabelToMatch: "trustyai/guardrails/groupB",
+	}
+	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs)
+
+	cm, err := reconciler.GenerateOrchestratorConfigMap(ctx, orchestrator)
+	assert.NoError(t, err)
+	assert.NotNil(t, cm)
+	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
+	assert.Equal(t, ns, cm.Namespace)
+
+	expectedData := `chat_generation:
+  service:
+    hostname: my-generation-service.test-ns.svc.cluster.local
+    port: 8080
+detectors:
+  my-inference-service-3:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-3.test-ns.svc.cluster.local"
+      port: 8003
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-4:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-4.test-ns.svc.cluster.local"
+      port: 8004
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-5:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-5.test-ns.svc.cluster.local"
+      port: 8005
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+`
+	assert.Equal(t, expectedData, cm.Data["config.yaml"])
 }

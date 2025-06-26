@@ -41,9 +41,18 @@ spec:
             description: GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator.
             properties:
               autoConfig:
-                description: Autoconfiguration of orchestrator config
+                description: Settings governing the automatic configuration of the
+                  orchestrator. Replaces `OrchestratorConfig`.
                 properties:
+                  detectorServiceLabelToMatch:
+                    description: |-
+                      Label key to use when automatically identifying guardrail detector inference services.
+                      If provided, all inference services with the label `$detectorServiceLabelToMatch: true` will be used as a guardrails detector.
+                      If not provided, the default match label is `trustyai/guardrails`, and the autoconfig will use all inference services with the label `trustyai/guardrails: true` as detectors.
+                    type: string
                   inferenceServiceToGuardrail:
+                    description: The name of the inference service that provides the
+                      vLLM generation model to-be-guardrailed
                     type: string
                 required:
                 - inferenceServiceToGuardrail

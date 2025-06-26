@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
+	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -16,8 +17,18 @@ import (
 
 // GenerateOrchestratorConfigMap creates a new ConfigMap for the orchestrator with default or generated data.
 func (r *GuardrailsOrchestratorReconciler) GenerateOrchestratorConfigMap(
-	ctx context.Context, orchestratorName, namespace string, owner client.Object, generationService string, useBuiltInDetectors bool) (*corev1.ConfigMap, error) {
+	ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (*corev1.ConfigMap, error) {
 	log := ctrl.Log.WithName("GenerateOrchestratorConfigMap")
+	orchestratorName := orchestrator.Name
+	namespace := orchestrator.Namespace
+	generationService := orchestrator.Spec.AutoConfig.InferenceServiceToGuardrail
+	useBuiltInDetectors := orchestrator.Spec.EnableBuiltInDetectors
+	matchLabel := orchestrator.Spec.AutoConfig.DetectorServiceLabelToMatch
+
+	if matchLabel == "" {
+		matchLabel = "trustyai/guardrails"
+	}
+
 	configMapName := orchestratorName + "-auto-config"
 
 	log.Info("Starting automatic orchestratorConfig generation",
@@ -50,10 +61,12 @@ func (r *GuardrailsOrchestratorReconciler) GenerateOrchestratorConfigMap(
 		return nil, fmt.Errorf("could not find InferenceService with name %q in namespace %q", generationService, namespace)
 	}
 
+	// get label-to-match
+
 	// get detectors
 	var detectorInferenceServices kservev1beta1.InferenceServiceList
 	err = r.List(ctx, &detectorInferenceServices, &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(map[string]string{"trustyai/guardrails": "true"}),
+		LabelSelector: labels.SelectorFromSet(map[string]string{matchLabel: "true"}),
 		Namespace:     namespace,
 	})
 	if err != nil || len(detectorInferenceServices.Items) == 0 {
@@ -144,7 +157,7 @@ func (r *GuardrailsOrchestratorReconciler) GenerateOrchestratorConfigMap(
 	}
 
 	// Set owner reference so the ConfigMap is garbage collected with the CR
-	if err := controllerutil.SetControllerReference(owner, cm, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(orchestrator, cm, r.Scheme); err != nil {
 		return nil, fmt.Errorf("failed to set owner reference: %w", err)
 	}
 	log.Info("Successfully created ConfigMap object", "configMapName", configMapName)
