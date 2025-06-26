@@ -62,26 +62,22 @@ func GenerateHTTPSKServeLoggerURL(crName string, namespace string) string {
 	return "https://" + crName + "." + namespace + ".svc.cluster.local"
 }
 
-func ProgressEqual(a, b *lmesv1alpha1.ProgressBar) bool {
+func ProgressTriggeredChange(a, b *lmesv1alpha1.ProgressBar) bool {
 	if a == nil && b == nil {
 		return true
 	}
 	if a == nil || b == nil {
 		return false
 	}
-	return a.Percent == b.Percent &&
-		a.ElapsedTime == b.ElapsedTime &&
-		a.RemainingTimeEstimate == b.RemainingTimeEstimate &&
-		a.Count == b.Count &&
-		a.Message == b.Message
+	return a.Percent == b.Percent && a.Message == b.Message
 }
 
-func ProgressArrayEqual(a, b []lmesv1alpha1.ProgressBar) bool {
+func ProgressArrayTriggeredChange(a, b []lmesv1alpha1.ProgressBar) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for i := range a {
-		if !ProgressEqual(&a[i], &b[i]) {
+		if !ProgressTriggeredChange(&a[i], &b[i]) {
 			return false
 		}
 	}

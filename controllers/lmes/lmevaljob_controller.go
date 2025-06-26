@@ -318,11 +318,12 @@ func (r *LMEvalJobReconciler) updateStatus(ctx context.Context, log logr.Logger,
 	}
 
 	// driver only provides updates for these fields
+	// only update is progress bar percent-complete or message has varied
 	if newStatus.State != job.Status.State ||
 		newStatus.Message != job.Status.Message ||
 		newStatus.Reason != job.Status.Reason ||
 		newStatus.Results != job.Status.Results ||
-		!utils.ProgressArrayEqual(newStatus.ProgressBars, job.Status.ProgressBars) {
+		!utils.ProgressArrayTriggeredChange(newStatus.ProgressBars, job.Status.ProgressBars) {
 
 		job.Status.State = newStatus.State
 		job.Status.Message = newStatus.Message
