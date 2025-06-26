@@ -240,7 +240,8 @@ func setupAndTestDeploymentServiceAccount(instance *trustyaiopendatahubiov1alpha
 
 	caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
-	if mode == "PVC" {
+	// Create a PVC for PVC mode or migration mode
+	if mode == "PVC" || instance.IsMigration() {
 		Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
 	}
 	Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
