@@ -479,6 +479,10 @@ func (d *driverImpl) updateProgressStatus(state lmesv1alpha1.JobState, reason lm
 		} else {
 			// if it's a new bar, append it to the progress bar list
 			d.status.ProgressBars = append(d.status.ProgressBars, latestProgress)
+			// Ensure ProgressBars is never longer than 10 items
+			if len(d.status.ProgressBars) > 10 {
+				d.status.ProgressBars = d.status.ProgressBars[1:]
+			}
 		}
 	}
 }
