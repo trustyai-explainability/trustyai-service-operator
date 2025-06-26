@@ -4909,6 +4909,59 @@ spec:
                         numDemos:
                           description: Number of fewshot
                           type: integer
+                        rag:
+                          description: Specify the RAG information if needed
+                          properties:
+                            mcp:
+                              description: The MCP settings. Currently, this is the
+                                only option for the end-to-end RAG,
+                              properties:
+                                contextField:
+                                  description: The jsonpath to the context field in
+                                    the array of the context information objects
+                                  pattern: ^[a-zA-Z0-9._-]+$
+                                  type: string
+                                idField:
+                                  description: The jsonpath to the id field in the
+                                    array of the context information objects
+                                  pattern: ^[a-zA-Z0-9._-]+$
+                                  type: string
+                                payloadField:
+                                  description: |-
+                                    The field name in the MCP payload that contains the JSON string of the context information.
+                                    Since the MCP payload may contain multiple records, each record is a JSON object contains the
+                                    specified field name as the key and its value is the JSON string of the context information.
+                                    The underlying process parses each JSON string of the context information and aggregate them
+                                    into an array.
+                                  pattern: ^[a-zA-Z0-9._-]+$
+                                  type: string
+                                tool:
+                                  description: The Tool name of the MCP tool. Or the
+                                    API name of the MCP tool.
+                                  pattern: ^[a-zA-Z0-9._-]+$
+                                  type: string
+                                url:
+                                  description: |-
+                                    The endpoint of the MCP server. For example:
+                                    http://localhost:3000/mcp
+                                  pattern: ^https?://[a-zA-Z0-9._/-]+$
+                                  type: string
+                                verifyCertificate:
+                                  default: true
+                                  description: Verify server's certificate if the
+                                    server is using HTTPS.
+                                  type: boolean
+                              required:
+                              - contextField
+                              - idField
+                              - payloadField
+                              - tool
+                              - url
+                              - verifyCertificate
+                              type: object
+                          required:
+                          - mcp
+                          type: object
                         systemPrompt:
                           description: The Unitxt System Prompt
                           properties:

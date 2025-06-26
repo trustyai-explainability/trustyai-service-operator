@@ -1049,6 +1049,16 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 			Metrics:       []lmesv1alpha1.Metric{{Name: "unitxt.metric3"}, {Name: "unitxt.metric4"}},
 			NumDemos:      &numDemos,
 			DemosPoolSize: &demosPoolSize,
+			RAG: &lmesv1alpha1.RAG{
+				MCP: lmesv1alpha1.MCP{
+					URL:               "https://localhost:3002/mcp",
+					Tool:              "search",
+					PayloadField:      "text",
+					ContextField:      "context",
+					IdField:           "id",
+					VerifyCertificate: true,
+				},
+			},
 		},
 	)
 
@@ -1061,7 +1071,7 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 		"/opt/app-root/src/bin/driver",
 		"--output-path", "/opt/app-root/src/output",
 		"--task-recipe", "card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
-		"--task-recipe", "card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--task-recipe", "card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10\nrag:\n  session: url=https://localhost:3002/mcp\n  request: tool=search,query_field=text,context_field=context,id_field=id,verify_cert=true\nprocess_docs: !function ###UNITXT_PATH###/utils.process_docs\nprocess_results: !function ###UNITXT_PATH###/utils.postprocess_docs",
 		"--",
 	}, generateCmd(svcOpts, job))
 }

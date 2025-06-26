@@ -122,7 +122,7 @@ func ValidateUserInput(job *lmesv1alpha1.LMEvalJob) error {
 	// Validate custom task git source
 	if job.Spec.TaskList.CustomTasks != nil && len(job.Spec.TaskList.TaskNames) > 0 {
 		gitSource := job.Spec.TaskList.CustomTasks.Source.GitSource
-		if err := ValidateGitURL(gitSource.URL); err != nil {
+		if err := ValidateURL(gitSource.URL); err != nil {
 			return fmt.Errorf("invalid git URL: %w", err)
 		}
 		if gitSource.Path != "" {
@@ -244,6 +244,13 @@ func ValidateTaskRecipes(args []lmesv1alpha1.TaskRecipe, argType string) error {
 		if arg.Format != nil {
 			if err := ValidateTaskName(*arg.Format); err != nil {
 				return fmt.Errorf("%s[%d] format: %w", argType, i, err)
+			}
+		}
+
+		// validate RAG settings if presents
+		if arg.RAG != nil {
+			if err := ValidateMCP(&arg.RAG.MCP); err != nil {
+				return fmt.Errorf("%s[%d] RAG: %w", argType, i, err)
 			}
 		}
 
@@ -458,20 +465,20 @@ func ValidateChatTemplateName(name string) error {
 	return nil
 }
 
-// ValidateGitURL validates git repository URLs
-func ValidateGitURL(url string) error {
+// ValidateURL validates git repository URLs
+func ValidateURL(url string) error {
 	if url == "" {
-		return fmt.Errorf("git URL cannot be empty")
+		return fmt.Errorf("URL cannot be empty")
 	}
 
 	// Check for shell metacharacters
 	if ContainsShellMetacharacters(url) {
-		return fmt.Errorf("git URL contains shell metacharacters")
+		return fmt.Errorf("URL contains shell metacharacters")
 	}
 
 	// Must be HTTPS URL for security
 	if !regexp.MustCompile(`^https://[a-zA-Z0-9._/-]+$`).MatchString(url) {
-		return fmt.Errorf("git URL must be a valid HTTPS URL (only alphanumeric, ., _, /, - allowed)")
+		return fmt.Errorf("URL must be a valid HTTPS URL (only alphanumeric, ., _, /, - allowed)")
 	}
 
 	return nil
@@ -525,6 +532,37 @@ func ValidateGitCommit(commit string) error {
 	// Git commit hashes should be hexadecimal (full SHA-1: 40 chars, short: 7+ chars)
 	if !regexp.MustCompile(`^[a-fA-F0-9]{7,40}$`).MatchString(commit) {
 		return fmt.Errorf("git commit must be a valid hexadecimal hash (7-40 characters)")
+	}
+
+	return nil
+}
+
+func ValidateMCP(mcp *lmesv1alpha1.MCP) error {
+	if mcp == nil {
+		return nil
+	}
+	// only support MCP for now, so directly check the MCP settings
+	if err := ValidateURL(mcp.URL); err != nil {
+		return fmt.Errorf("invalid MCP URL: %w", err)
+	}
+
+	// put restriction to only allow alphanumeric, hyphen, underscore, and period
+	rePat := regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
+	if !rePat.MatchString(mcp.Tool) {
+		return fmt.Errorf("MCP tool contains invalid characters (only alphanumeric, ., _, - allowed)")
+	}
+
+	if !rePat.MatchString(mcp.PayloadField) {
+		return fmt.Errorf("MCP payloadField contains invalid characters (only alphanumeric, ., _, - allowed)")
+	}
+
+	if !rePat.MatchString(mcp.ContextField) {
+		return fmt.Errorf("MCP contextField contains invalid characters (only alphanumeric, ., _, - allowed)")
+	}
+
+	if !rePat.MatchString(mcp.IdField) {
+		return fmt.Errorf("MCP idField contains invalid characters (only alphanumeric, ., _, - allowed)")
 	}
 
 	return nil

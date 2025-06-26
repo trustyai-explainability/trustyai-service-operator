@@ -299,6 +299,42 @@ func Test_TaskRecipes(t *testing.T) {
 	)
 }
 
+func Test_TaskRecipesWithRAG(t *testing.T) {
+	info := setupTest(t, true)
+	defer info.tearDown(t)
+
+	driver, err := NewDriver(&DriverOption{
+		Context:         context.Background(),
+		OutputPath:      info.outputPath,
+		CatalogPath:     info.catalogPath,
+		Logger:          driverLog,
+		TaskRecipesPath: info.taskPath,
+		TaskRecipes: []string{
+			"card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10\nrag:\n  session: url=https://localhost:3002/mcp\n.   request: tool=search,query_field=text,context_field=context,id_field=id,verify_cert=true\nprocess_docs: !function ###UNITXT_PATH###/utils.process_docs\nprocess_results: !function ###UNITXT_PATH###/utils.postprocess_docs",
+		},
+		Args:     []string{"sh", "-ec", "sleep 2; echo 'testing progress: 100%|' >&2; sleep 4"},
+		CommPort: info.port,
+	})
+	assert.Nil(t, err)
+
+	msgs, _ := runDriverAndWait4Complete(t, driver, false)
+
+	assert.Equal(t, []string{
+		"initializing the evaluation job",
+		"testing progress: 100%",
+		"job completed",
+	}, msgs)
+
+	assert.Nil(t, driver.Shutdown())
+
+	tr0, err := os.ReadFile(filepath.Join(info.taskPath, "tr_0.yaml"))
+	assert.Nil(t, err)
+	assert.Equal(t,
+		"task: tr_0\ninclude: unitxt\nrecipe: card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10\nrag:\n  session: url=https://localhost:3002/mcp\n.   request: tool=search,query_field=text,context_field=context,id_field=id,verify_cert=true\nprocess_docs: !function /opt/app-root/src/lm_eval/tasks/unitxt/utils.process_docs\nprocess_results: !function /opt/app-root/src/lm_eval/tasks/unitxt/utils.postprocess_docs",
+		string(tr0),
+	)
+}
+
 func Test_CustomCards(t *testing.T) {
 	info := setupTest(t, true)
 	defer info.tearDown(t)
