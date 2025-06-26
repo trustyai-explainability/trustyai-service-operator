@@ -169,8 +169,8 @@ func Test_ProgressUpdate(t *testing.T) {
 	msgs, _ := runDriverAndWait4Complete(t, driver, false)
 
 	assert.Equal(t, []string{
-		"Initializing the evaluation job",
-		"0%",
+		"initializing the evaluation job",
+		"Requesting API",
 		"job completed",
 	}, msgs)
 
@@ -314,7 +314,7 @@ func Test_TaskRecipes(t *testing.T) {
 			"card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 			"card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		},
-		Args:     []string{"sh", "-ec", "sleep 2; echo 'testing progress: 100%|' >&2; sleep 4"},
+		Args:     []string{"sh", "-ec", "sleep 2; echo 'testing progress:   100%|▏       | 1367/1200000 [09:27<134:30:31,  2.48it/s]' >&2; sleep 4"},
 		CommPort: info.port,
 	})
 	assert.Nil(t, err)
@@ -323,7 +323,7 @@ func Test_TaskRecipes(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"initializing the evaluation job",
-		"testing progress: 100%",
+		"testing progress",
 		"job completed",
 	}, msgs)
 
@@ -364,7 +364,7 @@ func Test_CustomCards(t *testing.T) {
 			{Type: Metric, Name: "llm_as_judge.rating.mistral_7b_instruct_v0_2_huggingface_template_mt_bench_single_turn", Value: `{"__type__": "llm_as_judge", "inference_model": { "__type__": "hf_pipeline_based_inference_engine", "model_name": "mistralai/Mistral-7B-Instruct-v0.2", "max_new_tokens": 256, "use_fp16": true }, "template": "templates.response_assessment.rating.mt_bench_single_turn", "task": "rating.single_turn", "format": "formats.models.mistral.instruction", "main_score": "mistral_7b_instruct_v0_2_huggingface_template_mt_bench_single_turn"}`},
 			{Type: Task, Name: "generation", Value: `{ "__type__": "task", "input_fields": { "input": "str", "type_of_input": "str", "type_of_output": "str" }, "reference_fields": { "output": "str" }, "prediction_type": "str", "metrics": [ "metrics.normalized_sacrebleu" ], "augmentable_inputs": [ "input" ], "defaults": { "type_of_output": "Text" } }`},
 		},
-		Args:     []string{"sh", "-ec", "sleep 1; echo 'testing progress: 100%|' >&2; sleep 3"},
+		Args:     []string{"sh", "-ec", "sleep 1; echo 'testing progress:   100%|▏       | 1367/1200000 [09:27<134:30:31,  2.48it/s]' >&2; sleep 3"},
 		CommPort: info.port,
 	})
 	assert.Nil(t, err)
@@ -373,7 +373,7 @@ func Test_CustomCards(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"initializing the evaluation job",
-		"testing progress: 100%",
+		"testing progress",
 		"job completed",
 	}, msgs)
 

@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes"
 	"io"
 	"io/fs"
 	"net"
@@ -142,7 +141,7 @@ func NewDriver(opt *DriverOption) (Driver, error) {
 
 // Run implements Driver.
 func (d *driverImpl) Run() error {
-	d.updateStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, "Initializing the evaluation job")
+	d.updateStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, "initializing the evaluation job")
 
 	if err := d.setupComm(); err != nil {
 		d.err = err
@@ -464,7 +463,7 @@ func (d *driverImpl) updateStatus(state lmesv1alpha1.JobState, reason lmesv1alph
 func (d *driverImpl) updateProgressStatus(state lmesv1alpha1.JobState, reason lmesv1alpha1.Reason, latestProgress lmesv1alpha1.ProgressBar) {
 	d.status.State = state
 	d.status.Reason = reason
-	d.status.Message = latestProgress.Percent // for backwards compatibility
+	d.status.Message = latestProgress.Message // for backwards compatibility
 
 	progressLen := len(d.status.ProgressBars)
 
@@ -481,7 +480,7 @@ func (d *driverImpl) updateProgressStatus(state lmesv1alpha1.JobState, reason lm
 			// if it's a new bar, append it to the progress bar list
 			d.status.ProgressBars = append(d.status.ProgressBars, latestProgress)
 			// Ensure ProgressBars is never longer than 10 items
-			if len(d.status.ProgressBars) > lmes.MaxProgressBars {
+			if len(d.status.ProgressBars) > 10 {
 				d.status.ProgressBars = d.status.ProgressBars[1:]
 			}
 		}

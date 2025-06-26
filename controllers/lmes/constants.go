@@ -45,5 +45,4 @@ const (
 	DefaultBatchSize           = "1"
 	DefaultDetectDevice        = true
 	ServiceName                = "LMES"
-	MaxProgressBars            = 50
 )
