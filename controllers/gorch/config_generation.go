@@ -50,8 +50,12 @@ func (r *GuardrailsOrchestratorReconciler) GenerateOrchestratorConfigMap(
 	for _, isvc := range allInferenceServices.Items {
 		if isvc.Name == generationService && isvc.Status.URL != nil {
 			split := strings.Split(isvc.Status.URL.String(), "//")[1]
-			host_and_port := strings.Split(split, ":")
-			genHost = host_and_port[0]
+			if strings.Contains(split, ":") {
+				host_and_port := strings.Split(split, ":")
+				genHost = host_and_port[0]
+			} else {
+				genHost = split
+			}
 			genPort = "8080"
 			break
 		}
@@ -69,8 +73,12 @@ func (r *GuardrailsOrchestratorReconciler) GenerateOrchestratorConfigMap(
 		LabelSelector: labels.SelectorFromSet(map[string]string{matchLabel: "true"}),
 		Namespace:     namespace,
 	})
-	if err != nil || len(detectorInferenceServices.Items) == 0 {
+	if err != nil {
 		return nil, fmt.Errorf("could not automatically find detector inference services: %w", err)
+	}
+
+	if len(detectorInferenceServices.Items) == 0 && orchestrator.Spec.EnableBuiltInDetectors == false {
+		return nil, fmt.Errorf("no detector inference services found and no built-in detectors specified")
 	}
 
 	// grab matching serving runtimes
