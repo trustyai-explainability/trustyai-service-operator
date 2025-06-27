@@ -67,10 +67,18 @@ func setupTestObjects(ns string, labelFunc func(i int) string) ([]client.Object,
 		isvcs = append(isvcs, isvc)
 		srs = append(srs, sr)
 	}
+	generationRuntimeName := "my-generation-runtime"
 	genIsvc := &kservev1beta1.InferenceService{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-generation-service",
 			Namespace: ns,
+		},
+		Spec: kservev1beta1.InferenceServiceSpec{
+			Predictor: kservev1beta1.PredictorSpec{
+				Model: &kservev1beta1.ModelSpec{
+					Runtime: &generationRuntimeName,
+				},
+			},
 		},
 		Status: kservev1beta1.InferenceServiceStatus{
 			URL: &apis.URL{
@@ -79,7 +87,29 @@ func setupTestObjects(ns string, labelFunc func(i int) string) ([]client.Object,
 			},
 		},
 	}
-	isvcs = append(isvcs, genIsvc)
+	genSr := &v1alpha1.ServingRuntime{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      generationRuntimeName,
+			Namespace: ns,
+			Labels:    map[string]string{"trustyai/guardrails": "true"},
+		},
+		Spec: v1alpha1.ServingRuntimeSpec{
+			ServingRuntimePodSpec: v1alpha1.ServingRuntimePodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "predictor",
+						Ports: []corev1.ContainerPort{
+							{
+								ContainerPort: int32(7000), // increment port by i
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: v1alpha1.ServingRuntimeStatus{},
+	}
+	isvcs = append(isvcs, genIsvc, genSr)
 	return isvcs, srs
 }
 
@@ -125,7 +155,7 @@ func TestGenerateOrchestratorConfigMap(t *testing.T) {
 	expectedData := `chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
-    port: 8080
+    port: 7000
 detectors:
   my-inference-service-1:
     type: text_contents
@@ -192,7 +222,7 @@ func TestGenerateOrchestratorConfigMapDetectorLabels(t *testing.T) {
 	expectedData := `chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
-    port: 8080
+    port: 7000
 detectors:
   my-inference-service-3:
     type: text_contents

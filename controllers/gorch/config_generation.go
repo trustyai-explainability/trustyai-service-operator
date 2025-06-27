@@ -46,9 +46,33 @@ func (r *GuardrailsOrchestratorReconciler) GenerateOrchestratorConfigMap(
 	if err != nil {
 		return nil, fmt.Errorf("Could not list all InferenceServices: %w", err)
 	}
+
+	// grab matching serving runtimes
+	var servingRuntimes v1alpha1.ServingRuntimeList
+	err = r.List(ctx, &servingRuntimes, &client.ListOptions{
+		Namespace: namespace,
+	})
+	if err != nil || len(servingRuntimes.Items) == 0 {
+		return nil, fmt.Errorf("could not automatically find serving runtimes: %w", err)
+	}
+
 	var genHost, genPort string
 	for _, isvc := range allInferenceServices.Items {
 		if isvc.Name == generationService && isvc.Status.URL != nil {
+
+			var matchingGenerationRuntime *v1alpha1.ServingRuntime
+			for _, servingRuntime := range servingRuntimes.Items {
+				if servingRuntime.Name == *isvc.Spec.Predictor.Model.Runtime {
+					matchingGenerationRuntime = &servingRuntime
+					break
+				}
+			}
+			if matchingGenerationRuntime == nil {
+				log.Error(nil, "could not find ServingRuntime for generation model", "generator", isvc.Name, "runtime", *isvc.Spec.Predictor.Model.Runtime)
+				continue
+			}
+			genPort = strconv.Itoa(int(matchingGenerationRuntime.Spec.Containers[0].Ports[0].ContainerPort))
+
 			split := strings.Split(isvc.Status.URL.String(), "//")[1]
 			if strings.Contains(split, ":") {
 				host_and_port := strings.Split(split, ":")
@@ -56,7 +80,6 @@ func (r *GuardrailsOrchestratorReconciler) GenerateOrchestratorConfigMap(
 			} else {
 				genHost = split
 			}
-			genPort = "8080"
 			break
 		}
 	}
@@ -79,15 +102,6 @@ func (r *GuardrailsOrchestratorReconciler) GenerateOrchestratorConfigMap(
 
 	if len(detectorInferenceServices.Items) == 0 && orchestrator.Spec.EnableBuiltInDetectors == false {
 		return nil, fmt.Errorf("no detector inference services found and no built-in detectors specified")
-	}
-
-	// grab matching serving runtimes
-	var servingRuntimes v1alpha1.ServingRuntimeList
-	err = r.List(ctx, &servingRuntimes, &client.ListOptions{
-		Namespace: namespace,
-	})
-	if err != nil || len(servingRuntimes.Items) == 0 {
-		return nil, fmt.Errorf("could not automatically find detector serving runtimes: %w", err)
 	}
 
 	// Extract status.address.uri from each InferenceService
@@ -114,8 +128,14 @@ func (r *GuardrailsOrchestratorReconciler) GenerateOrchestratorConfigMap(
 		if isvc.Status.URL != nil {
 			split := strings.Split(isvc.Status.URL.String(), "//")[1]
 
-			host_and_port := strings.Split(split, ":")
-			hosts = append(hosts, host_and_port[0])
+			var detectorHost string
+			if strings.Contains(split, ":") {
+				host_and_port := strings.Split(split, ":")
+				detectorHost = host_and_port[0]
+			} else {
+				detectorHost = split
+			}
+			hosts = append(hosts, detectorHost)
 
 			// for now, ignore the listed port in the inference service
 			// real_port = append(ports, host_and_port[1])
