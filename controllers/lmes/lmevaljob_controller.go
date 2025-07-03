@@ -404,21 +404,25 @@ func (r *LMEvalJobReconciler) handleDeletion(ctx context.Context, job *lmesv1alp
 }
 
 func createJobCreationMetrics(log logr.Logger, job *lmesv1alpha1.LMEvalJob) {
-	// Update the Prometheus metrics
+	// Update the Prometheus metrics for each task in the tasklist
 	log.Info("Creating a new LMEvalJob metric", "name", job.Name)
 	for _, task := range job.Spec.TaskList.TaskNames {
 		labels := make(map[string]string)
+
+		// add job information to metric
+		labels["eval_job_namespace"] = job.Namespace
 		labels["framework"] = "lm-evaluation-harness"
 		labels["model_type"] = job.Spec.Model
 		labels["task"] = task
 
+		// combine model args into single string
 		modelArgs := make([]string, len(job.Spec.ModelArgs))
 		for i, arg := range job.Spec.ModelArgs {
 			modelArgs[i] = arg.Name + ":" + arg.Value
 		}
 		labels["model_args"] = strings.Join(modelArgs, ",")
-		labels["eval_job_namespace"] = job.Namespace
 
+		// create/update metric counter
 		counter := metrics.GetOrCreateEvalCounter(labels)
 		counter.Inc()
 	}
