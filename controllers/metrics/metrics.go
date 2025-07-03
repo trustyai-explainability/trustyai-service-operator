@@ -39,6 +39,10 @@ func GetOrCreateEvalCounter(labels map[string]string) prometheus.Counter {
 	return getOrCreateCounter("eval", "Number of times this task has been scheduled", labels)
 }
 
+func GetOrCreateGuardrailsOrchestratorCounter(labels map[string]string) prometheus.Counter {
+	return getOrCreateCounter("guardrails_orchestrators", "Number of guardrails orchestrators that have been created", labels)
+}
+
 // GetOrCreateCounter returns a prometheus.Counter with the given name, help, and labels.
 // If a counter with that name and labels already exists, it returns the existing one.
 // Otherwise, it creates, registers, and returns a new counter.
