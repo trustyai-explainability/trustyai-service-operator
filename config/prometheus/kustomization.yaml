@@ -1,2 +1,3 @@
 resources:
-  - monitor.yaml
+  - metrics-service.yaml
+  - operator-service-monitor.yaml
