@@ -5,6 +5,7 @@ resources:
   - ../crd
   - ../rbac
   - ../manager
+  - ../prometheus
 
 commonLabels:
   app.kubernetes.io/part-of: trustyai
