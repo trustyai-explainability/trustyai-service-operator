@@ -25,6 +25,18 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+type AutoConfig struct {
+	// The name of the inference service that provides the vLLM generation model to-be-guardrailed
+	InferenceServiceToGuardrail string `json:"inferenceServiceToGuardrail"`
+
+	/* Label key to use when automatically identifying guardrail detector inference services.
+	If provided, all inference services with the label `$detectorServiceLabelToMatch: true` will be used as a guardrails detector.
+	If not provided, the default match label is `trustyai/guardrails`, and the autoconfig will use all inference services with the label `trustyai/guardrails: true` as detectors.
+	*/
+	// +optional
+	DetectorServiceLabelToMatch string `json:"detectorServiceLabelToMatch,omitempty"`
+}
+
 // GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator.
 type GuardrailsOrchestratorSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -33,7 +45,11 @@ type GuardrailsOrchestratorSpec struct {
 	// Number of replicas
 	Replicas int32 `json:"replicas"`
 	// Name of configmap containing generator,detector,and chunker arguments
-	OrchestratorConfig *string `json:"orchestratorConfig"`
+	OrchestratorConfig *string `json:"orchestratorConfig,omitempty"`
+
+	// Settings governing the automatic configuration of the orchestrator. Replaces `OrchestratorConfig`.
+	AutoConfig *AutoConfig `json:"autoConfig,omitempty"`
+
 	// Boolean flag to enable/disable built-in detectors
 	// +optional
 	EnableBuiltInDetectors bool `json:"enableBuiltInDetectors,omitempty"`
