@@ -94,11 +94,9 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	// Start reconcilation
-	firstReconcile := false
 	if orchestrator.Status.Conditions == nil {
 		reason := ReconcileInit
 		message := "Initializing GuardrailsOrchestrator resource"
-		firstReconcile = true
 		orchestrator, err = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
 			SetProgressingCondition(&saved.Status.Conditions, reason, message)
 			saved.Status.Phase = PhaseProgressing
@@ -158,37 +156,34 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	if firstReconcile {
-		if orchestrator.Spec.AutoConfig != nil {
-			cm, err := r.GenerateOrchestratorConfigMap(ctx, orchestrator)
-			if err != nil {
-				log.Error(err, "Failed to automatically generate orchestrator configmap")
-				return ctrl.Result{}, err
-			}
-			if err := r.Create(ctx, cm); err != nil && !errors.IsAlreadyExists(err) {
-				log.Error(err, "Failed to create orchestrator configmap")
-				return ctrl.Result{}, err
-			}
+	if orchestrator.Spec.AutoConfig != nil {
+		cm, err := r.GenerateOrchestratorConfigMap(ctx, orchestrator)
+		if err != nil {
+			log.Error(err, "Failed to automatically generate orchestrator configmap")
+			return ctrl.Result{}, err
+		}
+		if err := r.Create(ctx, cm); err != nil && !errors.IsAlreadyExists(err) {
+			log.Error(err, "Failed to create orchestrator configmap")
+			return ctrl.Result{}, err
+		}
+		log.Info("Automatically generated an OrchestratorConfig from resources in namespace")
 
-			log.Info("Automatically generated an OrchestratorConfig from resources in namespace")
-
-			// Set orchestrator.Spec.OrchestratorConfig to use the automatically generated config
-			orchestrator.Spec.OrchestratorConfig = &cm.Name
-			if err := r.Update(ctx, orchestrator); err != nil {
-				log.Error(err, "Failed to update OrchestratorConfig in CR")
+		// Set orchestrator.Spec.OrchestratorConfig to use the automatically generated config
+		orchestrator.Spec.OrchestratorConfig = &cm.Name
+		if err := r.Update(ctx, orchestrator); err != nil {
+			log.Error(err, "Failed to update OrchestratorConfig in CR")
+			return ctrl.Result{}, err
+		}
+	} else {
+		log.Info("Using manually-configured OrchestratorConfig")
+		existingConfigMap := &corev1.ConfigMap{}
+		err = r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.OrchestratorConfig, Namespace: orchestrator.Namespace}, existingConfigMap)
+		if err != nil {
+			log.Error(err, "Failed to get existing ConfigMap", "ConfigMap.Name", *orchestrator.Spec.OrchestratorConfig, "ConfigMap.Namespace", orchestrator.Namespace)
+			if client.IgnoreNotFound(err) != nil {
 				return ctrl.Result{}, err
 			}
-		} else {
-			log.Info("Using manually-configured OrchestratorConfig")
-			existingConfigMap := &corev1.ConfigMap{}
-			err = r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.OrchestratorConfig, Namespace: orchestrator.Namespace}, existingConfigMap)
-			if err != nil {
-				log.Error(err, "Failed to get existing ConfigMap", "ConfigMap.Name", *orchestrator.Spec.OrchestratorConfig, "ConfigMap.Namespace", orchestrator.Namespace)
-				if client.IgnoreNotFound(err) != nil {
-					return ctrl.Result{}, err
-				}
-				return ctrl.Result{}, nil
-			}
+			return ctrl.Result{}, nil
 		}
 	}
 
