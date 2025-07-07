@@ -201,8 +201,10 @@ func (r *GuardrailsOrchestratorReconciler) GenerateOrchestratorConfigMaps(
 		return nil, nil, fmt.Errorf("failed to set owner reference: %w", err)
 	}
 
-	if err := controllerutil.SetControllerReference(orchestrator, gatewayConfigMap, r.Scheme); err != nil {
-		return nil, nil, fmt.Errorf("failed to set owner reference for gateway configmap: %w", err)
+	if gatewayConfigMap != nil {
+		if err := controllerutil.SetControllerReference(orchestrator, gatewayConfigMap, r.Scheme); err != nil {
+			return nil, nil, fmt.Errorf("failed to set owner reference for gateway configmap: %w", err)
+		}
 	}
 
 	log.Info("Successfully created ConfigMap object", "configMapName", configMapName)

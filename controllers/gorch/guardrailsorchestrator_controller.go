@@ -378,9 +378,12 @@ func (r *GuardrailsOrchestratorReconciler) reconcileAutoConfig(ctx context.Conte
 		log.Error(err, "Failed to automatically create/update orchestrator configmap")
 	}
 
-	gatewayConfigChange, err := r.gatewayConfigLogic(ctx, log, orchestrator, cmGateway)
-	if err != nil {
-		log.Error(err, "Failed to automatically create/update orchestrator configmap")
+	gatewayConfigChange := false
+	if cmGateway != nil {
+		gatewayConfigChange, err = r.gatewayConfigLogic(ctx, log, orchestrator, cmGateway)
+		if err != nil {
+			log.Error(err, "Failed to automatically create/update orchestrator configmap")
+		}
 	}
 
 	// If the configmap changed, redeploy the orchestrator deployment
