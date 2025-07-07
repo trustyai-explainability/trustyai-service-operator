@@ -113,7 +113,7 @@ func setupTestObjects(ns string, labelFunc func(i int) string) ([]client.Object,
 	return isvcs, srs
 }
 
-func setupTestReconcilerAndOrchestrator(ns, orchestratorName string, autoConfig gorchv1alpha1.AutoConfig, isvcs, srs []client.Object, builtInDetectors bool) (*GuardrailsOrchestratorReconciler, *gorchv1alpha1.GuardrailsOrchestrator) {
+func setupTestReconcilerAndOrchestrator(ns, orchestratorName string, autoConfig gorchv1alpha1.AutoConfig, isvcs, srs []client.Object, builtInDetectors bool, gateway bool) (*GuardrailsOrchestratorReconciler, *gorchv1alpha1.GuardrailsOrchestrator) {
 	s := runtime.NewScheme()
 	_ = kservev1beta1.AddToScheme(s)
 	_ = gorchv1alpha1.AddToScheme(s)
@@ -129,8 +129,9 @@ func setupTestReconcilerAndOrchestrator(ns, orchestratorName string, autoConfig 
 			Namespace: ns,
 		},
 		Spec: gorchv1alpha1.GuardrailsOrchestratorSpec{
-			AutoConfig:             &autoConfig,
-			EnableBuiltInDetectors: builtInDetectors,
+			AutoConfig:              &autoConfig,
+			EnableBuiltInDetectors:  builtInDetectors,
+			EnableGuardrailsGateway: gateway,
 		},
 	}
 	return reconciler, orchestrator
@@ -145,9 +146,9 @@ func TestGenerateOrchestratorConfigMap(t *testing.T) {
 	autoConfig := gorchv1alpha1.AutoConfig{
 		InferenceServiceToGuardrail: "my-generation-service",
 	}
-	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, false)
+	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, false, false)
 
-	cm, err := reconciler.GenerateOrchestratorConfigMap(ctx, orchestrator)
+	cm, _, err := reconciler.GenerateOrchestratorConfigMaps(ctx, orchestrator)
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)
 	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
@@ -212,9 +213,9 @@ func TestGenerateOrchestratorConfigMapDetectorLabels(t *testing.T) {
 		InferenceServiceToGuardrail: "my-generation-service",
 		DetectorServiceLabelToMatch: "trustyai/guardrails/groupB",
 	}
-	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, false)
+	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, false, false)
 
-	cm, err := reconciler.GenerateOrchestratorConfigMap(ctx, orchestrator)
+	cm, _, err := reconciler.GenerateOrchestratorConfigMaps(ctx, orchestrator)
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)
 	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
@@ -259,9 +260,9 @@ func TestGenerateOrchestratorConfigMapBuiltInDetectors(t *testing.T) {
 	autoConfig := gorchv1alpha1.AutoConfig{
 		InferenceServiceToGuardrail: "my-generation-service",
 	}
-	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, true)
+	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, true, false)
 
-	cm, err := reconciler.GenerateOrchestratorConfigMap(ctx, orchestrator)
+	cm, _, err := reconciler.GenerateOrchestratorConfigMaps(ctx, orchestrator)
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)
 	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
@@ -316,4 +317,116 @@ detectors:
     default_threshold: 0.5
 `
 	assert.Equal(t, expectedData, cm.Data["config.yaml"])
+}
+
+func TestGenerateOrchestratorConfigMapBuiltInDetectorsAndGateway(t *testing.T) {
+	ctx := context.Background()
+	ns := "test-ns"
+	orchestratorName := "test-orch"
+
+	isvcs, srs := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" })
+	autoConfig := gorchv1alpha1.AutoConfig{
+		InferenceServiceToGuardrail: "my-generation-service",
+	}
+	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, true, true)
+
+	cm, cmGateway, err := reconciler.GenerateOrchestratorConfigMaps(ctx, orchestrator)
+	assert.NoError(t, err)
+	assert.NotNil(t, cm)
+	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
+	assert.Equal(t, ns, cm.Namespace)
+
+	expectedData := `chat_generation:
+  service:
+    hostname: my-generation-service.test-ns.svc.cluster.local
+    port: 7000
+detectors:
+  my-inference-service-1:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-1.test-ns.svc.cluster.local"
+      port: 8001
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-2:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-2.test-ns.svc.cluster.local"
+      port: 8002
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-3:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-3.test-ns.svc.cluster.local"
+      port: 8003
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-4:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-4.test-ns.svc.cluster.local"
+      port: 8004
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-5:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-5.test-ns.svc.cluster.local"
+      port: 8005
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  regex:
+    type: text_contents
+    service:
+      hostname: 127.0.0.1
+      port: 8080
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+`
+	expectedGatewayData := `orchestrator:
+  host: "localhost"
+  port: 8032
+detectors:
+  - name: my-inference-service-1
+    input: true
+    output: true
+    detector_params: {}
+  - name: my-inference-service-2
+    input: true
+    output: true
+    detector_params: {}
+  - name: my-inference-service-3
+    input: true
+    output: true
+    detector_params: {}
+  - name: my-inference-service-4
+    input: true
+    output: true
+    detector_params: {}
+  - name: my-inference-service-5
+    input: true
+    output: true
+    detector_params: {}
+  - regex:
+    input: true
+    output: true
+    detector_params:
+      regex:
+        - $^
+routes:
+  - name: all
+    detectors:
+      - my-inference-service-1
+      - my-inference-service-2
+      - my-inference-service-3
+      - my-inference-service-4
+      - my-inference-service-5
+      - regex
+  - name: passthrough
+    detectors:
+`
+
+	assert.Equal(t, expectedData, cm.Data["config.yaml"])
+	assert.Equal(t, expectedGatewayData, cmGateway.Data["config.yaml"])
 }

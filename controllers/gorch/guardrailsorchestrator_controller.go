@@ -18,6 +18,8 @@ package gorch
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"github.com/go-logr/logr"
 	"time"
 
@@ -173,6 +175,46 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
+	// monitor the gateway config for changes
+	if orchestrator.Spec.EnableGuardrailsGateway && orchestrator.Spec.SidecarGatewayConfig != nil {
+		// Monitor the configmap named in orchestrator.Spec.SidecarGatewayConfig
+		sidecarGatewayConfigName := *orchestrator.Spec.SidecarGatewayConfig
+		existingGatewayConfigMap := &corev1.ConfigMap{}
+		err = r.Get(ctx, types.NamespacedName{Name: sidecarGatewayConfigName, Namespace: orchestrator.Namespace}, existingGatewayConfigMap)
+		if err != nil {
+			log.Error(err, "Failed to get SidecarGatewayConfig ConfigMap", "ConfigMap.Name", sidecarGatewayConfigName, "ConfigMap.Namespace", orchestrator.Namespace)
+			return ctrl.Result{}, err
+		} else {
+			// Check if the configmap has changed by comparing a hash annotation
+			existingDeployment := &appsv1.Deployment{}
+			err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingDeployment)
+			if err == nil {
+				// Compute a hash of the configmap data
+				configData := existingGatewayConfigMap.Data["gateway-config.yaml"]
+				hash := fmt.Sprintf("%x", sha256.Sum256([]byte(configData)))
+				annotationKey := "trustyai.opendatahub.io/sidecar-gateway-config-hash"
+				annotations := existingDeployment.Spec.Template.Annotations
+				if annotations == nil {
+					annotations = map[string]string{}
+				}
+				if annotations[annotationKey] != hash {
+					annotations[annotationKey] = hash
+					existingDeployment.Spec.Template.Annotations = annotations
+					if updateErr := r.Update(ctx, existingDeployment); updateErr != nil {
+						log.Error(updateErr, "Failed to redeploy orchestrator after SidecarGatewayConfig change")
+						return ctrl.Result{}, updateErr
+					}
+					log.Info("Redeployed orchestrator deployment due to SidecarGatewayConfig change")
+				}
+			} else if errors.IsNotFound(err) {
+				log.Info("Deployment not found, will be created in subsequent reconciliation")
+			} else {
+				log.Error(err, "Failed to get orchestrator deployment for redeploy after SidecarGatewayConfig change")
+				return ctrl.Result{}, err
+			}
+		}
+	}
+
 	existingDeployment := &appsv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingDeployment)
 	if err != nil && errors.IsNotFound(err) {
@@ -242,18 +284,11 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	return ctrl.Result{Requeue: true, RequeueAfter: 30 * time.Second}, nil
 }
 
-func (r *GuardrailsOrchestratorReconciler) reconcileAutoConfig(ctx context.Context, log logr.Logger, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (ctrl.Result, error) {
-	// Generate orchestrator configmap spec
-	cm, err := r.GenerateOrchestratorConfigMap(ctx, orchestrator)
-	if err != nil {
-		log.Error(err, "Failed to automatically generate orchestrator configmap")
-		return ctrl.Result{}, err
-	}
-
+func (r *GuardrailsOrchestratorReconciler) orchestratorConfigLogic(ctx context.Context, log logr.Logger, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, cm *corev1.ConfigMap) (bool, error) {
 	// Check if the configmap already exists and is up-to-date
 	existingCM := &corev1.ConfigMap{}
 	configMapChanged := false
-	err = r.Get(ctx, types.NamespacedName{Name: cm.Name, Namespace: cm.Namespace}, existingCM)
+	err := r.Get(ctx, types.NamespacedName{Name: cm.Name, Namespace: cm.Namespace}, existingCM)
 	if err == nil {
 		// ConfigMap exists, check if data is the same
 		if existingCM.Data["config.yaml"] == cm.Data["config.yaml"] {
@@ -263,7 +298,7 @@ func (r *GuardrailsOrchestratorReconciler) reconcileAutoConfig(ctx context.Conte
 			existingCM.Data = cm.Data
 			if updateErr := r.Update(ctx, existingCM); updateErr != nil {
 				log.Error(updateErr, "Failed to update existing orchestrator configmap")
-				return ctrl.Result{}, updateErr
+				return configMapChanged, updateErr
 			}
 			configMapChanged = true
 			log.Info("Updated existing OrchestratorConfig ConfigMap with new configuration")
@@ -272,31 +307,84 @@ func (r *GuardrailsOrchestratorReconciler) reconcileAutoConfig(ctx context.Conte
 		// ConfigMap does not exist, create it
 		if createErr := r.Create(ctx, cm); createErr != nil {
 			log.Error(createErr, "Failed to create orchestrator configmap")
-			return ctrl.Result{}, createErr
+			return configMapChanged, createErr
 		}
 		configMapChanged = true
 		log.Info("Automatically generated an OrchestratorConfig from resources in namespace")
 	} else {
 		log.Error(err, "Failed to get orchestrator configmap")
-		return ctrl.Result{}, err
+		return configMapChanged, err
 	}
 
 	// Set orchestrator.Spec.OrchestratorConfig to use the automatically generated config
 	latestOrchestrator := &gorchv1alpha1.GuardrailsOrchestrator{}
 	if err := r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, latestOrchestrator); err != nil {
 		log.Error(err, "Failed to re-fetch Orchestrator before patching")
-		return ctrl.Result{}, err
+		return configMapChanged, err
 	}
 	// Patch only the OrchestratorConfig field in the spec
 	patch := client.MergeFrom(latestOrchestrator.DeepCopy())
 	latestOrchestrator.Spec.OrchestratorConfig = &cm.Name
 	if err := r.Patch(ctx, latestOrchestrator, patch); err != nil {
 		log.Error(err, "Failed to patch OrchestratorConfig in CR")
+		return configMapChanged, err
+	}
+
+	return configMapChanged, nil
+}
+
+func (r *GuardrailsOrchestratorReconciler) gatewayConfigLogic(ctx context.Context, log logr.Logger, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, cm *corev1.ConfigMap) (bool, error) {
+	// Check if the configmap already exists and is up-to-date
+	existingCM := &corev1.ConfigMap{}
+	configMapChanged := false
+	err := r.Get(ctx, types.NamespacedName{Name: cm.Name, Namespace: cm.Namespace}, existingCM)
+	if errors.IsNotFound(err) {
+		// ConfigMap does not exist, create it
+		if createErr := r.Create(ctx, cm); createErr != nil {
+			log.Error(createErr, "Failed to create orchestrator configmap")
+			return false, createErr
+		}
+		configMapChanged = true
+		log.Info("Automatically generated a GatewayConfig from resources in namespace")
+	}
+
+	// Set orchestrator.Spec.OrchestratorConfig to use the automatically generated config
+	latestOrchestrator := &gorchv1alpha1.GuardrailsOrchestrator{}
+	if err := r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, latestOrchestrator); err != nil {
+		log.Error(err, "Failed to re-fetch Orchestrator before patching")
+		return configMapChanged, err
+	}
+	// Patch only the OrchestratorConfig field in the spec
+	patch := client.MergeFrom(latestOrchestrator.DeepCopy())
+	latestOrchestrator.Spec.SidecarGatewayConfig = &cm.Name
+	if err := r.Patch(ctx, latestOrchestrator, patch); err != nil {
+		log.Error(err, "Failed to patch GatewayConfig in CR")
+		return configMapChanged, err
+	}
+
+	return configMapChanged, nil
+}
+
+func (r *GuardrailsOrchestratorReconciler) reconcileAutoConfig(ctx context.Context, log logr.Logger, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (ctrl.Result, error) {
+	// Generate orchestrator configmap spec
+	cm, cmGateway, err := r.GenerateOrchestratorConfigMaps(ctx, orchestrator)
+	if err != nil {
+		log.Error(err, "Failed to automatically generate orchestrator configmap")
 		return ctrl.Result{}, err
 	}
 
+	orchestratorConfigChange, err := r.orchestratorConfigLogic(ctx, log, orchestrator, cm)
+	if err != nil {
+		log.Error(err, "Failed to automatically create/update orchestrator configmap")
+	}
+
+	gatewayConfigChange, err := r.gatewayConfigLogic(ctx, log, orchestrator, cmGateway)
+	if err != nil {
+		log.Error(err, "Failed to automatically create/update orchestrator configmap")
+	}
+
 	// If the configmap changed, redeploy the orchestrator deployment
-	if configMapChanged {
+	if orchestratorConfigChange || gatewayConfigChange {
 		existingDeployment := &appsv1.Deployment{}
 		err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingDeployment)
 		if err == nil {
