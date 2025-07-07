@@ -123,6 +123,11 @@ func (r *GuardrailsOrchestratorReconciler) GenerateOrchestratorConfigMap(
 			continue
 		}
 
+		if len(matchingRuntime.Spec.Containers) == 0 || len(matchingRuntime.Spec.Containers[0].Ports) == 0 {
+			log.Error(nil, "servingRuntime is misconfigured and does not have containers or ports, skipping.", "detector", isvc.Name, "runtime", matchingRuntime.Name)
+			continue
+		}
+
 		httpPort := strconv.Itoa(int(matchingRuntime.Spec.Containers[0].Ports[0].ContainerPort))
 		ports = append(ports, httpPort)
 		if isvc.Status.URL != nil {

@@ -18,6 +18,7 @@ package gorch
 
 import (
 	"context"
+	"github.com/go-logr/logr"
 	"time"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -157,23 +158,8 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	if orchestrator.Spec.AutoConfig != nil {
-		cm, err := r.GenerateOrchestratorConfigMap(ctx, orchestrator)
-		if err != nil {
-			log.Error(err, "Failed to automatically generate orchestrator configmap")
-			return ctrl.Result{}, err
-		}
-		if err := r.Create(ctx, cm); err != nil && !errors.IsAlreadyExists(err) {
-			log.Error(err, "Failed to create orchestrator configmap")
-			return ctrl.Result{}, err
-		}
-		log.Info("Automatically generated an OrchestratorConfig from resources in namespace")
-
-		// Set orchestrator.Spec.OrchestratorConfig to use the automatically generated config
-		orchestrator.Spec.OrchestratorConfig = &cm.Name
-		if err := r.Update(ctx, orchestrator); err != nil {
-			log.Error(err, "Failed to update OrchestratorConfig in CR")
-			return ctrl.Result{}, err
-		}
+		result, err := r.reconcileAutoConfig(ctx, log, orchestrator)
+		return result, err
 	} else {
 		log.Info("Using manually-configured OrchestratorConfig")
 		existingConfigMap := &corev1.ConfigMap{}
@@ -254,6 +240,85 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, updateErr
 	}
 	return ctrl.Result{Requeue: true, RequeueAfter: 30 * time.Second}, nil
+}
+
+func (r *GuardrailsOrchestratorReconciler) reconcileAutoConfig(ctx context.Context, log logr.Logger, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (ctrl.Result, error) {
+	// Generate orchestrator configmap spec
+	cm, err := r.GenerateOrchestratorConfigMap(ctx, orchestrator)
+	if err != nil {
+		log.Error(err, "Failed to automatically generate orchestrator configmap")
+		return ctrl.Result{}, err
+	}
+
+	// Check if the configmap already exists and is up-to-date
+	existingCM := &corev1.ConfigMap{}
+	configMapChanged := false
+	err = r.Get(ctx, types.NamespacedName{Name: cm.Name, Namespace: cm.Namespace}, existingCM)
+	if err == nil {
+		// ConfigMap exists, check if data is the same
+		if existingCM.Data["config.yaml"] == cm.Data["config.yaml"] {
+			//pass
+		} else {
+			// Update only if data is different
+			existingCM.Data = cm.Data
+			if updateErr := r.Update(ctx, existingCM); updateErr != nil {
+				log.Error(updateErr, "Failed to update existing orchestrator configmap")
+				return ctrl.Result{}, updateErr
+			}
+			configMapChanged = true
+			log.Info("Updated existing OrchestratorConfig ConfigMap with new configuration")
+		}
+	} else if errors.IsNotFound(err) {
+		// ConfigMap does not exist, create it
+		if createErr := r.Create(ctx, cm); createErr != nil {
+			log.Error(createErr, "Failed to create orchestrator configmap")
+			return ctrl.Result{}, createErr
+		}
+		configMapChanged = true
+		log.Info("Automatically generated an OrchestratorConfig from resources in namespace")
+	} else {
+		log.Error(err, "Failed to get orchestrator configmap")
+		return ctrl.Result{}, err
+	}
+
+	// Set orchestrator.Spec.OrchestratorConfig to use the automatically generated config
+	latestOrchestrator := &gorchv1alpha1.GuardrailsOrchestrator{}
+	if err := r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, latestOrchestrator); err != nil {
+		log.Error(err, "Failed to re-fetch Orchestrator before patching")
+		return ctrl.Result{}, err
+	}
+	// Patch only the OrchestratorConfig field in the spec
+	patch := client.MergeFrom(latestOrchestrator.DeepCopy())
+	latestOrchestrator.Spec.OrchestratorConfig = &cm.Name
+	if err := r.Patch(ctx, latestOrchestrator, patch); err != nil {
+		log.Error(err, "Failed to patch OrchestratorConfig in CR")
+		return ctrl.Result{}, err
+	}
+
+	// If the configmap changed, redeploy the orchestrator deployment
+	if configMapChanged {
+		existingDeployment := &appsv1.Deployment{}
+		err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingDeployment)
+		if err == nil {
+			// Annotate the deployment to force a rollout
+			if existingDeployment.Spec.Template.Annotations == nil {
+				existingDeployment.Spec.Template.Annotations = map[string]string{}
+			}
+			existingDeployment.Spec.Template.Annotations["trustyai.opendatahub.io/configmap-redeployed-at"] = time.Now().Format(time.RFC3339Nano)
+			if updateErr := r.Update(ctx, existingDeployment); updateErr != nil {
+				log.Error(updateErr, "Failed to redeploy orchestrator after configmap change")
+				return ctrl.Result{}, updateErr
+			}
+			log.Info("Redeployed orchestrator deployment due to configmap change")
+		} else if errors.IsNotFound(err) {
+			log.Info("Deployment not found, will be created in subsequent reconciliation")
+		} else {
+			log.Error(err, "Failed to get orchestrator deployment for redeploy")
+			return ctrl.Result{}, err
+		}
+	}
+
+	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
