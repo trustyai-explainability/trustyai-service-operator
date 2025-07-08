@@ -14,8 +14,8 @@ ENV PATH="/opt/app-root/bin:/opt/app-root/src/.local/bin/:/opt/app-root/src/bin:
 
 RUN curl -L https://github.com/opendatahub-io/lm-evaluation-harness/archive/refs/heads/incubation.zip -o repo.zip && \
     unzip repo.zip && \
-    cp -r lm-evaluation-harness-release-0.4.8/* . && \
-    rm -rf lm-evaluation-harness-release-0.4.8 repo.zip && \
+    cp -r lm-evaluation-harness-incubation/* . && \
+    rm -rf lm-evaluation-harness-incubation repo.zip && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -e .
 
