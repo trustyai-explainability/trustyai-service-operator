@@ -19,8 +19,8 @@ var (
 	// PatternLimit allows for integers, floats, and percentage in limit values
 	PatternLimit = regexp.MustCompile(`^(\d+(\.\d+)?|\d*\.\d+)$`)
 
-	// PatternTaskName allows for alphanumeric, hyphens and underscores in task names
-	PatternTaskName = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+	// PatternTaskName allows for alphanumeric, hyphens, underscores, parentheses in task names
+	PatternTaskName = regexp.MustCompile(`^[a-zA-Z0-9._()-]+$`)
 
 	// AllowedModels allows for a subset of model types
 	AllowedModels = map[string]struct{}{

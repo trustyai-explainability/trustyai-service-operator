@@ -343,7 +343,7 @@ func ValidateTaskName(name string) error {
 	}
 
 	if !PatternTaskName.MatchString(name) {
-		return fmt.Errorf("task name contains invalid characters (only alphanumeric, ., _, - allowed)")
+		return fmt.Errorf("task name contains invalid characters (only alphanumeric, ., _, -, () allowed)")
 	}
 
 	return nil
