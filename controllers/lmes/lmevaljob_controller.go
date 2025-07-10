@@ -415,12 +415,22 @@ func createJobCreationMetrics(log logr.Logger, job *lmesv1alpha1.LMEvalJob) {
 		labels["model_type"] = job.Spec.Model
 		labels["task"] = task
 
-		// combine model args into single string
-		modelArgs := make([]string, len(job.Spec.ModelArgs))
-		for i, arg := range job.Spec.ModelArgs {
-			modelArgs[i] = arg.Name + ":" + arg.Value
+		// grab model name
+		hasUrl := false
+		hasName := false
+		for _, arg := range job.Spec.ModelArgs {
+			if arg.Name == "model" {
+				labels["model_name"] = arg.Value
+				hasUrl = true
+			}
+			if arg.Name == "base_url" {
+				labels["base_url"] = arg.Value
+				hasName = true
+			}
+			if hasUrl && hasName {
+				break
+			}
 		}
-		labels["model_args"] = strings.Join(modelArgs, ",")
 
 		// create/update metric counter
 		counter := metrics.GetOrCreateEvalCounter(labels)
