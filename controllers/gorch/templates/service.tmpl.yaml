@@ -11,10 +11,14 @@ spec:
     - IPv4
   ports:
     {{if .Orchestrator.Spec.EnableGuardrailsGateway}}
-    - name: http
+    - name: gateway
       protocol: TCP
       port: 8090
       targetPort: 8090
+    - name: http
+      protocol: TCP
+      port: 8033
+      targetPort: 8032
     {{else}}
     - name: http
       protocol: TCP
