@@ -65,30 +65,45 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 	}
 
 	var genHost, genPort string
-	for _, isvc := range allInferenceServices.Items {
-		if isvc.Name == generationService && isvc.Status.URL != nil {
+	// Check if generationService is a fully qualified URL with port
+	if strings.Contains(generationService, "://") && strings.Contains(generationService, ":") {
+		// e.g. http://host:port or https://host:port
+		split := strings.SplitN(generationService, "://", 2)
+		hostPort := split[1]
+		host, port, found := strings.Cut(hostPort, ":")
+		if found {
+			genHost = host
+			genPort = port
+			log.Info("Generation service resolved from fully qualified URL", "genHost", genHost, "genPort", genPort)
+		} else {
+			return nil, nil, fmt.Errorf("could not parse host and port from fully qualified generationService: %q", generationService)
+		}
+	} else {
+		for _, isvc := range allInferenceServices.Items {
+			if isvc.Name == generationService && isvc.Status.URL != nil {
 
-			var matchingGenerationRuntime *v1alpha1.ServingRuntime
-			for _, servingRuntime := range servingRuntimes.Items {
-				if servingRuntime.Name == *isvc.Spec.Predictor.Model.Runtime {
-					matchingGenerationRuntime = &servingRuntime
-					break
+				var matchingGenerationRuntime *v1alpha1.ServingRuntime
+				for _, servingRuntime := range servingRuntimes.Items {
+					if servingRuntime.Name == *isvc.Spec.Predictor.Model.Runtime {
+						matchingGenerationRuntime = &servingRuntime
+						break
+					}
 				}
-			}
-			if matchingGenerationRuntime == nil {
-				log.Error(nil, "could not find ServingRuntime for generation model", "generator", isvc.Name, "runtime", *isvc.Spec.Predictor.Model.Runtime)
-				continue
-			}
-			genPort = strconv.Itoa(int(matchingGenerationRuntime.Spec.Containers[0].Ports[0].ContainerPort))
+				if matchingGenerationRuntime == nil {
+					log.Error(nil, "could not find ServingRuntime for generation model", "generator", isvc.Name, "runtime", *isvc.Spec.Predictor.Model.Runtime)
+					continue
+				}
+				genPort = strconv.Itoa(int(matchingGenerationRuntime.Spec.Containers[0].Ports[0].ContainerPort))
 
-			split := strings.Split(isvc.Status.URL.String(), "//")[1]
-			if strings.Contains(split, ":") {
-				host_and_port := strings.Split(split, ":")
-				genHost = host_and_port[0]
-			} else {
-				genHost = split
+				split := strings.Split(isvc.Status.URL.String(), "//")[1]
+				if strings.Contains(split, ":") {
+					host_and_port := strings.Split(split, ":")
+					genHost = host_and_port[0]
+				} else {
+					genHost = split
+				}
+				break
 			}
-			break
 		}
 	}
 	log.Info("Generation service resolved", "genHost", genHost, "genPort", genPort)
