@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/metrics"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"maps"
 	"slices"
@@ -401,6 +402,41 @@ func (r *LMEvalJobReconciler) handleDeletion(ctx context.Context, job *lmesv1alp
 	return ctrl.Result{}, nil
 }
 
+func createJobCreationMetrics(log logr.Logger, job *lmesv1alpha1.LMEvalJob) {
+	// Update the Prometheus metrics for each task in the tasklist
+	log.Info("Creating a new LMEvalJob metric", "name", job.Name)
+	for _, task := range job.Spec.TaskList.TaskNames {
+		labels := make(map[string]string)
+
+		// add job information to metric
+		labels["eval_job_namespace"] = job.Namespace
+		labels["framework"] = "lm-evaluation-harness"
+		labels["model_type"] = job.Spec.Model
+		labels["task"] = task
+
+		// grab model name
+		hasUrl := false
+		hasName := false
+		for _, arg := range job.Spec.ModelArgs {
+			if arg.Name == "model" {
+				labels["model_name"] = arg.Value
+				hasUrl = true
+			}
+			if arg.Name == "base_url" {
+				labels["base_url"] = arg.Value
+				hasName = true
+			}
+			if hasUrl && hasName {
+				break
+			}
+		}
+
+		// create/update metric counter
+		counter := metrics.GetOrCreateEvalCounter(labels)
+		counter.Inc()
+	}
+}
+
 func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (reconcile.Result, error) {
 	// If it doesn't contain our finalizer, add it
 	if !controllerutil.ContainsFinalizer(job, lmesv1alpha1.FinalizerName) {
@@ -465,6 +501,9 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 		log.Error(err, "Failed to create pod for the LMEvalJob", "name", job.Name)
 		return ctrl.Result{}, err
 	}
+
+	// Create metrics
+	createJobCreationMetrics(log, job)
 
 	// Create the pod successfully. Wait for the driver to update the status
 	job.Status.State = lmesv1alpha1.ScheduledJobState
@@ -820,8 +859,8 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 	var volumes = []corev1.Volume{
 		{
 			Name: "shared", VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{},
-			},
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
+		},
 		},
 	}
 
