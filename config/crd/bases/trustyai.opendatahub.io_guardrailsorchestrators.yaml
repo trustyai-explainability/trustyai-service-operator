@@ -102,6 +102,9 @@ spec:
                 description: Number of replicas
                 format: int32
                 type: integer
+              rustLogLevel:
+                description: Set RUST_LOG level log level in the orchestrator deployment
+                type: boolean
             required:
             - replicas
             type: object
