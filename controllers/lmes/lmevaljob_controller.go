@@ -20,13 +20,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"maps"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -522,7 +523,13 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 	// pull status from the driver
 	if err = r.updateStatus(ctx, log, job); err == nil && job.Status.State == lmesv1alpha1.CompleteJobState {
 		// Job completed successfully, handle cleanup
-		return r.handleComplete(ctx, log, job)
+		result, handleErr := r.handleComplete(ctx, log, job)
+		if handleErr != nil {
+			log.Error(handleErr, "failed to handle job completion, will retry")
+			// If handleComplete fails, we should retry after the polling interval
+			return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), handleErr
+		}
+		return result, nil
 	}
 	if err != nil {
 		log.Error(err, "unable to retrieve the status from the job's pod. retry after the pulling interval")
@@ -1405,10 +1412,12 @@ func isContainerFailed(status *corev1.ContainerStatus) (bool, string) {
 		status.State.Waiting.Reason != "PodInitializing" {
 		return true, status.State.Waiting.Reason
 	}
-	if status.State.Terminated != nil &&
-		status.State.Terminated.Reason != "Completed" &&
-		status.State.Terminated.ExitCode != 0 {
-		return true, status.State.Terminated.Reason
+	if status.State.Terminated != nil {
+		// Container is considered failed if it has a non-zero exit code OR an unexpected termination reason
+		if status.State.Terminated.ExitCode != 0 ||
+			(status.State.Terminated.Reason != "Completed" && status.State.Terminated.Reason != "") {
+			return true, status.State.Terminated.Reason
+		}
 	}
 	return false, ""
 }
