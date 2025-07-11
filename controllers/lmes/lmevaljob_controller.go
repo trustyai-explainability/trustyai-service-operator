@@ -521,8 +521,8 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 
 	// pull status from the driver
 	if err = r.updateStatus(ctx, log, job); err == nil && job.Status.State == lmesv1alpha1.CompleteJobState {
-		// the update will trigger another reconcile
-		return ctrl.Result{}, nil
+		// Job completed successfully, handle cleanup
+		return r.handleComplete(ctx, log, job)
 	}
 	if err != nil {
 		log.Error(err, "unable to retrieve the status from the job's pod. retry after the pulling interval")
@@ -1406,7 +1406,8 @@ func isContainerFailed(status *corev1.ContainerStatus) (bool, string) {
 		return true, status.State.Waiting.Reason
 	}
 	if status.State.Terminated != nil &&
-		status.State.Terminated.Reason != "Complete" {
+		status.State.Terminated.Reason != "Completed" &&
+		status.State.Terminated.ExitCode != 0 {
 		return true, status.State.Terminated.Reason
 	}
 	return false, ""
