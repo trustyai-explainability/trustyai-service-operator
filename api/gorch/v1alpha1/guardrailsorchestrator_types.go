@@ -65,7 +65,7 @@ type GuardrailsOrchestratorSpec struct {
 
 	// Set RUST_LOG level log level in the orchestrator deployment
 	// +optional
-	RustLogLevel bool `json:"rustLogLevel,omitempty"`
+	RustLogLevel *string `json:"rustLogLevel,omitempty"`
 }
 
 // OtelExporter defines the environment variables for configuring the OTLP exporter.
