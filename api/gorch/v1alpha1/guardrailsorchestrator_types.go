@@ -45,9 +45,11 @@ type GuardrailsOrchestratorSpec struct {
 	// Number of replicas
 	Replicas int32 `json:"replicas"`
 	// Name of configmap containing generator,detector,and chunker arguments
+	// +optional
 	OrchestratorConfig *string `json:"orchestratorConfig,omitempty"`
 
 	// Settings governing the automatic configuration of the orchestrator. Replaces `OrchestratorConfig`.
+	// +optional
 	AutoConfig *AutoConfig `json:"autoConfig,omitempty"`
 
 	// Boolean flag to enable/disable built-in detectors
