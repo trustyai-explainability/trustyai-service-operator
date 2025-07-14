@@ -16,8 +16,12 @@ limitations under the License.
 
 package controllers
 
-import "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas"
+import (
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/tas"
+)
 
 func init() {
+	// Register just the v1alpha1 controller
+	// Kubernetes API server will automatically convert  v1 (storage version) to v1alpha1 for controller to watch
 	registerService(tas.ServiceName, tas.ControllerSetUp)
 }
