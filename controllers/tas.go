@@ -22,6 +22,6 @@ import (
 
 func init() {
 	// Register just the v1alpha1 controller
-	// Kubernetes will automatically handle conversion v1 (storage version) <->v1alpha1
+	// Kubernetes API server will automatically convert  v1 (storage version) to v1alpha1 for controller to watch
 	registerService(tas.ServiceName, tas.ControllerSetUp)
 }
