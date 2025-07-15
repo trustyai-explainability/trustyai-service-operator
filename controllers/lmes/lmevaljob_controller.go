@@ -402,6 +402,7 @@ func (r *LMEvalJobReconciler) handleDeletion(ctx context.Context, job *lmesv1alp
 	return ctrl.Result{}, nil
 }
 
+// createJobCreationMetrics collects and publishes metric information about newly created LM-Eval jobs
 func createJobCreationMetrics(log logr.Logger, job *lmesv1alpha1.LMEvalJob) {
 	// Update the Prometheus metrics for each task in the tasklist
 	log.Info("Creating a new LMEvalJob metric", "name", job.Name)
