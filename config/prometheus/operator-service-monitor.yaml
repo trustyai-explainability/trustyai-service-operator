@@ -17,3 +17,4 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/part-of: trustyai
+      
