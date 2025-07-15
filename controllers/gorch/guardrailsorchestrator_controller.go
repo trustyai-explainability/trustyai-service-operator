@@ -69,6 +69,7 @@ func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.
 	}).SetupWithManager(mgr)
 }
 
+// createOrchestratorCreationMetrics collects and publishes metrics related to new-created Guardrails Orchestrators
 func createOrchestratorCreationMetrics(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) {
 	// Update the Prometheus metrics for each task in the tasklist
 	labels := make(map[string]string)
