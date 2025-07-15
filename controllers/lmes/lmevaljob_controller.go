@@ -22,13 +22,12 @@ import (
 	"fmt"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/metrics"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
