@@ -198,7 +198,7 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 	}
 
 	if useBuiltInDetectors {
-		configYaml.WriteString("  regex:\n")
+		configYaml.WriteString(fmt.Sprintf("  %s:\n", builtInDetectorName))
 		configYaml.WriteString("    type: text_contents\n")
 		configYaml.WriteString("    service:\n")
 		configYaml.WriteString("      hostname: 127.0.0.1\n")
@@ -294,7 +294,7 @@ func (r *GuardrailsOrchestratorReconciler) defineGatewayConfigMap(
 		configYaml.WriteString("    detector_params: {}\n")
 	}
 	if orchestrator.Spec.EnableBuiltInDetectors {
-		configYaml.WriteString("  - name: regex\n")
+		configYaml.WriteString(fmt.Sprintf("  - name: %s\n", builtInDetectorName))
 		configYaml.WriteString("    input: true\n")
 		configYaml.WriteString("    output: true\n")
 		configYaml.WriteString("    detector_params:\n")
@@ -309,7 +309,7 @@ func (r *GuardrailsOrchestratorReconciler) defineGatewayConfigMap(
 		configYaml.WriteString(fmt.Sprintf("      - %s\n", names[i]))
 	}
 	if orchestrator.Spec.EnableBuiltInDetectors {
-		configYaml.WriteString("      - regex\n")
+		configYaml.WriteString(fmt.Sprintf("      - %s\n", builtInDetectorName))
 	}
 	configYaml.WriteString("  - name: passthrough\n")
 	configYaml.WriteString("    detectors:\n")

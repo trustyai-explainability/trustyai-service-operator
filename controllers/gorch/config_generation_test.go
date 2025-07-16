@@ -148,7 +148,7 @@ func TestGenerateOrchestratorConfigMap(t *testing.T) {
 	}
 	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, false, false)
 
-	cm, _, err := reconciler.GenerateOrchestratorConfigMaps(ctx, orchestrator)
+	cm, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)
 	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
@@ -215,7 +215,7 @@ func TestGenerateOrchestratorConfigMapDetectorLabels(t *testing.T) {
 	}
 	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, false, false)
 
-	cm, _, err := reconciler.GenerateOrchestratorConfigMaps(ctx, orchestrator)
+	cm, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)
 	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
@@ -262,13 +262,13 @@ func TestGenerateOrchestratorConfigMapBuiltInDetectors(t *testing.T) {
 	}
 	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, true, false)
 
-	cm, _, err := reconciler.GenerateOrchestratorConfigMaps(ctx, orchestrator)
+	cm, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)
 	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
 	assert.Equal(t, ns, cm.Namespace)
 
-	expectedData := `chat_generation:
+	expectedData := fmt.Sprintf(`chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
     port: 7000
@@ -308,14 +308,14 @@ detectors:
       port: 8005
     chunker_id: whole_doc_chunker
     default_threshold: 0.5
-  regex:
+  %s:
     type: text_contents
     service:
       hostname: 127.0.0.1
       port: 8080
     chunker_id: whole_doc_chunker
     default_threshold: 0.5
-`
+`, builtInDetectorName)
 	assert.Equal(t, expectedData, cm.Data["config.yaml"])
 }
 
@@ -330,13 +330,15 @@ func TestGenerateOrchestratorConfigMapBuiltInDetectorsAndGateway(t *testing.T) {
 	}
 	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, true, true)
 
-	cm, cmGateway, err := reconciler.GenerateOrchestratorConfigMaps(ctx, orchestrator)
+	cm, names, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
+	cmGateway, err := reconciler.defineGatewayConfigMap(orchestrator, names)
+
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)
 	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
 	assert.Equal(t, ns, cm.Namespace)
 
-	expectedData := `chat_generation:
+	expectedData := fmt.Sprintf(`chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
     port: 7000
@@ -376,15 +378,15 @@ detectors:
       port: 8005
     chunker_id: whole_doc_chunker
     default_threshold: 0.5
-  regex:
+  %s:
     type: text_contents
     service:
       hostname: 127.0.0.1
       port: 8080
     chunker_id: whole_doc_chunker
     default_threshold: 0.5
-`
-	expectedGatewayData := `orchestrator:
+`, builtInDetectorName)
+	expectedGatewayData := fmt.Sprintf(`orchestrator:
   host: "localhost"
   port: 8032
 detectors:
@@ -408,7 +410,7 @@ detectors:
     input: true
     output: true
     detector_params: {}
-  - regex:
+  - name: %s
     input: true
     output: true
     detector_params:
@@ -422,10 +424,10 @@ routes:
       - my-inference-service-3
       - my-inference-service-4
       - my-inference-service-5
-      - regex
+      - %s
   - name: passthrough
     detectors:
-`
+`, builtInDetectorName, builtInDetectorName)
 
 	assert.Equal(t, expectedData, cm.Data["config.yaml"])
 	assert.Equal(t, expectedGatewayData, cmGateway.Data["config.yaml"])
