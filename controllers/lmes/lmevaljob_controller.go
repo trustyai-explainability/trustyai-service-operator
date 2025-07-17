@@ -20,14 +20,15 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/metrics"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"maps"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/metrics"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -318,6 +319,25 @@ func (r *LMEvalJobReconciler) updateStatus(ctx context.Context, log logr.Logger,
 		return err
 	}
 
+	// Check if the pod is ready before accepting a Complete status from the driver
+	if newStatus.State == lmesv1alpha1.CompleteJobState {
+		pod, err := r.getPod(ctx, job)
+		if err != nil {
+			log.Error(err, "unable to get pod to verify completion status")
+			return err
+		}
+
+		if mainIdx := getContainerByName(&pod.Status, "main"); mainIdx == -1 {
+			// Main container not found, pod still initialising
+			log.Info("ignoring Complete status from driver - pod still initialising", "podName", job.GetPodName())
+			return nil
+		} else if pod.Status.ContainerStatuses[mainIdx].State.Running == nil {
+			// Main container not running, pod still initialising
+			log.Info("ignoring Complete status from driver - pod not running yet", "podName", job.GetPodName())
+			return nil
+		}
+	}
+
 	// driver only provides updates for these fields
 	// only update is progress bar percent-complete or message has varied
 	if newStatus.State != job.Status.State ||
@@ -556,6 +576,9 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 		log.Info("detect an error on the job's pod. marked the job as done", "name", job.GetPodName())
 		return ctrl.Result{}, err
 	} else if pod.Status.ContainerStatuses[mainIdx].State.Running == nil {
+		// Pod is not running yet, don't accept completion status from driver
+		// This prevents the driver from marking the job as complete during pod initialisation
+		log.Info("pod not running yet, skipping status update from driver", "podName", job.GetPodName())
 		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 	}
 
@@ -866,8 +889,8 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 	var volumes = []corev1.Volume{
 		{
 			Name: "shared", VolumeSource: corev1.VolumeSource{
-			EmptyDir: &corev1.EmptyDirVolumeSource{},
-		},
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
 		},
 	}
 
