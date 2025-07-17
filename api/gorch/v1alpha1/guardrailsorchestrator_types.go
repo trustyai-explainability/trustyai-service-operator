@@ -65,9 +65,9 @@ type GuardrailsOrchestratorSpec struct {
 	// +optional
 	OtelExporter OtelExporter `json:"otelExporter,omitempty"`
 
-	// Set RUST_LOG level log level in the orchestrator deployment
+	// Set log level in the orchestrator deployment
 	// +optional
-	RustLogLevel *string `json:"rustLogLevel,omitempty"`
+	LogLevel *string `json:"logLevel,omitempty"`
 }
 
 // OtelExporter defines the environment variables for configuring the OTLP exporter.
@@ -112,12 +112,34 @@ type Condition struct {
 	LastTransitionTime metav1.Time `json:"lastTransitionTime" description:"last time the condition transit from one status to another"`
 }
 
+type DetectedService struct {
+	Name     string `json:"name,omitempty"`
+	Type     string `json:"type,omitempty"` // e.g. "generator" or "detector"
+	Hostname string `json:"hostname,omitempty"`
+	Port     string `json:"port,omitempty"`
+}
+
+type AutoConfigState struct {
+	GeneratedConfigMap        *string           `json:"generatedConfigMap,omitempty"`
+	GeneratedGatewayConfigMap *string           `json:"generatedGatewayConfigAMap,omitempty"`
+	LastGenerated             string            `json:"lastGenerated,omitempty"`
+	GenerationService         DetectedService   `json:"generationService,omitempty"`
+	DetectorServices          []DetectedService `json:"detectorServices,omitempty"`
+	ConfigurationHash         string            `json:"configurationHash,omitempty"`
+	Status                    string            `json:"status,omitempty"`
+	Message                   string            `json:"message,omitempty"`
+}
+
 type GuardrailsOrchestratorStatus struct {
 	Phase string `json:"phase,omitempty"`
 
 	// Conditions describes the state of the GuardrailsOrchestrator resource.
 	// +optional
 	Conditions []Condition `json:"conditions,omitempty"`
+
+	// AutoConfigState describes information about the generated autoconfiguration
+	// +optional
+	AutoConfigState *AutoConfigState `json:"autoConfigState,omitempty"`
 }
 
 // +kubebuilder:object:root=true

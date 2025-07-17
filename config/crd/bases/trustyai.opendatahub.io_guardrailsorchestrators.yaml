@@ -68,6 +68,9 @@ spec:
                 description: ' Name of the configmap containing guadrails sidecar
                   gateway arguments'
                 type: string
+              logLevel:
+                description: Set log level in the orchestrator deployment
+                type: string
               orchestratorConfig:
                 description: Name of configmap containing generator,detector,and chunker
                   arguments
@@ -102,14 +105,52 @@ spec:
                 description: Number of replicas
                 format: int32
                 type: integer
-              rustLogLevel:
-                description: Set RUST_LOG level log level in the orchestrator deployment
-                type: string
             required:
             - replicas
             type: object
           status:
             properties:
+              autoConfigState:
+                description: AutoConfigState describes information about the generated
+                  autoconfiguration
+                properties:
+                  configurationHash:
+                    type: string
+                  detectorServices:
+                    items:
+                      properties:
+                        hostname:
+                          type: string
+                        name:
+                          type: string
+                        port:
+                          type: string
+                        type:
+                          type: string
+                      type: object
+                    type: array
+                  generatedConfigMap:
+                    type: string
+                  generatedGatewayConfigAMap:
+                    type: string
+                  generationService:
+                    properties:
+                      hostname:
+                        type: string
+                      name:
+                        type: string
+                      port:
+                        type: string
+                      type:
+                        type: string
+                    type: object
+                  lastGenerated:
+                    type: string
+                  message:
+                    type: string
+                  status:
+                    type: string
+                type: object
               conditions:
                 description: Conditions describes the state of the GuardrailsOrchestrator
                   resource.

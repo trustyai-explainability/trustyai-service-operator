@@ -148,7 +148,7 @@ func TestGenerateOrchestratorConfigMap(t *testing.T) {
 	}
 	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, false, false)
 
-	cm, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
+	cm, _, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)
 	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
@@ -158,6 +158,67 @@ func TestGenerateOrchestratorConfigMap(t *testing.T) {
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
     port: 7000
+detectors:
+  my-inference-service-1:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-1.test-ns.svc.cluster.local"
+      port: 8001
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-2:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-2.test-ns.svc.cluster.local"
+      port: 8002
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-3:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-3.test-ns.svc.cluster.local"
+      port: 8003
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-4:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-4.test-ns.svc.cluster.local"
+      port: 8004
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-5:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-5.test-ns.svc.cluster.local"
+      port: 8005
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+`
+	assert.Equal(t, expectedData, cm.Data["config.yaml"])
+}
+
+func TestGenerateOrchestratorConfigMapFullURL(t *testing.T) {
+	ctx := context.Background()
+	ns := "test-ns"
+	orchestratorName := "test-orch"
+
+	isvcs, srs := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" })
+	autoConfig := gorchv1alpha1.AutoConfig{
+		InferenceServiceToGuardrail: "http://my-generation-service:8123",
+	}
+	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, false, false)
+
+	cm, _, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
+	assert.NoError(t, err)
+	assert.NotNil(t, cm)
+	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
+	assert.Equal(t, ns, cm.Namespace)
+
+	expectedData := `chat_generation:
+  service:
+    hostname: my-generation-service
+    port: 8123
 detectors:
   my-inference-service-1:
     type: text_contents
@@ -215,7 +276,7 @@ func TestGenerateOrchestratorConfigMapDetectorLabels(t *testing.T) {
 	}
 	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, false, false)
 
-	cm, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
+	cm, _, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)
 	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
@@ -262,7 +323,7 @@ func TestGenerateOrchestratorConfigMapBuiltInDetectors(t *testing.T) {
 	}
 	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, true, false)
 
-	cm, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
+	cm, _, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)
 	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
@@ -330,8 +391,8 @@ func TestGenerateOrchestratorConfigMapBuiltInDetectorsAndGateway(t *testing.T) {
 	}
 	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, true, true)
 
-	cm, names, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
-	cmGateway, err := reconciler.defineGatewayConfigMap(orchestrator, names)
+	cm, _, detectorServices, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
+	cmGateway, err := reconciler.defineGatewayConfigMap(orchestrator, detectorServices)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)

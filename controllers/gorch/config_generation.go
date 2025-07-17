@@ -14,18 +14,105 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"net/url"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
+
+const (
+	generationType = "generation"
+	detectorType   = "detector"
+
+	// === orchestrator config constants ========
+	orchestratorConfigPreamble = `chat_generation:
+  service:
+    hostname: %s
+    port: %s
+detectors:
+`
+	orchestratorBuiltInConfig = `  %s:
+    type: text_contents
+    service:
+      hostname: 127.0.0.1
+      port: 8080
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+`
+	orchestratorExternalDetector = `  %s:
+    type: text_contents
+    service:
+      hostname: %q
+      port: %s
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+`
+
+	// === gateway config constants ========
+	gatewayPreamable = `orchestrator:
+  host: "localhost"
+  port: 8032
+detectors:
+`
+	gatewayExternalDetector = `  - name: %s
+    input: true
+    output: true
+    detector_params: {}
+`
+	gatewayBuiltInDetector = `  - name: %s
+    input: true
+    output: true
+    detector_params:
+      regex:
+        - $^
+`
+	gatewayRoutesPreamble = `routes:
+  - name: all
+    detectors:
+`
+	gatewayPassthrough = `  - name: passthrough
+    detectors:
+`
+)
+
+// === UTILS ===========================================================================================================
+func getOrchestratorConfigMap(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *string {
+	if orchestrator.Spec.OrchestratorConfig != nil {
+		return orchestrator.Spec.OrchestratorConfig
+	} else if orchestrator.Status.AutoConfigState.GeneratedConfigMap != nil {
+		return orchestrator.Status.AutoConfigState.GeneratedConfigMap
+	} else {
+		return nil
+	}
+}
+
+func getGatewayConfigMap(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *string {
+	if orchestrator.Spec.SidecarGatewayConfig != nil {
+		return orchestrator.Spec.SidecarGatewayConfig
+	} else if orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap != nil {
+		return orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap
+	} else {
+		return nil
+	}
+}
+
+func (r *GuardrailsOrchestratorReconciler) refreshOrchestrator(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, log logr.Logger) (*gorchv1alpha1.GuardrailsOrchestrator, error) {
+	latestOrchestrator := &gorchv1alpha1.GuardrailsOrchestrator{}
+	if err := r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, latestOrchestrator); err != nil {
+		log.Error(err, "Failed to re-fetch Orchestrator before updating status")
+		return nil, err
+	}
+	return latestOrchestrator, nil
+}
 
 // === ORCHESTRATOR CONFIGURATION ======================================================================================
 // defineOrchestratorConfigMap defines ConfigMap *data* for the orchestrator according to the ISVCs+SRs in the namespace
 func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
-	ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (*corev1.ConfigMap, []string, error) {
+	ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (*corev1.ConfigMap, *gorchv1alpha1.DetectedService, []gorchv1alpha1.DetectedService, error) {
 	log := ctrl.Log.WithName("AutoConfigurator | Orchestrator ConfigMap Definer |")
 	orchestratorName := orchestrator.Name
 	namespace := orchestrator.Namespace
@@ -52,7 +139,7 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 		Namespace: namespace,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("Could not list all InferenceServices: %w", err)
+		return nil, nil, nil, fmt.Errorf("could not list all InferenceServices in namespace %s: %w", namespace, err)
 	}
 
 	// grab matching serving runtimes
@@ -61,22 +148,19 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 		Namespace: namespace,
 	})
 	if err != nil || len(servingRuntimes.Items) == 0 {
-		return nil, nil, fmt.Errorf("could not automatically find serving runtimes: %w", err)
+		return nil, nil, nil, fmt.Errorf("could not automatically find serving runtimes: %w", err)
 	}
 
-	var genHost, genPort string
+	var detectedGenerationService gorchv1alpha1.DetectedService
 	// Check if generationService is a fully qualified URL with port
 	if strings.Contains(generationService, "://") && strings.Contains(generationService, ":") {
 		// e.g. http://host:port or https://host:port
-		split := strings.SplitN(generationService, "://", 2)
-		hostPort := split[1]
-		host, port, found := strings.Cut(hostPort, ":")
-		if found {
-			genHost = host
-			genPort = port
-			log.Info("Generation service resolved from fully qualified URL", "genHost", genHost, "genPort", genPort)
+		generationURL, err := url.Parse(generationService)
+		if err == nil {
+			detectedGenerationService = gorchv1alpha1.DetectedService{Name: generationService, Hostname: generationURL.Hostname(), Port: generationURL.Port(), Type: generationType}
+			log.Info("Generation service resolved from fully qualified URL", "generationService", generationService)
 		} else {
-			return nil, nil, fmt.Errorf("could not parse host and port from fully qualified generationService: %q", generationService)
+			return nil, nil, nil, fmt.Errorf("could not parse host and port from fully qualified generationService: %q", generationService)
 		}
 	} else {
 		for _, isvc := range allInferenceServices.Items {
@@ -93,25 +177,22 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 					log.Error(nil, "could not find ServingRuntime for generation model", "generator", isvc.Name, "runtime", *isvc.Spec.Predictor.Model.Runtime)
 					continue
 				}
-				genPort = strconv.Itoa(int(matchingGenerationRuntime.Spec.Containers[0].Ports[0].ContainerPort))
 
-				split := strings.Split(isvc.Status.URL.String(), "//")[1]
-				if strings.Contains(split, ":") {
-					host_and_port := strings.Split(split, ":")
-					genHost = host_and_port[0]
-				} else {
-					genHost = split
+				genPort := strconv.Itoa(int(matchingGenerationRuntime.Spec.Containers[0].Ports[0].ContainerPort))
+				generationURL, err := url.Parse(isvc.Status.URL.String())
+				if err != nil {
+					return nil, nil, nil, fmt.Errorf("could not parse URL %s from generator service status %s", isvc.Status.URL.String(), isvc.Name)
 				}
+				detectedGenerationService = gorchv1alpha1.DetectedService{Name: isvc.Name, Hostname: generationURL.Hostname(), Port: genPort, Type: generationType}
 				break
 			}
 		}
 	}
-	log.Info("Generation service resolved", "genHost", genHost, "genPort", genPort)
-	if genHost == "" || genPort == "" {
-		return nil, nil, fmt.Errorf("could not find InferenceService with name %q in namespace %q", generationService, namespace)
+	if detectedGenerationService.Hostname == "" || detectedGenerationService.Port == "" {
+		return nil, nil, nil, fmt.Errorf("could not find InferenceService with name %q in namespace %s", generationService, namespace)
+	} else {
+		log.Info("Generation service resolved", "Generation service", detectedGenerationService)
 	}
-
-	// get label-to-match
 
 	// get detectors
 	var detectorInferenceServices kservev1beta1.InferenceServiceList
@@ -120,18 +201,14 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 		Namespace:     namespace,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("could not automatically find detector inference services: %w", err)
+		return nil, nil, nil, fmt.Errorf("could not automatically find detector inference services: %w", err)
 	}
 
 	if len(detectorInferenceServices.Items) == 0 && orchestrator.Spec.EnableBuiltInDetectors == false {
-		return nil, nil, fmt.Errorf("no detector inference services found and no built-in detectors specified")
+		return nil, nil, nil, fmt.Errorf("no detector inference services found and no built-in detectors specified")
 	}
 
-	// Extract status.address.uri from each InferenceService
-	var hosts []string
-	var ports []string
-	var names []string
-
+	var detectedDetectorServices []gorchv1alpha1.DetectedService
 	// sort the inference services by name, to ensure consistent configmap generation
 	sortedDetectorItems := detectorInferenceServices.Items
 	sort.Slice(sortedDetectorItems, func(i, j int) bool {
@@ -139,8 +216,6 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 	})
 
 	for _, isvc := range sortedDetectorItems {
-		names = append(names, isvc.Name)
-
 		var matchingRuntime *v1alpha1.ServingRuntime
 		for _, servingRuntime := range servingRuntimes.Items {
 			if servingRuntime.Name == *isvc.Spec.Predictor.Model.Runtime {
@@ -159,52 +234,30 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 		}
 
 		httpPort := strconv.Itoa(int(matchingRuntime.Spec.Containers[0].Ports[0].ContainerPort))
-		ports = append(ports, httpPort)
 		if isvc.Status.URL != nil {
-			split := strings.Split(isvc.Status.URL.String(), "//")[1]
-
-			var detectorHost string
-			if strings.Contains(split, ":") {
-				host_and_port := strings.Split(split, ":")
-				detectorHost = host_and_port[0]
-			} else {
-				detectorHost = split
+			detectorURL, err := url.Parse(isvc.Status.URL.String())
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("could not parse URL %s from detector service status %s", isvc.Status.URL.String(), isvc.Name)
 			}
-			hosts = append(hosts, detectorHost)
-
 			// for now, ignore the listed port in the inference service
 			// real_port = append(ports, host_and_port[1])
+
+			detectedDetectorServices = append(detectedDetectorServices, gorchv1alpha1.DetectedService{Name: isvc.Name, Hostname: detectorURL.Hostname(), Port: httpPort, Type: detectorType})
+
 		}
 	}
 
-	log.Info("Detector services resolved", "names", names, "hosts", hosts, "ports", ports)
+	log.Info("Detector services resolved", "detectedDetectorServices", detectedDetectorServices)
 
 	// Build detectors YAML string
 	var configYaml strings.Builder
-	configYaml.WriteString("chat_generation:\n")
-	configYaml.WriteString("  service:\n")
-	configYaml.WriteString(fmt.Sprintf("    hostname: %s\n", genHost))
-	configYaml.WriteString(fmt.Sprintf("    port: %s\n", genPort))
-
-	configYaml.WriteString("detectors:\n")
-	for i := range names {
-		configYaml.WriteString(fmt.Sprintf("  %s:\n", names[i]))
-		configYaml.WriteString("    type: text_contents\n")
-		configYaml.WriteString("    service:\n")
-		configYaml.WriteString(fmt.Sprintf("      hostname: %q\n", hosts[i]))
-		configYaml.WriteString(fmt.Sprintf("      port: %s\n", ports[i]))
-		configYaml.WriteString("    chunker_id: whole_doc_chunker\n")
-		configYaml.WriteString("    default_threshold: 0.5\n")
+	configYaml.WriteString(fmt.Sprintf(orchestratorConfigPreamble, detectedGenerationService.Hostname, detectedGenerationService.Port))
+	for i := range detectedDetectorServices {
+		configYaml.WriteString(fmt.Sprintf(orchestratorExternalDetector, detectedDetectorServices[i].Name, detectedDetectorServices[i].Hostname, detectedDetectorServices[i].Port))
 	}
 
 	if useBuiltInDetectors {
-		configYaml.WriteString(fmt.Sprintf("  %s:\n", builtInDetectorName))
-		configYaml.WriteString("    type: text_contents\n")
-		configYaml.WriteString("    service:\n")
-		configYaml.WriteString("      hostname: 127.0.0.1\n")
-		configYaml.WriteString("      port: 8080\n")
-		configYaml.WriteString("    chunker_id: whole_doc_chunker\n")
-		configYaml.WriteString("    default_threshold: 0.5\n")
+		configYaml.WriteString(fmt.Sprintf(orchestratorBuiltInConfig, builtInDetectorName))
 	}
 
 	log.Info("Defined orchestrator config.yaml", "configYaml", configYaml.String())
@@ -221,9 +274,9 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 
 	// Set owner reference so the ConfigMap is garbage collected with the CR
 	if err := controllerutil.SetControllerReference(orchestrator, cm, r.Scheme); err != nil {
-		return nil, nil, fmt.Errorf("failed to set owner reference: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to set owner reference: %w", err)
 	}
-	return cm, names, nil
+	return cm, &detectedGenerationService, detectedDetectorServices, nil
 }
 
 // applyOrchestratorConfigMap creates/patches an orchestrator-config ConfigMap in the namespace
@@ -257,62 +310,55 @@ func (r *GuardrailsOrchestratorReconciler) applyOrchestratorConfigMap(ctx contex
 		return err
 	}
 
-	// Set orchestrator.Spec.OrchestratorConfig to use the automatically generated config
-	latestOrchestrator := &gorchv1alpha1.GuardrailsOrchestrator{}
-	if err := r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, latestOrchestrator); err != nil {
-		log.Error(err, "Failed to re-fetch Orchestrator before patching")
-		return err
-	}
-	// Patch only the OrchestratorConfig field in the spec
-	patch := client.MergeFrom(latestOrchestrator.DeepCopy())
-	latestOrchestrator.Spec.OrchestratorConfig = &cm.Name
-	if err := r.Patch(ctx, latestOrchestrator, patch); err != nil {
-		log.Error(err, "Failed to patch OrchestratorConfig in CR")
-		return err
+	return nil
+}
+
+func (r *GuardrailsOrchestratorReconciler) updateStatusWithOrchestratorConfigInfo(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, configMap corev1.ConfigMap, generationService gorchv1alpha1.DetectedService, detectorServices []gorchv1alpha1.DetectedService) error {
+	orchestrator.Status.Conditions = []gorchv1alpha1.Condition{
+		{
+			Type:    "Available",
+			Status:  "True",
+			Reason:  "AutoConfigured",
+			Message: "Orchestrator is running with auto-generated configuration",
+			// You may want to set LastTransitionTime here as well
+		},
 	}
 
-	orchestrator.Spec.OrchestratorConfig = &cm.Name
-	return nil
+	orchestrator.Status.AutoConfigState = &gorchv1alpha1.AutoConfigState{
+		GeneratedConfigMap: &configMap.Name,
+		LastGenerated:      configMap.CreationTimestamp.Format(time.RFC3339),
+		DetectorServices:   detectorServices,
+		GenerationService:  generationService,
+		Status:             "Completed",
+		Message:            fmt.Sprintf("Generated AutoConfig with 1 generation services and %d detector services", len(detectorServices)),
+	}
+	return r.Status().Update(ctx, orchestrator)
 }
 
 // === GATEWAY CONFIGURATION ===========================================================================================
 // defineGatewayConfigMap defines default configmap *data* for the guardrails gateway
 func (r *GuardrailsOrchestratorReconciler) defineGatewayConfigMap(
-	orchestrator *gorchv1alpha1.GuardrailsOrchestrator, names []string) (*corev1.ConfigMap, error) {
+	orchestrator *gorchv1alpha1.GuardrailsOrchestrator, detectorServices []gorchv1alpha1.DetectedService) (*corev1.ConfigMap, error) {
 	log := ctrl.Log.WithName("AutoConfigurator | Gateway Config Definer |")
 
 	var configYaml strings.Builder
-	configYaml.WriteString("orchestrator:\n")
-	configYaml.WriteString("  host: \"localhost\"\n")
-	configYaml.WriteString("  port: 8032\n")
-	configYaml.WriteString("detectors:\n")
+	configYaml.WriteString(gatewayPreamable)
 
-	for i := range names {
-		configYaml.WriteString(fmt.Sprintf("  - name: %s\n", names[i]))
-		configYaml.WriteString("    input: true\n")
-		configYaml.WriteString("    output: true\n")
-		configYaml.WriteString("    detector_params: {}\n")
+	for i := range detectorServices {
+		configYaml.WriteString(fmt.Sprintf(gatewayExternalDetector, detectorServices[i].Name))
 	}
 	if orchestrator.Spec.EnableBuiltInDetectors {
-		configYaml.WriteString(fmt.Sprintf("  - name: %s\n", builtInDetectorName))
-		configYaml.WriteString("    input: true\n")
-		configYaml.WriteString("    output: true\n")
-		configYaml.WriteString("    detector_params:\n")
-		configYaml.WriteString("      regex:\n")
-		configYaml.WriteString("        - $^\n")
+		configYaml.WriteString(fmt.Sprintf(gatewayBuiltInDetector, builtInDetectorName))
 	}
 
-	configYaml.WriteString("routes:\n")
-	configYaml.WriteString("  - name: all\n")
-	configYaml.WriteString("    detectors:\n")
-	for i := range names {
-		configYaml.WriteString(fmt.Sprintf("      - %s\n", names[i]))
+	configYaml.WriteString(gatewayRoutesPreamble)
+	for i := range detectorServices {
+		configYaml.WriteString(fmt.Sprintf("      - %s\n", detectorServices[i].Name))
 	}
 	if orchestrator.Spec.EnableBuiltInDetectors {
 		configYaml.WriteString(fmt.Sprintf("      - %s\n", builtInDetectorName))
 	}
-	configYaml.WriteString("  - name: passthrough\n")
-	configYaml.WriteString("    detectors:\n")
+	configYaml.WriteString(gatewayPassthrough)
 
 	log.Info("Defined gateway config.yaml", "configYaml", configYaml.String())
 
@@ -366,22 +412,9 @@ func (r *GuardrailsOrchestratorReconciler) applyGatewayConfigMap(ctx context.Con
 		log.Info("Automatically generated a default GatewayConfig from resources in namespace")
 	}
 
-	// Set orchestrator.Spec.OrchestratorConfig to use the automatically generated config
-	latestOrchestrator := &gorchv1alpha1.GuardrailsOrchestrator{}
-	if err := r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, latestOrchestrator); err != nil {
-		log.Error(err, "Failed to re-fetch Orchestrator before patching")
-		return err
-	}
-
-	// Patch only the OrchestratorConfig field in the spec
-	patch := client.MergeFrom(latestOrchestrator.DeepCopy())
-	latestOrchestrator.Spec.SidecarGatewayConfig = &cm.Name
-	if err := r.Patch(ctx, latestOrchestrator, patch); err != nil {
-		log.Error(err, "Failed to patch GatewayConfig in CR")
-		return err
-	}
-	orchestrator.Spec.SidecarGatewayConfig = &cm.Name
-	return nil
+	// update status
+	orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap = &cm.Name
+	return r.Status().Update(ctx, orchestrator)
 }
 
 // ===== Reconciliation Logic ==========================================================================================
@@ -396,9 +429,9 @@ func (r *GuardrailsOrchestratorReconciler) shouldRegenerateAutoConfig(ctx contex
 
 	// check if configmaps have been deleted
 	// Check if orchestrator configmap exists
-	if orchestrator.Spec.OrchestratorConfig != nil {
+	if getOrchestratorConfigMap(orchestrator) != nil {
 		cm := &corev1.ConfigMap{}
-		err := r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.OrchestratorConfig, Namespace: namespace}, cm)
+		err := r.Get(ctx, types.NamespacedName{Name: *getOrchestratorConfigMap(orchestrator), Namespace: namespace}, cm)
 		if err != nil {
 			if errors.IsNotFound(err) {
 				return true, nil // ConfigMap deleted, trigger regeneration
@@ -408,9 +441,9 @@ func (r *GuardrailsOrchestratorReconciler) shouldRegenerateAutoConfig(ctx contex
 	}
 
 	// Check if gateway configmap exists
-	if orchestrator.Spec.EnableGuardrailsGateway && orchestrator.Spec.SidecarGatewayConfig != nil {
+	if orchestrator.Spec.EnableGuardrailsGateway && getGatewayConfigMap(orchestrator) != nil {
 		cm := &corev1.ConfigMap{}
-		err := r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.SidecarGatewayConfig, Namespace: namespace}, cm)
+		err := r.Get(ctx, types.NamespacedName{Name: *getGatewayConfigMap(orchestrator), Namespace: namespace}, cm)
 		if err != nil {
 			if errors.IsNotFound(err) {
 				return true, nil // ConfigMap deleted, trigger regeneration
@@ -479,7 +512,13 @@ func (r *GuardrailsOrchestratorReconciler) runAutoConfig(ctx context.Context, or
 	log := ctrl.Log.WithName("AutoConfigurator |")
 	log.Info("Starting AutoConfigurator")
 
-	cm, isvcNames, err := r.defineOrchestratorConfigMap(ctx, orchestrator)
+	// make sure we're using an up-to-date instance of the orchestrator
+	orchestrator, err := r.refreshOrchestrator(ctx, orchestrator, log)
+	if err != nil {
+		return err
+	}
+
+	cm, generationService, detectorServices, err := r.defineOrchestratorConfigMap(ctx, orchestrator)
 	if err != nil {
 		log.Error(err, "Failed to automatically generate orchestrator configmap")
 		return err
@@ -488,10 +527,16 @@ func (r *GuardrailsOrchestratorReconciler) runAutoConfig(ctx context.Context, or
 	if err := r.applyOrchestratorConfigMap(ctx, orchestrator, cm); err != nil {
 		log.Error(err, "Failed to automatically create/update orchestrator configmap")
 		return err
+	} else {
+		err := r.updateStatusWithOrchestratorConfigInfo(ctx, orchestrator, *cm, *generationService, detectorServices)
+		if err != nil {
+			log.Error(err, "Failed to automatically generate orchestrator configmap")
+			return err
+		}
 	}
 
 	if orchestrator.Spec.EnableGuardrailsGateway {
-		gatewayCM, err := r.defineGatewayConfigMap(orchestrator, isvcNames)
+		gatewayCM, err := r.defineGatewayConfigMap(orchestrator, detectorServices)
 		if err != nil {
 			log.Error(err, "Failed to automatically generate gateway configmap")
 			return err
@@ -513,15 +558,15 @@ func (r *GuardrailsOrchestratorReconciler) redeployOnConfigMapChange(
 	orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (ctrl.Result, error) {
 
 	existingConfigMap := &corev1.ConfigMap{}
-	if err := r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.OrchestratorConfig, Namespace: orchestrator.Namespace}, existingConfigMap); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: *getOrchestratorConfigMap(orchestrator), Namespace: orchestrator.Namespace}, existingConfigMap); err != nil {
 		log.Error(err, "Failed to get ConfigMap", "ConfigMap.Name", configMapName, "ConfigMap.Namespace", orchestrator.Namespace)
 		return ctrl.Result{}, err
 	}
 
 	var existingGatewayConfigMap *corev1.ConfigMap
-	if orchestrator.Spec.SidecarGatewayConfig != nil {
+	if getGatewayConfigMap(orchestrator) != nil {
 		existingGatewayConfigMap = &corev1.ConfigMap{}
-		err := r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.SidecarGatewayConfig, Namespace: orchestrator.Namespace}, existingGatewayConfigMap)
+		err := r.Get(ctx, types.NamespacedName{Name: *getGatewayConfigMap(orchestrator), Namespace: orchestrator.Namespace}, existingGatewayConfigMap)
 		if err != nil {
 			log.Error(err, "Failed to get ConfigMap", "ConfigMap.Name", configMapName, "ConfigMap.Namespace", orchestrator.Namespace)
 			return ctrl.Result{}, err
@@ -571,9 +616,9 @@ func (r *GuardrailsOrchestratorReconciler) setConfigMapHashAnnotations(
 	var changedConfigs []string
 
 	// Orchestrator config hash
-	if orchestrator.Spec.OrchestratorConfig != nil {
+	if getOrchestratorConfigMap(orchestrator) != nil {
 		cm := &corev1.ConfigMap{}
-		if err := r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.OrchestratorConfig, Namespace: orchestrator.Namespace}, cm); err == nil {
+		if err := r.Get(ctx, types.NamespacedName{Name: *getOrchestratorConfigMap(orchestrator), Namespace: orchestrator.Namespace}, cm); err == nil {
 			configData := cm.Data["config.yaml"]
 			hash := fmt.Sprintf("%x", sha256.Sum256([]byte(configData)))
 			if annotations["trustyai.opendatahub.io/orchestrator-config-hash"] != hash {
@@ -584,9 +629,9 @@ func (r *GuardrailsOrchestratorReconciler) setConfigMapHashAnnotations(
 	}
 
 	// Gateway config hash
-	if orchestrator.Spec.EnableGuardrailsGateway && orchestrator.Spec.SidecarGatewayConfig != nil {
+	if orchestrator.Spec.EnableGuardrailsGateway && getGatewayConfigMap(orchestrator) != nil {
 		cm := &corev1.ConfigMap{}
-		if err := r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.SidecarGatewayConfig, Namespace: orchestrator.Namespace}, cm); err == nil {
+		if err := r.Get(ctx, types.NamespacedName{Name: *getGatewayConfigMap(orchestrator), Namespace: orchestrator.Namespace}, cm); err == nil {
 			configData := cm.Data["config.yaml"]
 			hash := fmt.Sprintf("%x", sha256.Sum256([]byte(configData)))
 			if annotations["trustyai.opendatahub.io/orchestrator-gateway-config-hash"] != hash {
