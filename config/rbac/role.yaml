@@ -209,6 +209,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - serving.kserve.io
+  resources:
+  - servingruntimes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - trustyai.opendatahub.io
   resources:
   - guardrailsorchestrators
