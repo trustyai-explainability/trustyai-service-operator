@@ -83,7 +83,7 @@ detectors:
 func getOrchestratorConfigMap(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *string {
 	if orchestrator.Spec.OrchestratorConfig != nil {
 		return orchestrator.Spec.OrchestratorConfig
-	} else if orchestrator.Status.AutoConfigState.GeneratedConfigMap != nil {
+	} else if orchestrator.Status.AutoConfigState != nil && orchestrator.Status.AutoConfigState.GeneratedConfigMap != nil {
 		return orchestrator.Status.AutoConfigState.GeneratedConfigMap
 	} else {
 		return nil
@@ -93,7 +93,7 @@ func getOrchestratorConfigMap(orchestrator *gorchv1alpha1.GuardrailsOrchestrator
 func getGatewayConfigMap(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *string {
 	if orchestrator.Spec.SidecarGatewayConfig != nil {
 		return orchestrator.Spec.SidecarGatewayConfig
-	} else if orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap != nil {
+	} else if orchestrator.Status.AutoConfigState != nil && orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap != nil {
 		return orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap
 	} else {
 		return nil
