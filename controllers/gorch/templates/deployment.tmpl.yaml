@@ -61,13 +61,13 @@ spec:
           env:
             - name: ORCHESTRATOR_CONFIG
               value: /config/config.yaml
-            {{ - if or .Orchestrator.Spec.SidecarGatewayConfig (and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap) }}
+            {{if or .Orchestrator.Spec.SidecarGatewayConfig (and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap) }}
             - name: HTTP_PORT
               value: '8032'
-            {{ - else }}
+            {{else}}
             - name: HTTP_PORT
               value: '8033'
-            {{ - end }}
+            {{end}}
             - name: RUST_BACKTRACE
               value: 'full'
             - name: RUST_LOG
@@ -106,15 +106,9 @@ spec:
               mountPath: /config/config.yaml
               subPath: config.yaml
           ports:
-            {{ - if or .Orchestrator.Spec.SidecarGatewayConfig (and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap) }}
             - name: http
-              containerPort: 8032
+              containerPort: {{ if or .Orchestrator.Spec.SidecarGatewayConfig (and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap) }}8032{{ else }}8033{{ end }}
               protocol: TCP
-            {{else}}
-            - name: http
-              containerPort: 8033
-              protocol: TCP
-            {{end}}
           imagePullPolicy: Always
           terminationMessagePolicy: File
           resources:
