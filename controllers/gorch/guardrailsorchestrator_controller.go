@@ -18,6 +18,7 @@ package gorch
 
 import (
 	"context"
+	"github.com/go-logr/logr"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -71,6 +72,15 @@ func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.
 		Namespace: ns,
 		Recorder:  recorder,
 	}).SetupWithManager(mgr)
+}
+
+func (r *GuardrailsOrchestratorReconciler) refreshOrchestrator(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, log logr.Logger) (*gorchv1alpha1.GuardrailsOrchestrator, error) {
+	latestOrchestrator := &gorchv1alpha1.GuardrailsOrchestrator{}
+	if err := r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, latestOrchestrator); err != nil {
+		log.Error(err, "Failed to re-fetch Orchestrator before updating status")
+		return nil, err
+	}
+	return latestOrchestrator, nil
 }
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -173,6 +183,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 				log.Error(err, "Failed to perform AutoConfig")
 				return ctrl.Result{}, err
 			}
+			orchestrator, _ = r.refreshOrchestrator(ctx, orchestrator, log)
 		}
 	} else {
 		log.Info("Using manually-configured OrchestratorConfig")
@@ -188,10 +199,15 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	// monitor the orchestrator or gateway config for changes
-	if orchestrator.Spec.OrchestratorConfig != nil {
+	if getOrchestratorConfigMap(orchestrator) != nil {
 		if result, err := r.redeployOnConfigMapChange(ctx, log, orchestrator); err != nil {
 			return result, err
 		}
+	}
+
+	if orchestrator.Spec.AutoConfig != nil && (getOrchestratorConfigMap(orchestrator) == nil || (orchestrator.Spec.EnableGuardrailsGateway && getGatewayConfigMap(orchestrator) == nil)) {
+		log.Info("Waiting for orchestrator status to register AutoConfig information before starting deployment")
+		return ctrl.Result{}, nil
 	}
 
 	existingDeployment := &appsv1.Deployment{}

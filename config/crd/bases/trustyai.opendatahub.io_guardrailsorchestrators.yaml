@@ -131,7 +131,7 @@ spec:
                     type: array
                   generatedConfigMap:
                     type: string
-                  generatedGatewayConfigAMap:
+                  generatedGatewayConfigMap:
                     type: string
                   generationService:
                     properties:

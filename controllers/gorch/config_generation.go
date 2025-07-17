@@ -100,15 +100,6 @@ func getGatewayConfigMap(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *st
 	}
 }
 
-func (r *GuardrailsOrchestratorReconciler) refreshOrchestrator(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, log logr.Logger) (*gorchv1alpha1.GuardrailsOrchestrator, error) {
-	latestOrchestrator := &gorchv1alpha1.GuardrailsOrchestrator{}
-	if err := r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, latestOrchestrator); err != nil {
-		log.Error(err, "Failed to re-fetch Orchestrator before updating status")
-		return nil, err
-	}
-	return latestOrchestrator, nil
-}
-
 // === ORCHESTRATOR CONFIGURATION ======================================================================================
 // defineOrchestratorConfigMap defines ConfigMap *data* for the orchestrator according to the ISVCs+SRs in the namespace
 func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
@@ -324,13 +315,17 @@ func (r *GuardrailsOrchestratorReconciler) updateStatusWithOrchestratorConfigInf
 		},
 	}
 
+	numDetectors := len(detectorServices)
+	if orchestrator.Spec.EnableBuiltInDetectors {
+		numDetectors += 1
+	}
 	orchestrator.Status.AutoConfigState = &gorchv1alpha1.AutoConfigState{
 		GeneratedConfigMap: &configMap.Name,
 		LastGenerated:      configMap.CreationTimestamp.Format(time.RFC3339),
 		DetectorServices:   detectorServices,
 		GenerationService:  generationService,
 		Status:             "Completed",
-		Message:            fmt.Sprintf("Generated AutoConfig with 1 generation services and %d detector services", len(detectorServices)),
+		Message:            fmt.Sprintf("Generated AutoConfig with 1 generation services and %d detector services", numDetectors),
 	}
 	return r.Status().Update(ctx, orchestrator)
 }

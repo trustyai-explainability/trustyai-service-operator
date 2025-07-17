@@ -7,10 +7,13 @@ import (
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	"github.com/stretchr/testify/assert"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/gorch/templates"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"knative.dev/pkg/apis"
+	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"testing"
@@ -492,4 +495,35 @@ routes:
 
 	assert.Equal(t, expectedData, cm.Data["config.yaml"])
 	assert.Equal(t, expectedGatewayData, cmGateway.Data["config.yaml"])
+}
+
+func TestDeploymentTemplateRenders(t *testing.T) {
+	// Setup a minimal orchestrator and images
+	orchestrator := &gorchv1alpha1.GuardrailsOrchestrator{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-orchestrator",
+			Namespace: "test-ns",
+		},
+		Spec: gorchv1alpha1.GuardrailsOrchestratorSpec{
+			Replicas: 1,
+		},
+	}
+	containerImages := ContainerImages{
+		OrchestratorImage:      "orchestrator:latest",
+		DetectorImage:          "detector:latest",
+		GuardrailsGatewayImage: "gateway:latest",
+	}
+	deploymentConfig := DeploymentConfig{
+		Orchestrator:    orchestrator,
+		ContainerImages: containerImages,
+	}
+
+	// Use the actual template path
+	templatePath := "deployment.tmpl.yaml"
+
+	deployment, err := templates.ParseResource[appsv1.Deployment](templatePath, deploymentConfig, reflect.TypeOf(&appsv1.Deployment{}))
+	assert.NoError(t, err)
+	assert.NotNil(t, deployment)
+	assert.Equal(t, "test-orchestrator", deployment.Name)
+	assert.Equal(t, "test-ns", deployment.Namespace)
 }

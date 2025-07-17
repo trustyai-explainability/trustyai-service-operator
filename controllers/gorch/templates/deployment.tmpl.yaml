@@ -33,27 +33,23 @@ spec:
         sidecar.istio.io/inject: "true"
     spec:
       volumes:
-        {{- if or .Orchestrator.Spec.OrchestratorConfig (and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedConfigMap) }}
-      - name: {{.Orchestrator.Name}}-config
-        configMap:
-          name: {{ if .Orchestrator.Spec.OrchestratorConfig }}
-            {{ .Orchestrator.Spec.OrchestratorConfig }}
-            {{ else }}
-            {{ .Orchestrator.Status.AutoConfigState.GeneratedConfigMap }}
-            {{ end }}
-          defaultMode: 420
-        {{- end }}
-        {{ - if .Orchestrator.Spec.SidecarGatewayConfig }}
+{{- if or .Orchestrator.Spec.OrchestratorConfig (and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedConfigMap) }}
+        - name: {{.Orchestrator.Name}}-config
+          configMap:
+            name:  {{ if .Orchestrator.Spec.OrchestratorConfig }}{{ .Orchestrator.Spec.OrchestratorConfig }}{{ else }}{{ .Orchestrator.Status.AutoConfigState.GeneratedConfigMap }}{{ end }}
+            defaultMode: 420
+{{- end}}
+{{- if .Orchestrator.Spec.SidecarGatewayConfig }}
         - name: {{.Orchestrator.Name}}-sidecar-gateway-config
           configMap:
             name: {{.Orchestrator.Spec.SidecarGatewayConfig}}
             defaultMode: 420
-        {{ - else if and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap }}
+{{- else if and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap }}
         - name: {{.Orchestrator.Name}}-sidecar-gateway-config
           configMap:
             name: {{.Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap}}
             defaultMode: 420
-        {{ - end }}
+{{- end }}
       serviceAccountName: {{.Orchestrator.Name}}-serviceaccount
       containers:
         - name: {{.Orchestrator.Name}}

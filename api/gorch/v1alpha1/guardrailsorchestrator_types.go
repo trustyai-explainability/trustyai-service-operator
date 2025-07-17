@@ -121,7 +121,7 @@ type DetectedService struct {
 
 type AutoConfigState struct {
 	GeneratedConfigMap        *string           `json:"generatedConfigMap,omitempty"`
-	GeneratedGatewayConfigMap *string           `json:"generatedGatewayConfigAMap,omitempty"`
+	GeneratedGatewayConfigMap *string           `json:"generatedGatewayConfigMap,omitempty"`
 	LastGenerated             string            `json:"lastGenerated,omitempty"`
 	GenerationService         DetectedService   `json:"generationService,omitempty"`
 	DetectorServices          []DetectedService `json:"detectorServices,omitempty"`
