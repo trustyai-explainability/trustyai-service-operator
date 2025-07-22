@@ -113,10 +113,12 @@ type Condition struct {
 }
 
 type DetectedService struct {
-	Name     string `json:"name,omitempty"`
-	Type     string `json:"type,omitempty"` // e.g. "generator" or "detector"
-	Hostname string `json:"hostname,omitempty"`
-	Port     string `json:"port,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Type      string `json:"type,omitempty"` // e.g. "generator" or "detector"
+	Scheme    string `json:"scheme,omitempty"`
+	Hostname  string `json:"hostname,omitempty"`
+	Port      string `json:"port,omitempty"`
+	TLSSecret string `json:"tlsSecret,omitempty"`
 }
 
 type AutoConfigState struct {

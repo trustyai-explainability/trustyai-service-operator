@@ -170,6 +170,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
+	var tlsMounts []gorchv1alpha1.DetectedService
 	if orchestrator.Spec.AutoConfig != nil {
 		// Only perform autoconfig logic if the relevant resources have changed
 		shouldRegen, err := r.shouldRegenerateAutoConfig(ctx, orchestrator)
@@ -178,7 +179,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 			return ctrl.Result{}, err
 		}
 		if shouldRegen {
-			err = r.runAutoConfig(ctx, orchestrator)
+			tlsMounts, err = r.runAutoConfig(ctx, orchestrator)
 			if err != nil {
 				log.Error(err, "Failed to perform AutoConfig")
 				return ctrl.Result{}, err
@@ -224,6 +225,11 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 		r.setConfigMapHashAnnotations(ctx, orchestrator, annotations)
 		deployment.Spec.Template.Annotations = annotations
+		if len(tlsMounts) > 0 {
+			for i := range tlsMounts {
+				MountSecret(deployment, tlsMounts[i].TLSSecret)
+			}
+		}
 
 		err = r.Create(ctx, deployment)
 		if err != nil {
