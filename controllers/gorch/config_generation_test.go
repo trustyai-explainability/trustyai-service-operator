@@ -42,6 +42,12 @@ func setupTestObjects(ns string, labelFunc func(i int) string, tlsFunc func(i in
 			scheme = "http"
 		}
 
+		var url string
+		if tlsFunc(i) {
+			url = fmt.Sprintf("my-inference-service-%d.test-ns.svc.cluster.local:844%d", i, i)
+		} else {
+			url = fmt.Sprintf("my-inference-service-%d.test-ns.svc.cluster.local", i)
+		}
 		isvc := &kservev1beta1.InferenceService{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      isvcName,
@@ -58,7 +64,7 @@ func setupTestObjects(ns string, labelFunc func(i int) string, tlsFunc func(i in
 			Status: kservev1beta1.InferenceServiceStatus{
 				URL: &apis.URL{
 					Scheme: scheme,
-					Host:   fmt.Sprintf("my-inference-service-%d.test-ns.svc.cluster.local:844%d", i, i),
+					Host:   url,
 				},
 			},
 		}
@@ -194,7 +200,7 @@ func TestGenerateOrchestratorConfigMap(t *testing.T) {
 	expectedData := `chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
-    port: 7000
+    port: 8080
 detectors:
   my-inference-service-1:
     type: text_contents
@@ -322,7 +328,7 @@ func TestGenerateOrchestratorConfigMapDetectorLabels(t *testing.T) {
 	expectedData := `chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
-    port: 7000
+    port: 8080
 detectors:
   my-inference-service-3:
     type: text_contents
@@ -369,7 +375,7 @@ func TestGenerateOrchestratorConfigMapBuiltInDetectors(t *testing.T) {
 	expectedData := fmt.Sprintf(`chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
-    port: 7000
+    port: 8080
 detectors:
   my-inference-service-1:
     type: text_contents
@@ -439,7 +445,7 @@ func TestGenerateOrchestratorConfigMapBuiltInDetectorsAndGateway(t *testing.T) {
 	expectedData := fmt.Sprintf(`chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
-    port: 7000
+    port: 8080
 detectors:
   my-inference-service-1:
     type: text_contents
@@ -595,7 +601,7 @@ detectors:
     type: text_contents
     service:
       hostname: "my-inference-service-1.test-ns.svc.cluster.local"
-      port: 8441
+      port: 8001
     chunker_id: whole_doc_chunker
     default_threshold: 0.5
   my-inference-service-2:
@@ -610,7 +616,7 @@ detectors:
     type: text_contents
     service:
       hostname: "my-inference-service-3.test-ns.svc.cluster.local"
-      port: 8443
+      port: 8003
     chunker_id: whole_doc_chunker
     default_threshold: 0.5
   my-inference-service-4:
@@ -625,7 +631,7 @@ detectors:
     type: text_contents
     service:
       hostname: "my-inference-service-5.test-ns.svc.cluster.local"
-      port: 8445
+      port: 8005
     chunker_id: whole_doc_chunker
     default_threshold: 0.5
   %s:
@@ -681,7 +687,7 @@ detectors:
     type: text_contents
     service:
       hostname: "my-inference-service-1.test-ns.svc.cluster.local"
-      port: 8441
+      port: 8001
     chunker_id: whole_doc_chunker
     default_threshold: 0.5
   my-inference-service-2:
@@ -696,7 +702,7 @@ detectors:
     type: text_contents
     service:
       hostname: "my-inference-service-3.test-ns.svc.cluster.local"
-      port: 8443
+      port: 8003
     chunker_id: whole_doc_chunker
     default_threshold: 0.5
   my-inference-service-4:
@@ -711,7 +717,7 @@ detectors:
     type: text_contents
     service:
       hostname: "my-inference-service-5.test-ns.svc.cluster.local"
-      port: 8445
+      port: 8005
     chunker_id: whole_doc_chunker
     default_threshold: 0.5
   %s:

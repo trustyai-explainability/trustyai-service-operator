@@ -184,6 +184,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 				log.Error(err, "Failed to perform AutoConfig")
 				return ctrl.Result{}, err
 			}
+			log.Info("TLS Mounts", "tls", tlsMounts)
 			orchestrator, _ = r.refreshOrchestrator(ctx, orchestrator, log)
 		}
 	} else {
@@ -199,15 +200,23 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
-	// monitor the orchestrator or gateway config for changes
-	if getOrchestratorConfigMap(orchestrator) != nil {
-		if result, err := r.redeployOnConfigMapChange(ctx, log, orchestrator); err != nil {
-			return result, err
-		}
+	if orchestrator, err = r.refreshOrchestrator(ctx, orchestrator, log); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	if orchestrator.Spec.AutoConfig != nil && (getOrchestratorConfigMap(orchestrator) == nil || (orchestrator.Spec.EnableGuardrailsGateway && getGatewayConfigMap(orchestrator) == nil)) {
 		log.Info("Waiting for orchestrator status to register AutoConfig information before starting deployment")
+		log.Info("orchestrator", "status", orchestrator.Status)
+		if orchestrator.Spec.AutoConfig == nil {
+			log.Info("AutoConfig is nil")
+		} else {
+			if getOrchestratorConfigMap(orchestrator) == nil {
+				log.Info("Orchestrator ConfigMap is nil")
+			}
+			if getGatewayConfigMap(orchestrator) == nil {
+				log.Info("Gateway ConfigMap is nil")
+			}
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -225,8 +234,10 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 		r.setConfigMapHashAnnotations(ctx, orchestrator, annotations)
 		deployment.Spec.Template.Annotations = annotations
+		log.Info("TLS Mounts length", "len", len(tlsMounts), "tlsMounts", tlsMounts)
 		if len(tlsMounts) > 0 {
 			for i := range tlsMounts {
+				log.Info("Adding TLS mount to Deployment", "Mount", tlsMounts[i].Name)
 				MountSecret(deployment, tlsMounts[i].TLSSecret)
 			}
 		}
@@ -239,6 +250,13 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	} else if err != nil {
 		log.Error(err, "Failed to get Deployment")
 		return ctrl.Result{}, err
+	}
+
+	// monitor the orchestrator or gateway config for changes
+	if getOrchestratorConfigMap(orchestrator) != nil {
+		if result, err := r.redeployOnConfigMapChange(ctx, log, orchestrator); err != nil {
+			return result, err
+		}
 	}
 
 	existingService := &corev1.Service{}
