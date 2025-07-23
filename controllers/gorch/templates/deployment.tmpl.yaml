@@ -33,16 +33,23 @@ spec:
         sidecar.istio.io/inject: "true"
     spec:
       volumes:
+{{- if or .Orchestrator.Spec.OrchestratorConfig (and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedConfigMap) }}
         - name: {{.Orchestrator.Name}}-config
           configMap:
-            name: {{.Orchestrator.Spec.OrchestratorConfig}}
+            name:  {{ if .Orchestrator.Spec.OrchestratorConfig }}{{ .Orchestrator.Spec.OrchestratorConfig }}{{ else }}{{ .Orchestrator.Status.AutoConfigState.GeneratedConfigMap }}{{ end }}
             defaultMode: 420
-        {{if .Orchestrator.Spec.SidecarGatewayConfig}}
+{{- end}}
+{{- if .Orchestrator.Spec.SidecarGatewayConfig }}
         - name: {{.Orchestrator.Name}}-sidecar-gateway-config
           configMap:
             name: {{.Orchestrator.Spec.SidecarGatewayConfig}}
             defaultMode: 420
-        {{end}}
+{{- else if and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap }}
+        - name: {{.Orchestrator.Name}}-sidecar-gateway-config
+          configMap:
+            name: {{.Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap}}
+            defaultMode: 420
+{{- end }}
       serviceAccountName: {{.Orchestrator.Name}}-serviceaccount
       containers:
         - name: {{.Orchestrator.Name}}
@@ -50,7 +57,7 @@ spec:
           env:
             - name: ORCHESTRATOR_CONFIG
               value: /config/config.yaml
-            {{if .Orchestrator.Spec.SidecarGatewayConfig}}
+            {{if or .Orchestrator.Spec.SidecarGatewayConfig (and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap) }}
             - name: HTTP_PORT
               value: '8032'
             {{else}}
@@ -60,34 +67,34 @@ spec:
             - name: RUST_BACKTRACE
               value: 'full'
             - name: RUST_LOG
-              value: 'info'
+              value: '{{if .Orchestrator.Spec.LogLevel}}{{.Orchestrator.Spec.LogLevel}}{{else}}info{{end}}'
           {{if .Orchestrator.Spec.OtelExporter.Protocol}}
-            - name: OTEL_EXPORTER_OTLP_PROTOCOL
-              value: {{.Orchestrator.Spec.OtelExporter.Protocol}}
+          - name: OTEL_EXPORTER_OTLP_PROTOCOL
+            value: {{.Orchestrator.Spec.OtelExporter.Protocol}}
           {{end}}
           {{if .Orchestrator.Spec.OtelExporter.TracesProtocol}}
-            - name: OTEL_EXPORTER_OTLP_TRACES_PROTOCOL
-              value: {{.Orchestrator.Spec.OtelExporter.TracesProtocol}}
+          - name: OTEL_EXPORTER_OTLP_TRACES_PROTOCOL
+            value: {{.Orchestrator.Spec.OtelExporter.TracesProtocol}}
           {{end}}
           {{if .Orchestrator.Spec.OtelExporter.MetricsProtocol}}
-            - name: OTEL_EXPORTER_OTLP_METRICS_PROTOCOL
-              value: {{.Orchestrator.Spec.OtelExporter.MetricsProtocol}}
+          - name: OTEL_EXPORTER_OTLP_METRICS_PROTOCOL
+            value: {{.Orchestrator.Spec.OtelExporter.MetricsProtocol}}
           {{end}}
           {{if .Orchestrator.Spec.OtelExporter.OTLPEndpoint}}
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{.Orchestrator.Spec.OtelExporter.OTLPEndpoint}}
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: {{.Orchestrator.Spec.OtelExporter.OTLPEndpoint}}
           {{end}}
           {{if .Orchestrator.Spec.OtelExporter.TracesEndpoint}}
-            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
-              value: {{.Orchestrator.Spec.OtelExporter.TracesEndpoint}}
+          - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+            value: {{.Orchestrator.Spec.OtelExporter.TracesEndpoint}}
           {{end}}
           {{if .Orchestrator.Spec.OtelExporter.MetricsEndpoint}}
-            - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
-              value: {{.Orchestrator.Spec.OtelExporter.MetricsEndpoint}}
+          - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+            value: {{.Orchestrator.Spec.OtelExporter.MetricsEndpoint}}
           {{end}}
           {{if .Orchestrator.Spec.OtelExporter.OTLPExport}}
-            - name: OTLP_EXPORT
-              value: {{.Orchestrator.Spec.OtelExporter.OTLPExport}}
+          - name: OTLP_EXPORT
+            value: {{.Orchestrator.Spec.OtelExporter.OTLPExport}}
           {{end}}
           volumeMounts:
             - name: {{.Orchestrator.Name}}-config
@@ -95,15 +102,9 @@ spec:
               mountPath: /config/config.yaml
               subPath: config.yaml
           ports:
-            {{if .Orchestrator.Spec.SidecarGatewayConfig}}
             - name: http
-              containerPort: 8032
+              containerPort: {{ if or .Orchestrator.Spec.SidecarGatewayConfig (and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap) }}8032{{ else }}8033{{ end }}
               protocol: TCP
-            {{else}}
-            - name: http
-              containerPort: 8033
-              protocol: TCP
-            {{end}}
           imagePullPolicy: Always
           terminationMessagePolicy: File
           resources:
@@ -138,8 +139,8 @@ spec:
               - /app/bin/fms-guardrails-orchestr8
         {{if .Orchestrator.Spec.EnableGuardrailsGateway}}
         - name: {{.Orchestrator.Name}}-gateway
-          image : {{.ContainerImages.GuardrailsGatewayImage}}
-          command: ["/app/bin/vllm-orchestrator-gateway"]
+          image: {{.ContainerImages.GuardrailsGatewayImage}}
+          command: [ "/app/bin/vllm-orchestrator-gateway" ]
           volumeMounts:
             - name: {{.Orchestrator.Name}}-sidecar-gateway-config
               readOnly: true
@@ -151,6 +152,6 @@ spec:
         {{end}}
         {{if .Orchestrator.Spec.EnableBuiltInDetectors}}
         - name: {{.Orchestrator.Name}}-detectors
-          image : {{.ContainerImages.DetectorImage}}
-          command: ["/app/bin/regex-detector"]
+          image: {{.ContainerImages.DetectorImage}}
+          command: [ "/app/bin/regex-detector" ]
         {{end}}
