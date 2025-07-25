@@ -400,6 +400,9 @@ type Outputs struct {
 	// Create an operator managed PVC
 	// +optional
 	PersistentVolumeClaimManaged *PersistentVolumeClaimManaged `json:"pvcManaged,omitempty"`
+	// Upload results to OCI registry
+	// +optional
+	OCISpec *OCISpec `json:"oci,omitempty"`
 }
 
 func (c *LMEvalContainer) GetSecurityContext() *corev1.SecurityContext {
@@ -461,6 +464,35 @@ type OfflineS3Spec struct {
 	Endpoint  corev1.SecretKeySelector  `json:"endpoint"`
 	VerifySSL *bool                     `json:"verifySSL,omitempty"`
 	CABundle  *corev1.SecretKeySelector `json:"caBundle,omitempty"`
+}
+
+type OCISpec struct {
+	// Registry URL (e.g., quay.io, registry.redhat.com)
+	Registry corev1.SecretKeySelector `json:"registry"`
+	// Repository path (e.g., myorg/evaluation-results)
+	Repository corev1.SecretKeySelector `json:"repository"`
+	// Optional tag for the artifact (defaults to job name if not specified)
+	// +optional
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._-]*$`
+	Tag string `json:"tag,omitempty"`
+	// Path within the results to package as artifact
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._/-]*$`
+	Path string `json:"path"`
+	// Username for registry authentication
+	// +optional
+	UsernameRef *corev1.SecretKeySelector `json:"username,omitempty"`
+	// Password for registry authentication
+	// +optional
+	PasswordRef *corev1.SecretKeySelector `json:"password,omitempty"`
+	// Token for registry authentication (alternative to username/password)
+	// +optional
+	TokenRef *corev1.SecretKeySelector `json:"token,omitempty"`
+	// Whether to verify SSL certificates
+	// +optional
+	VerifySSL *bool `json:"verifySSL,omitempty"`
+	// CA bundle for custom certificates
+	// +optional
+	CABundle *corev1.SecretKeySelector `json:"caBundle,omitempty"`
 }
 
 // OfflineStorageSpec defines the storage configuration for LMEvalJob's offline mode
@@ -585,8 +617,24 @@ func (s *LMEvalJobSpec) HasOfflineS3() bool {
 	return s.Offline != nil && s.Offline.StorageSpec.S3Spec != nil
 }
 
+func (s *LMEvalJobSpec) HasOCIOutput() bool {
+	return s.Outputs != nil && s.Outputs.OCISpec != nil
+}
+
 func (s *OfflineS3Spec) HasCertificates() bool {
 	return s.CABundle != nil
+}
+
+func (s *OCISpec) HasCertificates() bool {
+	return s.CABundle != nil
+}
+
+func (s *OCISpec) HasUsernamePassword() bool {
+	return s.UsernameRef != nil && s.PasswordRef != nil
+}
+
+func (s *OCISpec) HasToken() bool {
+	return s.TokenRef != nil
 }
 
 // HasCustomOutput returns whether an LMEvalJobSpec defines custom outputs or not
@@ -602,6 +650,11 @@ func (o *Outputs) HasManagedPVC() bool {
 // HasExistingPVC returns whether the outputs define an existing PVC
 func (o *Outputs) HasExistingPVC() bool {
 	return o.PersistentVolumeClaimName != nil
+}
+
+// HasOCI returns whether the outputs define OCI upload
+func (o *Outputs) HasOCI() bool {
+	return o != nil && o.OCISpec != nil
 }
 
 // LMEvalJobStatus defines the observed state of LMEvalJob

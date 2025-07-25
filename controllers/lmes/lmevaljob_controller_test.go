@@ -3768,3 +3768,321 @@ func Test_ControllerIntegration(t *testing.T) {
 		assert.Equal(t, "python", args[0], "Should start with python")
 	})
 }
+
+// Test OCI controller functionality
+func Test_OCICommandGeneration(t *testing.T) {
+	svcOpts := &serviceOptions{
+		PodImage:         "podimage:latest",
+		DriverImage:      "driver:latest",
+		ImagePullPolicy:  corev1.PullAlways,
+		MaxBatchSize:     20,
+		DefaultBatchSize: "4",
+	}
+
+	t.Run("WithOCIOutput", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "test",
+				Namespace: "default",
+			},
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "test",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"task1"},
+				},
+				Outputs: &lmesv1alpha1.Outputs{
+					OCISpec: &lmesv1alpha1.OCISpec{
+						Registry: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "registry",
+						},
+						Repository: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "repository",
+						},
+						Path: "results",
+					},
+				},
+			},
+		}
+
+		cmds := generateCmd(svcOpts, job)
+		assert.Contains(t, cmds, "--upload-to-oci", "Should include OCI upload flag")
+	})
+
+	t.Run("WithoutOCIOutput", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "test",
+				Namespace: "default",
+			},
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "test",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"task1"},
+				},
+			},
+		}
+
+		cmds := generateCmd(svcOpts, job)
+		assert.NotContains(t, cmds, "--upload-to-oci", "Should not include OCI upload flag")
+	})
+}
+
+func Test_OCIPodConfiguration(t *testing.T) {
+	logger := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:         "podimage:latest",
+		DriverImage:      "driver:latest",
+		ImagePullPolicy:  corev1.PullAlways,
+		MaxBatchSize:     20,
+		DefaultBatchSize: "4",
+	}
+
+	t.Run("BasicOCIConfiguration", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "test-oci",
+				Namespace: "default",
+			},
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "test",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"task1"},
+				},
+				Outputs: &lmesv1alpha1.Outputs{
+					OCISpec: &lmesv1alpha1.OCISpec{
+						Registry: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "registry",
+						},
+						Repository: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "repository",
+						},
+						Path: "results",
+						UsernameRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "username",
+						},
+						PasswordRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "password",
+						},
+					},
+				},
+			},
+		}
+
+		// Debug: Check if HasOCIOutput returns true
+		hasOCI := job.Spec.HasOCIOutput()
+		assert.True(t, hasOCI, "Job should have OCI output configured")
+
+		pod := CreatePod(svcOpts, job, logger)
+		assert.NotNil(t, pod, "Should generate pod successfully")
+
+		// Check environment variables
+		envVars := pod.Spec.Containers[0].Env
+		envMap := make(map[string]corev1.EnvVar)
+		for _, env := range envVars {
+			envMap[env.Name] = env
+		}
+
+		// Verify OCI environment variables are set
+		assert.Contains(t, envMap, "OCI_REGISTRY", "Should have OCI_REGISTRY env var")
+		assert.Contains(t, envMap, "OCI_REPOSITORY", "Should have OCI_REPOSITORY env var")
+		assert.Contains(t, envMap, "OCI_PATH", "Should have OCI_PATH env var")
+		assert.Contains(t, envMap, "OCI_VERIFY_SSL", "Should have OCI_VERIFY_SSL env var")
+		assert.Contains(t, envMap, "OCI_USERNAME", "Should have OCI_USERNAME env var when auth is configured")
+		assert.Contains(t, envMap, "OCI_PASSWORD", "Should have OCI_PASSWORD env var when auth is configured")
+		assert.NotContains(t, envMap, "OCI_TOKEN", "Should not have OCI_TOKEN env var without token auth")
+
+		// Verify environment variable sources
+		assert.Equal(t, "oci-secret", envMap["OCI_REGISTRY"].ValueFrom.SecretKeyRef.Name)
+		assert.Equal(t, "registry", envMap["OCI_REGISTRY"].ValueFrom.SecretKeyRef.Key)
+		assert.Equal(t, "oci-secret", envMap["OCI_REPOSITORY"].ValueFrom.SecretKeyRef.Name)
+		assert.Equal(t, "repository", envMap["OCI_REPOSITORY"].ValueFrom.SecretKeyRef.Key)
+		assert.Equal(t, "results", envMap["OCI_PATH"].Value)
+		assert.Equal(t, "true", envMap["OCI_VERIFY_SSL"].Value)
+		assert.Equal(t, "oci-secret", envMap["OCI_USERNAME"].ValueFrom.SecretKeyRef.Name)
+		assert.Equal(t, "username", envMap["OCI_USERNAME"].ValueFrom.SecretKeyRef.Key)
+		assert.Equal(t, "oci-secret", envMap["OCI_PASSWORD"].ValueFrom.SecretKeyRef.Name)
+		assert.Equal(t, "password", envMap["OCI_PASSWORD"].ValueFrom.SecretKeyRef.Key)
+	})
+
+	t.Run("OCIWithToken", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "test-oci-token",
+				Namespace: "default",
+			},
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "test",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"task1"},
+				},
+				Outputs: &lmesv1alpha1.Outputs{
+					OCISpec: &lmesv1alpha1.OCISpec{
+						Registry: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "registry",
+						},
+						Repository: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "repository",
+						},
+						Path: "results",
+						TokenRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
+							Key:                  "token",
+						},
+					},
+				},
+			},
+		}
+
+		pod := CreatePod(svcOpts, job, logger)
+		assert.NotNil(t, pod, "Should generate pod successfully")
+
+		// Check environment variables
+		envVars := pod.Spec.Containers[0].Env
+		envMap := make(map[string]corev1.EnvVar)
+		for _, env := range envVars {
+			envMap[env.Name] = env
+		}
+
+		// Verify token authentication is used
+		assert.Contains(t, envMap, "OCI_TOKEN", "Should have OCI_TOKEN env var")
+		assert.NotContains(t, envMap, "OCI_USERNAME", "Should not have OCI_USERNAME env var")
+		assert.NotContains(t, envMap, "OCI_PASSWORD", "Should not have OCI_PASSWORD env var")
+
+		// Verify token source
+		assert.Equal(t, "oci-token", envMap["OCI_TOKEN"].ValueFrom.SecretKeyRef.Name)
+		assert.Equal(t, "token", envMap["OCI_TOKEN"].ValueFrom.SecretKeyRef.Key)
+	})
+
+	t.Run("OCIWithCustomTag", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "test-oci-tag",
+				Namespace: "default",
+			},
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "test",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"task1"},
+				},
+				Outputs: &lmesv1alpha1.Outputs{
+					OCISpec: &lmesv1alpha1.OCISpec{
+						Registry: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "registry",
+						},
+						Repository: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "repository",
+						},
+						Tag:  "custom-tag-v1.0",
+						Path: "results",
+						TokenRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
+							Key:                  "token",
+						},
+					},
+				},
+			},
+		}
+
+		pod := CreatePod(svcOpts, job, logger)
+		assert.NotNil(t, pod, "Should generate pod successfully")
+
+		// Check environment variables
+		envVars := pod.Spec.Containers[0].Env
+		envMap := make(map[string]corev1.EnvVar)
+		for _, env := range envVars {
+			envMap[env.Name] = env
+		}
+
+		// Verify custom tag is set
+		assert.Contains(t, envMap, "OCI_TAG", "Should have OCI_TAG env var")
+		assert.Equal(t, "custom-tag-v1.0", envMap["OCI_TAG"].Value)
+	})
+
+	t.Run("OCIWithCertificates", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "test-oci-certs",
+				Namespace: "default",
+			},
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "test",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"task1"},
+				},
+				Outputs: &lmesv1alpha1.Outputs{
+					OCISpec: &lmesv1alpha1.OCISpec{
+						Registry: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "registry",
+						},
+						Repository: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "repository",
+						},
+						Path: "results",
+						TokenRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
+							Key:                  "token",
+						},
+						CABundle: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "ca-bundle"},
+							Key:                  "ca.crt",
+						},
+						VerifySSL: ptr.To(false),
+					},
+				},
+			},
+		}
+
+		pod := CreatePod(svcOpts, job, logger)
+		assert.NotNil(t, pod, "Should generate pod successfully")
+
+		// Check environment variables
+		envVars := pod.Spec.Containers[0].Env
+		envMap := make(map[string]corev1.EnvVar)
+		for _, env := range envVars {
+			envMap[env.Name] = env
+		}
+
+		// Verify SSL configuration
+		assert.Contains(t, envMap, "OCI_VERIFY_SSL", "Should have OCI_VERIFY_SSL env var")
+		assert.Equal(t, "false", envMap["OCI_VERIFY_SSL"].Value)
+		assert.Contains(t, envMap, "OCI_CA_BUNDLE", "Should have OCI_CA_BUNDLE env var")
+		assert.Equal(t, "/etc/certificates/oci/ca.crt", envMap["OCI_CA_BUNDLE"].Value)
+
+		// Check volume mounts
+		volumeMounts := pod.Spec.Containers[0].VolumeMounts
+		var ociCertMount *corev1.VolumeMount
+		for _, mount := range volumeMounts {
+			if mount.Name == "certificates-oci" {
+				ociCertMount = &mount
+				break
+			}
+		}
+		assert.NotNil(t, ociCertMount, "Should have OCI certificate volume mount")
+		assert.Equal(t, "/etc/certificates/oci", ociCertMount.MountPath)
+
+		// Check volumes
+		volumes := pod.Spec.Volumes
+		var ociCertVolume *corev1.Volume
+		for _, volume := range volumes {
+			if volume.Name == "certificates-oci" {
+				ociCertVolume = &volume
+				break
+			}
+		}
+		assert.NotNil(t, ociCertVolume, "Should have OCI certificate volume")
+		assert.NotNil(t, ociCertVolume.ConfigMap, "Should be a ConfigMap volume")
+		assert.Equal(t, "ca-bundle", ociCertVolume.ConfigMap.Name)
+	})
+}
