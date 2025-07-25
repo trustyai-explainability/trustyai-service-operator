@@ -60,6 +60,7 @@ var (
 	detectDevice        = flag.Bool("detect-device", false, "detect available device(s), CUDA or CPU")
 	commPort            = flag.Int("listen-port", driver.DefaultPort, "driver serves APIs on the port")
 	downloadAssetsS3    = flag.Bool("download-assets-s3", false, "Download assets from S3")
+	uploadToOCI         = flag.Bool("upload-to-oci", false, "Upload results to OCI registry")
 	customTaskGitURL    = flag.String("custom-task-git-url", "", "Git repository URL for custom tasks")
 	customTaskGitBranch = flag.String("custom-task-git-branch", "", "Git repository branch for custom tasks")
 	customTaskGitCommit = flag.String("custom-task-git-commit", "", "Git commit for custom tasks")
@@ -129,6 +130,7 @@ func main() {
 		Args:                args,
 		CommPort:            *commPort,
 		DownloadAssetsS3:    *downloadAssetsS3,
+		UploadToOCI:         *uploadToOCI,
 		CustomTaskGitURL:    *customTaskGitURL,
 		CustomTaskGitBranch: *customTaskGitBranch,
 		CustomTaskGitCommit: *customTaskGitCommit,
