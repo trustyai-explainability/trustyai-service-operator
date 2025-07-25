@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"embed"
 	"errors"
 	"fmt"
 	"slices"
@@ -25,6 +26,9 @@ import (
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
+
+//go:embed **/templates/*.tmpl.yaml
+var templateFS embed.FS
 
 // to set up a controller. may include webhook or not
 type ControllerSetupFunc func(mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) error

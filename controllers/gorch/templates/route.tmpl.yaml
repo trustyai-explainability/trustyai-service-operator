@@ -1,18 +1,18 @@
 kind: Route
 apiVersion: route.openshift.io/v1
 metadata:
-  name: {{.Orchestrator.Name}}-health
-  namespace: {{.Orchestrator.Namespace}}
+  name: {{.RouteName}}
+  namespace: {{.Owner.Namespace}}
   labels:
-    app: {{.Orchestrator.Name}}
-    component: {{.Orchestrator.Name}}
+    app: {{.Owner.Name}}
+    component: {{.Owner.Name}}
 spec:
   to:
     kind: Service
-    name:  {{.Orchestrator.Name}}-service
+    name:  {{.Owner.Name}}-service
     weight: 100
   port:
-    targetPort: health
+    targetPort: {{.RoutePort}}
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect

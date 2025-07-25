@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -51,17 +52,8 @@ type TrustyAIServiceStatus struct {
 	// Define your status fields here
 	Phase      string                 `json:"phase"`
 	Replicas   int32                  `json:"replicas"`
-	Conditions []Condition            `json:"conditions"`
+	Conditions []common.Condition     `json:"conditions"`
 	Ready      corev1.ConditionStatus `json:"ready,omitempty"`
-}
-
-// Condition represents possible conditions of a TrustyAIServiceStatus
-type Condition struct {
-	Type               string                 `json:"type"`
-	Status             corev1.ConditionStatus `json:"status"`
-	LastTransitionTime metav1.Time            `json:"lastTransitionTime"`
-	Reason             string                 `json:"reason"`
-	Message            string                 `json:"message"`
 }
 
 //+kubebuilder:object:root=true
@@ -107,7 +99,7 @@ func (t *TrustyAIService) IsMigration() bool {
 // SetStatus sets the status of the TrustyAIService
 func (t *TrustyAIService) SetStatus(condType, reason, message string, status corev1.ConditionStatus) {
 	now := metav1.Now()
-	condition := Condition{
+	condition := common.Condition{
 		Type:               condType,
 		Status:             status,
 		Reason:             reason,

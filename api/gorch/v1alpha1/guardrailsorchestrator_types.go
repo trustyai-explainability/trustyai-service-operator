@@ -17,8 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	corev1 "k8s.io/api/core/v1"
-
+	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -32,7 +31,7 @@ type GuardrailsOrchestratorSpec struct {
 
 	// Number of replicas
 	Replicas int32 `json:"replicas"`
-	// Name of configmap containing generator,detector,and chunker arguments
+	// Name of configmap containing generator, detector, and chunker arguments
 	OrchestratorConfig *string `json:"orchestratorConfig"`
 	// Boolean flag to enable/disable built-in detectors
 	// +optional
@@ -73,29 +72,12 @@ type OtelExporter struct {
 	OTLPExport string `json:"otlpExport,omitempty"`
 }
 
-type ConditionType string
-
-type Condition struct {
-	Type ConditionType `json:"type" description:"type of condition ie. Available|Progressing|Degraded."`
-
-	Status corev1.ConditionStatus `json:"status" description:"status of the condition, one of True, False, Unknown"`
-
-	// +optional
-	Reason string `json:"reason,omitempty" description:"one-word CamelCase reason for the condition's last transition"`
-
-	// +optional
-	Message string `json:"message,omitempty" description:"human-readable message indicating details about last transition"`
-
-	// +optional
-	LastTransitionTime metav1.Time `json:"lastTransitionTime" description:"last time the condition transit from one status to another"`
-}
-
 type GuardrailsOrchestratorStatus struct {
 	Phase string `json:"phase,omitempty"`
 
 	// Conditions describes the state of the GuardrailsOrchestrator resource.
 	// +optional
-	Conditions []Condition `json:"conditions,omitempty"`
+	Conditions []common.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

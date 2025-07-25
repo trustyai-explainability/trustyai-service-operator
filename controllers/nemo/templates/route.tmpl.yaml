@@ -1,0 +1,19 @@
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: {{.Owner.Name}}
+  namespace: {{.Owner.Namespace}}
+  labels:
+    app: {{.Owner.Name}}
+    component: {{.Owner.Name}}
+spec:
+  to:
+    kind: Service
+    name:  {{.Owner.Name}}-service
+    weight: 100
+  port:
+    targetPort: oauth-proxy
+  tls:
+    termination: passthrough
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

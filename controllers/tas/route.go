@@ -2,11 +2,11 @@ package tas
 
 import (
 	"context"
+	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	"reflect"
 
 	routev1 "github.com/openshift/api/route/v1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
-	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"

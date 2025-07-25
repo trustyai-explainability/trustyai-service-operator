@@ -2,9 +2,8 @@ package utils
 
 import (
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
-	"os"
-
 	appsv1 "k8s.io/api/apps/v1"
+	"os"
 )
 
 func IsDeploymentReady(deployment *appsv1.Deployment) bool {

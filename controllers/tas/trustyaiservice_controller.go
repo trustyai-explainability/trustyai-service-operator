@@ -19,6 +19,7 @@ package tas
 import (
 	"context"
 	goerrors "errors"
+	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	"time"
 
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
@@ -228,7 +229,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Create service
-	service, err := r.reconcileService(ctx, trustyAIServiceService)
+	service, err := utils.CreateService(ctx, r.Client, trustyAIServiceService, serviceTemplatePath, templateParser.ParseResource)
 	if err != nil {
 		// handle error
 		return RequeueWithError(err)

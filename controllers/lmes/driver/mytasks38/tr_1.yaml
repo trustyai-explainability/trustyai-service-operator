@@ -1,0 +1,3 @@
+task: tr_1
+include: unitxt
+recipe: card=cards.unitxt.card1,template=templates.mytemplate.tp_0,system_prompt=system_prompts.sp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10
