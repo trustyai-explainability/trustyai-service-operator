@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
 	v1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"sigs.k8s.io/controller-runtime/pkg/conversion"
 )
@@ -30,9 +31,9 @@ func (src *TrustyAIService) ConvertTo(dstRaw conversion.Hub) error {
 	dst.Status.Ready = src.Status.Ready
 
 	// Convert Conditions
-	dst.Status.Conditions = make([]v1.Condition, len(src.Status.Conditions))
+	dst.Status.Conditions = make([]common.Condition, len(src.Status.Conditions))
 	for i, srcCondition := range src.Status.Conditions {
-		dst.Status.Conditions[i] = v1.Condition{
+		dst.Status.Conditions[i] = common.Condition{
 			Type:               srcCondition.Type,
 			Status:             srcCondition.Status,
 			LastTransitionTime: srcCondition.LastTransitionTime,

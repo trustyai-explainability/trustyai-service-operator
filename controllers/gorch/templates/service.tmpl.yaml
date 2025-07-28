@@ -1,16 +1,16 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{.Orchestrator.Name}}-service
-  namespace: {{.Orchestrator.Namespace}}
+  name: {{.Owner.Name}}-service
+  namespace: {{.Owner.Namespace}}
   labels:
-    app: {{.Orchestrator.Name}}
-    component: {{.Orchestrator.Name}}
+    app: {{.Owner.Name}}
+    component: {{.Owner.Name}}
 spec:
   ipFamilies:
     - IPv4
   ports:
-    {{if .Orchestrator.Spec.EnableGuardrailsGateway}}
+    {{if .Owner.Spec.EnableGuardrailsGateway}}
     - name: http
       protocol: TCP
       port: 8090
@@ -30,5 +30,5 @@ spec:
   ipFamilyPolicy: SingleStack
   sessionAffinity: None
   selector:
-    app: {{.Orchestrator.Name}}
-    component: {{.Orchestrator.Name}}
+    app: {{.Owner.Name}}
+    component: {{.Owner.Name}}

@@ -18,9 +18,10 @@ package gorch
 
 import (
 	"context"
+	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/gorch/templates"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"time"
 
-	routev1 "github.com/openshift/api/route/v1"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -33,6 +34,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+)
+
+const (
+	serviceTemplate = "service.tmpl.yaml"
+	routeTemplate   = "route.tmpl.yaml"
+	httpsRoutePort  = "https"
+	healthRoutePort = "health"
 )
 
 // GuardrailsOrchestratorReconciler reconciles a GuardrailsOrchestrator object
@@ -93,11 +101,11 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 
 	// Start reconcilation
 	if orchestrator.Status.Conditions == nil {
-		reason := ReconcileInit
+		reason := utils.ReconcileInit
 		message := "Initializing GuardrailsOrchestrator resource"
 		orchestrator, err = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
-			SetProgressingCondition(&saved.Status.Conditions, reason, message)
-			saved.Status.Phase = PhaseProgressing
+			utils.SetProgressingCondition(&saved.Status.Conditions, reason, message)
+			saved.Status.Phase = utils.PhaseProgressing
 		})
 		if err != nil {
 			log.Error(err, "Failed to update GuardrailsOrchestrator status during initialization")
@@ -179,48 +187,22 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	existingService := &corev1.Service{}
-	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-service", Namespace: orchestrator.Namespace}, existingService)
-	if err != nil && errors.IsNotFound(err) {
-		// Define a new service
-		service := r.createService(ctx, orchestrator)
-		log.Info("Creating a new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
-		err = r.Create(ctx, service)
-		if err != nil {
-			log.Error(err, "Failed to create new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
-			return ctrl.Result{}, err
-		}
-	} else if err != nil {
-		log.Error(err, "Failed to get Service")
+	_, err = utils.ReconcileService(ctx, r.Client, orchestrator, serviceTemplate, templateParser.ParseResource)
+	if err != nil {
+		log.Error(err, "Failed to reconcile service")
 		return ctrl.Result{}, err
 	}
 
-	existingRoute := &routev1.Route{}
-	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingRoute)
-	if err != nil && errors.IsNotFound(err) {
-		// Define a new route
-		httpRoute := r.createRoute(ctx, "https-route.tmpl.yaml", orchestrator)
-		log.Info("Creating a new Route", "Route.Namespace", httpRoute.Namespace, "Route.Name", httpRoute.Name)
-		err = r.Create(ctx, httpRoute)
-		if err != nil {
-			log.Error(err, "Failed to create new Route", "Route.Namespace", httpRoute.Namespace, "Route.Name", httpRoute.Name)
-		}
-	} else if err != nil {
-		log.Error(err, "Failed to get Route")
+	_, err = utils.ReconcileRoute(ctx, r.Client, orchestrator, orchestrator.Name, httpsRoutePort, routeTemplate, templateParser.ParseResource)
+	if err != nil {
+		log.Error(err, "Failed to reconcile https route")
 		return ctrl.Result{}, err
 	}
 
-	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-health", Namespace: orchestrator.Namespace}, existingRoute)
-	if err != nil && errors.IsNotFound(err) {
-		// Define a new route
-		healthRoute := r.createRoute(ctx, "health-route.tmpl.yaml", orchestrator)
-		log.Info("Creating a new Route", "Route.Namespace", healthRoute.Namespace, "Route.Name", healthRoute.Name)
-		err = r.Create(ctx, healthRoute)
-		if err != nil {
-			log.Error(err, "Failed to create new Route", "Route.Namespace", healthRoute.Namespace, "Route.Name", healthRoute.Name)
-		}
-	} else if err != nil {
-		log.Error(err, "Failed to get Route")
+	healthRouteName := orchestrator.Name + "-" + healthRoutePort
+	_, err = utils.ReconcileRoute(ctx, r.Client, orchestrator, healthRouteName, healthRoutePort, routeTemplate, templateParser.ParseResource)
+	if err != nil {
+		log.Error(err, "Failed to reconcile health route")
 		return ctrl.Result{}, err
 	}
 

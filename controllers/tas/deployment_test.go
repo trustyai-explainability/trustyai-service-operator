@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -55,8 +57,8 @@ func setupAndTestDeploymentDefault(instance *trustyaiopendatahubiov1alpha1.Trust
 	Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("registry.redhat.io/openshift4/ose-oauth-proxy:latest"))
 
 	WaitFor(func() error {
-		service, _ := reconciler.reconcileService(ctx, instance)
-		return reconciler.Create(ctx, service)
+		_, err := utils.ReconcileService(ctx, reconciler.Client, instance, serviceTemplatePath, templates.ParseResource)
+		return err
 	}, "failed to create service")
 
 	service := &corev1.Service{}
@@ -130,8 +132,8 @@ func setupAndTestDeploymentConfigMap(instance *trustyaiopendatahubiov1alpha1.Tru
 	Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal(oauthImage))
 
 	WaitFor(func() error {
-		service, _ := reconciler.reconcileService(ctx, instance)
-		return reconciler.Create(ctx, service)
+		_, err := utils.ReconcileService(ctx, reconciler.Client, instance, serviceTemplatePath, templates.ParseResource)
+		return err
 	}, "failed to create service")
 
 	service := &corev1.Service{}

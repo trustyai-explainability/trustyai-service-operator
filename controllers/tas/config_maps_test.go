@@ -126,19 +126,17 @@ var _ = Describe("ConfigMap tests", func() {
 			var actualOAuthImage string
 			var actualServiceImage string
 
-			configMapPath := operatorNamespace + "/" + constants.ConfigMap
-
 			Eventually(func() error {
 				var err error
 				actualOAuthImage, err = reconciler.getImageFromConfigMap(ctx, configMapOAuthProxyImageKey, defaultOAuthProxyImage)
 				return err
-			}, defaultTimeout, defaultPolling).Should(MatchError(fmt.Sprintf("configmap %s does not contain necessary keys", configMapPath)), "failed to get oauth image from ConfigMap")
+			}, defaultTimeout, defaultPolling).Should(MatchError(fmt.Sprintf("configmap %s in namespace %s does not contain key %s", constants.ConfigMap, operatorNamespace, configMapOAuthProxyImageKey)), "failed to get oauth image from ConfigMap")
 
 			Eventually(func() error {
 				var err error
 				actualServiceImage, err = reconciler.getImageFromConfigMap(ctx, configMapServiceImageKey, defaultImage)
 				return err
-			}, defaultTimeout, defaultPolling).Should(MatchError(fmt.Sprintf("configmap %s does not contain necessary keys", configMapPath)), "failed to get oauth image from ConfigMap")
+			}, defaultTimeout, defaultPolling).Should(MatchError(fmt.Sprintf("configmap %s in namespace %s does not contain key %s", constants.ConfigMap, operatorNamespace, configMapServiceImageKey)), "failed to get service image from ConfigMap")
 
 			Expect(actualOAuthImage).Should(Equal(defaultOAuthProxyImage))
 			Expect(actualServiceImage).Should(Equal(defaultImage))

@@ -2,12 +2,12 @@ package tas
 
 import (
 	"context"
+	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	"reflect"
 	"strconv"
 
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
-	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
