@@ -18,6 +18,8 @@ package gorch
 
 import (
 	"context"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/metrics"
+	"strconv"
 	"time"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -67,6 +69,19 @@ func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.
 	}).SetupWithManager(mgr)
 }
 
+// createOrchestratorCreationMetrics collects and publishes metrics related to new-created Guardrails Orchestrators
+func createOrchestratorCreationMetrics(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) {
+	// Update the Prometheus metrics for each task in the tasklist
+	labels := make(map[string]string)
+	labels["orchestrator_namespace"] = orchestrator.Namespace
+	labels["using_built_in_detectors"] = strconv.FormatBool(orchestrator.Spec.EnableBuiltInDetectors)
+	labels["using_sidecar_gateway"] = strconv.FormatBool(orchestrator.Spec.SidecarGatewayConfig != nil)
+
+	// create/update metric counter
+	counter := metrics.GetOrCreateGuardrailsOrchestratorCounter(labels)
+	counter.Inc()
+}
+
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // TODO(user): Modify the Reconcile function to compare the state specified by
@@ -103,6 +118,8 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 			log.Error(err, "Failed to update GuardrailsOrchestrator status during initialization")
 			return ctrl.Result{}, err
 		}
+
+		createOrchestratorCreationMetrics(orchestrator)
 	}
 
 	if !controllerutil.ContainsFinalizer(orchestrator, finalizerName) {
