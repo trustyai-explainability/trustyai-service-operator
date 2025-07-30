@@ -45,4 +45,8 @@ const (
 	DefaultBatchSize           = "1"
 	DefaultDetectDevice        = true
 	ServiceName                = "LMES"
+	// DataSienceCluster ConfigMap constants
+	DSCConfigMapName         = "trustyai-dsc-config"
+	DSCAllowOnlineKey        = "eval.lmeval.allowOnline"
+	DSCAllowCodeExecutionKey = "eval.lmeval.allowCodeExecution"
 )
