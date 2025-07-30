@@ -1162,6 +1162,14 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 			})
 		}
 
+		// Add subject if specified
+		if job.Spec.Outputs.OCISpec.Subject != "" {
+			ociEnvVars = append(ociEnvVars, corev1.EnvVar{
+				Name:  "OCI_SUBJECT",
+				Value: job.Spec.Outputs.OCISpec.Subject,
+			})
+		}
+
 		// Handle authentication - either username/password or token
 		if job.Spec.Outputs.OCISpec.HasUsernamePassword() {
 			ociAuthEnvVars := []corev1.EnvVar{

@@ -4008,6 +4008,53 @@ func Test_OCIPodConfiguration(t *testing.T) {
 		assert.Equal(t, "custom-tag-v1.0", envMap["OCI_TAG"].Value)
 	})
 
+	t.Run("OCIWithSubject", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "test-oci-subject",
+				Namespace: "default",
+			},
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "test",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"task1"},
+				},
+				Outputs: &lmesv1alpha1.Outputs{
+					OCISpec: &lmesv1alpha1.OCISpec{
+						Registry: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "registry",
+						},
+						Repository: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "repository",
+						},
+						Subject: "llama-2-7b-chat",
+						Path:    "results",
+						TokenRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
+							Key:                  "token",
+						},
+					},
+				},
+			},
+		}
+
+		pod := CreatePod(svcOpts, job, logger)
+		assert.NotNil(t, pod, "Should generate pod successfully")
+
+		// Check environment variables
+		envVars := pod.Spec.Containers[0].Env
+		envMap := make(map[string]corev1.EnvVar)
+		for _, env := range envVars {
+			envMap[env.Name] = env
+		}
+
+		// Verify subject is set
+		assert.Contains(t, envMap, "OCI_SUBJECT", "Should have OCI_SUBJECT env var")
+		assert.Equal(t, "llama-2-7b-chat", envMap["OCI_SUBJECT"].Value)
+	})
+
 	t.Run("OCIWithCertificates", func(t *testing.T) {
 		job := &lmesv1alpha1.LMEvalJob{
 			ObjectMeta: v1.ObjectMeta{
