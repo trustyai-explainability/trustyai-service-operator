@@ -31,6 +31,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -510,7 +511,7 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 
 	// construct a new pod and create a pod for the job
 	currentTime := v1.Now()
-	pod := CreatePod(Options, job, log)
+	pod := CreatePod(r, Options, job, log)
 	if err := r.Create(ctx, pod, &client.CreateOptions{}); err != nil {
 		// Failed to create the pod. Mark the status as complete with failed
 		job.Status.State = lmesv1alpha1.CompleteJobState
@@ -728,7 +729,7 @@ func (r *LMEvalJobReconciler) handleSuspend(ctx context.Context, log logr.Logger
 
 func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
 	log.Info("Resume job")
-	pod := CreatePod(Options, job, log)
+	pod := CreatePod(r, Options, job, log)
 	if err := r.Create(ctx, pod); err != nil {
 		log.Error(err, "failed to create pod to resume job")
 		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
@@ -853,7 +854,18 @@ func unmarshal(custom string, props []string) (map[string]interface{}, error) {
 	return obj, nil
 }
 
-func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) *corev1.Pod {
+func CreatePod(r *LMEvalJobReconciler, svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) *corev1.Pod {
+
+	// Get DataScienceCluster LMEval settings (if reconciler is available)
+	var dscAllowOnline, dscAllowCodeExecution *bool
+	if r != nil {
+		if dscAllowOnlineVal, dscAllowCodeExecutionVal, err := r.getDSCLMEvalSettings(context.Background(), log); err != nil {
+			log.Error(err, "failed to read DSC ConfigMap settings, using operator defaults")
+		} else {
+			dscAllowOnline = dscAllowOnlineVal
+			dscAllowCodeExecution = dscAllowCodeExecutionVal
+		}
+	}
 
 	var envVars = removeProtectedEnvVars(job.Spec.Pod.GetContainer().GetEnv())
 
@@ -944,14 +956,23 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 		},
 	}
 
-	if job.Spec.AllowCodeExecution != nil && *job.Spec.AllowCodeExecution {
-		// Disable remote code execution by default
+	// Check if code execution is allowed based on permissions
+	// Precedence: operator config -> DSC ConfigMap
+	codeExecutionAllowed := false
+	if dscAllowCodeExecution != nil {
+		codeExecutionAllowed = *dscAllowCodeExecution
+		log.Info("using DSC ConfigMap permission for LMEval code execution", "value", codeExecutionAllowed)
+	} else {
+		codeExecutionAllowed = svcOpts.AllowCodeExecution
+		log.Info("using operator config permission for LMEval code execution", "value", codeExecutionAllowed)
+	}
 
-		if !svcOpts.AllowCodeExecution {
-			log.Error(fmt.Errorf("code execution not allowed by the operator"), "change this setting and redeploy the operator")
+	if job.Spec.AllowCodeExecution != nil && *job.Spec.AllowCodeExecution {
+		if !codeExecutionAllowed {
+			log.Error(fmt.Errorf("code execution not allowed by permissions"), "DSC or operator config disallows code execution")
 			envVars = append(envVars, disallowRemoteCodeEnvVars...)
 		} else {
-			log.Info("enabling code execution")
+			log.Info("enabling code execution from job spec")
 			envVars = append(envVars, allowRemoteCodeEnvVars...)
 		}
 	} else {
@@ -981,12 +1002,23 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 		},
 	}
 
-	// Enforce offline mode by default
-	if job.Spec.AllowOnline != nil && *job.Spec.AllowOnline {
+	// Check if online mode is allowed
+	// Precedence: operator config -> DSC ConfigMap
+	onlineModeAllowed := false
+	if dscAllowOnline != nil {
+		onlineModeAllowed = *dscAllowOnline
+		log.Info("using DSC ConfigMap permission for LMEval online mode", "value", onlineModeAllowed)
+	} else {
+		onlineModeAllowed = svcOpts.AllowOnline
+		log.Info("using operator config permission for LMEval online mode", "value", onlineModeAllowed)
+	}
 
-		if !svcOpts.AllowOnline {
-			log.Error(fmt.Errorf("online mode not allowed by the operator"), "change this setting and redeploy the operator")
+	if job.Spec.AllowOnline != nil && *job.Spec.AllowOnline {
+		if !onlineModeAllowed {
+			log.Error(fmt.Errorf("online mode not allowed by permissions"), "DSC or operator config disallows online mode")
 			envVars = append(envVars, offlineHuggingFaceEnvVars...)
+		} else {
+			log.Info("enabling online mode from job spec")
 		}
 	} else {
 		envVars = append(envVars, offlineHuggingFaceEnvVars...)
@@ -1138,7 +1170,7 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 			Image:           svcOpts.PodImage,
 			ImagePullPolicy: svcOpts.ImagePullPolicy,
 			Env:             envVars,
-			Command:         generateCmd(svcOpts, job),
+			Command:         generateCmd(svcOpts, job, dscAllowOnline),
 			Args:            generateArgs(svcOpts, job, log),
 			SecurityContext: mainSecurityContext,
 			VolumeMounts:    volumeMounts,
@@ -1377,7 +1409,7 @@ func concatTasks(tasks lmesv1alpha1.TaskList) []string {
 	return append(tasks.TaskNames, recipesName...)
 }
 
-func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string {
+func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, dscAllowOnline *bool) []string {
 	if job == nil {
 		return nil
 	}
@@ -1398,7 +1430,16 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 		cmds = append(cmds, "--listen-port", fmt.Sprintf("%d", svcOpts.DriverPort))
 	}
 
-	if job.Spec.AllowOnline != nil && *job.Spec.AllowOnline && svcOpts.AllowOnline {
+	// Check if online mode
+	// Precedence: operator config -> DSC ConfigMap
+	onlineModeAllowed := false
+	if dscAllowOnline != nil {
+		onlineModeAllowed = *dscAllowOnline
+	} else {
+		onlineModeAllowed = svcOpts.AllowOnline
+	}
+
+	if job.Spec.AllowOnline != nil && *job.Spec.AllowOnline && onlineModeAllowed {
 		cmds = append(cmds, "--allow-online")
 	}
 
@@ -1530,4 +1571,47 @@ func removeProtectedEnvVars(envVars []corev1.EnvVar) []corev1.EnvVar {
 	}
 
 	return allowedEnvVars
+}
+
+// getDSCLMEvalSettings reads the DataScienceCluster ConfigMap and returns the LMEval settings
+// Returns nil values if the ConfigMap doesn't exist or doesn't contain the settings
+func (r *LMEvalJobReconciler) getDSCLMEvalSettings(ctx context.Context, log logr.Logger) (*bool, *bool, error) {
+	configMapKey := types.NamespacedName{
+		Namespace: r.Namespace,
+		Name:      DSCConfigMapName,
+	}
+
+	var cm corev1.ConfigMap
+	if err := r.Get(ctx, configMapKey, &cm); err != nil {
+		if errors.IsNotFound(err) {
+			// DataScienceCluster ConfigMap not found (use operator defaults)
+			log.Info("DataScienceCluster ConfigMap not found, using operator defaults", "configMap", configMapKey)
+			return nil, nil, nil
+		}
+		return nil, nil, fmt.Errorf("error reading DataScienceCluster configmap %s: %w", configMapKey, err)
+	}
+
+	var allowOnline, allowCodeExecution *bool
+
+	// allowOnline setting
+	if allowOnlineStr, ok := cm.Data[DSCAllowOnlineKey]; ok {
+		if allowOnlineVal, err := strconv.ParseBool(allowOnlineStr); err == nil {
+			allowOnline = &allowOnlineVal
+			log.Info("DataScienceCluster allowOnline setting", "value", allowOnlineVal)
+		} else {
+			log.Error(err, "invalid allowOnline value in DataScienceCluster ConfigMap", "value", allowOnlineStr)
+		}
+	}
+
+	// allowCodeExecution setting
+	if allowCodeExecutionStr, ok := cm.Data[DSCAllowCodeExecutionKey]; ok {
+		if allowCodeExecutionVal, err := strconv.ParseBool(allowCodeExecutionStr); err == nil {
+			allowCodeExecution = &allowCodeExecutionVal
+			log.Info("DataScienceCluster allowCodeExecution setting", "value", allowCodeExecutionVal)
+		} else {
+			log.Error(err, "invalid allowCodeExecution value in DataScienceCluster ConfigMap", "value", allowCodeExecutionStr)
+		}
+	}
+
+	return allowOnline, allowCodeExecution, nil
 }

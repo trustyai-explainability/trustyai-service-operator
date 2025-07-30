@@ -114,7 +114,7 @@ func Test_SimplePod(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job),
+					Command:         generateCmd(svcOpts, job, nil),
 					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
@@ -184,7 +184,7 @@ func Test_SimplePod(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, log)
+	newPod := CreatePod(nil, svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -330,7 +330,7 @@ func Test_WithCustomPod(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job),
+					Command:         generateCmd(svcOpts, job, nil),
 					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: &corev1.SecurityContext{
 						RunAsUser:  &runAsUser,
@@ -445,7 +445,7 @@ func Test_WithCustomPod(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, log)
+	newPod := CreatePod(nil, svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 
@@ -460,7 +460,7 @@ func Test_WithCustomPod(t *testing.T) {
 		"custom/annotation1": "annotation1",
 	}
 
-	newPod = CreatePod(svcOpts, job, log)
+	newPod = CreatePod(nil, svcOpts, job, log)
 	assert.Equal(t, expect, newPod)
 }
 
@@ -609,7 +609,7 @@ func Test_EnvSecretsPod(t *testing.T) {
 							Value: "True",
 						},
 					},
-					Command:         generateCmd(svcOpts, job),
+					Command:         generateCmd(svcOpts, job, nil),
 					Args:            generateArgs(svcOpts, job, log),
 					SecurityContext: defaultSecurityContext,
 					VolumeMounts: []corev1.VolumeMount{
@@ -632,7 +632,7 @@ func Test_EnvSecretsPod(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, log)
+	newPod := CreatePod(nil, svcOpts, job, log)
 	// maybe only verify the envs: Containers[0].Env
 	assert.Equal(t, expect, newPod)
 }
@@ -734,7 +734,7 @@ func Test_FileSecretsPod(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job),
+					Command:         generateCmd(svcOpts, job, nil),
 					Args:            generateArgs(svcOpts, job, log),
 					Ports: []corev1.ContainerPort{
 						{
@@ -823,7 +823,7 @@ func Test_FileSecretsPod(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, log)
+	newPod := CreatePod(nil, svcOpts, job, log)
 	// maybe only verify the envs: Containers[0].Env
 	assert.Equal(t, expect, newPod)
 }
@@ -1039,7 +1039,7 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 		"--output-path", "/opt/app-root/src/output",
 		"--task-recipe", "card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		"--",
-	}, generateCmd(svcOpts, job))
+	}, generateCmd(svcOpts, job, nil))
 
 	job.Spec.TaskList.TaskRecipes = append(job.Spec.TaskList.TaskRecipes,
 		lmesv1alpha1.TaskRecipe{
@@ -1063,7 +1063,7 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 		"--task-recipe", "card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		"--task-recipe", "card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		"--",
-	}, generateCmd(svcOpts, job))
+	}, generateCmd(svcOpts, job, nil))
 }
 
 func Test_GenerateArgCmdCustomCard(t *testing.T) {
@@ -1121,7 +1121,7 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 		"--custom-artifact", `card|custom_0|{ "__type__": "task_card", "loader": { "__type__": "load_hf", "path": "wmt16", "name": "de-en" }, "preprocess_steps": [ { "__type__": "copy", "field": "translation/en", "to_field": "text" }, { "__type__": "copy", "field": "translation/de", "to_field": "translation" }, { "__type__": "set", "fields": { "source_language": "english", "target_language": "dutch" } } ], "task": "tasks.translation.directed", "templates": "templates.translation.directed.all" }`,
 		"--task-recipe", "card=cards.custom_0,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		"--",
-	}, generateCmd(svcOpts, job))
+	}, generateCmd(svcOpts, job, nil))
 
 	// add second task using custom recipe + custom template
 	job.Spec.TaskList.TaskRecipes = append(job.Spec.TaskList.TaskRecipes,
@@ -1157,7 +1157,7 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 		"--task-recipe", "card=cards.custom_1,template=templates.tp_0,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
 		"--custom-artifact", `template|tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
 		"--",
-	}, generateCmd(svcOpts, job))
+	}, generateCmd(svcOpts, job, nil))
 
 	// add third task using normal card + custom system_prompt
 	job.Spec.TaskList.TaskRecipes = append(job.Spec.TaskList.TaskRecipes,
@@ -1191,7 +1191,7 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 		"--custom-artifact", `template|tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
 		"--custom-artifact", "system_prompt|sp_0|this is a custom system promp",
 		"--",
-	}, generateCmd(svcOpts, job))
+	}, generateCmd(svcOpts, job, nil))
 
 	// add forth task using custom card + custom template + custom system_prompt
 	// and reuse the template and system prompt
@@ -1226,7 +1226,7 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 		"--custom-artifact", `template|tp_0|{ "__type__": "input_output_template", "instruction": "In the following task, you translate a {text_type}.", "input_format": "Translate this {text_type} from {source_language} to {target_language}: {text}.", "target_prefix": "Translation: ", "output_format": "{translation}", "postprocessors": [ "processors.lower_case" ] }`,
 		"--custom-artifact", "system_prompt|sp_0|this is a custom system promp",
 		"--",
-	}, generateCmd(svcOpts, job))
+	}, generateCmd(svcOpts, job, nil))
 
 	// add fifth task using regular card + custom template + custom system_prompt
 	// both template and system prompt are new
@@ -1272,7 +1272,7 @@ func Test_GenerateArgCmdCustomCard(t *testing.T) {
 		"--custom-artifact", "system_prompt|sp_0|this is a custom system promp",
 		"--custom-artifact", "system_prompt|sp_1|this is a custom system promp2",
 		"--",
-	}, generateCmd(svcOpts, job))
+	}, generateCmd(svcOpts, job, nil))
 }
 
 func Test_CustomCardValidation(t *testing.T) {
@@ -1686,7 +1686,7 @@ func Test_ManagedPVC(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job),
+					Command:         generateCmd(svcOpts, job, nil),
 					Args:            generateArgs(svcOpts, job, log),
 					Ports: []corev1.ContainerPort{
 						{
@@ -1769,7 +1769,7 @@ func Test_ManagedPVC(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, log)
+	newPod := CreatePod(nil, svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -1850,7 +1850,7 @@ func Test_ExistingPVC(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job),
+					Command:         generateCmd(svcOpts, job, nil),
 					Args:            generateArgs(svcOpts, job, log),
 					Ports: []corev1.ContainerPort{
 						{
@@ -1932,7 +1932,7 @@ func Test_ExistingPVC(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, log)
+	newPod := CreatePod(nil, svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -2024,7 +2024,7 @@ func Test_PVCPreference(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job),
+					Command:         generateCmd(svcOpts, job, nil),
 					Args:            generateArgs(svcOpts, job, log),
 					Ports: []corev1.ContainerPort{
 						{
@@ -2118,7 +2118,7 @@ func Test_PVCPreference(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, log)
+	newPod := CreatePod(nil, svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -2209,7 +2209,7 @@ func Test_OfflineMode(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job),
+					Command:         generateCmd(svcOpts, job, nil),
 					Args:            generateArgs(svcOpts, job, log),
 					Ports: []corev1.ContainerPort{
 						{
@@ -2303,7 +2303,7 @@ func Test_OfflineMode(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, log)
+	newPod := CreatePod(nil, svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -2417,7 +2417,7 @@ func Test_ProtectedVars(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job),
+					Command:         generateCmd(svcOpts, job, nil),
 					Args:            generateArgs(svcOpts, job, log),
 					Ports: []corev1.ContainerPort{
 						{
@@ -2516,7 +2516,7 @@ func Test_ProtectedVars(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, log)
+	newPod := CreatePod(nil, svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -2614,7 +2614,7 @@ func Test_OnlineModeDisabled(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job),
+					Command:         generateCmd(svcOpts, job, nil),
 					Args:            generateArgs(svcOpts, job, log),
 					Ports: []corev1.ContainerPort{
 						{
@@ -2708,7 +2708,7 @@ func Test_OnlineModeDisabled(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, log)
+	newPod := CreatePod(nil, svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -2802,7 +2802,7 @@ func Test_OnlineMode(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job),
+					Command:         generateCmd(svcOpts, job, nil),
 					Args:            generateArgs(svcOpts, job, log),
 					Ports: []corev1.ContainerPort{
 						{
@@ -2876,7 +2876,7 @@ func Test_OnlineMode(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, log)
+	newPod := CreatePod(nil, svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -2973,7 +2973,7 @@ func Test_AllowCodeOnlineMode(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job),
+					Command:         generateCmd(svcOpts, job, nil),
 					Args:            generateArgs(svcOpts, job, log),
 					Ports: []corev1.ContainerPort{
 						{
@@ -3047,7 +3047,7 @@ func Test_AllowCodeOnlineMode(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, log)
+	newPod := CreatePod(nil, svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -3142,7 +3142,7 @@ func Test_AllowCodeOfflineMode(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job),
+					Command:         generateCmd(svcOpts, job, nil),
 					Args:            generateArgs(svcOpts, job, log),
 					Ports: []corev1.ContainerPort{
 						{
@@ -3236,7 +3236,7 @@ func Test_AllowCodeOfflineMode(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, log)
+	newPod := CreatePod(nil, svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -3331,7 +3331,7 @@ func Test_OfflineModeWithOutput(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job),
+					Command:         generateCmd(svcOpts, job, nil),
 					Args:            generateArgs(svcOpts, job, log),
 					Ports: []corev1.ContainerPort{
 						{
@@ -3437,7 +3437,7 @@ func Test_OfflineModeWithOutput(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, log)
+	newPod := CreatePod(nil, svcOpts, job, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -3547,7 +3547,7 @@ func Test_CustomTasksGitSource(t *testing.T) {
 				},
 			}
 
-			pod := CreatePod(svcOpts, job, log)
+			pod := CreatePod(nil, svcOpts, job, log)
 
 			require.NotNil(t, pod)
 
@@ -3638,7 +3638,7 @@ func Test_CustomTasksGitSourceOfflineMode(t *testing.T) {
 
 	logger := logr.Discard()
 
-	pod := CreatePod(Options, job, logger)
+	pod := CreatePod(nil, Options, job, logger)
 
 	if pod == nil {
 		t.Fatal("pod should not be nil")
