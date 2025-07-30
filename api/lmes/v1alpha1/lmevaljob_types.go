@@ -481,6 +481,7 @@ type OCISpec struct {
 	// Subject for the OCI artifact
 	// +optional
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._:/@-]*$`
+	// +kubebuilder:validation:MaxLength=255
 	Subject string `json:"subject,omitempty"`
 	// Username for registry authentication
 	// +optional

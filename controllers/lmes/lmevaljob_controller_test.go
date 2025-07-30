@@ -4055,6 +4055,191 @@ func Test_OCIPodConfiguration(t *testing.T) {
 		assert.Equal(t, "llama-2-7b-chat", envMap["OCI_SUBJECT"].Value)
 	})
 
+	t.Run("OCIWithSubjectOmitted", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "test-oci-subject-omitted",
+				Namespace: "default",
+			},
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "test",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"task1"},
+				},
+				Outputs: &lmesv1alpha1.Outputs{
+					OCISpec: &lmesv1alpha1.OCISpec{
+						Registry: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "registry",
+						},
+						Repository: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "repository",
+						},
+						Path: "results",
+						TokenRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
+							Key:                  "token",
+						},
+					},
+				},
+			},
+		}
+
+		pod := CreatePod(svcOpts, job, logger)
+		assert.NotNil(t, pod, "Should generate pod successfully")
+
+		// Check environment variables
+		envVars := pod.Spec.Containers[0].Env
+		envMap := make(map[string]corev1.EnvVar)
+		for _, env := range envVars {
+			envMap[env.Name] = env
+		}
+
+		// Verify OCI_SUBJECT is not set when omitted
+		assert.NotContains(t, envMap, "OCI_SUBJECT", "Should not have OCI_SUBJECT env var when omitted")
+	})
+
+	t.Run("OCIWithSubjectEmpty", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "test-oci-subject-empty",
+				Namespace: "default",
+			},
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "test",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"task1"},
+				},
+				Outputs: &lmesv1alpha1.Outputs{
+					OCISpec: &lmesv1alpha1.OCISpec{
+						Registry: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "registry",
+						},
+						Repository: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "repository",
+						},
+						Subject: "",
+						Path:    "results",
+						TokenRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
+							Key:                  "token",
+						},
+					},
+				},
+			},
+		}
+
+		pod := CreatePod(svcOpts, job, logger)
+		assert.NotNil(t, pod, "Should generate pod successfully")
+
+		// Check environment variables
+		envVars := pod.Spec.Containers[0].Env
+		envMap := make(map[string]corev1.EnvVar)
+		for _, env := range envVars {
+			envMap[env.Name] = env
+		}
+
+		// Verify OCI_SUBJECT is not set when empty
+		assert.NotContains(t, envMap, "OCI_SUBJECT", "Should not have OCI_SUBJECT env var when empty")
+	})
+
+	t.Run("OCIWithSubjectSpecialChars", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "test-oci-subject-special",
+				Namespace: "default",
+			},
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "test",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"task1"},
+				},
+				Outputs: &lmesv1alpha1.Outputs{
+					OCISpec: &lmesv1alpha1.OCISpec{
+						Registry: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "registry",
+						},
+						Repository: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "repository",
+						},
+						Subject: "valid-subject-123",
+						Path:    "results",
+						TokenRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
+							Key:                  "token",
+						},
+					},
+				},
+			},
+		}
+
+		pod := CreatePod(svcOpts, job, logger)
+		assert.NotNil(t, pod, "Should generate pod successfully")
+
+		// Check environment variables
+		envVars := pod.Spec.Containers[0].Env
+		envMap := make(map[string]corev1.EnvVar)
+		for _, env := range envVars {
+			envMap[env.Name] = env
+		}
+
+		// Verify subject with valid special characters is set
+		assert.Contains(t, envMap, "OCI_SUBJECT", "Should have OCI_SUBJECT env var")
+		assert.Equal(t, "valid-subject-123", envMap["OCI_SUBJECT"].Value)
+	})
+
+	t.Run("OCIWithSubjectDigestFormat", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "test-oci-subject-digest",
+				Namespace: "default",
+			},
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "test",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"task1"},
+				},
+				Outputs: &lmesv1alpha1.Outputs{
+					OCISpec: &lmesv1alpha1.OCISpec{
+						Registry: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "registry",
+						},
+						Repository: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "repository",
+						},
+						Subject: "sha256:a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef12345678",
+						Path:    "results",
+						TokenRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
+							Key:                  "token",
+						},
+					},
+				},
+			},
+		}
+
+		pod := CreatePod(svcOpts, job, logger)
+		assert.NotNil(t, pod, "Should generate pod successfully")
+
+		// Check environment variables
+		envVars := pod.Spec.Containers[0].Env
+		envMap := make(map[string]corev1.EnvVar)
+		for _, env := range envVars {
+			envMap[env.Name] = env
+		}
+
+		// Verify subject with OCI digest format is set
+		assert.Contains(t, envMap, "OCI_SUBJECT", "Should have OCI_SUBJECT env var")
+		assert.Equal(t, "sha256:a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef12345678", envMap["OCI_SUBJECT"].Value)
+	})
+
 	t.Run("OCIWithCertificates", func(t *testing.T) {
 		job := &lmesv1alpha1.LMEvalJob{
 			ObjectMeta: v1.ObjectMeta{
