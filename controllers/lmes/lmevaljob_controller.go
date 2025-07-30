@@ -1124,7 +1124,7 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 	}
 
 	// Always add OCI env vars if configured, regardless of offline/online mode
-	if job.Spec.HasOCIOutput() {
+	if job.Spec.HasOCIOutput() && job.Spec.Outputs != nil && job.Spec.Outputs.OCISpec != nil {
 		ociEnvVars := []corev1.EnvVar{
 			{
 				Name: "OCI_REGISTRY",
@@ -1159,6 +1159,14 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 			ociEnvVars = append(ociEnvVars, corev1.EnvVar{
 				Name:  "OCI_TAG",
 				Value: job.Spec.Outputs.OCISpec.Tag,
+			})
+		}
+
+		// Add subject if specified
+		if job.Spec.Outputs.OCISpec.Subject != "" {
+			ociEnvVars = append(ociEnvVars, corev1.EnvVar{
+				Name:  "OCI_SUBJECT",
+				Value: job.Spec.Outputs.OCISpec.Subject,
 			})
 		}
 
