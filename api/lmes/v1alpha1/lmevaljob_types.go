@@ -478,6 +478,11 @@ type OCISpec struct {
 	// Path within the results to package as artifact
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._/-]*$`
 	Path string `json:"path"`
+	// Subject for the OCI artifact
+	// +optional
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._:/@-]*$`
+	// +kubebuilder:validation:MaxLength=255
+	Subject string `json:"subject,omitempty"`
 	// Username for registry authentication
 	// +optional
 	UsernameRef *corev1.SecretKeySelector `json:"username,omitempty"`

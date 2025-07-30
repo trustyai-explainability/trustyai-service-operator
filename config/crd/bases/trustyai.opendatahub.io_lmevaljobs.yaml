@@ -363,6 +363,10 @@ spec:
                         - key
                         type: object
                         x-kubernetes-map-type: atomic
+                      subject:
+                        description: Subject for the OCI artifact
+                        pattern: ^[a-zA-Z0-9._:/@-]*$
+                        type: string
                       tag:
                         description: Optional tag for the artifact (defaults to job
                           name if not specified)
