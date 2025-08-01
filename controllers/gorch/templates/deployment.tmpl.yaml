@@ -29,8 +29,6 @@ spec:
         app.kubernetes.io/instance: {{.Orchestrator.Name}}
         app.kubernetes.io/name: {{.Orchestrator.Name}}
         app.kubernetes.io/part-of: trustyai
-      annotations:
-        sidecar.istio.io/inject: "true"
     spec:
       volumes:
 {{- if or .Orchestrator.Spec.OrchestratorConfig (and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedConfigMap) }}
@@ -50,6 +48,14 @@ spec:
             name: {{.Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap}}
             defaultMode: 420
 {{- end }}
+        - name: tls-certs
+          secret:
+            secretName: {{ .Orchestrator.Name }}-tls
+            defaultMode: 420
+        - name: tls-ca-bundle
+          configMap:
+            name: {{.Orchestrator.Name }}-ca-bundle
+            defaultMode: 420
       serviceAccountName: {{.Orchestrator.Name}}-serviceaccount
       containers:
         - name: {{.Orchestrator.Name}}
@@ -66,6 +72,10 @@ spec:
             {{end}}
             - name: RUST_BACKTRACE
               value: 'full'
+            - name: TLS_CERT_PATH
+              value: /etc/tls/private/tls.crt
+            - NAME: TLS_KEY_PATH
+              value: /etc/tls/private/tls.key
             - name: RUST_LOG
               value: '{{if .Orchestrator.Spec.LogLevel}}{{.Orchestrator.Spec.LogLevel}}{{else}}info{{end}}'
           {{if .Orchestrator.Spec.OtelExporter.Protocol}}
@@ -101,8 +111,14 @@ spec:
               readOnly: true
               mountPath: /config/config.yaml
               subPath: config.yaml
+            - name: tls-certs
+              mountPath: /etc/tls/private
+              readOnly: true
+            - name: tls-ca-bundle
+              mountPath: /etc/tls/ca
+              readOnly: true
           ports:
-            - name: http
+            - name: https
               containerPort: {{ if or .Orchestrator.Spec.SidecarGatewayConfig (and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap) }}8032{{ else }}8033{{ end }}
               protocol: TCP
           imagePullPolicy: Always

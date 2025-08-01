@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: {{.Orchestrator.Name}}-service
   namespace: {{.Orchestrator.Namespace}}
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: {{ .Orchestrator.Name }}-tls
   labels:
     app: {{.Orchestrator.Name}}
     component: {{.Orchestrator.Name}}
@@ -15,12 +17,12 @@ spec:
       protocol: TCP
       port: 8090
       targetPort: 8090
-    - name: http
+    - name: https
       protocol: TCP
       port: 8033
       targetPort: 8032
     {{else}}
-    - name: http
+    - name: https
       protocol: TCP
       port: 8033
       targetPort: 8033

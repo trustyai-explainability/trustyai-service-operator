@@ -19,15 +19,38 @@ import (
 	"testing"
 )
 
-func setupTestObjects(ns string, labelFunc func(i int) string) ([]client.Object, []client.Object) {
+func setupTestObjects(ns string, labelFunc func(i int) string, tlsFunc func(i int) bool, generationTLS bool) ([]client.Object, []client.Object, []client.Object) {
 	var isvcs []client.Object
 	var srs []client.Object
+	var secrets []client.Object
 	for i := 1; i <= 5; i++ {
 		runtimeName := fmt.Sprintf("my-serving-runtime-%d", i)
+		isvcName := fmt.Sprintf("my-inference-service-%d", i)
 		label := labelFunc(i)
+
+		var scheme string
+		if tlsFunc(i) {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      isvcName + "-predictor-serving-cert",
+					Namespace: ns,
+				},
+			}
+			secrets = append(secrets, secret)
+			scheme = "https"
+		} else {
+			scheme = "http"
+		}
+
+		var url string
+		if tlsFunc(i) {
+			url = fmt.Sprintf("my-inference-service-%d.test-ns.svc.cluster.local:844%d", i, i)
+		} else {
+			url = fmt.Sprintf("my-inference-service-%d.test-ns.svc.cluster.local", i)
+		}
 		isvc := &kservev1beta1.InferenceService{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("my-inference-service-%d", i),
+				Name:      isvcName,
 				Namespace: ns,
 				Labels:    map[string]string{label: "true"},
 			},
@@ -40,11 +63,12 @@ func setupTestObjects(ns string, labelFunc func(i int) string) ([]client.Object,
 			},
 			Status: kservev1beta1.InferenceServiceStatus{
 				URL: &apis.URL{
-					Scheme: "https",
-					Host:   fmt.Sprintf("my-inference-service-%d.test-ns.svc.cluster.local:844%d", i, i),
+					Scheme: scheme,
+					Host:   url,
 				},
 			},
 		}
+
 		sr := &v1alpha1.ServingRuntime{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      fmt.Sprintf("my-serving-runtime-%d", i),
@@ -71,9 +95,24 @@ func setupTestObjects(ns string, labelFunc func(i int) string) ([]client.Object,
 		srs = append(srs, sr)
 	}
 	generationRuntimeName := "my-generation-runtime"
+	generationISVCName := "my-generation-service"
+	var generationScheme string
+	if generationTLS {
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      generationISVCName + "-predictor-serving-cert",
+				Namespace: ns,
+			},
+		}
+		secrets = append(secrets, secret)
+		generationScheme = "https"
+	} else {
+		generationScheme = "http"
+	}
+
 	genIsvc := &kservev1beta1.InferenceService{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "my-generation-service",
+			Name:      generationISVCName,
 			Namespace: ns,
 		},
 		Spec: kservev1beta1.InferenceServiceSpec{
@@ -85,7 +124,7 @@ func setupTestObjects(ns string, labelFunc func(i int) string) ([]client.Object,
 		},
 		Status: kservev1beta1.InferenceServiceStatus{
 			URL: &apis.URL{
-				Scheme: "https",
+				Scheme: generationScheme,
 				Host:   "my-generation-service.test-ns.svc.cluster.local:8080",
 			},
 		},
@@ -113,15 +152,16 @@ func setupTestObjects(ns string, labelFunc func(i int) string) ([]client.Object,
 		Status: v1alpha1.ServingRuntimeStatus{},
 	}
 	isvcs = append(isvcs, genIsvc, genSr)
-	return isvcs, srs
+	return isvcs, srs, secrets
 }
 
-func setupTestReconcilerAndOrchestrator(ns, orchestratorName string, autoConfig gorchv1alpha1.AutoConfig, isvcs, srs []client.Object, builtInDetectors bool, gateway bool) (*GuardrailsOrchestratorReconciler, *gorchv1alpha1.GuardrailsOrchestrator) {
+func setupTestReconcilerAndOrchestrator(ns, orchestratorName string, autoConfig gorchv1alpha1.AutoConfig, isvcs, srs []client.Object, secrets []client.Object, builtInDetectors bool, gateway bool) (*GuardrailsOrchestratorReconciler, *gorchv1alpha1.GuardrailsOrchestrator) {
 	s := runtime.NewScheme()
 	_ = kservev1beta1.AddToScheme(s)
 	_ = gorchv1alpha1.AddToScheme(s)
 	_ = v1alpha1.AddToScheme(s)
-	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(isvcs...).WithObjects(srs...).Build()
+	_ = corev1.AddToScheme(s)
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(isvcs...).WithObjects(srs...).WithObjects(secrets...).Build()
 	reconciler := &GuardrailsOrchestratorReconciler{
 		Client: fakeClient,
 		Scheme: s,
@@ -145,13 +185,13 @@ func TestGenerateOrchestratorConfigMap(t *testing.T) {
 	ns := "test-ns"
 	orchestratorName := "test-orch"
 
-	isvcs, srs := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" })
+	isvcs, srs, secrets := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" }, func(i int) bool { return false }, false)
 	autoConfig := gorchv1alpha1.AutoConfig{
 		InferenceServiceToGuardrail: "my-generation-service",
 	}
-	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, false, false)
+	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, secrets, false, false)
 
-	cm, _, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
+	cm, _, _, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)
 	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
@@ -160,7 +200,7 @@ func TestGenerateOrchestratorConfigMap(t *testing.T) {
 	expectedData := `chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
-    port: 7000
+    port: 8080
 detectors:
   my-inference-service-1:
     type: text_contents
@@ -206,13 +246,13 @@ func TestGenerateOrchestratorConfigMapFullURL(t *testing.T) {
 	ns := "test-ns"
 	orchestratorName := "test-orch"
 
-	isvcs, srs := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" })
+	isvcs, srs, secrets := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" }, func(i int) bool { return false }, false)
 	autoConfig := gorchv1alpha1.AutoConfig{
 		InferenceServiceToGuardrail: "http://my-generation-service:8123",
 	}
-	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, false, false)
+	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, secrets, false, false)
 
-	cm, _, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
+	cm, _, _, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)
 	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
@@ -267,19 +307,19 @@ func TestGenerateOrchestratorConfigMapDetectorLabels(t *testing.T) {
 	ns := "test-ns"
 	orchestratorName := "test-orch"
 
-	isvcs, srs := setupTestObjects(ns, func(i int) string {
+	isvcs, srs, secrets := setupTestObjects(ns, func(i int) string {
 		if i < 3 {
 			return "trustyai/guardrails/groupA"
 		}
 		return "trustyai/guardrails/groupB"
-	})
+	}, func(i int) bool { return false }, false)
 	autoConfig := gorchv1alpha1.AutoConfig{
 		InferenceServiceToGuardrail: "my-generation-service",
 		DetectorServiceLabelToMatch: "trustyai/guardrails/groupB",
 	}
-	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, false, false)
+	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, secrets, false, false)
 
-	cm, _, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
+	cm, _, _, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)
 	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
@@ -288,7 +328,7 @@ func TestGenerateOrchestratorConfigMapDetectorLabels(t *testing.T) {
 	expectedData := `chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
-    port: 7000
+    port: 8080
 detectors:
   my-inference-service-3:
     type: text_contents
@@ -320,13 +360,13 @@ func TestGenerateOrchestratorConfigMapBuiltInDetectors(t *testing.T) {
 	ns := "test-ns"
 	orchestratorName := "test-orch"
 
-	isvcs, srs := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" })
+	isvcs, srs, secrets := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" }, func(i int) bool { return false }, false)
 	autoConfig := gorchv1alpha1.AutoConfig{
 		InferenceServiceToGuardrail: "my-generation-service",
 	}
-	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, true, false)
+	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, secrets, true, false)
 
-	cm, _, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
+	cm, _, _, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
 	assert.NoError(t, err)
 	assert.NotNil(t, cm)
 	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
@@ -335,7 +375,7 @@ func TestGenerateOrchestratorConfigMapBuiltInDetectors(t *testing.T) {
 	expectedData := fmt.Sprintf(`chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
-    port: 7000
+    port: 8080
 detectors:
   my-inference-service-1:
     type: text_contents
@@ -388,13 +428,13 @@ func TestGenerateOrchestratorConfigMapBuiltInDetectorsAndGateway(t *testing.T) {
 	ns := "test-ns"
 	orchestratorName := "test-orch"
 
-	isvcs, srs := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" })
+	isvcs, srs, secrets := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" }, func(i int) bool { return false }, false)
 	autoConfig := gorchv1alpha1.AutoConfig{
 		InferenceServiceToGuardrail: "my-generation-service",
 	}
-	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, true, true)
+	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, secrets, true, true)
 
-	cm, _, detectorServices, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
+	cm, _, detectorServices, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
 	cmGateway, err := reconciler.defineGatewayConfigMap(orchestrator, detectorServices)
 
 	assert.NoError(t, err)
@@ -405,7 +445,7 @@ func TestGenerateOrchestratorConfigMapBuiltInDetectorsAndGateway(t *testing.T) {
 	expectedData := fmt.Sprintf(`chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
-    port: 7000
+    port: 8080
 detectors:
   my-inference-service-1:
     type: text_contents
@@ -526,4 +566,201 @@ func TestDeploymentTemplateRenders(t *testing.T) {
 	assert.NotNil(t, deployment)
 	assert.Equal(t, "test-orchestrator", deployment.Name)
 	assert.Equal(t, "test-ns", deployment.Namespace)
+}
+
+func TestHTTPSInferenceServiceTLSMounting(t *testing.T) {
+	ctx := context.Background()
+	ns := "test-ns"
+	orchestratorName := "test-orch"
+
+	isvcs, srs, secrets := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" }, func(i int) bool { return i%2 == 0 }, false)
+	autoConfig := gorchv1alpha1.AutoConfig{
+		InferenceServiceToGuardrail: "my-generation-service",
+	}
+	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, secrets, true, true)
+
+	cm, _, detectorServices, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
+
+	if err != nil {
+		fmt.Println(err, "Failed to define orchestrator configmap")
+
+	}
+
+	_, err = reconciler.defineGatewayConfigMap(orchestrator, detectorServices)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, cm)
+	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
+	assert.Equal(t, ns, cm.Namespace)
+	expectedData := fmt.Sprintf(`chat_generation:
+  service:
+    hostname: my-generation-service.test-ns.svc.cluster.local
+    port: 8080
+detectors:
+  my-inference-service-1:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-1.test-ns.svc.cluster.local"
+      port: 8001
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-2:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-2.test-ns.svc.cluster.local"
+      port: 8442
+      tls: my-inference-service-2-tls
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-3:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-3.test-ns.svc.cluster.local"
+      port: 8003
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-4:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-4.test-ns.svc.cluster.local"
+      port: 8444
+      tls: my-inference-service-4-tls
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-5:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-5.test-ns.svc.cluster.local"
+      port: 8005
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  %s:
+    type: text_contents
+    service:
+      hostname: 127.0.0.1
+      port: 8080
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+tls:
+  my-inference-service-2-tls:
+    cert_path: "/etc/tls/my-inference-service-2-predictor-serving-cert/tls.crt"
+    key_path: "/etc/tls/my-inference-service-2-predictor-serving-cert/tls.crt"
+  my-inference-service-4-tls:
+    cert_path: "/etc/tls/my-inference-service-4-predictor-serving-cert/tls.crt"
+    key_path: "/etc/tls/my-inference-service-4-predictor-serving-cert/tls.crt"
+`, builtInDetectorName)
+	assert.Equal(t, expectedData, cm.Data["config.yaml"])
+}
+
+func TestHTTPSInferenceServiceTLSGenerationTLS(t *testing.T) {
+	ctx := context.Background()
+	ns := "test-ns"
+	orchestratorName := "test-orch"
+
+	isvcs, srs, secrets := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" }, func(i int) bool { return i%2 == 0 }, true)
+	autoConfig := gorchv1alpha1.AutoConfig{
+		InferenceServiceToGuardrail: "my-generation-service",
+	}
+	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, secrets, true, true)
+
+	cm, _, detectorServices, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
+
+	if err != nil {
+		fmt.Println(err, "Failed to define orchestrator configmap")
+
+	}
+
+	_, err = reconciler.defineGatewayConfigMap(orchestrator, detectorServices)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, cm)
+	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
+	assert.Equal(t, ns, cm.Namespace)
+
+	expectedData := fmt.Sprintf(`chat_generation:
+  service:
+    hostname: my-generation-service.test-ns.svc.cluster.local
+    port: 8080
+    tls: my-generation-service-tls
+detectors:
+  my-inference-service-1:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-1.test-ns.svc.cluster.local"
+      port: 8001
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-2:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-2.test-ns.svc.cluster.local"
+      port: 8442
+      tls: my-inference-service-2-tls
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-3:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-3.test-ns.svc.cluster.local"
+      port: 8003
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-4:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-4.test-ns.svc.cluster.local"
+      port: 8444
+      tls: my-inference-service-4-tls
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-5:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-5.test-ns.svc.cluster.local"
+      port: 8005
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  %s:
+    type: text_contents
+    service:
+      hostname: 127.0.0.1
+      port: 8080
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+tls:
+  my-generation-service-tls:
+    cert_path: "/etc/tls/my-generation-service-predictor-serving-cert/tls.crt"
+    key_path: "/etc/tls/my-generation-service-predictor-serving-cert/tls.crt"
+  my-inference-service-2-tls:
+    cert_path: "/etc/tls/my-inference-service-2-predictor-serving-cert/tls.crt"
+    key_path: "/etc/tls/my-inference-service-2-predictor-serving-cert/tls.crt"
+  my-inference-service-4-tls:
+    cert_path: "/etc/tls/my-inference-service-4-predictor-serving-cert/tls.crt"
+    key_path: "/etc/tls/my-inference-service-4-predictor-serving-cert/tls.crt"
+`, builtInDetectorName)
+	assert.Equal(t, expectedData, cm.Data["config.yaml"])
+
+	// Simulate mounting the secret in a deployment
+	deployment := &appsv1.Deployment{
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "main"},
+					},
+				},
+			},
+		},
+	}
+	for _, secret := range secrets {
+		MountSecret(deployment, secret.GetName())
+		found := false
+		for _, v := range deployment.Spec.Template.Spec.Volumes {
+			if v.Name == secret.GetName()+"-vol" && v.VolumeSource.Secret != nil && v.VolumeSource.Secret.SecretName == secret.GetName() {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "TLS secret volume should be mounted for HTTPS inference service")
+	}
 }

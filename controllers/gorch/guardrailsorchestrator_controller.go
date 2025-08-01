@@ -187,6 +187,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
+	var tlsMounts []gorchv1alpha1.DetectedService
 	if orchestrator.Spec.AutoConfig != nil {
 		// Only perform autoconfig logic if the relevant resources have changed
 		shouldRegen, err := r.shouldRegenerateAutoConfig(ctx, orchestrator)
@@ -195,12 +196,14 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 			return ctrl.Result{}, err
 		}
 		if shouldRegen {
-			err = r.runAutoConfig(ctx, orchestrator)
+			tlsMounts, err = r.runAutoConfig(ctx, orchestrator)
 			if err != nil {
 				log.Error(err, "Failed to perform AutoConfig")
 				return ctrl.Result{}, err
 			}
 			orchestrator, _ = r.refreshOrchestrator(ctx, orchestrator, log)
+		} else {
+			tlsMounts = getTLSInfo(*orchestrator)
 		}
 	} else {
 		log.Info("Using manually-configured OrchestratorConfig")
@@ -212,13 +215,6 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{}, nil
-		}
-	}
-
-	// monitor the orchestrator or gateway config for changes
-	if getOrchestratorConfigMap(orchestrator) != nil {
-		if result, err := r.redeployOnConfigMapChange(ctx, log, orchestrator); err != nil {
-			return result, err
 		}
 	}
 
@@ -241,6 +237,11 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 		r.setConfigMapHashAnnotations(ctx, orchestrator, annotations)
 		deployment.Spec.Template.Annotations = annotations
+		if len(tlsMounts) > 0 {
+			for i := range tlsMounts {
+				MountSecret(deployment, tlsMounts[i].TLSSecret)
+			}
+		}
 
 		err = r.Create(ctx, deployment)
 		if err != nil {
@@ -250,6 +251,13 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	} else if err != nil {
 		log.Error(err, "Failed to get Deployment")
 		return ctrl.Result{}, err
+	}
+
+	// monitor the orchestrator or gateway config for changes
+	if getOrchestratorConfigMap(orchestrator) != nil {
+		if result, err := r.redeployOnConfigMapChange(ctx, log, orchestrator); err != nil {
+			return result, err
+		}
 	}
 
 	existingService := &corev1.Service{}
@@ -265,6 +273,21 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 	} else if err != nil {
 		log.Error(err, "Failed to get Service")
+		return ctrl.Result{}, err
+	}
+
+	existingConfigMap := &corev1.ConfigMap{}
+	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-ca-bundle", Namespace: orchestrator.Namespace}, existingConfigMap)
+	if err != nil && errors.IsNotFound(err) {
+		// Define a new route
+		caBundleConfigMap := r.createConfigMap(ctx, "ca-bundle-configmap.tmpl.yaml", orchestrator)
+		log.Info("Creating a new ConfigMap", "ConfigMap.Namespace", caBundleConfigMap.Namespace, "ConfigMap.Name", caBundleConfigMap.Name)
+		err = r.Create(ctx, caBundleConfigMap)
+		if err != nil {
+			log.Error(err, "Failed to create new ConfigMap", "ConfigMap.Namespace", caBundleConfigMap.Namespace, "ConfigMap.Name", caBundleConfigMap.Name)
+		}
+	} else if err != nil {
+		log.Error(err, "Failed to get ConfigMap")
 		return ctrl.Result{}, err
 	}
 
