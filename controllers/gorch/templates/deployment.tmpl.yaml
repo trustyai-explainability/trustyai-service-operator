@@ -162,9 +162,19 @@ spec:
               readOnly: true
               mountPath: /config/config.yaml
               subPath: config.yaml
+            - name: tls-certs
+              mountPath: /etc/tls/private
+              readOnly: true
+            - name: tls-ca-bundle
+              mountPath: /etc/tls/ca
+              readOnly: true
           env:
             - name: GATEWAY_CONFIG
               value: /config/config.yaml
+            - name: RUST_LOG
+              value: '{{if .Orchestrator.Spec.LogLevel}}{{.Orchestrator.Spec.LogLevel}}{{else}}info{{end}}'
+            - name: GATEWAY_USE_MTLS
+              value: '{{if .Orchestrator.Spec.UseMTLS}}true{{else}}false{{end}}'
         {{end}}
         {{if .Orchestrator.Spec.EnableBuiltInDetectors}}
         - name: {{.Orchestrator.Name}}-detectors
