@@ -15,18 +15,13 @@ spec:
     {{if .Orchestrator.Spec.EnableGuardrailsGateway}}
     - name: gateway
       protocol: TCP
-      port: 8090
-      targetPort: 8090
-    - name: https
-      protocol: TCP
-      port: 8033
-      targetPort: 8032
-    {{else}}
-    - name: https
-      protocol: TCP
-      port: 8033
-      targetPort: 8033
+      port: {{if .UseOAuthProxy}}8490{{else}}8090{{end}}
+      targetPort: {{if .UseOAuthProxy}}8490{{else}}8090{{end}}
     {{end}}
+    - name: https
+      protocol: TCP
+      port: {{if .UseOAuthProxy}}8433{{else}}8033{{end}}
+      targetPort: {{if .UseOAuthProxy}}8433{{else}}8033{{end}}
     - name: health
       protocol: TCP
       port: 8034

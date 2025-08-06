@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
@@ -29,9 +30,20 @@ type ContainerImages struct {
 	GuardrailsGatewayImage string
 }
 
+type OAuthConfig struct {
+	Suffix          string
+	Name            string
+	Namespace       string
+	OAuthProxyImage string
+	UpstreamPort    int
+	DownstreamPort  int
+}
+
 type DeploymentConfig struct {
-	Orchestrator    *gorchv1alpha1.GuardrailsOrchestrator
-	ContainerImages ContainerImages
+	Orchestrator           *gorchv1alpha1.GuardrailsOrchestrator
+	ContainerImages        ContainerImages
+	OrchestratorOAuthProxy *OAuthConfig
+	GatewayOAuthProxy      *OAuthConfig
 }
 
 func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *appsv1.Deployment {
@@ -64,14 +76,46 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 		containerImages.GuardrailsGatewayImage = guardrailsGatewayImage
 	}
 
+	var orchestratorOAuthProxy *OAuthConfig = nil
+	var gatewayOAuthProxy *OAuthConfig = nil
+	if val, ok := orchestrator.Annotations["security.opendatahub.io/enable-auth"]; ok && strings.ToLower(val) == "true" {
+		oAuthImage, err := r.getImageFromConfigMap(ctx, oAuthImageKey, constants.ConfigMap, r.Namespace)
+		if oAuthImage == "" || err != nil {
+			log.FromContext(ctx).Error(err, "Error getting OAuth proxy image from ConfigMap.")
+		}
+		log.FromContext(ctx).Info("Using sidecar gateway image " + oAuthImage + " " + "from configmap " + r.Namespace + ":" + constants.ConfigMap)
+
+		orchestratorOAuthProxy = &OAuthConfig{
+			Suffix:          "orchestrator",
+			Namespace:       orchestrator.Namespace,
+			Name:            orchestrator.Name,
+			OAuthProxyImage: oAuthImage,
+			DownstreamPort:  8433,
+			UpstreamPort:    8033,
+		}
+		if orchestrator.Spec.EnableGuardrailsGateway {
+			gatewayOAuthProxy = &OAuthConfig{
+				Suffix:          "gateway",
+				Namespace:       orchestrator.Namespace,
+				Name:            orchestrator.Name,
+				OAuthProxyImage: oAuthImage,
+				DownstreamPort:  8490,
+				UpstreamPort:    8090,
+			}
+		}
+	}
+
 	deploymentConfig := DeploymentConfig{
-		Orchestrator:    orchestrator,
-		ContainerImages: containerImages,
+		Orchestrator:           orchestrator,
+		ContainerImages:        containerImages,
+		OrchestratorOAuthProxy: orchestratorOAuthProxy,
+		GatewayOAuthProxy:      gatewayOAuthProxy,
 	}
 
 	var deployment *appsv1.Deployment
 
 	deployment, err = templateParser.ParseResource[appsv1.Deployment](deploymentTemplatePath, deploymentConfig, reflect.TypeOf(&appsv1.Deployment{}))
+
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to parse deployment template")
 	}

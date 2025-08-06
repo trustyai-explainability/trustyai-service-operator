@@ -3,6 +3,7 @@ package gorch
 import (
 	"context"
 	"reflect"
+	"strings"
 
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/gorch/templates"
@@ -14,14 +15,22 @@ import (
 const serviceTemplatePath = "service.tmpl.yaml"
 
 type ServiceConfig struct {
-	Orchestrator *gorchv1alpha1.GuardrailsOrchestrator
+	Orchestrator  *gorchv1alpha1.GuardrailsOrchestrator
+	UseOAuthProxy bool
 }
 
 func (r *GuardrailsOrchestratorReconciler) createService(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *corev1.Service {
 
-	serviceConfig := ServiceConfig{
-		Orchestrator: orchestrator,
+	useOAuth := false
+	if val, ok := orchestrator.Annotations["security.opendatahub.io/enable-auth"]; ok && strings.ToLower(val) == "true" {
+		useOAuth = true
 	}
+
+	serviceConfig := ServiceConfig{
+		Orchestrator:  orchestrator,
+		UseOAuthProxy: useOAuth,
+	}
+
 	var service *corev1.Service
 	service, err := templateParser.ParseResource[corev1.Service](serviceTemplatePath, serviceConfig, reflect.TypeOf(&corev1.Service{}))
 	if err != nil {
@@ -29,4 +38,5 @@ func (r *GuardrailsOrchestratorReconciler) createService(ctx context.Context, or
 	}
 	controllerutil.SetControllerReference(orchestrator, service, r.Scheme)
 	return service
+
 }
