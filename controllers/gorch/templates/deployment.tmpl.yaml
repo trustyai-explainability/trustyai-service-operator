@@ -3,8 +3,6 @@ apiVersion: apps/v1
 metadata:
   name: {{.Orchestrator.Name}}
   namespace: {{.Orchestrator.Namespace}}
-  annotations:
-      sidecar.istio.io/inject: "true"
   labels:
     app: {{.Orchestrator.Name}}
     component: {{.Orchestrator.Name}}

@@ -10,11 +10,11 @@ spec:
   ipFamilies:
     - IPv4
   ports:
-    {{if .Orchestrator.Spec.SidecarGatewayConfig}}
+    {{if .Orchestrator.Spec.EnableGuardrailsGateway}}
     - name: http
       protocol: TCP
-      port: 8032
-      targetPort: 8032
+      port: 8090
+      targetPort: 8090
     {{else}}
     - name: http
       protocol: TCP

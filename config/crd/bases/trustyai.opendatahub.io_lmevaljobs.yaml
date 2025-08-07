@@ -58,13 +58,27 @@ spec:
                   Batch size for the evaluation. This is used by the models that run and are loaded
                   locally and not apply for the commercial APIs.
                 type: string
+              chatTemplate:
+                description: ChatTemplate defines whether to apply the default or
+                  specified chat template to prompts. This is required for chat-completions
+                  models.
+                properties:
+                  enabled:
+                    type: boolean
+                  name:
+                    type: string
+                required:
+                - enabled
+                type: object
               genArgs:
                 description: Map to `--gen_kwargs` parameter for the underlying library.
                 items:
                   properties:
                     name:
+                      pattern: ^[a-zA-Z0-9._-]+$
                       type: string
                     value:
+                      pattern: ^[a-zA-Z0-9._/:\- ]*$
                       type: string
                   required:
                   - name
@@ -75,6 +89,7 @@ spec:
                   Accepts an integer, or a float between 0.0 and 1.0 . If passed, will limit
                   the number of documents to evaluate to the first X documents (if an integer)
                   per task or first X% of documents per task
+                pattern: ^(\d+\.?\d*|\d*\.\d+)$
                 type: string
               logSamples:
                 description: |-
@@ -83,14 +98,24 @@ spec:
                 type: boolean
               model:
                 description: Model name
+                enum:
+                - hf
+                - openai-completions
+                - openai-chat-completions
+                - local-completions
+                - local-chat-completions
+                - watsonx_llm
+                - textsynth
                 type: string
               modelArgs:
                 description: Args for the model
                 items:
                   properties:
                     name:
+                      pattern: ^[a-zA-Z0-9._-]+$
                       type: string
                     value:
+                      pattern: ^[a-zA-Z0-9._/:\- ]*$
                       type: string
                   required:
                   - name
@@ -192,6 +217,7 @@ spec:
                             type: object
                             x-kubernetes-map-type: atomic
                           path:
+                            pattern: ^[a-zA-Z0-9._/-]*$
                             type: string
                           region:
                             description: SecretKeySelector selects a key of a Secret.
@@ -4718,6 +4744,10 @@ spec:
                 description: Suspend keeps the job but without pods. This is intended
                   to be used by the Kueue integration
                 type: boolean
+              systemInstruction:
+                description: SystemInstruction will set the system instruction for
+                  all prompts passed to the evaluated model
+                type: string
               taskList:
                 description: Evaluation task list
                 properties:
@@ -4812,9 +4842,11 @@ spec:
                                 type: string
                               path:
                                 description: Path specifies the path to the task file
+                                pattern: ^[a-zA-Z0-9._/-]*$
                                 type: string
                               url:
                                 description: URL specifies the git repository URL
+                                pattern: ^https://[a-zA-Z0-9._/-]+$
                                 type: string
                             type: object
                         type: object
@@ -4823,6 +4855,7 @@ spec:
                     description: TaskNames from lm-eval's task list and/or from custom
                       tasks if CustomTasks is defined
                     items:
+                      pattern: ^[a-zA-Z0-9._-]+$
                       type: string
                     type: array
                   taskRecipes:
@@ -4844,6 +4877,7 @@ spec:
                               type: string
                             name:
                               description: Unitxt card's ID
+                              pattern: ^[a-zA-Z0-9._-]+$
                               type: string
                           type: object
                         demosPoolSize:
@@ -4944,6 +4978,37 @@ spec:
               podName:
                 description: The name of the Pod that runs the evaluation job
                 type: string
+              progressBars:
+                description: Information about the current job progress
+                items:
+                  description: ProgressBar stores information about progress of various
+                    steps within an evaluation task.
+                  properties:
+                    count:
+                      description: Fractional progress through the evaluation step,
+                        presented as "$completed_items/$total_items"
+                      type: string
+                    elapsedTime:
+                      description: The elapsed time that this step has been running
+                      type: string
+                    message:
+                      description: The title of the step being performed
+                      type: string
+                    percent:
+                      description: The percent completion of this evaluation step
+                      type: string
+                    remainingTimeEstimate:
+                      description: The estimated time remaining for this evaluation
+                        step
+                      type: string
+                  required:
+                  - count
+                  - elapsedTime
+                  - message
+                  - percent
+                  - remainingTimeEstimate
+                  type: object
+                type: array
               reason:
                 description: Final result of the job
                 enum:

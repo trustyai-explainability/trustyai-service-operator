@@ -39,7 +39,8 @@ import (
 )
 
 var (
-	progressMegPattern = regexp.MustCompile(`^(.*?:\s*?\d*?%)\|`)
+	// from https://gist.github.com/andenacitelli/20a98f8c45499fe21d55266b776d3071 -> regex pattern to extract tqdm fields
+	progressMsgPattern = regexp.MustCompile(`(.*): *(\d+%).*?(\d+\/\d+) +\[(\d+:\d+:?\d+)<(\d+:\d+:?\d+), +(\d+.\d+.*\/s)\]`)
 )
 
 const (
@@ -105,11 +106,11 @@ type driverComm struct {
 }
 
 type driverImpl struct {
-	Option          *DriverOption
-	lastProgressMsg string
-	status          lmesv1alpha1.LMEvalJobStatus
-	err             error
-	comm            *driverComm
+	Option       *DriverOption
+	lastProgress lmesv1alpha1.ProgressBar
+	status       lmesv1alpha1.LMEvalJobStatus
+	err          error
+	comm         *driverComm
 }
 
 func NewDriver(opt *DriverOption) (Driver, error) {
@@ -218,7 +219,7 @@ func (d *driverImpl) detectDevice() error {
 		return fmt.Errorf("failed to find the matched output")
 	}
 
-	patchDevice(d.Option.Args, matches[1] == "True")
+	d.Option.Args = patchDevice(d.Option.Args, matches[1] == "True")
 
 	return nil
 }
@@ -241,21 +242,21 @@ func (d *driverImpl) downloadS3Assets() error {
 	return nil
 }
 
-func patchDevice(args []string, hasCuda bool) {
-	var device = "cpu"
+func patchDevice(args []string, hasCuda bool) []string {
+	device := "cpu"
 	if hasCuda {
 		device = "cuda"
 	}
-	// patch the python command in the Option.Arg by adding the `--device cuda` option
-	// find the string with the `python -m lm_eval` prefix. usually it should be the last one
-	for idx, arg := range args {
-		if strings.HasPrefix(arg, "python -m lm_eval") {
-			if !strings.Contains(arg, "--device") {
-				args[idx] = fmt.Sprintf("%s --device %s", arg, device)
-			}
-			break
+
+	// Check if --device already exists
+	for _, arg := range args {
+		if arg == "--device" {
+			return args // already has device specified
 		}
 	}
+
+	// If we reach here, --device doesn't exist, so add it
+	return append(args, "--device", device)
 }
 
 // Create a domain socket and use HTTP protocal to handle communication
@@ -459,6 +460,33 @@ func (d *driverImpl) updateStatus(state lmesv1alpha1.JobState, reason lmesv1alph
 	d.status.Message = msg
 }
 
+func (d *driverImpl) updateProgressStatus(state lmesv1alpha1.JobState, reason lmesv1alpha1.Reason, latestProgress lmesv1alpha1.ProgressBar) {
+	d.status.State = state
+	d.status.Reason = reason
+	d.status.Message = latestProgress.Message // for backwards compatibility
+
+	progressLen := len(d.status.ProgressBars)
+
+	// if no progress bars yet reported
+	if progressLen == 0 {
+		d.status.ProgressBars = append(d.status.ProgressBars, latestProgress)
+	} else {
+		last := &d.status.ProgressBars[progressLen-1]
+
+		// are we updating an existing progress bar?
+		if last.Message == latestProgress.Message {
+			d.status.ProgressBars[progressLen-1] = latestProgress
+		} else {
+			// if it's a new bar, append it to the progress bar list
+			d.status.ProgressBars = append(d.status.ProgressBars, latestProgress)
+			// Ensure ProgressBars is never longer than 10 items
+			if len(d.status.ProgressBars) > 10 {
+				d.status.ProgressBars = d.status.ProgressBars[1:]
+			}
+		}
+	}
+}
+
 func (d *driverImpl) getResults() (string, error) {
 	var results string
 	pattern := "*result*.json"
@@ -498,10 +526,35 @@ func (d *driverImpl) updateProgress(msg string) {
 	// get multiple lines and only use the last one
 	msglist := strings.Split(msg, "\n")
 
-	if matches := progressMegPattern.FindStringSubmatch(msglist[len(msglist)-1]); len(matches) == 2 {
-		if matches[1] != d.lastProgressMsg {
-			d.lastProgressMsg = strings.Trim(matches[1], " \r")
-			d.updateStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, d.lastProgressMsg)
+	// gather tqdm fields
+	if matches := progressMsgPattern.FindStringSubmatch(msglist[len(msglist)-1]); len(matches) == 7 {
+		message := strings.Trim(matches[1], "\r")
+		percent := strings.Trim(matches[2], "\r")
+		count := strings.Trim(matches[3], "\r")
+		elapsedTime := strings.Trim(matches[4], "\r")
+		remainingTimeEstimate := strings.Trim(matches[5], "\r")
+
+		// standardize time format
+		if strings.Count(elapsedTime, ":") == 1 {
+			elapsedTime = "0:" + elapsedTime
+		}
+		if strings.Count(remainingTimeEstimate, ":") == 1 {
+			remainingTimeEstimate = "0:" + remainingTimeEstimate
+		}
+
+		newMessage := message != d.lastProgress.Message
+		newPercent := percent != d.lastProgress.Percent
+		newCount := count != d.lastProgress.Count
+
+		// if any of the run percent, message, count has changed, update the CR status
+		if newPercent || newCount || newMessage {
+			d.lastProgress.Message = message
+			d.lastProgress.Percent = percent
+			d.lastProgress.Count = count
+			d.lastProgress.ElapsedTime = elapsedTime
+			d.lastProgress.RemainingTimeEstimate = remainingTimeEstimate
+
+			d.updateProgressStatus(lmesv1alpha1.RunningJobState, lmesv1alpha1.NoReason, d.lastProgress)
 		}
 	}
 }
@@ -598,6 +651,7 @@ func (d *driverImpl) fetchGitCustomTasks() error {
 		return err
 	}
 
+	// #nosec G204 -- CustomTaskGitURL is validated by ValidateGitURL() in the controller
 	cloneCommand := exec.Command("git", "clone", d.Option.CustomTaskGitURL, repositoryDestination)
 	if output, err := cloneCommand.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to clone git repository: %v, output: %s", err, string(output))
@@ -608,12 +662,14 @@ func (d *driverImpl) fetchGitCustomTasks() error {
 
 	// Checkout a specific branch, if specified
 	if d.Option.CustomTaskGitBranch != "" {
+		// #nosec G204 -- CustomTaskGitBranch is validated by ValidateGitBranch() in the controller
 		checkoutCommand := exec.Command("git", clonedDirectory, workTree, "checkout", d.Option.CustomTaskGitBranch)
 		if output, err := checkoutCommand.CombinedOutput(); err != nil {
 			return fmt.Errorf("failed to checkout branch %s: %v, output: %s",
 				d.Option.CustomTaskGitBranch, err, string(output))
 		}
 	} else {
+		// #nosec G204 -- DefaultGitBranch is a constant value, not user input
 		checkoutCmd := exec.Command("git", clonedDirectory, workTree, "checkout", DefaultGitBranch)
 		if output, err := checkoutCmd.CombinedOutput(); err != nil {
 			d.Option.Logger.Info("failed to checkout main branch, using default branch from clone",
@@ -623,6 +679,7 @@ func (d *driverImpl) fetchGitCustomTasks() error {
 
 	// Checkout a specific commit, if specified
 	if d.Option.CustomTaskGitCommit != "" {
+		// #nosec G204 -- CustomTaskGitCommit is validated by ValidateGitCommit() in the controller
 		checkoutCommand := exec.Command("git", clonedDirectory, workTree, "checkout", d.Option.CustomTaskGitCommit)
 		if output, err := checkoutCommand.CombinedOutput(); err != nil {
 			return fmt.Errorf("failed to checkout commit %s: %v, output: %s",
@@ -644,6 +701,7 @@ func (d *driverImpl) fetchGitCustomTasks() error {
 		return err
 	}
 
+	// #nosec G204 -- taskPath is derived from validated CustomTaskGitPath, TaskRecipesPath is controlled by the application
 	copyCmd := exec.Command("cp", "-r", taskPath+"/.", d.Option.TaskRecipesPath)
 	output, err := copyCmd.CombinedOutput()
 	if err != nil {

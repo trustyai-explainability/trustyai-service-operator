@@ -12,10 +12,10 @@ RUN mkdir -p /opt/app-root/src/my_catalogs/cards && chmod -R g+rwx /opt/app-root
 RUN mkdir -p /opt/app-root/src/.cache
 ENV PATH="/opt/app-root/bin:/opt/app-root/src/.local/bin/:/opt/app-root/src/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-RUN curl -L https://github.com/opendatahub-io/lm-evaluation-harness/archive/refs/heads/release-0.4.8.zip -o repo.zip && \
+RUN curl -L https://github.com/opendatahub-io/lm-evaluation-harness/archive/refs/heads/incubation.zip -o repo.zip && \
     unzip repo.zip && \
-    cp -r lm-evaluation-harness-release-0.4.8/* . && \
-    rm -rf lm-evaluation-harness-release-0.4.8 repo.zip && \
+    cp -r lm-evaluation-harness-incubation/* . && \
+    rm -rf lm-evaluation-harness-incubation repo.zip && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -e .
 

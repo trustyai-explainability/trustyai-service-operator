@@ -27,6 +27,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/metrics"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -316,16 +319,38 @@ func (r *LMEvalJobReconciler) updateStatus(ctx context.Context, log logr.Logger,
 		return err
 	}
 
+	// Check if the pod is ready before accepting a Complete status from the driver
+	if newStatus.State == lmesv1alpha1.CompleteJobState {
+		pod, err := r.getPod(ctx, job)
+		if err != nil {
+			log.Error(err, "unable to get pod to verify completion status")
+			return err
+		}
+
+		if mainIdx := getContainerByName(&pod.Status, "main"); mainIdx == -1 {
+			// Main container not found, pod still initialising
+			log.Info("ignoring Complete status from driver - pod still initialising", "podName", job.GetPodName())
+			return nil
+		} else if pod.Status.ContainerStatuses[mainIdx].State.Running == nil {
+			// Main container not running, pod still initialising
+			log.Info("ignoring Complete status from driver - pod not running yet", "podName", job.GetPodName())
+			return nil
+		}
+	}
+
 	// driver only provides updates for these fields
+	// only update is progress bar percent-complete or message has varied
 	if newStatus.State != job.Status.State ||
 		newStatus.Message != job.Status.Message ||
 		newStatus.Reason != job.Status.Reason ||
-		newStatus.Results != job.Status.Results {
+		newStatus.Results != job.Status.Results ||
+		!utils.ProgressArrayTriggeredChange(newStatus.ProgressBars, job.Status.ProgressBars) {
 
 		job.Status.State = newStatus.State
 		job.Status.Message = newStatus.Message
 		job.Status.Reason = newStatus.Reason
 		job.Status.Results = newStatus.Results
+		job.Status.ProgressBars = newStatus.ProgressBars
 
 		err = r.Status().Update(ctx, job)
 		if err != nil {
@@ -397,6 +422,42 @@ func (r *LMEvalJobReconciler) handleDeletion(ctx context.Context, job *lmesv1alp
 	return ctrl.Result{}, nil
 }
 
+// createJobCreationMetrics collects and publishes metric information about newly created LM-Eval jobs
+func createJobCreationMetrics(log logr.Logger, job *lmesv1alpha1.LMEvalJob) {
+	// Update the Prometheus metrics for each task in the tasklist
+	log.Info("Creating a new LMEvalJob metric", "name", job.Name)
+	for _, task := range job.Spec.TaskList.TaskNames {
+		labels := make(map[string]string)
+
+		// add job information to metric
+		labels["eval_job_namespace"] = job.Namespace
+		labels["framework"] = "lm-evaluation-harness"
+		labels["model_type"] = job.Spec.Model
+		labels["task"] = task
+
+		// grab model name
+		hasUrl := false
+		hasName := false
+		for _, arg := range job.Spec.ModelArgs {
+			if arg.Name == "model" {
+				labels["model_name"] = arg.Value
+				hasUrl = true
+			}
+			if arg.Name == "base_url" {
+				labels["base_url"] = arg.Value
+				hasName = true
+			}
+			if hasUrl && hasName {
+				break
+			}
+		}
+
+		// create/update metric counter
+		counter := metrics.GetOrCreateEvalCounter(labels)
+		counter.Inc()
+	}
+}
+
 func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (reconcile.Result, error) {
 	// If it doesn't contain our finalizer, add it
 	if !controllerutil.ContainsFinalizer(job, lmesv1alpha1.FinalizerName) {
@@ -412,6 +473,22 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 		// Since finalizers were updated. Need to fetch the new LMEvalJob
 		// End the current reconcile and get revisioned job in next reconcile
 		return ctrl.Result{}, nil
+	}
+
+	// Validate user input
+	if err := ValidateUserInput(job); err != nil {
+		// Input validation failed
+		job.Status.State = lmesv1alpha1.CompleteJobState
+		job.Status.Reason = lmesv1alpha1.FailedReason
+		job.Status.Message = fmt.Sprintf("Input validation failed: %s", err.Error())
+
+		current := v1.Now()
+		job.Status.CompleteTime = &current
+		if err := r.Status().Update(ctx, job); err != nil {
+			log.Error(err, "unable to update LMEvalJob status for input validation error")
+		}
+		log.Error(err, "Input validation failed for LMEvalJob", "name", job.Name)
+		return ctrl.Result{}, err
 	}
 
 	// Validate the custom card if exists
@@ -445,6 +522,9 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 		log.Error(err, "Failed to create pod for the LMEvalJob", "name", job.Name)
 		return ctrl.Result{}, err
 	}
+
+	// Create metrics
+	createJobCreationMetrics(log, job)
 
 	// Create the pod successfully. Wait for the driver to update the status
 	job.Status.State = lmesv1alpha1.ScheduledJobState
@@ -496,13 +576,22 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 		log.Info("detect an error on the job's pod. marked the job as done", "name", job.GetPodName())
 		return ctrl.Result{}, err
 	} else if pod.Status.ContainerStatuses[mainIdx].State.Running == nil {
+		// Pod is not running yet, don't accept completion status from driver
+		// This prevents the driver from marking the job as complete during pod initialisation
+		log.Info("pod not running yet, skipping status update from driver", "podName", job.GetPodName())
 		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 	}
 
 	// pull status from the driver
 	if err = r.updateStatus(ctx, log, job); err == nil && job.Status.State == lmesv1alpha1.CompleteJobState {
-		// the update will trigger another reconcile
-		return ctrl.Result{}, nil
+		// Job completed successfully, handle cleanup
+		result, handleErr := r.handleComplete(ctx, log, job)
+		if handleErr != nil {
+			log.Error(handleErr, "failed to handle job completion, will retry")
+			// If handleComplete fails, we should retry after the polling interval
+			return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), handleErr
+		}
+		return result, nil
 	}
 	if err != nil {
 		log.Error(err, "unable to retrieve the status from the job's pod. retry after the pulling interval")
@@ -1211,42 +1300,40 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 		return nil
 	}
 
-	var cmd strings.Builder
-	cmd.WriteString("python -m lm_eval ")
-	cmd.WriteString("--output_path /opt/app-root/src/output ")
-	cmd.WriteString("--model " + job.Spec.Model + " ")
+	// Use argument escaping
+	cmds := []string{
+		"python", "-m", "lm_eval",
+		"--output_path", "/opt/app-root/src/output",
+		"--model", job.Spec.Model,
+	}
 
 	// --model_args
 	if job.Spec.ModelArgs != nil {
-		cmd.WriteString("--model_args " + argsToString(job.Spec.ModelArgs) + " ")
+		cmds = append(cmds, "--model_args", argsToString(job.Spec.ModelArgs))
 	}
 
-	combinedTasks := strings.Join(concatTasks(job.Spec.TaskList), ",")
-
 	// --tasks
-	cmd.WriteString("--tasks " + combinedTasks + " ")
-
+	cmds = append(cmds, "--tasks", strings.Join(concatTasks(job.Spec.TaskList), ","))
 	// --include
-	cmd.WriteString("--include_path " + driver.DefaultTaskRecipesPath + " ")
-
+	cmds = append(cmds, "--include_path", driver.DefaultTaskRecipesPath)
 	// --num_fewshot
 	if job.Spec.NumFewShot != nil {
-		cmd.WriteString("--num_fewshot " + fmt.Sprintf("%d", *job.Spec.NumFewShot) + " ")
+		cmds = append(cmds, "--num_fewshot", fmt.Sprintf("%d", *job.Spec.NumFewShot))
 	}
 
 	// --limit
 	if job.Spec.Limit != "" {
-		cmd.WriteString("--limit " + job.Spec.Limit + " ")
+		cmds = append(cmds, "--limit", job.Spec.Limit)
 	}
 
 	// --gen_kwargs
 	if job.Spec.GenArgs != nil {
-		cmd.WriteString("--gen_kwargs " + argsToString(job.Spec.GenArgs) + " ")
+		cmds = append(cmds, "--gen_kwargs", argsToString(job.Spec.GenArgs))
 	}
 
 	// --log_samples
 	if job.Spec.LogSamples != nil && *job.Spec.LogSamples {
-		cmd.WriteString("--log_samples ")
+		cmds = append(cmds, "--log_samples")
 	}
 
 	// --batch_size
@@ -1256,9 +1343,25 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 		batchSize = validateBatchSize(*job.Spec.BatchSize, svcOpts.MaxBatchSize, log)
 	}
 
-	cmd.WriteString("--batch_size " + batchSize)
+	cmds = append(cmds, "--batch_size", batchSize)
+	// --system_instruction
+	if job.Spec.SystemInstruction != "" {
+		cmds = append(cmds, "--system_instruction", job.Spec.SystemInstruction)
+	}
 
-	return []string{"sh", "-ec", cmd.String()}
+	// --apply_chat_template
+	// check for the default string value of "false"
+	if job.Spec.ChatTemplate != nil {
+		if !job.Spec.ChatTemplate.Enabled {
+
+		} else if job.Spec.ChatTemplate.Enabled && job.Spec.ChatTemplate.Name == "" {
+			cmds = append(cmds, "--apply_chat_template")
+		} else {
+			cmds = append(cmds, "--apply_chat_template", job.Spec.ChatTemplate.Name)
+		}
+	}
+
+	return cmds
 }
 
 func concatTasks(tasks lmesv1alpha1.TaskList) []string {
@@ -1278,8 +1381,10 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 	if job == nil {
 		return nil
 	}
-	cmds := make([]string, 0, 10)
-	cmds = append(cmds, DestDriverPath, "--output-path", "/opt/app-root/src/output")
+	cmds := []string{
+		DestDriverPath,
+		"--output-path", "/opt/app-root/src/output",
+	}
 
 	if job.Spec.HasOfflineS3() {
 		cmds = append(cmds, "--download-assets-s3")
@@ -1369,9 +1474,12 @@ func isContainerFailed(status *corev1.ContainerStatus) (bool, string) {
 		status.State.Waiting.Reason != "PodInitializing" {
 		return true, status.State.Waiting.Reason
 	}
-	if status.State.Terminated != nil &&
-		status.State.Terminated.Reason != "Complete" {
-		return true, status.State.Terminated.Reason
+	if status.State.Terminated != nil {
+		// Container is considered failed if it has a non-zero exit code OR an unexpected termination reason
+		if status.State.Terminated.ExitCode != 0 ||
+			(status.State.Terminated.Reason != "Completed" && status.State.Terminated.Reason != "") {
+			return true, status.State.Terminated.Reason
+		}
 	}
 	return false, ""
 }
