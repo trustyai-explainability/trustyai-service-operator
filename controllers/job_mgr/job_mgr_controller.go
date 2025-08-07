@@ -114,7 +114,8 @@ func (job *LMEvalJob) Finished() (condition metav1.Condition, finished bool) {
 // PodSets will build workload podSets corresponding to the job.
 func (job *LMEvalJob) PodSets() []kueue.PodSet {
 	log := log.FromContext(context.TODO())
-	pod := lmes.CreatePod(lmes.Options, &job.LMEvalJob, log)
+	// job_mgr controller doesn't have access to reconciler, so we pass nil
+	pod := lmes.CreatePod(nil, lmes.Options, &job.LMEvalJob, log)
 	podSet := kueue.PodSet{
 		Name:     job.GetPodName(),
 		Count:    1,
