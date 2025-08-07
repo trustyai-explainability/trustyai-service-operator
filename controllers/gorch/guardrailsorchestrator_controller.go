@@ -18,7 +18,12 @@ package gorch
 
 import (
 	"context"
+	"github.com/go-logr/logr"
+	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/metrics"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"strconv"
 	"time"
 
@@ -48,6 +53,8 @@ type GuardrailsOrchestratorReconciler struct {
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=guardrailsorchestrators,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=guardrailsorchestrators/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=guardrailsorchestrators/finalizers,verbs=update
+// +kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=get;list
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=list;watch;get;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=apps,resources=deployments/finalizers,verbs=update
@@ -80,6 +87,15 @@ func createOrchestratorCreationMetrics(orchestrator *gorchv1alpha1.GuardrailsOrc
 	// create/update metric counter
 	counter := metrics.GetOrCreateGuardrailsOrchestratorCounter(labels)
 	counter.Inc()
+}
+
+func (r *GuardrailsOrchestratorReconciler) refreshOrchestrator(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, log logr.Logger) (*gorchv1alpha1.GuardrailsOrchestrator, error) {
+	latestOrchestrator := &gorchv1alpha1.GuardrailsOrchestrator{}
+	if err := r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, latestOrchestrator); err != nil {
+		log.Error(err, "Failed to re-fetch Orchestrator before updating status")
+		return nil, err
+	}
+	return latestOrchestrator, nil
 }
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -171,12 +187,43 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	existingConfigMap := &corev1.ConfigMap{}
-	err = r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.OrchestratorConfig, Namespace: orchestrator.Namespace}, existingConfigMap)
-	if err != nil {
-		if client.IgnoreNotFound(err) != nil {
+	if orchestrator.Spec.AutoConfig != nil {
+		// Only perform autoconfig logic if the relevant resources have changed
+		shouldRegen, err := r.shouldRegenerateAutoConfig(ctx, orchestrator)
+		if err != nil {
+			log.Error(err, "Failed to check if autoconfig should be regenerated")
 			return ctrl.Result{}, err
 		}
+		if shouldRegen {
+			err = r.runAutoConfig(ctx, orchestrator)
+			if err != nil {
+				log.Error(err, "Failed to perform AutoConfig")
+				return ctrl.Result{}, err
+			}
+			orchestrator, _ = r.refreshOrchestrator(ctx, orchestrator, log)
+		}
+	} else {
+		log.Info("Using manually-configured OrchestratorConfig")
+		existingConfigMap := &corev1.ConfigMap{}
+		err = r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.OrchestratorConfig, Namespace: orchestrator.Namespace}, existingConfigMap)
+		if err != nil {
+			log.Error(err, "Failed to get existing ConfigMap", "ConfigMap.Name", *orchestrator.Spec.OrchestratorConfig, "ConfigMap.Namespace", orchestrator.Namespace)
+			if client.IgnoreNotFound(err) != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, nil
+		}
+	}
+
+	// monitor the orchestrator or gateway config for changes
+	if getOrchestratorConfigMap(orchestrator) != nil {
+		if result, err := r.redeployOnConfigMapChange(ctx, log, orchestrator); err != nil {
+			return result, err
+		}
+	}
+
+	if orchestrator.Spec.AutoConfig != nil && (getOrchestratorConfigMap(orchestrator) == nil || (orchestrator.Spec.EnableGuardrailsGateway && getGatewayConfigMap(orchestrator) == nil)) {
+		log.Info("Waiting for orchestrator status to register AutoConfig information before starting deployment")
 		return ctrl.Result{}, nil
 	}
 
@@ -186,6 +233,15 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		// Create a new deployment
 		deployment := r.createDeployment(ctx, orchestrator)
 		log.Info("Creating a new Deployment", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
+
+		// Ensure correct configmap hash annotations on first creation
+		annotations := deployment.Spec.Template.Annotations
+		if annotations == nil {
+			annotations = map[string]string{}
+		}
+		r.setConfigMapHashAnnotations(ctx, orchestrator, annotations)
+		deployment.Spec.Template.Annotations = annotations
+
 		err = r.Create(ctx, deployment)
 		if err != nil {
 			log.Error(err, "Failed to create new Deployment", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
@@ -254,5 +310,55 @@ func (r *GuardrailsOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) er
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&gorchv1alpha1.GuardrailsOrchestrator{}).
 		Owns(&appsv1.Deployment{}).
+		// Add a watch for changes to orchestrator-config or gateway-config ConfigMaps
+		Watches(
+			&corev1.ConfigMap{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
+				var requests []ctrl.Request
+				// List all GuardrailsOrchestrators in the namespace
+				var orchestrators gorchv1alpha1.GuardrailsOrchestratorList
+				if err := r.List(ctx, &orchestrators, &client.ListOptions{Namespace: obj.GetNamespace()}); err != nil {
+					return nil
+				}
+				for _, orch := range orchestrators.Items {
+					if (orch.Spec.OrchestratorConfig != nil && *orch.Spec.OrchestratorConfig == obj.GetName()) ||
+						(orch.Spec.SidecarGatewayConfig != nil && *orch.Spec.SidecarGatewayConfig == obj.GetName()) {
+						requests = append(requests, ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      orch.Name,
+								Namespace: orch.Namespace,
+							},
+						})
+					}
+				}
+				return requests
+			}),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
+		// Watch for changes to any matching InferenceService
+		Watches(
+			&kservev1beta1.InferenceService{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
+				var requests []ctrl.Request
+				var orchestrators gorchv1alpha1.GuardrailsOrchestratorList
+				if err := r.List(ctx, &orchestrators, &client.ListOptions{Namespace: obj.GetNamespace()}); err != nil {
+					return nil
+				}
+				for _, orch := range orchestrators.Items {
+					// Only trigger if AutoConfig is enabled and the ISVC matches the right labels/is the inference service
+					if orch.Spec.AutoConfig != nil && (orch.Spec.AutoConfig.DetectorServiceLabelToMatch == obj.GetLabels()["trustyai/guardrails"] ||
+						obj.GetName() == orch.Spec.AutoConfig.InferenceServiceToGuardrail) {
+						requests = append(requests, ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      orch.Name,
+								Namespace: orch.Namespace,
+							},
+						})
+					}
+				}
+				return requests
+			}),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
 		Complete(r)
 }
