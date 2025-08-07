@@ -55,7 +55,7 @@ data:
       },
       {
         "task": "humaneval",
-        "description": "Code generation task that measure functional correctness for synthesizing programs from docstrings."
+        "description": "Code generation task that measures functional correctness for synthesizing programs from docstrings."
       },
       {
         "task": "wsc273",
