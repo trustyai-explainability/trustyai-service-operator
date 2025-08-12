@@ -21,6 +21,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	// DefaultPVCSize is the default size for PVC when missing from the spec
+	DefaultPVCSize = "5Gi"
+)
+
 // TrustyAIService is the Schema for the trustyaiservices API
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
@@ -35,8 +40,11 @@ type TrustyAIService struct {
 type StorageSpec struct {
 	// Format only supports "PVC" or "DATABASE" values
 	// +kubebuilder:validation:Enum=PVC;DATABASE
-	Format                 string `json:"format"`
-	Folder                 string `json:"folder,omitempty"`
+	Format string `json:"format"`
+	Folder string `json:"folder,omitempty"`
+	// Size specifies the storage size when using PVC format
+	// If not specified, a default size of DefaultPVCSize will be used (when in PVC mode)
+	// Size is ignored when in database mode and for migration, the existing PVC will be used if found
 	Size                   string `json:"size,omitempty"`
 	DatabaseConfigurations string `json:"databaseConfigurations,omitempty"`
 }
@@ -105,6 +113,22 @@ func (s *StorageSpec) IsStoragePVC() bool {
 // IsStorageDatabase returns true if the storage is set to database.
 func (s *StorageSpec) IsStorageDatabase() bool {
 	return s.Format == "DATABASE"
+}
+
+// GetSize returns the specified storage size or a default value if not set (only relevant for PVC mode)
+func (s *StorageSpec) GetSize() string {
+	// For database mode, always ignore size (even in migration cases)
+	if s.IsStorageDatabase() {
+		return ""
+	}
+
+	// For PVC mode
+	if s.Size != "" {
+		return s.Size
+	}
+
+	// Default size for PVC mode, when missing
+	return DefaultPVCSize
 }
 
 // IsMigration returns true if the migration fields are set.
