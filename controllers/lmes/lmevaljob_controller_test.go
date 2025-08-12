@@ -1041,8 +1041,10 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 		"--",
 	}, generateCmd(svcOpts, job))
 
+	trName := "my_task"
 	job.Spec.TaskList.TaskRecipes = append(job.Spec.TaskList.TaskRecipes,
 		lmesv1alpha1.TaskRecipe{
+			Name:          &trName, // specify a custom task name
 			Card:          lmesv1alpha1.Card{Name: "unitxt.card2"},
 			Template:      &lmesv1alpha1.Template{Name: "unitxt.template2"},
 			Format:        &format,
@@ -1054,14 +1056,175 @@ func Test_GenerateArgCmdTaskRecipes(t *testing.T) {
 
 	// two task recipes
 	assert.Equal(t, []string{
-		"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "hf", "--model_args", "arg1=value1", "--tasks", "task1,task2,tr_0,tr_1", "--include_path", "/opt/app-root/src/my_tasks", "--batch_size", DefaultBatchSize,
+		"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "hf", "--model_args", "arg1=value1", "--tasks", "task1,task2,tr_0,my_task", "--include_path", "/opt/app-root/src/my_tasks", "--batch_size", DefaultBatchSize,
 	}, generateArgs(svcOpts, job, log))
 
 	assert.Equal(t, []string{
 		"/opt/app-root/src/bin/driver",
 		"--output-path", "/opt/app-root/src/output",
 		"--task-recipe", "card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
-		"--task-recipe", "card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--task-recipe", "card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10|my_task",
+		"--",
+	}, generateCmd(svcOpts, job))
+
+	job.Spec.TaskList.TaskGroups = []lmesv1alpha1.TaskGroup{
+		{
+			Name:      "group1",
+			TaskNames: []string{"task1", "task2"},
+			AggregateMetrics: []lmesv1alpha1.AggregateMetric{
+				{
+					MetricName: "acc_norm",
+				},
+			},
+		},
+	}
+
+	assert.Equal(t, []string{
+		"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "hf", "--model_args",
+		"arg1=value1", "--tasks", "task1,task2,tr_0,my_task,group1", "--include_path", "/opt/app-root/src/my_tasks",
+		"--batch_size", DefaultBatchSize,
+	}, generateArgs(svcOpts, job, log))
+
+	assert.Equal(t, []string{
+		"/opt/app-root/src/bin/driver",
+		"--output-path", "/opt/app-root/src/output",
+		"--task-recipe", "card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--task-recipe", "card=unitxt.card2,template=unitxt.template2,metrics=[unitxt.metric3,unitxt.metric4],format=unitxt.format,num_demos=5,demos_pool_size=10|my_task",
+		"--task-group", "group1|task:\n  - task1\n  - task2\naggregate_metric_list:\n  - metric: acc_norm\n    aggregation: mean\n    weight_by_size: true\n",
+		"--",
+	}, generateCmd(svcOpts, job))
+}
+
+func Test_GenerateArgCmdTaskGroups(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:         "podimage:latest",
+		DriverImage:      "driver:latest",
+		ImagePullPolicy:  corev1.PullAlways,
+		MaxBatchSize:     Options.MaxBatchSize,
+		DefaultBatchSize: Options.DefaultBatchSize,
+	}
+	var format = "unitxt.format"
+	var numDemos = 5
+	var demosPoolSize = 10
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1", "task2"},
+				TaskGroups: []lmesv1alpha1.TaskGroup{
+					{
+						Name: "mygroup",
+						TaskRecipes: []lmesv1alpha1.TaskRecipe{
+							{
+								Card:          lmesv1alpha1.Card{Name: "unitxt.card1"},
+								Template:      &lmesv1alpha1.Template{Name: "unitxt.template"},
+								Format:        &format,
+								Metrics:       []lmesv1alpha1.Metric{{Name: "unitxt.metric1"}, {Name: "unitxt.metric2"}},
+								NumDemos:      &numDemos,
+								DemosPoolSize: &demosPoolSize,
+							},
+						},
+						AggregateMetrics: []lmesv1alpha1.AggregateMetric{
+							{
+								MetricName: "acc_norm",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// one TaskGroup with a TaskRecipe using default naming
+	assert.Equal(t, []string{
+		"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output",
+		"--model", "test", "--model_args", "arg1=value1", "--tasks", "task1,task2,mygroup",
+		"--include_path", "/opt/app-root/src/my_tasks", "--batch_size", DefaultBatchSize,
+	}, generateArgs(svcOpts, job, log))
+
+	assert.Equal(t, []string{
+		"/opt/app-root/src/bin/driver",
+		"--output-path", "/opt/app-root/src/output",
+		"--task-recipe", "card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--task-group", "mygroup|task:\n  - tr_0\naggregate_metric_list:\n  - metric: acc_norm\n    aggregation: mean\n    weight_by_size: true\n",
+		"--",
+	}, generateCmd(svcOpts, job))
+
+	// add a named TaskRecipe to the existing TaskGroup
+	taskName := "my_task"
+	job.Spec.TaskList.TaskGroups[0].TaskRecipes = append(job.Spec.TaskList.TaskGroups[0].TaskRecipes, lmesv1alpha1.TaskRecipe{
+		Name:          &taskName,
+		Card:          lmesv1alpha1.Card{Name: "unitxt.card2"},
+		Template:      &lmesv1alpha1.Template{Name: "unitxt.template"},
+		Format:        &format,
+		Metrics:       []lmesv1alpha1.Metric{{Name: "unitxt.metric1"}, {Name: "unitxt.metric2"}},
+		NumDemos:      &numDemos,
+		DemosPoolSize: &demosPoolSize,
+	})
+	assert.Equal(t, []string{
+		"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "test",
+		"--model_args", "arg1=value1", "--tasks", "task1,task2,mygroup", "--include_path",
+		"/opt/app-root/src/my_tasks", "--batch_size", DefaultBatchSize,
+	}, generateArgs(svcOpts, job, log))
+
+	assert.Equal(t, []string{
+		"/opt/app-root/src/bin/driver",
+		"--output-path", "/opt/app-root/src/output",
+		"--task-recipe", "card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--task-recipe", "card=unitxt.card2,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10|my_task",
+		"--task-group", "mygroup|task:\n  - tr_0\n  - my_task\naggregate_metric_list:\n  - metric: acc_norm\n    aggregation: mean\n    weight_by_size: true\n",
+		"--",
+	}, generateCmd(svcOpts, job))
+
+	weightBySize := false
+	// add the second TaskGroup
+	job.Spec.TaskList.TaskGroups = append(job.Spec.TaskList.TaskGroups, lmesv1alpha1.TaskGroup{
+		Name: "mygroup2",
+		TaskRecipes: []lmesv1alpha1.TaskRecipe{
+			{
+				Card:          lmesv1alpha1.Card{Name: "unitxt.card3"},
+				Template:      &lmesv1alpha1.Template{Name: "unitxt.template"},
+				Format:        &format,
+				Metrics:       []lmesv1alpha1.Metric{{Name: "unitxt.metric1"}, {Name: "unitxt.metric2"}},
+				NumDemos:      &numDemos,
+				DemosPoolSize: &demosPoolSize,
+			},
+		},
+		AggregateMetrics: []lmesv1alpha1.AggregateMetric{
+			{
+				MetricName:   "acc_norm",
+				WeightBySize: &weightBySize,
+			},
+		},
+	})
+
+	assert.Equal(t, []string{
+		"python", "-m", "lm_eval", "--output_path", "/opt/app-root/src/output", "--model", "test",
+		"--model_args", "arg1=value1", "--tasks", "task1,task2,mygroup,mygroup2", "--include_path",
+		"/opt/app-root/src/my_tasks", "--batch_size", DefaultBatchSize,
+	}, generateArgs(svcOpts, job, log))
+
+	assert.Equal(t, []string{
+		"/opt/app-root/src/bin/driver",
+		"--output-path", "/opt/app-root/src/output",
+		"--task-recipe", "card=unitxt.card1,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--task-recipe", "card=unitxt.card2,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10|my_task",
+		"--task-group", "mygroup|task:\n  - tr_0\n  - my_task\naggregate_metric_list:\n  - metric: acc_norm\n    aggregation: mean\n    weight_by_size: true\n",
+		"--task-recipe", "card=unitxt.card3,template=unitxt.template,metrics=[unitxt.metric1,unitxt.metric2],format=unitxt.format,num_demos=5,demos_pool_size=10",
+		"--task-group", "mygroup2|task:\n  - tr_1\naggregate_metric_list:\n  - metric: acc_norm\n    aggregation: mean\n    weight_by_size: false\n",
 		"--",
 	}, generateCmd(svcOpts, job))
 }
@@ -1422,6 +1585,107 @@ func Test_CustomCardValidation(t *testing.T) {
 
 	// missing outout_format property
 	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "missing output_format definition")
+}
+
+func Test_DuplicateTaskNameValidation(t *testing.T) {
+	log := log.FromContext(context.Background())
+	lmevalRec := LMEvalJobReconciler{
+		Namespace: "test",
+	}
+	var taskName = "my_task"
+	var job = &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "test",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "arg1", Value: "value1"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskRecipes: []lmesv1alpha1.TaskRecipe{
+					{
+						Name: &taskName,
+						Card: lmesv1alpha1.Card{
+							Custom: `
+							{
+								"__type__": "task_card",
+								"loader": {
+									"__type__": "load_hf",
+									"path": "wmt16",
+									"name": "de-en"
+								},
+								"preprocess_steps": [
+									{
+										"__type__": "copy",
+										"field": "translation/en",
+										"to_field": "text"
+									},
+									{
+										"__type__": "copy",
+										"field": "translation/de",
+										"to_field": "translation"
+									},
+									{
+										"__type__": "set",
+										"fields": {
+											"source_language": "english",
+											"target_language": "dutch"
+										}
+									}
+								],
+								"task": "tasks.translation.directed",
+								"templates": "templates.translation.directed.all"
+							}`,
+						},
+					},
+					{
+						Name: &taskName,
+						Card: lmesv1alpha1.Card{
+							Custom: `
+							{
+								"__type__": "task_card",
+								"loader": {
+									"__type__": "load_hf",
+									"path": "wmt16",
+									"name": "de-en"
+								},
+								"preprocess_steps": [
+									{
+										"__type__": "copy",
+										"field": "translation/en",
+										"to_field": "text"
+									},
+									{
+										"__type__": "copy",
+										"field": "translation/de",
+										"to_field": "translation"
+									},
+									{
+										"__type__": "set",
+										"fields": {
+											"source_language": "english",
+											"target_language": "dutch"
+										}
+									}
+								],
+								"task": "tasks.translation.directed",
+								"templates": "templates.translation.directed.all"
+							}`,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	assert.ErrorContains(t, lmevalRec.validateCustomRecipes(job, log), "failed to parse the custom card: duplicate task name my_task")
 }
 
 func Test_CustomMetrics(t *testing.T) {
