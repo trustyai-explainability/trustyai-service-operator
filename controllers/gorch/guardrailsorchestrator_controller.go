@@ -21,6 +21,7 @@ import (
 	"github.com/go-logr/logr"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/metrics"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -164,6 +165,14 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 				log.Error(err, "Failed to remove finalizer from GuardrailsOrchestrator")
 				return ctrl.Result{Requeue: true}, nil
 			}
+
+			if requiresOAuth(orchestrator) {
+				if err = r.cleanupClusterRoleBinding(ctx, orchestrator); err != nil {
+					log.Error(err, "Failed to cleanup ClusterRoleBinding")
+					return ctrl.Result{}, err
+				}
+			}
+
 			if err = r.Update(ctx, orchestrator); err != nil {
 				log.Error(err, "Failed to remove finalizer for GuardrailsOrchestrator")
 				return ctrl.Result{}, err
@@ -173,6 +182,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	existingServiceAccount := &corev1.ServiceAccount{}
+	var serviceAccountName string
 	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-serviceaccount", Namespace: orchestrator.Namespace}, existingServiceAccount)
 	if err != nil && errors.IsNotFound(err) {
 		serviceAccount := r.createServiceAccount(ctx, orchestrator)
@@ -182,8 +192,26 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 			log.Error(err, "Failed to create new ServiceAccount", "ServiceAccount.Namespace", serviceAccount.Namespace, "ServiceAccount.Name", serviceAccount.Name)
 			return ctrl.Result{}, err
 		}
+		serviceAccountName = serviceAccount.Name
 	} else if err != nil {
 		log.Error(err, "Failed to get ServiceAccount")
+		return ctrl.Result{}, err
+	} else {
+		serviceAccountName = existingServiceAccount.Name
+	}
+
+	existingClusterRoleBinding := &rbacv1.ClusterRoleBinding{}
+	err = r.Get(ctx, types.NamespacedName{Name: getClusterRoleName(orchestrator), Namespace: orchestrator.Namespace}, existingClusterRoleBinding)
+	if err != nil && errors.IsNotFound(err) {
+		clusterRoleBinding := r.createClusterRoleBinding(orchestrator, serviceAccountName)
+		log.Info("Creating a new ClusterRoleBinding", "clusterRoleBinding.Namespace", clusterRoleBinding.Namespace, "clusterRoleBinding.Name", clusterRoleBinding.Name)
+		err = r.Create(ctx, clusterRoleBinding)
+		if err != nil {
+			log.Error(err, "Failed to create new ClusterRoleBinding", "clusterRoleBinding.Namespace", clusterRoleBinding.Namespace, "clusterRoleBinding.Name", clusterRoleBinding.Name)
+			return ctrl.Result{}, err
+		}
+	} else if err != nil {
+		log.Error(err, "Failed to get ClusterRoleBinding")
 		return ctrl.Result{}, err
 	}
 
@@ -227,7 +255,23 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingDeployment)
 	if err != nil && errors.IsNotFound(err) {
 		// Create a new deployment
-		deployment := r.createDeployment(ctx, orchestrator)
+		deployment, err := r.createDeployment(ctx, orchestrator)
+		if err != nil {
+			log.Error(err, "Failed to create Deployment", "Deployment", orchestrator.Name, "Namespace", orchestrator.Namespace)
+			return ctrl.Result{}, err
+		}
+
+		// add TLS mounts to deployment
+		err = r.addTLSMounts(ctx, orchestrator, deployment, tlsMounts)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				log.Info("Could not find required TLS serving secrets, will try again.")
+				return ctrl.Result{}, nil
+			}
+			log.Error(err, "Failed to add TLS Mounts")
+			return ctrl.Result{}, err
+		}
+
 		log.Info("Creating a new Deployment", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
 
 		// Ensure correct configmap hash annotations on first creation
@@ -237,11 +281,6 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 		r.setConfigMapHashAnnotations(ctx, orchestrator, annotations)
 		deployment.Spec.Template.Annotations = annotations
-		if len(tlsMounts) > 0 {
-			for i := range tlsMounts {
-				MountSecret(deployment, tlsMounts[i].TLSSecret)
-			}
-		}
 
 		err = r.Create(ctx, deployment)
 		if err != nil {
@@ -255,7 +294,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 
 	// monitor the orchestrator or gateway config for changes
 	if getOrchestratorConfigMap(orchestrator) != nil {
-		if result, err := r.redeployOnConfigMapChange(ctx, log, orchestrator); err != nil {
+		if result, err := r.redeployOnConfigMapChange(ctx, log, orchestrator, tlsMounts); err != nil {
 			return result, err
 		}
 	}
@@ -320,6 +359,22 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
+	if orchestrator.Spec.EnableGuardrailsGateway {
+		err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-gateway", Namespace: orchestrator.Namespace}, existingRoute)
+		if err != nil && errors.IsNotFound(err) {
+			// Define a new route
+			gatewayRoute := r.createRoute(ctx, "gateway-route.tmpl.yaml", orchestrator)
+			log.Info("Creating a new Route", "Route.Namespace", gatewayRoute.Namespace, "Route.Name", gatewayRoute.Name)
+			err = r.Create(ctx, gatewayRoute)
+			if err != nil {
+				log.Error(err, "Failed to create new Route", "Route.Namespace", gatewayRoute.Namespace, "Route.Name", gatewayRoute.Name)
+			}
+		} else if err != nil {
+			log.Error(err, "Failed to get Route")
+			return ctrl.Result{}, err
+		}
+	}
+
 	// Finalize reconcilation
 	_, updateErr := r.reconcileStatuses(ctx, orchestrator)
 	if updateErr != nil {
@@ -344,8 +399,12 @@ func (r *GuardrailsOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) er
 					return nil
 				}
 				for _, orch := range orchestrators.Items {
-					if (orch.Spec.OrchestratorConfig != nil && *orch.Spec.OrchestratorConfig == obj.GetName()) ||
-						(orch.Spec.SidecarGatewayConfig != nil && *orch.Spec.SidecarGatewayConfig == obj.GetName()) {
+					orchConfigMap := getOrchestratorConfigMap(&orch)
+					gatewayConfigMap := getGatewayConfigMap(&orch)
+
+					// apply a watch to the orch and gateway configs
+					if (orchConfigMap != nil && *orchConfigMap == obj.GetName()) ||
+						(gatewayConfigMap != nil && *gatewayConfigMap == obj.GetName()) {
 						requests = append(requests, ctrl.Request{
 							NamespacedName: types.NamespacedName{
 								Name:      orch.Name,
@@ -356,7 +415,11 @@ func (r *GuardrailsOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) er
 				}
 				return requests
 			}),
-			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+			builder.WithPredicates(predicate.Or(
+				predicate.AnnotationChangedPredicate{},
+				predicate.ResourceVersionChangedPredicate{},
+				predicate.GenerationChangedPredicate{},
+			)),
 		).
 		// Watch for changes to any matching InferenceService
 		Watches(
@@ -368,20 +431,26 @@ func (r *GuardrailsOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) er
 					return nil
 				}
 				for _, orch := range orchestrators.Items {
-					// Only trigger if AutoConfig is enabled and the ISVC matches the right labels/is the inference service
-					if orch.Spec.AutoConfig != nil && (orch.Spec.AutoConfig.DetectorServiceLabelToMatch == obj.GetLabels()["trustyai/guardrails"] ||
-						obj.GetName() == orch.Spec.AutoConfig.InferenceServiceToGuardrail) {
-						requests = append(requests, ctrl.Request{
-							NamespacedName: types.NamespacedName{
-								Name:      orch.Name,
-								Namespace: orch.Namespace,
-							},
-						})
+					// apply a watch to any inference service being used by an orchestrator config
+					if orch.Spec.AutoConfig != nil {
+						val, ok := obj.GetLabels()[orch.Spec.AutoConfig.DetectorServiceLabelToMatch]
+						if (ok && val == "true") || obj.GetName() == orch.Spec.AutoConfig.InferenceServiceToGuardrail {
+							requests = append(requests, ctrl.Request{
+								NamespacedName: types.NamespacedName{
+									Name:      orch.Name,
+									Namespace: orch.Namespace,
+								},
+							})
+						}
 					}
 				}
 				return requests
 			}),
-			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+			builder.WithPredicates(predicate.Or(
+				predicate.AnnotationChangedPredicate{},
+				predicate.ResourceVersionChangedPredicate{},
+				predicate.GenerationChangedPredicate{},
+			)),
 		).
 		Complete(r)
 }

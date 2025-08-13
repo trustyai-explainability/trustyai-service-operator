@@ -47,12 +47,14 @@
           args:
             - '--cookie-secret=SECRET'
             - '--https-address=:{{.DownstreamPort}}'
+            - '--http-address='
             - '--email-domain=*'
             - '--openshift-service-account={{ .Name }}-serviceaccount'
             - '--provider=openshift'
+            - '--pass-user-bearer-token'
             - '--tls-cert=/etc/tls/private/tls.crt'
             - '--tls-key=/etc/tls/private/tls.key'
-            - '--upstream=http://localhost:{{ .UpstreamPort }}'
+            - '--upstream={{.UpstreamProtocol}}://localhost:{{.UpstreamPort}}'
             - '--skip-auth-regex=''(^/apis/v1beta1/healthz)'''
             - >-
               --openshift-sar={"namespace":"{{ .Namespace }}","resource":"pods","verb":"get"}
@@ -234,7 +236,7 @@ spec:
             - name: GATEWAY_USE_MTLS
               value: 'false'
         {{ if .GatewayOAuthProxy }}
-        - {{- template "oAuthProxy" .GatewayOAuthProxy}}
+        - {{- template "oAuthProxy" .GatewayOAuthProxy }}
         {{end}}
         {{end}}
         {{ if .Orchestrator.Spec.EnableBuiltInDetectors }}

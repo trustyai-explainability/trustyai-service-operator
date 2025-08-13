@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"net/url"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -78,8 +79,11 @@ detectors:
 
 	orchestratorConclusion = `passthrough_headers:
     - Authorization
-    - Content-Type
-`
+    - Content-Type`
+
+	oauthHeaderRewrite = `
+    - x-forwarded-access-token
+rewrite_forwarded_access_header: true`
 
 	// === gateway config constants ========
 	gatewayPreamable = `orchestrator:
@@ -109,6 +113,8 @@ detectors:
 )
 
 // === UTILS ===========================================================================================================
+// getOrchestratorConfigMap holds logic for retrieving the orchestrator configmap
+// prioritizes any manually configured configmaps,if not found, checks for any auto-generated configs
 func getOrchestratorConfigMap(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *string {
 	if orchestrator.Spec.OrchestratorConfig != nil {
 		return orchestrator.Spec.OrchestratorConfig
@@ -119,6 +125,8 @@ func getOrchestratorConfigMap(orchestrator *gorchv1alpha1.GuardrailsOrchestrator
 	}
 }
 
+// getGatewayConfigMap holds logic for retrieving the gateway configmap
+// prioritizes any manually configured configmaps, if not found, checks for any auto-generated configs
 func getGatewayConfigMap(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *string {
 	if orchestrator.Spec.SidecarGatewayConfig != nil {
 		return orchestrator.Spec.SidecarGatewayConfig
@@ -129,16 +137,7 @@ func getGatewayConfigMap(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *st
 	}
 }
 
-func (r *GuardrailsOrchestratorReconciler) findPredictorServingCertSecret(ctx context.Context, namespace string, isvcName string) (*corev1.Secret, error) {
-	secretName := isvcName + "-predictor-serving-cert"
-	secret := &corev1.Secret{}
-	err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret)
-	if err != nil {
-		return nil, err
-	}
-	return secret, nil
-}
-
+// getInferenceServicesAndServingRuntimes returns every inference service and serving runtime in the namespace
 func (r *GuardrailsOrchestratorReconciler) getInferenceServicesAndServingRuntimes(ctx context.Context, namespace string) (kservev1beta1.InferenceServiceList, v1alpha1.ServingRuntimeList, error) {
 	var inferenceServices kservev1beta1.InferenceServiceList
 	if err := r.List(ctx, &inferenceServices, &client.ListOptions{
@@ -157,6 +156,7 @@ func (r *GuardrailsOrchestratorReconciler) getInferenceServicesAndServingRuntime
 	return inferenceServices, servingRuntimes, nil
 }
 
+// extractInferenceServiceInfo reads an inference service (and corresponding serving runtime) to determine the ISVC's protocol, URL, and port
 func (r *GuardrailsOrchestratorReconciler) extractInferenceServiceInfo(ctx context.Context, namespace string, isvc kservev1beta1.InferenceService, servingRuntimes v1alpha1.ServingRuntimeList) (*gorchv1alpha1.DetectedService, error) {
 	log := ctrl.Log.WithName("AutoConfigurator | Orchestrator ConfigMap Definer |")
 	url, err := url.Parse(isvc.Status.URL.String())
@@ -209,7 +209,7 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 
 	configMapName := orchestratorName + "-auto-config"
 
-	log.Info("Starting automatic orchestrator configmap definition",
+	log.V(2).Info("Starting automatic orchestrator configmap definition",
 		"orchestratorName", orchestratorName,
 		"namespace", namespace,
 		"inferenceServiceToGuardrail", inferenceServiceToGuardrail,
@@ -225,11 +225,11 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 	var detectedGenerationService *gorchv1alpha1.DetectedService
 	// Check if inferenceServiceToGuardrail is a fully qualified URL with port
 	if strings.Contains(inferenceServiceToGuardrail, "://") && strings.Contains(inferenceServiceToGuardrail, ":") {
-		// e.g. http://host:port or https://host:port
+		// e.g., http://host:port or https://host:port
 		generationURL, err := url.Parse(inferenceServiceToGuardrail)
 		if err == nil {
 			detectedGenerationService = &gorchv1alpha1.DetectedService{Name: inferenceServiceToGuardrail, Hostname: generationURL.Hostname(), Scheme: generationURL.Scheme, Port: generationURL.Port(), Type: generationType}
-			log.Info("Generation service resolved from fully qualified URL", "inferenceServiceToGuardrail", inferenceServiceToGuardrail)
+			log.V(2).Info("Generation service resolved from fully qualified URL", "inferenceServiceToGuardrail", inferenceServiceToGuardrail)
 		} else {
 			return nil, nil, nil, nil, fmt.Errorf("could not parse host and port from fully qualified inferenceServiceToGuardrail: %q", inferenceServiceToGuardrail)
 		}
@@ -247,7 +247,7 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 	if detectedGenerationService.Hostname == "" || detectedGenerationService.Port == "" {
 		return nil, nil, nil, nil, fmt.Errorf("could not find InferenceService with name %q in namespace %s", inferenceServiceToGuardrail, namespace)
 	} else {
-		log.Info("Generation service resolved", "Generation service", detectedGenerationService)
+		log.V(2).Info("Generation service resolved", "Generation service", detectedGenerationService)
 	}
 
 	// === GET DETECTORS =====
@@ -281,13 +281,12 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 		}
 	}
 
-	log.Info("Detector services resolved", "detectedDetectorServices", detectedDetectorServices)
+	log.V(2).Info("Detector services resolved", "detectedDetectorServices", detectedDetectorServices)
 
 	// === BUILD CONFIG =====
 	var configYaml strings.Builder
 
 	var tlsConfigs []gorchv1alpha1.DetectedService
-	fmt.Println(detectedGenerationService)
 	if detectedGenerationService.Scheme == "http" {
 		configYaml.WriteString(fmt.Sprintf(orchestratorConfigPreamble, detectedGenerationService.Hostname, detectedGenerationService.Port))
 	} else {
@@ -317,7 +316,11 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 
 	configYaml.WriteString(orchestratorConclusion)
 
-	log.Info("Defined orchestrator config.yaml", "configYaml", configYaml.String())
+	if requiresOAuth(orchestrator) {
+		configYaml.WriteString(oauthHeaderRewrite)
+	}
+
+	log.V(2).Info("Defined orchestrator config.yaml", "configYaml", configYaml.String())
 
 	cm := &corev1.ConfigMap{
 		ObjectMeta: ctrl.ObjectMeta{
@@ -353,7 +356,7 @@ func (r *GuardrailsOrchestratorReconciler) applyOrchestratorConfigMap(ctx contex
 				log.Error(updateErr, "Failed to update existing orchestrator configmap")
 				return updateErr
 			}
-			log.Info("Updated existing OrchestratorConfig ConfigMap with new configuration")
+			log.V(2).Info("Updated existing OrchestratorConfig ConfigMap with new configuration")
 		}
 	} else if errors.IsNotFound(err) {
 		// ConfigMap does not exist, create it
@@ -361,7 +364,7 @@ func (r *GuardrailsOrchestratorReconciler) applyOrchestratorConfigMap(ctx contex
 			log.Error(createErr, "Failed to create orchestrator configmap")
 			return createErr
 		}
-		log.Info("Automatically generated an orchestrator ConfigMap from resources in namespace")
+		log.V(2).Info("Automatically generated an orchestrator ConfigMap from resources in namespace")
 	} else {
 		log.Error(err, "Failed to get orchestrator configmap")
 		return err
@@ -370,6 +373,8 @@ func (r *GuardrailsOrchestratorReconciler) applyOrchestratorConfigMap(ctx contex
 	return nil
 }
 
+// updateStatusWithOrchestratorConfigInfo populates the orchestrator's status with information about the auto-generated
+// orchestrator config
 func (r *GuardrailsOrchestratorReconciler) updateStatusWithOrchestratorConfigInfo(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, configMap corev1.ConfigMap, generationService gorchv1alpha1.DetectedService, detectorServices []gorchv1alpha1.DetectedService) error {
 	orchestrator.Status.Conditions = []gorchv1alpha1.Condition{
 		{
@@ -421,7 +426,7 @@ func (r *GuardrailsOrchestratorReconciler) defineGatewayConfigMap(
 	}
 	configYaml.WriteString(gatewayPassthrough)
 
-	log.Info("Defined gateway config.yaml", "configYaml", configYaml.String())
+	log.V(2).Info("Defined gateway config.yaml", "configYaml", configYaml.String())
 
 	configMapName := orchestratorName + "-gateway-auto-config"
 	cm := &corev1.ConfigMap{
@@ -470,18 +475,23 @@ func (r *GuardrailsOrchestratorReconciler) applyGatewayConfigMap(ctx context.Con
 			log.Error(createErr, "Failed to create orchestrator configmap")
 			return createErr
 		}
-		log.Info("Automatically generated a default GatewayConfig from resources in namespace")
+
+		log.V(2).Info("Automatically generated a default GatewayConfig from resources in namespace")
 	}
 
-	// refresh before applying status
-	orchestrator, err = r.refreshOrchestrator(ctx, orchestrator, log)
-	if err != nil {
-		return err
-	}
-
-	// update status
-	orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap = &cm.Name
-	return r.Status().Update(ctx, orchestrator)
+	// update status with retry on conflict
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		// Always fetch the latest version before updating status
+		latest := &gorchv1alpha1.GuardrailsOrchestrator{}
+		if err := r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, latest); err != nil {
+			return err
+		}
+		if latest.Status.AutoConfigState == nil {
+			latest.Status.AutoConfigState = &gorchv1alpha1.AutoConfigState{}
+		}
+		latest.Status.AutoConfigState.GeneratedGatewayConfigMap = &cm.Name
+		return r.Status().Update(ctx, latest)
+	})
 }
 
 // ===== Reconciliation Logic ==========================================================================================
@@ -626,7 +636,9 @@ func (r *GuardrailsOrchestratorReconciler) runAutoConfig(ctx context.Context, or
 func (r *GuardrailsOrchestratorReconciler) redeployOnConfigMapChange(
 	ctx context.Context,
 	log logr.Logger,
-	orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (ctrl.Result, error) {
+	orchestrator *gorchv1alpha1.GuardrailsOrchestrator,
+	tlsMounts []gorchv1alpha1.DetectedService,
+) (ctrl.Result, error) {
 
 	existingConfigMap := &corev1.ConfigMap{}
 	if err := r.Get(ctx, types.NamespacedName{Name: *getOrchestratorConfigMap(orchestrator), Namespace: orchestrator.Namespace}, existingConfigMap); err != nil {
@@ -656,20 +668,36 @@ func (r *GuardrailsOrchestratorReconciler) redeployOnConfigMapChange(
 			// refetch deployment
 			err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingDeployment)
 			if err != nil {
-				log.Error(err, "Could not fetch up-to-date deployment for patching")
+				log.Error(err, "Could not fetch up-to-date deployment prior to updating")
 			}
-
-			existingDeployment.Spec.Template.Annotations = annotations
-			if updateErr := r.Update(ctx, existingDeployment); updateErr != nil {
-				log.Error(updateErr, "Failed to redeploy orchestrator after ConfigMap change")
-				return ctrl.Result{}, updateErr
+			newDeployment, err := r.createDeployment(ctx, orchestrator)
+			if err != nil {
+				log.Error(err, "Could not create updated deployment spec")
+				return ctrl.Result{}, err
 			}
+			err = r.addTLSMounts(ctx, orchestrator, newDeployment, tlsMounts)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					log.V(2).Info("Could not find required TLS serving secrets, will retry")
+					return ctrl.Result{}, nil
+				}
+				log.Error(err, "Error adding TLS mounts to updated deployment spec.")
+				return ctrl.Result{}, err
+			}
+			newDeployment.Spec.Template.Annotations = annotations
 
-			log.Info("Redeployed orchestrator deployment due to changes in " + strings.Join(changedConfigs, ", "))
+			// patch the deployment with any new changes manually-configured items
+			if patchDeployment(existingDeployment, newDeployment) {
+				if updateErr := r.Update(ctx, existingDeployment); updateErr != nil {
+					log.Error(updateErr, "Failed to redeploy orchestrator after ConfigMap change")
+					return ctrl.Result{}, updateErr
+				}
+			}
+			log.V(2).Info("Redeployed orchestrator deployment due to changes in " + strings.Join(changedConfigs, ", "))
 		}
 
 	} else if errors.IsNotFound(err) {
-		log.Info("Deployment not found, will be created in subsequent reconciliation")
+		log.V(2).Info("Deployment not found, will be created in subsequent reconciliation")
 	} else {
 		log.Error(err, "Failed to get orchestrator deployment for redeploy after ConfigMap change", "ConfigMap.Name", configMapName)
 		return ctrl.Result{}, err

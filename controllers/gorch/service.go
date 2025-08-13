@@ -2,12 +2,10 @@ package gorch
 
 import (
 	"context"
-	"reflect"
-	"strings"
-
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/gorch/templates"
 	corev1 "k8s.io/api/core/v1"
+	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -21,14 +19,9 @@ type ServiceConfig struct {
 
 func (r *GuardrailsOrchestratorReconciler) createService(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *corev1.Service {
 
-	useOAuth := false
-	if val, ok := orchestrator.Annotations["security.opendatahub.io/enable-auth"]; ok && strings.ToLower(val) == "true" {
-		useOAuth = true
-	}
-
 	serviceConfig := ServiceConfig{
 		Orchestrator:  orchestrator,
-		UseOAuthProxy: useOAuth,
+		UseOAuthProxy: requiresOAuth(orchestrator),
 	}
 
 	var service *corev1.Service
