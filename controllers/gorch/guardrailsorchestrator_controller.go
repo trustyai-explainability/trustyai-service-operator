@@ -19,6 +19,7 @@ package gorch
 import (
 	"context"
 	"time"
+    "fmt"
 
 	routev1 "github.com/openshift/api/route/v1"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
@@ -91,10 +92,10 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	// Start reconcilation
+	// Start reconcilation with enhanced status message
 	if orchestrator.Status.Conditions == nil {
 		reason := ReconcileInit
-		message := "Initializing GuardrailsOrchestrator resource"
+		message := ReconcileInitMessage
 		orchestrator, err = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
 			SetProgressingCondition(&saved.Status.Conditions, reason, message)
 			saved.Status.Phase = PhaseProgressing
@@ -103,6 +104,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 			log.Error(err, "Failed to update GuardrailsOrchestrator status during initialization")
 			return ctrl.Result{}, err
 		}
+		r.Recorder.Event(orchestrator, "Normal", "Initializing", message)
 	}
 
 	if !controllerutil.ContainsFinalizer(orchestrator, finalizerName) {
@@ -117,8 +119,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
-	// Check if the GuardrailsOrchestrator is marked to be deleted, which is
-	// indicated by the deletion timestamp being set.
+	// Check if the GuardrailsOrchestrator is marked to be deleted
 	isMarkedToBeDeleted := orchestrator.GetDeletionTimestamp() != nil
 	if isMarkedToBeDeleted {
 		if controllerutil.ContainsFinalizer(orchestrator, finalizerName) {
@@ -135,9 +136,15 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 				log.Error(err, "Failed to remove finalizer for GuardrailsOrchestrator")
 				return ctrl.Result{}, err
 			}
+			r.Recorder.Event(orchestrator, "Normal", "Deleted", "GuardrailsOrchestrator resource deleted successfully")
 		}
 		return ctrl.Result{}, nil
 	}
+
+	// Update status to show we're creating ServiceAccount
+	orchestrator, _ = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+		SetProgressingCondition(&saved.Status.Conditions, ReconcileProgressing, "Creating ServiceAccount")
+	})
 
 	existingServiceAccount := &corev1.ServiceAccount{}
 	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-serviceaccount", Namespace: orchestrator.Namespace}, existingServiceAccount)
@@ -147,21 +154,42 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		err = r.Create(ctx, serviceAccount)
 		if err != nil {
 			log.Error(err, "Failed to create new ServiceAccount", "ServiceAccount.Namespace", serviceAccount.Namespace, "ServiceAccount.Name", serviceAccount.Name)
+			orchestrator, _ = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+				SetDegradedCondition(&saved.Status.Conditions, true, "ServiceAccountCreationFailed",
+					fmt.Sprintf("Failed to create ServiceAccount: %v", err))
+			})
 			return ctrl.Result{}, err
 		}
+		r.Recorder.Event(orchestrator, "Normal", "ServiceAccountCreated", ServiceAccountCreatedMessage)
 	} else if err != nil {
 		log.Error(err, "Failed to get ServiceAccount")
 		return ctrl.Result{}, err
 	}
 
+	// Check ConfigMap existence with enhanced status
 	existingConfigMap := &corev1.ConfigMap{}
 	err = r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.OrchestratorConfig, Namespace: orchestrator.Namespace}, existingConfigMap)
 	if err != nil {
 		if client.IgnoreNotFound(err) != nil {
+			orchestrator, _ = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+				SetDegradedCondition(&saved.Status.Conditions, true, "ConfigMapError",
+					fmt.Sprintf("Error checking ConfigMap '%s': %v", *orchestrator.Spec.OrchestratorConfig, err))
+			})
 			return ctrl.Result{}, err
 		}
+		orchestrator, _ = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+			SetDegradedCondition(&saved.Status.Conditions, true, "ConfigMapNotFound",
+				fmt.Sprintf("%s '%s'", ConfigMapNotFoundMessage, *orchestrator.Spec.OrchestratorConfig))
+		})
+		r.Recorder.Event(orchestrator, "Warning", "ConfigMapNotFound",
+			fmt.Sprintf("Required ConfigMap '%s' not found in namespace '%s'", *orchestrator.Spec.OrchestratorConfig, orchestrator.Namespace))
 		return ctrl.Result{}, nil
 	}
+
+	// Update status to show we're creating Deployment
+	orchestrator, _ = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+		SetProgressingCondition(&saved.Status.Conditions, ReconcileProgressing, "Creating Deployment")
+	})
 
 	existingDeployment := &appsv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingDeployment)
@@ -172,12 +200,22 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		err = r.Create(ctx, deployment)
 		if err != nil {
 			log.Error(err, "Failed to create new Deployment", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
+			orchestrator, _ = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+				SetDegradedCondition(&saved.Status.Conditions, true, "DeploymentCreationFailed",
+					fmt.Sprintf("Failed to create Deployment: %v", err))
+			})
 			return ctrl.Result{}, err
 		}
+		r.Recorder.Event(orchestrator, "Normal", "DeploymentCreated", "Deployment created successfully")
 	} else if err != nil {
 		log.Error(err, "Failed to get Deployment")
 		return ctrl.Result{}, err
 	}
+
+	// Update status to show we're creating Service
+	orchestrator, _ = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+		SetProgressingCondition(&saved.Status.Conditions, ReconcileProgressing, "Creating Service")
+	})
 
 	existingService := &corev1.Service{}
 	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-service", Namespace: orchestrator.Namespace}, existingService)
@@ -188,12 +226,22 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		err = r.Create(ctx, service)
 		if err != nil {
 			log.Error(err, "Failed to create new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
+			orchestrator, _ = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+				SetDegradedCondition(&saved.Status.Conditions, true, "ServiceCreationFailed",
+					fmt.Sprintf("Failed to create Service: %v", err))
+			})
 			return ctrl.Result{}, err
 		}
+		r.Recorder.Event(orchestrator, "Normal", "ServiceCreated", ServiceCreatedMessage)
 	} else if err != nil {
 		log.Error(err, "Failed to get Service")
 		return ctrl.Result{}, err
 	}
+
+	// Update status to show we're creating Routes
+	orchestrator, _ = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+		SetProgressingCondition(&saved.Status.Conditions, ReconcileProgressing, "Creating Routes")
+	})
 
 	existingRoute := &routev1.Route{}
 	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingRoute)
@@ -204,6 +252,14 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		err = r.Create(ctx, httpRoute)
 		if err != nil {
 			log.Error(err, "Failed to create new Route", "Route.Namespace", httpRoute.Namespace, "Route.Name", httpRoute.Name)
+			orchestrator, _ = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+				SetDegradedCondition(&saved.Status.Conditions, true, "HTTPRouteCreationFailed",
+					fmt.Sprintf("Failed to create HTTP Route: %v", err))
+			})
+			r.Recorder.Event(orchestrator, "Warning", "RouteCreationFailed",
+				fmt.Sprintf("Failed to create HTTP route: %v", err))
+		} else {
+			r.Recorder.Event(orchestrator, "Normal", "HTTPRouteCreated", "HTTP route created successfully")
 		}
 	} else if err != nil {
 		log.Error(err, "Failed to get Route")
@@ -218,17 +274,33 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		err = r.Create(ctx, healthRoute)
 		if err != nil {
 			log.Error(err, "Failed to create new Route", "Route.Namespace", healthRoute.Namespace, "Route.Name", healthRoute.Name)
+			orchestrator, _ = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+				SetDegradedCondition(&saved.Status.Conditions, true, "HealthRouteCreationFailed",
+					fmt.Sprintf("Failed to create Health Route: %v", err))
+			})
+			r.Recorder.Event(orchestrator, "Warning", "HealthRouteCreationFailed",
+				fmt.Sprintf("Failed to create health route: %v", err))
+		} else {
+			r.Recorder.Event(orchestrator, "Normal", "HealthRouteCreated", "Health route created successfully")
 		}
 	} else if err != nil {
 		log.Error(err, "Failed to get Route")
 		return ctrl.Result{}, err
 	}
 
-	// Finalize reconcilation
+	// Finalize reconcilation with comprehensive status update
 	_, updateErr := r.reconcileStatuses(ctx, orchestrator)
 	if updateErr != nil {
 		return ctrl.Result{}, updateErr
 	}
+
+	// Emit appropriate event based on final status
+	if orchestrator.Status.Phase == PhaseReady {
+		r.Recorder.Event(orchestrator, "Normal", "Ready", ReconcileCompletedMessage)
+	} else if orchestrator.Status.Phase == PhaseFailed {
+		r.Recorder.Event(orchestrator, "Warning", "Failed", ReconcileFailedMessage)
+	}
+
 	return ctrl.Result{Requeue: true, RequeueAfter: 30 * time.Second}, nil
 }
 
