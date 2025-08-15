@@ -134,7 +134,7 @@ spec:
               value: 'full'
             - name: TLS_CERT_PATH
               value: /etc/tls/private/tls.crt
-            - NAME: TLS_KEY_PATH
+            - name: TLS_KEY_PATH
               value: /etc/tls/private/tls.key
             - name: RUST_LOG
               value: '{{if .Orchestrator.Spec.LogLevel}}{{.Orchestrator.Spec.LogLevel}}{{else}}info{{end}}'

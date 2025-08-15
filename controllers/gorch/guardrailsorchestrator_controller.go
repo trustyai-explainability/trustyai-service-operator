@@ -318,7 +318,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	existingConfigMap := &corev1.ConfigMap{}
 	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-ca-bundle", Namespace: orchestrator.Namespace}, existingConfigMap)
 	if err != nil && errors.IsNotFound(err) {
-		// Define a new route
+		// Define a new configmap
 		caBundleConfigMap := r.createConfigMap(ctx, "ca-bundle-configmap.tmpl.yaml", orchestrator)
 		log.Info("Creating a new ConfigMap", "ConfigMap.Namespace", caBundleConfigMap.Namespace, "ConfigMap.Name", caBundleConfigMap.Name)
 		err = r.Create(ctx, caBundleConfigMap)

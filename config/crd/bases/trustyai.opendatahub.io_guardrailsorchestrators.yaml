@@ -102,7 +102,10 @@ spec:
                     type: string
                 type: object
               replicas:
-                description: Number of replicas
+                description: |-
+                  INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
+                  Important: Run "make" to regenerate code after modifying this file
+                  Number of replicas
                 format: int32
                 type: integer
             required:

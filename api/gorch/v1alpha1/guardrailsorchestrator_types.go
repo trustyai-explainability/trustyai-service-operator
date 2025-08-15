@@ -41,17 +41,14 @@ type AutoConfig struct {
 type GuardrailsOrchestratorSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-
 	// Number of replicas
 	Replicas int32 `json:"replicas"`
 	// Name of configmap containing generator,detector,and chunker arguments
 	// +optional
 	OrchestratorConfig *string `json:"orchestratorConfig,omitempty"`
-
 	// Settings governing the automatic configuration of the orchestrator. Replaces `OrchestratorConfig`.
 	// +optional
 	AutoConfig *AutoConfig `json:"autoConfig,omitempty"`
-
 	// Boolean flag to enable/disable built-in detectors
 	// +optional
 	EnableBuiltInDetectors bool `json:"enableBuiltInDetectors,omitempty"`
@@ -64,7 +61,6 @@ type GuardrailsOrchestratorSpec struct {
 	// List of orchestrator enviroment variables for configuring the OTLP exporter
 	// +optional
 	OtelExporter OtelExporter `json:"otelExporter,omitempty"`
-
 	// Set log level in the orchestrator deployment
 	// +optional
 	LogLevel *string `json:"logLevel,omitempty"`
@@ -114,8 +110,8 @@ type Condition struct {
 
 type DetectedService struct {
 	Name      string `json:"name,omitempty"`
-	Type      string `json:"type,omitempty"` // e.g. "generator" or "detector"
-	Scheme    string `json:"scheme,omitempty"`
+	Type      string `json:"type,omitempty"`   // e.g. "generator" or "detector"
+	Scheme    string `json:"scheme,omitempty"` //e.g., "http" or "https"
 	Hostname  string `json:"hostname,omitempty"`
 	Port      string `json:"port,omitempty"`
 	TLSSecret string `json:"tlsSecret,omitempty"`
@@ -134,11 +130,9 @@ type AutoConfigState struct {
 
 type GuardrailsOrchestratorStatus struct {
 	Phase string `json:"phase,omitempty"`
-
 	// Conditions describes the state of the GuardrailsOrchestrator resource.
 	// +optional
 	Conditions []Condition `json:"conditions,omitempty"`
-
 	// AutoConfigState describes information about the generated autoconfiguration
 	// +optional
 	AutoConfigState *AutoConfigState `json:"autoConfigState,omitempty"`
