@@ -237,6 +237,9 @@ detectors:
       port: 8005
     chunker_id: whole_doc_chunker
     default_threshold: 0.5
+passthrough_headers:
+  - Authorization
+  - Content-Type
 `
 	assert.Equal(t, expectedData, cm.Data["config.yaml"])
 }
@@ -298,6 +301,9 @@ detectors:
       port: 8005
     chunker_id: whole_doc_chunker
     default_threshold: 0.5
+passthrough_headers:
+  - Authorization
+  - Content-Type
 `
 	assert.Equal(t, expectedData, cm.Data["config.yaml"])
 }
@@ -351,6 +357,9 @@ detectors:
       port: 8005
     chunker_id: whole_doc_chunker
     default_threshold: 0.5
+passthrough_headers:
+  - Authorization
+  - Content-Type
 `
 	assert.Equal(t, expectedData, cm.Data["config.yaml"])
 }
@@ -419,6 +428,9 @@ detectors:
       port: 8080
     chunker_id: whole_doc_chunker
     default_threshold: 0.5
+passthrough_headers:
+  - Authorization
+  - Content-Type
 `, builtInDetectorName)
 	assert.Equal(t, expectedData, cm.Data["config.yaml"])
 }
@@ -489,6 +501,9 @@ detectors:
       port: 8080
     chunker_id: whole_doc_chunker
     default_threshold: 0.5
+passthrough_headers:
+  - Authorization
+  - Content-Type
 `, builtInDetectorName)
 	expectedGatewayData := fmt.Sprintf(`orchestrator:
   host: "localhost"
@@ -644,10 +659,15 @@ detectors:
 tls:
   my-inference-service-2-tls:
     cert_path: "/etc/tls/my-inference-service-2-predictor-serving-cert/tls.crt"
-    key_path: "/etc/tls/my-inference-service-2-predictor-serving-cert/tls.crt"
+    key_path: "/etc/tls/my-inference-service-2-predictor-serving-cert/tls.key"
+    client_ca_cert_path: "/etc/tls/ca/service-ca.crt"
   my-inference-service-4-tls:
     cert_path: "/etc/tls/my-inference-service-4-predictor-serving-cert/tls.crt"
-    key_path: "/etc/tls/my-inference-service-4-predictor-serving-cert/tls.crt"
+    key_path: "/etc/tls/my-inference-service-4-predictor-serving-cert/tls.key"
+    client_ca_cert_path: "/etc/tls/ca/service-ca.crt"
+passthrough_headers:
+  - Authorization
+  - Content-Type
 `, builtInDetectorName)
 	assert.Equal(t, expectedData, cm.Data["config.yaml"])
 }
@@ -730,13 +750,142 @@ detectors:
 tls:
   my-generation-service-tls:
     cert_path: "/etc/tls/my-generation-service-predictor-serving-cert/tls.crt"
-    key_path: "/etc/tls/my-generation-service-predictor-serving-cert/tls.crt"
+    key_path: "/etc/tls/my-generation-service-predictor-serving-cert/tls.key"
+    client_ca_cert_path: "/etc/tls/ca/service-ca.crt"
   my-inference-service-2-tls:
     cert_path: "/etc/tls/my-inference-service-2-predictor-serving-cert/tls.crt"
-    key_path: "/etc/tls/my-inference-service-2-predictor-serving-cert/tls.crt"
+    key_path: "/etc/tls/my-inference-service-2-predictor-serving-cert/tls.key"
+    client_ca_cert_path: "/etc/tls/ca/service-ca.crt"
   my-inference-service-4-tls:
     cert_path: "/etc/tls/my-inference-service-4-predictor-serving-cert/tls.crt"
-    key_path: "/etc/tls/my-inference-service-4-predictor-serving-cert/tls.crt"
+    key_path: "/etc/tls/my-inference-service-4-predictor-serving-cert/tls.key"
+    client_ca_cert_path: "/etc/tls/ca/service-ca.crt"
+passthrough_headers:
+  - Authorization
+  - Content-Type
+`, builtInDetectorName)
+	assert.Equal(t, expectedData, cm.Data["config.yaml"])
+
+	// Simulate mounting the secret in a deployment
+	deployment := &appsv1.Deployment{
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "main"},
+					},
+				},
+			},
+		},
+	}
+	for _, secret := range secrets {
+		MountSecret(deployment, secret.GetName())
+		found := false
+		for _, v := range deployment.Spec.Template.Spec.Volumes {
+			if v.Name == secret.GetName()+"-vol" && v.VolumeSource.Secret != nil && v.VolumeSource.Secret.SecretName == secret.GetName() {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "TLS secret volume should be mounted for HTTPS inference service")
+	}
+}
+
+func TestHTTPSInferenceServiceTLSGenerationTLSOauth(t *testing.T) {
+	ctx := context.Background()
+	ns := "test-ns"
+	orchestratorName := "test-orch"
+
+	isvcs, srs, secrets := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" }, func(i int) bool { return i%2 == 0 }, true)
+	autoConfig := gorchv1alpha1.AutoConfig{
+		InferenceServiceToGuardrail: "my-generation-service",
+	}
+	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, secrets, true, true)
+	orchestrator.Annotations = make(map[string]string)
+	orchestrator.Annotations["security.opendatahub.io/enable-auth"] = "true"
+
+	cm, _, detectorServices, _, err := reconciler.defineOrchestratorConfigMap(ctx, orchestrator)
+
+	if err != nil {
+		fmt.Println(err, "Failed to define orchestrator configmap")
+
+	}
+
+	_, err = reconciler.defineGatewayConfigMap(orchestrator, detectorServices)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, cm)
+	assert.Equal(t, orchestratorName+"-auto-config", cm.Name)
+	assert.Equal(t, ns, cm.Namespace)
+
+	expectedData := fmt.Sprintf(`chat_generation:
+  service:
+    hostname: my-generation-service.test-ns.svc.cluster.local
+    port: 8080
+    tls: my-generation-service-tls
+detectors:
+  my-inference-service-1:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-1.test-ns.svc.cluster.local"
+      port: 8001
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-2:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-2.test-ns.svc.cluster.local"
+      port: 8442
+      tls: my-inference-service-2-tls
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-3:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-3.test-ns.svc.cluster.local"
+      port: 8003
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-4:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-4.test-ns.svc.cluster.local"
+      port: 8444
+      tls: my-inference-service-4-tls
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  my-inference-service-5:
+    type: text_contents
+    service:
+      hostname: "my-inference-service-5.test-ns.svc.cluster.local"
+      port: 8005
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+  %s:
+    type: text_contents
+    service:
+      hostname: 127.0.0.1
+      port: 8080
+    chunker_id: whole_doc_chunker
+    default_threshold: 0.5
+tls:
+  my-generation-service-tls:
+    cert_path: "/etc/tls/my-generation-service-predictor-serving-cert/tls.crt"
+    key_path: "/etc/tls/my-generation-service-predictor-serving-cert/tls.key"
+    client_ca_cert_path: "/etc/tls/ca/service-ca.crt"
+  my-inference-service-2-tls:
+    cert_path: "/etc/tls/my-inference-service-2-predictor-serving-cert/tls.crt"
+    key_path: "/etc/tls/my-inference-service-2-predictor-serving-cert/tls.key"
+    client_ca_cert_path: "/etc/tls/ca/service-ca.crt"
+  my-inference-service-4-tls:
+    cert_path: "/etc/tls/my-inference-service-4-predictor-serving-cert/tls.crt"
+    key_path: "/etc/tls/my-inference-service-4-predictor-serving-cert/tls.key"
+    client_ca_cert_path: "/etc/tls/ca/service-ca.crt"
+passthrough_headers:
+  - Authorization
+  - Content-Type
+  - x-forwarded-access-token
+rewrite_forwarded_access_header: true
 `, builtInDetectorName)
 	assert.Equal(t, expectedData, cm.Data["config.yaml"])
 

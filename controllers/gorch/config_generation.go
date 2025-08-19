@@ -78,12 +78,13 @@ detectors:
 `
 
 	orchestratorConclusion = `passthrough_headers:
-    - Authorization
-    - Content-Type`
+  - Authorization
+  - Content-Type
+`
 
-	oauthHeaderRewrite = `
-    - x-forwarded-access-token
-rewrite_forwarded_access_header: true`
+	oauthHeaderRewrite = `  - x-forwarded-access-token
+rewrite_forwarded_access_header: true
+`
 
 	// === gateway config constants ========
 	gatewayPreamable = `orchestrator:

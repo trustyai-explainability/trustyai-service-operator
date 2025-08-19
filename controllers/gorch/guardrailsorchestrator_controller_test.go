@@ -56,9 +56,8 @@ func createGuardrailsOrchestrator(ctx context.Context, orchestratorConfigMap str
 	return err
 }
 
-func createGuardrailsOrchestratorSidecar(ctx context.Context, orchestratorConfigMap string) error {
+func createGuardrailsOrchestratorSidecar(ctx context.Context, orchestratorConfigMap string, guardrailsGatewayConfigMap string) error {
 	typedNamespacedName := types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}
-	guardrailsGatewayConfigMap := "guardrails-gateway-config"
 	err := k8sClient.Get(ctx, typedNamespacedName, &gorchv1alpha1.GuardrailsOrchestrator{})
 	if err != nil && errors.IsNotFound(err) {
 		gorch := &gorchv1alpha1.GuardrailsOrchestrator{
@@ -149,7 +148,7 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typedNamespacedName})
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Checking if resources were successfully created in the reconcilation")
+		By("Checking if resources were successfully created in the reconciliation")
 		Eventually(func() error {
 			configMap := &corev1.ConfigMap{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: constants.ConfigMap, Namespace: namespaceName}, configMap); err != nil {
@@ -182,8 +181,8 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 				return err
 			}
 			Expect(service.Namespace).Should(Equal(namespaceName))
-			Expect((service.Spec.Ports[0].Name)).Should(Equal("http"))
-			Expect((service.Spec.Ports[0].Port)).Should(Equal(int32(8033)))
+			Expect((service.Spec.Ports[0].Name)).Should(Equal("https"))
+			Expect((service.Spec.Ports[0].Port)).Should(Equal(int32(8032)))
 
 			route := &routev1.Route{}
 			if err := routev1.AddToScheme(scheme.Scheme); err != nil {
@@ -235,7 +234,7 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 		By("Creating a custom resource for the GuardrailsOrchestrator")
 		ctx := context.Background()
 		typedNamespacedName := types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}
-		err = createGuardrailsOrchestratorSidecar(ctx, configMap.Name)
+		err = createGuardrailsOrchestratorSidecar(ctx, orchestratorName+"-config", configMap.Name)
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Checking if the custom resource was successfully created")
@@ -252,7 +251,7 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typedNamespacedName})
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Checking if resources were successfully created in the reconcilation")
+		By("Checking if resources were successfully created in the reconciliation")
 		Eventually(func() error {
 			configMap := &corev1.ConfigMap{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-config", Namespace: namespaceName}, configMap); err != nil {
@@ -270,6 +269,7 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 			if err = k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}, deployment); err != nil {
 				return err
 			}
+
 			Expect(*deployment.Spec.Replicas).Should(Equal(int32(1)))
 			Expect(deployment.Namespace).Should(Equal(namespaceName))
 			Expect(deployment.Name).Should(Equal(orchestratorName))
@@ -285,7 +285,7 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 				return err
 			}
 			Expect(service.Namespace).Should(Equal(namespaceName))
-			Expect(service.Spec.Ports[0].Name).Should(Equal("http"))
+			Expect(service.Spec.Ports[0].Name).Should(Equal("gateway"))
 			Expect(service.Spec.Ports[0].Port).Should(Equal(int32(8090)))
 
 			route := &routev1.Route{}
@@ -342,7 +342,7 @@ func testCreateDeleteGuardrailsOrchestratorOtelExporter(namespaceName string) {
 		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typedNamespacedName})
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Checking if resources were successfully created in the reconcilation")
+		By("Checking if resources were successfully created in the reconciliation")
 		Eventually(func() error {
 			configMap := &corev1.ConfigMap{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: constants.ConfigMap, Namespace: namespaceName}, configMap); err != nil {

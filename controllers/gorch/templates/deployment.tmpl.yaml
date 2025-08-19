@@ -96,23 +96,23 @@ spec:
         app.kubernetes.io/part-of: trustyai
     spec:
       volumes:
-{{ if or .Orchestrator.Spec.OrchestratorConfig (and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedConfigMap) }}
+{{- if or .Orchestrator.Spec.OrchestratorConfig (and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedConfigMap) }}
         - name: {{.Orchestrator.Name}}-config
           configMap:
             name:  {{ if .Orchestrator.Spec.OrchestratorConfig }}{{ .Orchestrator.Spec.OrchestratorConfig }}{{ else }}{{ .Orchestrator.Status.AutoConfigState.GeneratedConfigMap }}{{ end }}
             defaultMode: 420
 {{- end}}
-{{ if .Orchestrator.Spec.SidecarGatewayConfig }}
+{{- if .Orchestrator.Spec.SidecarGatewayConfig }}
         - name: {{.Orchestrator.Name}}-sidecar-gateway-config
           configMap:
             name: {{.Orchestrator.Spec.SidecarGatewayConfig}}
             defaultMode: 420
-{{ else if and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap }}
+{{- else if and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap }}
         - name: {{.Orchestrator.Name}}-sidecar-gateway-config
           configMap:
             name: {{.Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap}}
             defaultMode: 420
-{{ end }}
+{{- end }}
         - name: tls-certs
           secret:
             secretName: {{ .Orchestrator.Name }}-tls
@@ -138,34 +138,27 @@ spec:
               value: /etc/tls/private/tls.key
             - name: RUST_LOG
               value: '{{if .Orchestrator.Spec.LogLevel}}{{.Orchestrator.Spec.LogLevel}}{{else}}info{{end}}'
-          {{ if .Orchestrator.Spec.OtelExporter.Protocol }}
-          - name: OTEL_EXPORTER_OTLP_PROTOCOL
-            value: {{.Orchestrator.Spec.OtelExporter.Protocol }}
-          {{end}}
-          {{ if .Orchestrator.Spec.OtelExporter.TracesProtocol }}
-          - name: OTEL_EXPORTER_OTLP_TRACES_PROTOCOL
-            value: {{.Orchestrator.Spec.OtelExporter.TracesProtocol}}
-          {{end}}
-          {{ if .Orchestrator.Spec.OtelExporter.MetricsProtocol }}
-          - name: OTEL_EXPORTER_OTLP_METRICS_PROTOCOL
-            value: {{.Orchestrator.Spec.OtelExporter.MetricsProtocol}}
-          {{end}}
-          {{ if .Orchestrator.Spec.OtelExporter.OTLPEndpoint }}
-          - name: OTEL_EXPORTER_OTLP_ENDPOINT
-            value: {{.Orchestrator.Spec.OtelExporter.OTLPEndpoint}}
-          {{end}}
-          {{if .Orchestrator.Spec.OtelExporter.TracesEndpoint}}
-          - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
-            value: {{.Orchestrator.Spec.OtelExporter.TracesEndpoint}}
-          {{end}}
-          {{if .Orchestrator.Spec.OtelExporter.MetricsEndpoint}}
-          - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
-            value: {{.Orchestrator.Spec.OtelExporter.MetricsEndpoint}}
-          {{end}}
-          {{if .Orchestrator.Spec.OtelExporter.OTLPExport}}
-          - name: OTLP_EXPORT
-            value: {{.Orchestrator.Spec.OtelExporter.OTLPExport}}
-          {{end}}
+            {{- if .Orchestrator.Spec.OtelExporter.Protocol }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: {{.Orchestrator.Spec.OtelExporter.Protocol }}{{end}}
+            {{- if .Orchestrator.Spec.OtelExporter.TracesProtocol }}
+            - name: OTEL_EXPORTER_OTLP_TRACES_PROTOCOL
+              value: {{.Orchestrator.Spec.OtelExporter.TracesProtocol}}{{end}}
+            {{- if .Orchestrator.Spec.OtelExporter.MetricsProtocol }}
+            - name: OTEL_EXPORTER_OTLP_METRICS_PROTOCOL
+              value: {{.Orchestrator.Spec.OtelExporter.MetricsProtocol}}{{end}}
+            {{- if .Orchestrator.Spec.OtelExporter.OTLPEndpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{.Orchestrator.Spec.OtelExporter.OTLPEndpoint}}{{end}}
+            {{- if .Orchestrator.Spec.OtelExporter.TracesEndpoint}}
+            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+              value: {{.Orchestrator.Spec.OtelExporter.TracesEndpoint}}{{end}}
+            {{- if .Orchestrator.Spec.OtelExporter.MetricsEndpoint}}
+            - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+              value: {{.Orchestrator.Spec.OtelExporter.MetricsEndpoint}}{{end}}
+            {{- if .Orchestrator.Spec.OtelExporter.OTLPExport}}
+            - name: OTLP_EXPORT
+              value: {{.Orchestrator.Spec.OtelExporter.OTLPExport}}{{end}}
           volumeMounts:
             - name: {{.Orchestrator.Name}}-config
               readOnly: true

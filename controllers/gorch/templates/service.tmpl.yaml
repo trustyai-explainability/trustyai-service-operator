@@ -17,7 +17,7 @@ spec:
       protocol: TCP
       port: {{if .UseOAuthProxy}}8490{{else}}8090{{end}}
       targetPort: {{if .UseOAuthProxy}}8490{{else}}8090{{end}}
-    {{end}}
+    {{end -}}
     - name: https
       protocol: TCP
       port: {{if .UseOAuthProxy}}8432{{else}}8032{{end}}
