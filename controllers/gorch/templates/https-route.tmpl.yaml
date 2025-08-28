@@ -6,6 +6,8 @@ metadata:
   labels:
     app: {{.Orchestrator.Name}}
     component: {{.Orchestrator.Name}}
+  annotations:
+    haproxy.router.openshift.io/timeout: 5m
 spec:
   to:
     kind: Service
