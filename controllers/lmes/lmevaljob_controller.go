@@ -928,6 +928,10 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 			Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
 			Value: "False",
 		},
+		{
+			Name:  "HF_ALLOW_CODE_EVAL",
+			Value: "0",
+		},
 	}
 	allowRemoteCodeEnvVars := []corev1.EnvVar{
 		{
@@ -941,6 +945,10 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 		{
 			Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
 			Value: "True",
+		},
+		{
+			Name:  "HF_ALLOW_CODE_EVAL",
+			Value: "1",
 		},
 	}
 
@@ -1361,6 +1369,12 @@ func generateArgs(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr
 		}
 	}
 
+	// --confirm_run_unsafe_code
+	log.Info("Enabling unsafe code execution for LMEvalJob", "jobName", job.Name, "namespace", job.Namespace)
+	if job.Spec.AllowCodeExecution != nil && *job.Spec.AllowCodeExecution {
+		cmds = append(cmds, "--confirm_run_unsafe_code")
+	}
+
 	return cmds
 }
 
@@ -1510,6 +1524,7 @@ var ProtectedEnvVarNames = []string{
 	"TRANSFORMERS_OFFLINE",
 	"HF_EVALUATE_OFFLINE",
 	"UNITXT_ALLOW_UNVERIFIED_CODE",
+	"HF_ALLOW_CODE_EVAL",
 }
 
 // removeProtectedEnvVars removes protected EnvVars from a list of EnvVars

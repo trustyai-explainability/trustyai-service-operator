@@ -150,6 +150,10 @@ func Test_SimplePod(t *testing.T) {
 							Value: "False",
 						},
 						{
+							Name:  "HF_ALLOW_CODE_EVAL",
+							Value: "0",
+						},
+						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
 						},
@@ -378,6 +382,10 @@ func Test_WithCustomPod(t *testing.T) {
 							Value: "False",
 						},
 						{
+							Name:  "HF_ALLOW_CODE_EVAL",
+							Value: "0",
+						},
+						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
 						},
@@ -589,6 +597,10 @@ func Test_EnvSecretsPod(t *testing.T) {
 							Value: "False",
 						},
 						{
+							Name:  "HF_ALLOW_CODE_EVAL",
+							Value: "0",
+						},
+						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
 						},
@@ -762,6 +774,10 @@ func Test_FileSecretsPod(t *testing.T) {
 						{
 							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
 							Value: "False",
+						},
+						{
+							Name:  "HF_ALLOW_CODE_EVAL",
+							Value: "0",
 						},
 						{
 							Name:  "HF_DATASETS_OFFLINE",
@@ -1716,6 +1732,10 @@ func Test_ManagedPVC(t *testing.T) {
 							Value: "False",
 						},
 						{
+							Name:  "HF_ALLOW_CODE_EVAL",
+							Value: "0",
+						},
+						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
 						},
@@ -1878,6 +1898,10 @@ func Test_ExistingPVC(t *testing.T) {
 						{
 							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
 							Value: "False",
+						},
+						{
+							Name:  "HF_ALLOW_CODE_EVAL",
+							Value: "0",
 						},
 						{
 							Name:  "HF_DATASETS_OFFLINE",
@@ -2059,6 +2083,10 @@ func Test_PVCPreference(t *testing.T) {
 						{
 							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
 							Value: "False",
+						},
+						{
+							Name:  "HF_ALLOW_CODE_EVAL",
+							Value: "0",
 						},
 						{
 							Name:  "HF_DATASETS_OFFLINE",
@@ -2246,6 +2274,10 @@ func Test_OfflineMode(t *testing.T) {
 							Value: "False",
 						},
 						{
+							Name:  "HF_ALLOW_CODE_EVAL",
+							Value: "0",
+						},
+						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
 						},
@@ -2362,6 +2394,10 @@ func Test_ProtectedVars(t *testing.T) {
 							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
 							Value: "True",
 						},
+						{
+							Name:  "HF_ALLOW_CODE_EVAL",
+							Value: "1",
+						},
 					},
 				},
 			},
@@ -2457,6 +2493,10 @@ func Test_ProtectedVars(t *testing.T) {
 						{
 							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
 							Value: "False",
+						},
+						{
+							Name:  "HF_ALLOW_CODE_EVAL",
+							Value: "0",
 						},
 						{
 							Name:  "HF_DATASETS_OFFLINE",
@@ -2651,6 +2691,10 @@ func Test_OnlineModeDisabled(t *testing.T) {
 							Value: "False",
 						},
 						{
+							Name:  "HF_ALLOW_CODE_EVAL",
+							Value: "0",
+						},
+						{
 							Name:  "HF_DATASETS_OFFLINE",
 							Value: "1",
 						},
@@ -2838,6 +2882,10 @@ func Test_OnlineMode(t *testing.T) {
 							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
 							Value: "False",
 						},
+						{
+							Name:  "HF_ALLOW_CODE_EVAL",
+							Value: "0",
+						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
@@ -3009,6 +3057,10 @@ func Test_AllowCodeOnlineMode(t *testing.T) {
 							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
 							Value: "True",
 						},
+						{
+							Name:  "HF_ALLOW_CODE_EVAL",
+							Value: "1",
+						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
@@ -3177,6 +3229,10 @@ func Test_AllowCodeOfflineMode(t *testing.T) {
 						{
 							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
 							Value: "True",
+						},
+						{
+							Name:  "HF_ALLOW_CODE_EVAL",
+							Value: "1",
 						},
 						{
 							Name:  "HF_DATASETS_OFFLINE",
@@ -3366,6 +3422,10 @@ func Test_OfflineModeWithOutput(t *testing.T) {
 						{
 							Name:  "UNITXT_ALLOW_UNVERIFIED_CODE",
 							Value: "False",
+						},
+						{
+							Name:  "HF_ALLOW_CODE_EVAL",
+							Value: "0",
 						},
 						{
 							Name:  "HF_DATASETS_OFFLINE",
@@ -3767,4 +3827,22 @@ func Test_ControllerIntegration(t *testing.T) {
 		assert.Greater(t, len(args), 0, "Should generate command arguments")
 		assert.Equal(t, "python", args[0], "Should start with python")
 	})
+}
+
+func Test_AllowCodeExecution(t *testing.T) {
+	ctx := context.Background()
+	log := log.FromContext(ctx)
+
+	svcOpts := &serviceOptions{DefaultBatchSize: "1"}
+	allowCode := true
+	job := &lmesv1alpha1.LMEvalJob{
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model:              "hf",
+			TaskList:           lmesv1alpha1.TaskList{TaskNames: []string{"task1"}},
+			AllowCodeExecution: &allowCode,
+		},
+	}
+
+	args := generateArgs(svcOpts, job, log)
+	assert.Contains(t, args, "--confirm_run_unsafe_code")
 }
