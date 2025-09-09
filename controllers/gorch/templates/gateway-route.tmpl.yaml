@@ -1,7 +1,7 @@
 kind: Route
 apiVersion: route.openshift.io/v1
 metadata:
-  name: {{.Orchestrator.Name}}
+  name: {{.Orchestrator.Name}}-gateway
   namespace: {{.Orchestrator.Namespace}}
   labels:
     app: {{.Orchestrator.Name}}
@@ -12,9 +12,9 @@ spec:
     name:  {{.Orchestrator.Name}}-service
     weight: 100
   port:
-    targetPort: https
+    targetPort: gateway
   tls:
-    termination: passthrough
+    termination: edge
     insecureEdgeTerminationPolicy: Redirect
   wildcardPolicy: None
 

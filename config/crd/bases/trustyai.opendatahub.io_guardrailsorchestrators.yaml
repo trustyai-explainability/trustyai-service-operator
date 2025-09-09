@@ -40,6 +40,23 @@ spec:
           spec:
             description: GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator.
             properties:
+              autoConfig:
+                description: Settings governing the automatic configuration of the
+                  orchestrator. Replaces `OrchestratorConfig`.
+                properties:
+                  detectorServiceLabelToMatch:
+                    description: |-
+                      Label key to use when automatically identifying guardrail detector inference services.
+                      If provided, all inference services with the label `$detectorServiceLabelToMatch: true` will be used as a guardrails detector.
+                      If not provided, the default match label is `trustyai/guardrails`, and the autoconfig will use all inference services with the label `trustyai/guardrails: true` as detectors.
+                    type: string
+                  inferenceServiceToGuardrail:
+                    description: The name of the inference service that provides the
+                      vLLM generation model to-be-guardrailed
+                    type: string
+                required:
+                - inferenceServiceToGuardrail
+                type: object
               enableBuiltInDetectors:
                 description: Boolean flag to enable/disable built-in detectors
                 type: boolean
@@ -50,6 +67,9 @@ spec:
               guardrailsGatewayConfig:
                 description: ' Name of the configmap containing guadrails sidecar
                   gateway arguments'
+                type: string
+              logLevel:
+                description: Set log level in the orchestrator deployment
                 type: string
               orchestratorConfig:
                 description: Name of configmap containing generator,detector,and chunker
@@ -82,15 +102,66 @@ spec:
                     type: string
                 type: object
               replicas:
-                description: Number of replicas
+                description: |-
+                  INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
+                  Important: Run "make" to regenerate code after modifying this file
+                  Number of replicas
                 format: int32
                 type: integer
             required:
-            - orchestratorConfig
             - replicas
             type: object
           status:
             properties:
+              autoConfigState:
+                description: AutoConfigState describes information about the generated
+                  autoconfiguration
+                properties:
+                  configurationHash:
+                    type: string
+                  detectorServices:
+                    items:
+                      properties:
+                        hostname:
+                          type: string
+                        name:
+                          type: string
+                        port:
+                          type: string
+                        scheme:
+                          type: string
+                        tlsSecret:
+                          type: string
+                        type:
+                          type: string
+                      type: object
+                    type: array
+                  generatedConfigMap:
+                    type: string
+                  generatedGatewayConfigMap:
+                    type: string
+                  generationService:
+                    properties:
+                      hostname:
+                        type: string
+                      name:
+                        type: string
+                      port:
+                        type: string
+                      scheme:
+                        type: string
+                      tlsSecret:
+                        type: string
+                      type:
+                        type: string
+                    type: object
+                  lastGenerated:
+                    type: string
+                  message:
+                    type: string
+                  status:
+                    type: string
+                type: object
               conditions:
                 description: Conditions describes the state of the GuardrailsOrchestrator
                   resource.

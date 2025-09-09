@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: {{.Orchestrator.Name}}-service
   namespace: {{.Orchestrator.Namespace}}
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: {{ .Orchestrator.Name }}-tls
   labels:
     app: {{.Orchestrator.Name}}
     component: {{.Orchestrator.Name}}
@@ -11,16 +13,15 @@ spec:
     - IPv4
   ports:
     {{if .Orchestrator.Spec.EnableGuardrailsGateway}}
-    - name: http
+    - name: gateway
       protocol: TCP
-      port: 8090
-      targetPort: 8090
-    {{else}}
-    - name: http
+      port: {{if .UseOAuthProxy}}8490{{else}}8090{{end}}
+      targetPort: {{if .UseOAuthProxy}}8490{{else}}8090{{end}}
+    {{end -}}
+    - name: https
       protocol: TCP
-      port: 8033
-      targetPort: 8033
-    {{end}}
+      port: {{if .UseOAuthProxy}}8432{{else}}8032{{end}}
+      targetPort: {{if .UseOAuthProxy}}8432{{else}}8032{{end}}
     - name: health
       protocol: TCP
       port: 8034

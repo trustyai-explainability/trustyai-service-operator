@@ -1,3 +1,68 @@
+{{ define "oAuthProxy" }} name: oauth-proxy-{{ .Suffix }}
+          image: {{ .OAuthProxyImage}}
+          resources:
+            limits:
+              cpu: 100m
+              memory: 64Mi
+            requests:
+              cpu: 100m
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /oauth/healthz
+              port: oauth-proxy
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+            periodSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /oauth/healthz
+              port: oauth-proxy
+              scheme: HTTPS
+            initialDelaySeconds: 30
+            timeoutSeconds: 1
+            periodSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+          ports:
+            - name: oauth-proxy
+              containerPort: {{ .DownstreamPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: tls-certs
+              mountPath: /etc/tls/private
+              readOnly: true
+            - name: tls-ca-bundle
+              mountPath: /etc/tls/ca
+              readOnly: true
+          args:
+            - '--cookie-secret=SECRET'
+            - '--https-address=:{{.DownstreamPort}}'
+            - '--http-address='
+            - '--email-domain=*'
+            - '--openshift-service-account={{ .Name }}-serviceaccount'
+            - '--provider=openshift'
+            - '--pass-user-bearer-token'
+            - '--tls-cert=/etc/tls/private/tls.crt'
+            - '--tls-key=/etc/tls/private/tls.key'
+            - '--upstream={{.UpstreamProtocol}}://localhost:{{.UpstreamPort}}'
+            - '--skip-auth-regex=''(^/apis/v1beta1/healthz)'''
+            - >-
+              --openshift-sar={"namespace":"{{ .Namespace }}","resource":"pods","verb":"get"}
+            - >-
+              --openshift-delegate-urls={"/": {"namespace": "{{ .Namespace }}", "resource":
+              "pods", "verb": "get"}}
+{{ end }}
+
 kind: Deployment
 apiVersion: apps/v1
 metadata:
@@ -29,20 +94,33 @@ spec:
         app.kubernetes.io/instance: {{.Orchestrator.Name}}
         app.kubernetes.io/name: {{.Orchestrator.Name}}
         app.kubernetes.io/part-of: trustyai
-      annotations:
-        sidecar.istio.io/inject: "true"
     spec:
       volumes:
+{{- if or .Orchestrator.Spec.OrchestratorConfig (and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedConfigMap) }}
         - name: {{.Orchestrator.Name}}-config
           configMap:
-            name: {{.Orchestrator.Spec.OrchestratorConfig}}
+            name:  {{ if .Orchestrator.Spec.OrchestratorConfig }}{{ .Orchestrator.Spec.OrchestratorConfig }}{{ else }}{{ .Orchestrator.Status.AutoConfigState.GeneratedConfigMap }}{{ end }}
             defaultMode: 420
-        {{if .Orchestrator.Spec.SidecarGatewayConfig}}
+{{- end}}
+{{- if .Orchestrator.Spec.SidecarGatewayConfig }}
         - name: {{.Orchestrator.Name}}-sidecar-gateway-config
           configMap:
             name: {{.Orchestrator.Spec.SidecarGatewayConfig}}
             defaultMode: 420
-        {{end}}
+{{- else if and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap }}
+        - name: {{.Orchestrator.Name}}-sidecar-gateway-config
+          configMap:
+            name: {{.Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap}}
+            defaultMode: 420
+{{- end }}
+        - name: tls-certs
+          secret:
+            secretName: {{ .Orchestrator.Name }}-tls
+            defaultMode: 420
+        - name: tls-ca-bundle
+          configMap:
+            name: {{.Orchestrator.Name }}-ca-bundle
+            defaultMode: 420
       serviceAccountName: {{.Orchestrator.Name}}-serviceaccount
       containers:
         - name: {{.Orchestrator.Name}}
@@ -50,60 +128,52 @@ spec:
           env:
             - name: ORCHESTRATOR_CONFIG
               value: /config/config.yaml
-            {{if .Orchestrator.Spec.SidecarGatewayConfig}}
             - name: HTTP_PORT
               value: '8032'
-            {{else}}
-            - name: HTTP_PORT
-              value: '8033'
-            {{end}}
             - name: RUST_BACKTRACE
               value: 'full'
+            - name: TLS_CERT_PATH
+              value: /etc/tls/private/tls.crt
+            - name: TLS_KEY_PATH
+              value: /etc/tls/private/tls.key
             - name: RUST_LOG
-              value: 'info'
-          {{if .Orchestrator.Spec.OtelExporter.Protocol}}
+              value: '{{if .Orchestrator.Spec.LogLevel}}{{.Orchestrator.Spec.LogLevel}}{{else}}info{{end}}'
+            {{- if .Orchestrator.Spec.OtelExporter.Protocol }}
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
-              value: {{.Orchestrator.Spec.OtelExporter.Protocol}}
-          {{end}}
-          {{if .Orchestrator.Spec.OtelExporter.TracesProtocol}}
+              value: {{.Orchestrator.Spec.OtelExporter.Protocol }}{{end}}
+            {{- if .Orchestrator.Spec.OtelExporter.TracesProtocol }}
             - name: OTEL_EXPORTER_OTLP_TRACES_PROTOCOL
-              value: {{.Orchestrator.Spec.OtelExporter.TracesProtocol}}
-          {{end}}
-          {{if .Orchestrator.Spec.OtelExporter.MetricsProtocol}}
+              value: {{.Orchestrator.Spec.OtelExporter.TracesProtocol}}{{end}}
+            {{- if .Orchestrator.Spec.OtelExporter.MetricsProtocol }}
             - name: OTEL_EXPORTER_OTLP_METRICS_PROTOCOL
-              value: {{.Orchestrator.Spec.OtelExporter.MetricsProtocol}}
-          {{end}}
-          {{if .Orchestrator.Spec.OtelExporter.OTLPEndpoint}}
+              value: {{.Orchestrator.Spec.OtelExporter.MetricsProtocol}}{{end}}
+            {{- if .Orchestrator.Spec.OtelExporter.OTLPEndpoint }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{.Orchestrator.Spec.OtelExporter.OTLPEndpoint}}
-          {{end}}
-          {{if .Orchestrator.Spec.OtelExporter.TracesEndpoint}}
+              value: {{.Orchestrator.Spec.OtelExporter.OTLPEndpoint}}{{end}}
+            {{- if .Orchestrator.Spec.OtelExporter.TracesEndpoint}}
             - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
-              value: {{.Orchestrator.Spec.OtelExporter.TracesEndpoint}}
-          {{end}}
-          {{if .Orchestrator.Spec.OtelExporter.MetricsEndpoint}}
+              value: {{.Orchestrator.Spec.OtelExporter.TracesEndpoint}}{{end}}
+            {{- if .Orchestrator.Spec.OtelExporter.MetricsEndpoint}}
             - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
-              value: {{.Orchestrator.Spec.OtelExporter.MetricsEndpoint}}
-          {{end}}
-          {{if .Orchestrator.Spec.OtelExporter.OTLPExport}}
+              value: {{.Orchestrator.Spec.OtelExporter.MetricsEndpoint}}{{end}}
+            {{- if .Orchestrator.Spec.OtelExporter.OTLPExport}}
             - name: OTLP_EXPORT
-              value: {{.Orchestrator.Spec.OtelExporter.OTLPExport}}
-          {{end}}
+              value: {{.Orchestrator.Spec.OtelExporter.OTLPExport}}{{end}}
           volumeMounts:
             - name: {{.Orchestrator.Name}}-config
               readOnly: true
               mountPath: /config/config.yaml
               subPath: config.yaml
+            - name: tls-certs
+              mountPath: /etc/tls/private
+              readOnly: true
+            - name: tls-ca-bundle
+              mountPath: /etc/tls/ca
+              readOnly: true
           ports:
-            {{if .Orchestrator.Spec.SidecarGatewayConfig}}
-            - name: http
-              containerPort: 8032
+            - name: https
+              containerPort: {{ if or .Orchestrator.Spec.SidecarGatewayConfig (and .Orchestrator.Status.AutoConfigState .Orchestrator.Status.AutoConfigState.GeneratedGatewayConfigMap) }}8032{{ else }}8033{{ end }}
               protocol: TCP
-            {{else}}
-            - name: http
-              containerPort: 8033
-              protocol: TCP
-            {{end}}
           imagePullPolicy: Always
           terminationMessagePolicy: File
           resources:
@@ -136,21 +206,37 @@ spec:
             terminationMessagePath: /dev/termination-log
             command:
               - /app/bin/fms-guardrails-orchestr8
-        {{if .Orchestrator.Spec.EnableGuardrailsGateway}}
+        {{ if .Orchestrator.Spec.EnableGuardrailsGateway }}
         - name: {{.Orchestrator.Name}}-gateway
-          image : {{.ContainerImages.GuardrailsGatewayImage}}
-          command: ["/app/bin/vllm-orchestrator-gateway"]
+          image: {{.ContainerImages.GuardrailsGatewayImage}}
+          command: [ "/app/bin/vllm-orchestrator-gateway" ]
           volumeMounts:
             - name: {{.Orchestrator.Name}}-sidecar-gateway-config
               readOnly: true
               mountPath: /config/config.yaml
               subPath: config.yaml
+            - name: tls-certs
+              mountPath: /etc/tls/private
+              readOnly: true
+            - name: tls-ca-bundle
+              mountPath: /etc/tls/ca
+              readOnly: true
           env:
             - name: GATEWAY_CONFIG
               value: /config/config.yaml
+            - name: RUST_LOG
+              value: '{{if .Orchestrator.Spec.LogLevel}}{{.Orchestrator.Spec.LogLevel}}{{else}}info{{end}}'
+            - name: GATEWAY_USE_MTLS
+              value: 'false'
+        {{ if .GatewayOAuthProxy }}
+        - {{- template "oAuthProxy" .GatewayOAuthProxy }}
         {{end}}
-        {{if .Orchestrator.Spec.EnableBuiltInDetectors}}
+        {{end}}
+        {{ if .Orchestrator.Spec.EnableBuiltInDetectors }}
         - name: {{.Orchestrator.Name}}-detectors
-          image : {{.ContainerImages.DetectorImage}}
-          command: ["/app/bin/regex-detector"]
+          image: {{.ContainerImages.DetectorImage}}
+          command: [ "/app/bin/regex-detector" ]
+        {{end}}
+        {{- if .OrchestratorOAuthProxy -}}
+        - {{- template "oAuthProxy" .OrchestratorOAuthProxy }}
         {{end}}

@@ -30,16 +30,19 @@ type ContainerImages struct {
 }
 
 type DeploymentConfig struct {
-	Orchestrator    *gorchv1alpha1.GuardrailsOrchestrator
-	ContainerImages ContainerImages
+	Orchestrator           *gorchv1alpha1.GuardrailsOrchestrator
+	ContainerImages        ContainerImages
+	OrchestratorOAuthProxy *OAuthConfig
+	GatewayOAuthProxy      *OAuthConfig
 }
 
-func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *appsv1.Deployment {
+func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (*appsv1.Deployment, error) {
 	var containerImages ContainerImages
 
 	orchestratorImage, err := r.getImageFromConfigMap(ctx, orchestratorImageKey, constants.ConfigMap, r.Namespace)
 	if orchestratorImage == "" || err != nil {
 		log.FromContext(ctx).Error(err, "Error getting container image from ConfigMap.")
+		return nil, err
 	}
 	containerImages.OrchestratorImage = orchestratorImage
 	log.FromContext(ctx).Info("using OrchestratorImage " + orchestratorImage + " " + "from config map " + r.Namespace + ":" + constants.ConfigMap)
@@ -49,6 +52,7 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 		detectorImage, err := r.getImageFromConfigMap(ctx, detectorImageKey, constants.ConfigMap, r.Namespace)
 		if detectorImage == "" || err != nil {
 			log.FromContext(ctx).Error(err, "Error getting detectors image from ConfigMap.")
+			return nil, err
 		}
 		log.FromContext(ctx).Info("Using detector image " + detectorImage + " " + "from configmap " + r.Namespace + ":" + constants.ConfigMap)
 		containerImages.DetectorImage = detectorImage
@@ -65,20 +69,30 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 	}
 
 	deploymentConfig := DeploymentConfig{
-		Orchestrator:    orchestrator,
-		ContainerImages: containerImages,
+		Orchestrator:           orchestrator,
+		ContainerImages:        containerImages,
+		OrchestratorOAuthProxy: nil,
+		GatewayOAuthProxy:      nil,
+	}
+
+	if requiresOAuth(orchestrator) {
+		if err = r.configureOAuth(ctx, orchestrator, &deploymentConfig); err != nil {
+			log.FromContext(ctx).Error(err, "Error configuring OAuth.")
+			return nil, err
+		}
 	}
 
 	var deployment *appsv1.Deployment
-
 	deployment, err = templateParser.ParseResource[appsv1.Deployment](deploymentTemplatePath, deploymentConfig, reflect.TypeOf(&appsv1.Deployment{}))
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to parse deployment template")
+		return nil, err
 	}
 	if err := controllerutil.SetControllerReference(orchestrator, deployment, r.Scheme); err != nil {
 		log.FromContext(ctx).Error(err, "Failed to set controller reference for deployment")
+		return nil, err
 	}
-	return deployment
+	return deployment, nil
 }
 
 func (r *GuardrailsOrchestratorReconciler) checkDeploymentReady(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (bool, error) {
@@ -121,4 +135,43 @@ func (r GuardrailsOrchestratorReconciler) checkPodsReady(ctx context.Context, de
 		}
 	}
 	return nil
+}
+
+// addTLSMounts adds secret mounts for each TLS serving secret required by the orchestrator
+func (r GuardrailsOrchestratorReconciler) addTLSMounts(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, deployment *appsv1.Deployment, tlsMounts []gorchv1alpha1.DetectedService) error {
+	if len(tlsMounts) > 0 {
+		for i := range tlsMounts {
+			MountSecret(deployment, tlsMounts[i].TLSSecret)
+
+			// validate that the TLS serving secrets indeed exist before creating deployment
+			_, err := getSecret(ctx, r.Client, orchestrator.Namespace, tlsMounts[i].TLSSecret)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// patchDeployment updates existingDeployment in-place to match newDeployment's Spec and Template Annotations.
+// Returns true if any changes were made.
+func patchDeployment(existingDeployment, newDeployment *appsv1.Deployment) bool {
+	changed := false
+
+	// Patch Spec (deep copy to avoid pointer issues)
+	if !reflect.DeepEqual(existingDeployment.Spec, newDeployment.Spec) {
+		existingDeployment.Spec = *newDeployment.Spec.DeepCopy()
+		changed = true
+	}
+
+	// Patch Annotations (if needed)
+	if !reflect.DeepEqual(existingDeployment.Annotations, newDeployment.Annotations) {
+		existingDeployment.Annotations = map[string]string{}
+		for k, v := range newDeployment.Annotations {
+			existingDeployment.Annotations[k] = v
+		}
+		changed = true
+	}
+
+	return changed
 }
