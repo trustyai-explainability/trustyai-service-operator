@@ -14,7 +14,7 @@ spec:
   port:
     targetPort: gateway
   tls:
-    termination: edge
+    termination: {{if .UseOAuthProxy}}reencrypt{{else}}edge{{end}}
     insecureEdgeTerminationPolicy: Redirect
   wildcardPolicy: None
 

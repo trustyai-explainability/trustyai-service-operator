@@ -18,12 +18,14 @@ import (
 )
 
 type RouteConfig struct {
-	Orchestrator *gorchv1alpha1.GuardrailsOrchestrator
+	Orchestrator  *gorchv1alpha1.GuardrailsOrchestrator
+	UseOAuthProxy bool
 }
 
 func (r *GuardrailsOrchestratorReconciler) createRoute(ctx context.Context, routeTemplatePath string, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *routev1.Route {
 	routeHttpsConfig := RouteConfig{
-		Orchestrator: orchestrator,
+		Orchestrator:  orchestrator,
+		UseOAuthProxy: requiresOAuth(orchestrator),
 	}
 	var route *routev1.Route
 	route, err := templateParser.ParseResource[routev1.Route](routeTemplatePath, routeHttpsConfig, reflect.TypeOf(&routev1.Route{}))
