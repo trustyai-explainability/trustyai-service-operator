@@ -26,3 +26,8 @@ bin
 
 # CI Test Outputs
 tests/artifacts/*
+
+# Driver build artifacts
+controllers/lmes/driver/mycatalogs*
+controllers/lmes/driver/mytasks*
+controllers/lmes/driver/outputs*
