@@ -22,6 +22,12 @@ spec:
       protocol: TCP
       port: {{if .UseOAuthProxy}}8432{{else}}8032{{end}}
       targetPort: {{if .UseOAuthProxy}}8432{{else}}8032{{end}}
+    {{if .UseOAuthProxy}}
+    - name: https-tls
+      protocol: TCP
+      port: 8032
+      targetPort: 8032
+    {{end}}
     - name: health
       protocol: TCP
       port: 8034

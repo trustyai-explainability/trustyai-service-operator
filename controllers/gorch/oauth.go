@@ -2,6 +2,7 @@ package gorch
 
 import (
 	"context"
+	"fmt"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -14,6 +15,7 @@ type OAuthConfig struct {
 	Namespace        string
 	OAuthProxyImage  string
 	UpstreamProtocol string
+	UpstreamHost     string
 	UpstreamPort     int
 	DownstreamPort   int
 }
@@ -40,6 +42,7 @@ func (r *GuardrailsOrchestratorReconciler) configureOAuth(ctx context.Context, o
 		OAuthProxyImage:  oAuthImage,
 		DownstreamPort:   8432,
 		UpstreamProtocol: "https",
+		UpstreamHost:     fmt.Sprintf("%s-service.%s.svc", orchestrator.Name, orchestrator.Namespace), // use full service name to avoid certificate validation issues
 		UpstreamPort:     8032,
 	}
 	if orchestrator.Spec.EnableGuardrailsGateway {
@@ -50,6 +53,7 @@ func (r *GuardrailsOrchestratorReconciler) configureOAuth(ctx context.Context, o
 			OAuthProxyImage:  oAuthImage,
 			DownstreamPort:   8490,
 			UpstreamProtocol: "http",
+			UpstreamHost:     "localhost",
 			UpstreamPort:     8090,
 		}
 	}
