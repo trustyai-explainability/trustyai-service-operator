@@ -37,7 +37,7 @@ jobs:
       - name: Assigning main context
         if: github.head_ref == '' && github.ref == 'refs/heads/main'
         run: echo "BUILD_CONTEXT=main" >> $GITHUB_ENV
-      #
+
       # Run checkouts
       - uses: mheap/github-action-required-labels@v4
         if: env.BUILD_CONTEXT == 'ci'
@@ -52,6 +52,52 @@ jobs:
       - uses: actions/checkout@v3
         if: env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
       #
+      - name: Set main-branch/default environment
+        run: |
+          echo "OPERATOR_TAG=latest" >> $GITHUB_ENV
+          echo "LMES_DRIVER_TAG=latest" >> $GITHUB_ENV
+          echo "LMES_JOB_TAG=latest" >> $GITHUB_ENV
+          echo "ORCH_TAG=latest" >> $GITHUB_ENV
+          
+          echo "OPERATOR_IMAGE_NAME=${{ vars.QUAY_RELEASE_REPO }}" >> $GITHUB_ENV
+          echo "LMES_DRIVER_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_DRIVER_REPO }}" >> $GITHUB_ENV
+          echo "LMES_JOB_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_JOB_REPO }}" >> $GITHUB_ENV
+          echo "ORCH_IMAGE_NAME=${{ vars.QUAY_RELEASE_GUARDRAILS_REPO }}" >> $GITHUB_ENV
+
+      - name: Set tag environment
+        if: env.BUILD_CONTEXT == 'tag'
+        run: |
+          echo "OPERATOR_TAG=${{ github.ref_name }}" >> $GITHUB_ENV
+          echo "LMES_DRIVER_TAG=${{ github.ref_name }}" >> $GITHUB_ENV
+          echo "LMES_JOB_TAG=${{ github.ref_name }}" >> $GITHUB_ENV
+          echo "ORCH_TAG=${{ github.ref_name }}" >> $GITHUB_ENV
+          
+          echo "OPERATOR_IMAGE_NAME=${{ vars.QUAY_RELEASE_REPO }}" >> $GITHUB_ENV
+          echo "LMES_DRIVER_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_DRIVER_REPO }}" >> $GITHUB_ENV
+          echo "LMES_JOB_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_JOB_REPO }}" >> $GITHUB_ENV
+          echo "ORCH_IMAGE_NAME=${{ vars.QUAY_RELEASE_GUARDRAILS_REPO }}" >> $GITHUB_ENV
+
+      # Set environments depending on context
+      - name: Set CI environment
+        if: env.BUILD_CONTEXT == 'ci'
+        run: |
+          echo "OPERATOR_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          echo "IMAGE_NAME=quay.io/trustyai/trustyai-service-operator-ci" >> $GITHUB_ENV
+
+      - name: Set CI environment - LMES
+        if: env.BUILD_CONTEXT == 'ci' && contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        run: |
+          echo "LMES_DRIVER_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          echo "LMES_JOB_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          echo "LMES_DRIVER_IMAGE_NAME=quay.io/trustyai/ta-lmes-driver-ci" >> $GITHUB_ENV
+          echo "LMES_JOB_IMAGE_NAME=quay.io/trustyai/ta-lmes-job-ci" >> $GITHUB_ENV
+
+      - name: Set CI environment - Orchestrator
+        if: env.BUILD_CONTEXT == 'ci' && contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build')
+        run: |
+          echo "ORCH_IMAGE_NAME=quay.io/trustyai/ta-guardrails-orchestrator-ci" >> $GITHUB_ENV
+          echo "ORCH_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+
       # Print variables for debugging
       - name: Log reference variables
         run: |
@@ -59,40 +105,10 @@ jobs:
           echo "GITHUB.REF: ${{ github.ref }}"
           echo "GITHUB.HEAD_REF: ${{ github.head_ref }}"
           echo "SHA: ${{ github.event.pull_request.head.sha }}"
-          echo "MAIN IMAGE AT: ${{ vars.QUAY_RELEASE_REPO }}:latest"
-          echo "LMES DRIVER IMAGE AT: ${{ vars.QUAY_RELEASE_LMES_DRIVER_REPO }}:latest"
-          echo "LMES JOB IMAGE AT: ${{ vars.QUAY_RELEASE_LMES_JOB_REPO }}:latest"
-          echo "GUARDRAILS ORCH IMAGE AT: ${{ vars.QUAY_RELEASE_GUARDRAILS_REPO }}:latest"
-
-          echo "CI IMAGE AT: quay.io/trustyai/trustyai-service-operator-ci:${{ github.event.pull_request.head.sha }}"
-      #
-      # Set environments depending on context
-      - name: Set CI environment
-        if: env.BUILD_CONTEXT == 'ci'
-        run: |
-          echo "TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
-          echo "IMAGE_NAME=quay.io/trustyai/trustyai-service-operator-ci" >> $GITHUB_ENV
-          echo "DRIVER_IMAGE_NAME=quay.io/trustyai/ta-lmes-driver-ci" >> $GITHUB_ENV
-          echo "JOB_IMAGE_NAME=quay.io/trustyai/ta-lmes-job-ci" >> $GITHUB_ENV
-          echo "ORCH_IMAGE_NAME=quay.io/trustyai/ta-guardrails-orchestrator-ci" >> $GITHUB_ENV
-
-      - name: Set main-branch environment
-        if: env.BUILD_CONTEXT == 'main'
-        run: |
-          echo "TAG=latest" >> $GITHUB_ENV
-          echo "IMAGE_NAME=${{ vars.QUAY_RELEASE_REPO }}" >> $GITHUB_ENV
-          echo "DRIVER_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_DRIVER_REPO }}" >> $GITHUB_ENV
-          echo "JOB_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_JOB_REPO }}" >> $GITHUB_ENV
-          echo "ORCH_IMAGE_NAME=${{ vars.QUAY_RELEASE_GUARDRAILS_REPO }}" >> $GITHUB_ENV
-
-      - name: Set tag environment
-        if: env.BUILD_CONTEXT == 'tag'
-        run: |
-          echo "TAG=${{ github.ref_name }}" >> $GITHUB_ENV
-          echo "IMAGE_NAME=${{ vars.QUAY_RELEASE_REPO }}" >> $GITHUB_ENV
-          echo "DRIVER_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_DRIVER_REPO }}" >> $GITHUB_ENV
-          echo "JOB_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_JOB_REPO }}" >> $GITHUB_ENV
-          echo "ORCH_IMAGE_NAME=${{ vars.QUAY_RELEASE_GUARDRAILS_REPO }}" >> $GITHUB_ENV
+          echo "MAIN IMAGE AT: ${{ env.OPERATOR_IMAGE_NAME }}:${{ env.OPERATOR_TAG }}"
+          echo "LMES DRIVER IMAGE AT: ${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }}"
+          echo "LMES JOB IMAGE AT: ${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }}"
+          echo "GUARDRAILS ORCH IMAGE AT: ${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }}"
 
       # Run docker commands
       - name: Put expiry date on CI-tagged image
@@ -101,41 +117,53 @@ jobs:
       - name: Log in to Quay
         run: docker login -u ${{ secrets.QUAY_ROBOT_USERNAME }} -p ${{ secrets.QUAY_ROBOT_SECRET }} quay.io
       - name: Build main image
-        run: docker build -t ${{ env.IMAGE_NAME }}:$TAG .
+        run: docker build -t ${{ env.OPERATOR_IMAGE_NAME }}:${{ env.OPERATOR_TAG }} .
       - name: Push main image to Quay
-        run: docker push ${{ env.IMAGE_NAME }}:$TAG
+        run: docker push ${{ env.OPERATOR_IMAGE_NAME }}:${{ env.OPERATOR_TAG }}
+
+      # LMES Driver Builds
       - name: Build LMES driver image
-        run: docker build -f Dockerfile.driver -t ${{ env.DRIVER_IMAGE_NAME }}:$TAG .
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        run: docker build -f Dockerfile.driver -t ${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }} .
       - name: Push LMES driver image to Quay
-        run: docker push ${{ env.DRIVER_IMAGE_NAME }}:$TAG
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        run: docker push ${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }}
+
+      # LMES Job Builds
       - name: Build LMES job image
-        run: docker build -f Dockerfile.lmes-job -t ${{ env.JOB_IMAGE_NAME }}:$TAG .
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        run: docker build -f Dockerfile.lmes-job -t ${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }} .
       - name: Push LMES job image to Quay
-        run: docker push ${{ env.JOB_IMAGE_NAME }}:$TAG
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        run: docker push ${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }}
+
+      # Orchestrator Builds
       - name: Build Guardrails orchestrator image
-        run: docker build -f Dockerfile.orchestrator -t ${{ env.ORCH_IMAGE_NAME }}:$TAG .
+        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build')
+        run: docker build -f Dockerfile.orchestrator -t ${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }} .
       - name: Push Guardrails orchestrator image to Quay
-        run: docker push ${{ env.ORCH_IMAGE_NAME }}:$TAG
+        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build')
+        run: docker push ${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }}
 
       # Create CI Manifests
       - name: Set up manifests for CI
         if: env.BUILD_CONTEXT == 'ci'
         run: |
-          sed -i "s#quay.io/trustyai/trustyai-service-operator:latest#${{ env.IMAGE_NAME }}:$TAG#" ./config/base/params.env
-          sed -i "s#quay.io/trustyai/trustyai-service-operator:latest#${{ env.IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
-          sed -i "s#quay.io/trustyai/trustyai-service-operator:latest#${{ env.IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
+          sed -i "s#quay.io/trustyai/trustyai-service-operator:latest#${{ env.OPERATOR_IMAGE_NAME }}:${{ env.OPERATOR_TAG }}#" ./config/base/params.env
+          sed -i "s#quay.io/trustyai/trustyai-service-operator:latest#${{ env.OPERATOR_IMAGE_NAME }}:${{ env.OPERATOR_TAG }}#" ./config/overlays/odh/params.env
+          sed -i "s#quay.io/trustyai/trustyai-service-operator:latest#${{ env.OPERATOR_IMAGE_NAME }}:${{ env.OPERATOR_TAG }}#" ./config/overlays/rhoai/params.env
           
-          sed -i "s#quay.io/trustyai/ta-lmes-driver:latest#${{ env.DRIVER_IMAGE_NAME }}:$TAG#" ./config/base/params.env
-          sed -i "s#quay.io/trustyai/ta-lmes-driver:latest#${{ env.DRIVER_IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
-          sed -i "s#quay.io/trustyai/ta-lmes-driver:latest#${{ env.DRIVER_IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-driver:latest#${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }}#" ./config/base/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-driver:latest#${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }}#" ./config/overlays/odh/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-driver:latest#${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }}#" ./config/overlays/rhoai/params.env
           
-          sed -i "s#quay.io/trustyai/ta-lmes-job:latest#${{ env.JOB_IMAGE_NAME }}:$TAG#" ./config/base/params.env
-          sed -i "s#quay.io/trustyai/ta-lmes-job:latest#${{ env.JOB_IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
-          sed -i "s#quay.io/trustyai/ta-lmes-job:latest#${{ env.JOB_IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-job:latest#${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }}#" ./config/base/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-job:latest#${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }}#" ./config/overlays/odh/params.env
+          sed -i "s#quay.io/trustyai/ta-lmes-job:latest#${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }}#" ./config/overlays/rhoai/params.env
           
-          sed -i "s#quay.io/trustyai/ta-guardrails-orchestrator:latest#${{ env.ORCH_IMAGE_NAME }}:$TAG#" ./config/base/params.env
-          sed -i "s#quay.io/trustyai/ta-guardrails-orchestrator:latest#${{ env.ORCH_IMAGE_NAME }}:$TAG#" ./config/overlays/odh/params.env
-          sed -i "s#quay.io/trustyai/ta-guardrails-orchestrator:latest#${{ env.ORCH_IMAGE_NAME }}:$TAG#" ./config/overlays/rhoai/params.env
+          sed -i "s#quay.io/trustyai/ta-guardrails-orchestrator:latest#${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }}#" ./config/base/params.env
+          sed -i "s#quay.io/trustyai/ta-guardrails-orchestrator:latest#${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }}#" ./config/overlays/odh/params.env
+          sed -i "s#quay.io/trustyai/ta-guardrails-orchestrator:latest#${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }}#" ./config/overlays/rhoai/params.env
           
           
           rm -Rf $(ls . | grep -v config)
@@ -150,7 +178,7 @@ jobs:
           destination-github-username: "trustyai-ci-bot"
           destination-repository-username: "trustyai-explainability"
           destination-repository-name: "trustyai-service-operator-ci"
-          target-branch: operator-${{ env.TAG }}
+          target-branch: operator-${{ env.OPERATOR_TAG }}
           create-target-branch-if-needed: "true"
 
       # Leave comment
@@ -172,20 +200,20 @@ jobs:
           body: |
             PR image build and manifest generation completed successfully!
 
-            📦 [PR image](https://quay.io/trustyai/trustyai-service-operator-ci:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/trustyai-service-operator-ci:${{ github.event.pull_request.head.sha }}`
+            📦 [PR image](https://${{ env.OPERATOR_IMAGE_NAME }}:${{ env.OPERATOR_TAG }}): `${{ env.OPERATOR_IMAGE_NAME }}:${{ env.OPERATOR_TAG }}`
 
-            📦 [LMES driver image](https://quay.io/trustyai/ta-lmes-driver-ci:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/ta-lmes-driver-ci:${{ github.event.pull_request.head.sha }}`
+            📦 [LMES driver image](https://${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }}): `${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }}`
 
-            📦 [LMES job image](https://quay.io/trustyai/ta-lmes-job-ci:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/ta-lmes-job-ci:${{ github.event.pull_request.head.sha }}`
+            📦 [LMES job image](https://${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }}): `${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }}`
 
-            📦 [Guardrails orchestrator image](https://quay.io/trustyai/ta-guardrails-orchestrator-ci:${{ github.event.pull_request.head.sha }}): `quay.io/trustyai/ta-guardrails-orchestrator-ci:${{ github.event.pull_request.head.sha }}`
+            📦 [Guardrails orchestrator image](https://${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }}): `${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }}`
 
-            🗂️ [CI manifests](https://github.com/trustyai-explainability/trustyai-service-operator-ci/tree/operator-${{ env.TAG }})
+            🗂️ [CI manifests](https://github.com/trustyai-explainability/trustyai-service-operator-ci/tree/operator-${{ env.OPERATOR_TAG }})
 
             ```
                   devFlags:
                     manifests:
                       - contextDir: config
                         sourcePath: ''
-                        uri: https://api.github.com/repos/trustyai-explainability/trustyai-service-operator-ci/tarball/operator-${{ env.TAG }}
+                        uri: https://api.github.com/repos/trustyai-explainability/trustyai-service-operator-ci/tarball/operator-${{ env.OPERATOR_TAG }}
             ```
