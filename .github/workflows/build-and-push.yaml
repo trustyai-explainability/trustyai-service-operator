@@ -123,26 +123,26 @@ jobs:
 
       # LMES Driver Builds
       - name: Build LMES driver image
-        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build') ||  env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
         run: docker build -f Dockerfile.driver -t ${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }} .
       - name: Push LMES driver image to Quay
-        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build') ||  env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
         run: docker push ${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }}
 
       # LMES Job Builds
       - name: Build LMES job image
-        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build') ||  env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
         run: docker build -f Dockerfile.lmes-job -t ${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }} .
       - name: Push LMES job image to Quay
-        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build') ||  env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
         run: docker push ${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }}
 
       # Orchestrator Builds
       - name: Build Guardrails orchestrator image
-        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build')
+        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build') ||  env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
         run: docker build -f Dockerfile.orchestrator -t ${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }} .
       - name: Push Guardrails orchestrator image to Quay
-        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build')
+        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build') ||  env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
         run: docker push ${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }}
 
       # Create CI Manifests
