@@ -53,6 +53,7 @@ import (
 
 	"github.com/go-logr/logr"
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/dsc"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes/driver"
 )
 
@@ -274,6 +275,15 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		if err := constructOptionsFromConfigMap(&log, &cm); err != nil {
 			return err
+		}
+
+		// Read DSC configuration if available
+		dscReader := dsc.NewDSCConfigReader(r.Client, r.Namespace)
+		if dscConfig, err := dscReader.ReadDSCConfig(ctx, &log); err != nil {
+			log.Error(err, "failed to read DSC configuration, continuing with defaults")
+			// Don't return error here as DSC config is optional
+		} else {
+			ApplyDSCConfig(dscConfig)
 		}
 
 		return nil
