@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/dsc"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes/driver"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -114,4 +115,12 @@ func constructOptionsFromConfigMap(log *logr.Logger, configmap *corev1.ConfigMap
 	}
 
 	return nil
+}
+
+// ApplyDSCConfig applies DSC configuration to the LMES Options
+func ApplyDSCConfig(dscConfig *dsc.DSCConfig) {
+	if dscConfig != nil {
+		Options.AllowOnline = dscConfig.AllowOnline
+		Options.AllowCodeExecution = dscConfig.AllowCodeExecution
+	}
 }
