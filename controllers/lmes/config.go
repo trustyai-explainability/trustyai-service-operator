@@ -118,6 +118,7 @@ func constructOptionsFromConfigMap(log *logr.Logger, configmap *corev1.ConfigMap
 }
 
 // ApplyDSCConfig applies DSC configuration to the LMES Options
+// Only applies configuration if DSC config is available and not nil
 func ApplyDSCConfig(dscConfig *dsc.DSCConfig) {
 	if dscConfig != nil {
 		Options.AllowOnline = dscConfig.AllowOnline
