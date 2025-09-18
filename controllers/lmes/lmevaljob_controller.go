@@ -276,6 +276,7 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		if err := constructOptionsFromConfigMap(&log, &cm); err != nil {
 			return err
 		}
+		log.Info("Constructed options from configmap", "options", Options)
 
 		// Read DSC configuration if available
 		dscReader := dsc.NewDSCConfigReader(r.Client, r.Namespace)
@@ -286,6 +287,7 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			ApplyDSCConfig(dscConfig)
 		}
 
+		log.Info("Applied DSC configuration", "options", Options)
 		return nil
 	})); err != nil {
 		return err
