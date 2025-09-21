@@ -114,7 +114,13 @@ func (job *LMEvalJob) Finished() (condition metav1.Condition, finished bool) {
 // PodSets will build workload podSets corresponding to the job.
 func (job *LMEvalJob) PodSets() []kueue.PodSet {
 	log := log.FromContext(context.TODO())
-	pod := lmes.CreatePod(lmes.Options, &job.LMEvalJob, log)
+	// Use global Options permissions for job manager.
+	// This will be updated before every job deployment.
+	permConfig := &lmes.PermissionConfig{
+		AllowOnline:        lmes.Options.AllowOnline,
+		AllowCodeExecution: lmes.Options.AllowCodeExecution,
+	}
+	pod := lmes.CreatePod(lmes.Options, &job.LMEvalJob, permConfig, log)
 	podSet := kueue.PodSet{
 		Name:     job.GetPodName(),
 		Count:    1,
