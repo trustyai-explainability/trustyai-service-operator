@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	nemov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo/v1alpha1"
 	"os"
 
 	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
@@ -67,6 +68,7 @@ func init() {
 	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
 	utilruntime.Must(kueuev1beta1.AddToScheme(scheme))
 	utilruntime.Must(gorchv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(nemov1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
