@@ -67,6 +67,7 @@ type DriverOption struct {
 	Args                []string
 	CommPort            int
 	DownloadAssetsS3    bool
+	UploadToOCI         bool
 	CustomTaskGitURL    string
 	CustomTaskGitBranch string
 	CustomTaskGitCommit string
@@ -237,6 +238,64 @@ func (d *driverImpl) downloadS3Assets() error {
 	fmt.Println(string(output))
 	if err != nil {
 		return fmt.Errorf("failed to download assets from S3: %v", err)
+	}
+
+	return nil
+}
+
+func (d *driverImpl) uploadToOCI() error {
+	if d == nil || !d.Option.UploadToOCI {
+		return nil
+	}
+
+	fmt.Println("Uploading results to OCI registry")
+
+	// Build command arguments: scripts/oci.py <registry> <results_location>
+	registryFromEnv := os.Getenv("OCI_REGISTRY")
+	if registryFromEnv == "" {
+		return fmt.Errorf("OCI_REGISTRY environment variable not set")
+	}
+
+	pathFromEnv := os.Getenv("OCI_PATH")
+	var resultsLocation string
+	if pathFromEnv == "" {
+		// If OCI_PATH is not set, use the output path directly
+		resultsLocation = d.Option.OutputPath
+	} else {
+		// If OCI_PATH is set, join it with the output path
+		resultsLocation = filepath.Join(d.Option.OutputPath, pathFromEnv)
+	}
+
+	cmd := []string{"python", "/opt/app-root/src/scripts/oci.py", registryFromEnv, resultsLocation}
+	fmt.Printf("[DEBUG] OCI upload CLI: %v\n", cmd)
+
+	// List all files and directories in resultsLocation
+	fmt.Printf("[DEBUG] Contents of results location (%s):\n", resultsLocation)
+	_ = filepath.Walk(resultsLocation, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Printf("  [error] %v\n", err)
+			return nil
+		}
+		rel, _ := filepath.Rel(resultsLocation, path)
+		if rel == "." {
+			fmt.Printf("  %s/\n", rel)
+		} else if info.IsDir() {
+			fmt.Printf("  %s/\n", rel)
+		} else {
+			fmt.Printf("  %s\n", rel)
+		}
+		return nil
+	})
+
+	output, err := exec.Command(
+		"python",
+		"/opt/app-root/src/scripts/oci.py",
+		registryFromEnv,
+		resultsLocation,
+	).Output()
+	fmt.Println(string(output))
+	if err != nil {
+		return fmt.Errorf("failed to upload results to OCI: %v", err)
 	}
 
 	return nil
@@ -443,6 +502,11 @@ func (d *driverImpl) updateCompleteStatus(err error) {
 		var results string
 		results, err = d.getResults()
 		d.status.Results = results
+
+		// Upload results to OCI if configured
+		if err == nil {
+			err = d.uploadToOCI()
+		}
 	}
 
 	if err != nil {

@@ -276,6 +276,7 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		if err := constructOptionsFromConfigMap(&log, &cm); err != nil {
 			return err
 		}
+		log.Info("Constructed options from configmap", "options", Options)
 
 		// Read DSC configuration if available
 		dscReader := dsc.NewDSCConfigReader(r.Client, r.Namespace)
@@ -286,6 +287,7 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			ApplyDSCConfig(dscConfig)
 		}
 
+		log.Info("Applied DSC configuration", "options", Options)
 		return nil
 	})); err != nil {
 		return err
@@ -518,9 +520,23 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 		return ctrl.Result{}, err
 	}
 
+	// Read current permissions for this job deployment
+	permConfig, err := ReadEffectivePermissions(ctx, r.Client, r.Namespace, r.ConfigMap, &log)
+	if err != nil {
+		// Failed to read permissions. Mark the status as complete with failed
+		job.Status.State = lmesv1alpha1.CompleteJobState
+		job.Status.Reason = lmesv1alpha1.FailedReason
+		job.Status.Message = fmt.Sprintf("Failed to read configuration: %s", err.Error())
+		if err := r.Status().Update(ctx, job); err != nil {
+			log.Error(err, "unable to update LMEvalJob status for config read failure")
+		}
+		log.Error(err, "Failed to read permissions for LMEvalJob", "name", job.Name)
+		return ctrl.Result{}, err
+	}
+
 	// construct a new pod and create a pod for the job
 	currentTime := v1.Now()
-	pod := CreatePod(Options, job, log)
+	pod := CreatePod(Options, job, permConfig, log)
 	if err := r.Create(ctx, pod, &client.CreateOptions{}); err != nil {
 		// Failed to create the pod. Mark the status as complete with failed
 		job.Status.State = lmesv1alpha1.CompleteJobState
@@ -738,13 +754,21 @@ func (r *LMEvalJobReconciler) handleSuspend(ctx context.Context, log logr.Logger
 
 func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
 	log.Info("Resume job")
-	pod := CreatePod(Options, job, log)
-	if err := r.Create(ctx, pod); err != nil {
-		log.Error(err, "failed to create pod to resume job")
+
+	// Read effective permissions for this job deployment
+	permConfig, err := ReadEffectivePermissions(ctx, r.Client, r.Namespace, r.ConfigMap, &log)
+	if err != nil {
+		log.Error(err, "Failed to read effective permissions for LMEvalJob resume", "name", job.Name)
+		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), err
+	}
+
+	pod := CreatePod(Options, job, permConfig, log)
+	if createErr := r.Create(ctx, pod); createErr != nil {
+		log.Error(createErr, "failed to create pod to resume job")
 		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 	}
 	job.Status.State = lmesv1alpha1.ScheduledJobState
-	err := r.Status().Update(ctx, job)
+	err = r.Status().Update(ctx, job)
 	if err != nil {
 		log.Error(err, "failed to update job status to scheduled")
 	}
@@ -863,7 +887,7 @@ func unmarshal(custom string, props []string) (map[string]interface{}, error) {
 	return obj, nil
 }
 
-func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Logger) *corev1.Pod {
+func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig *PermissionConfig, log logr.Logger) *corev1.Pod {
 
 	var envVars = removeProtectedEnvVars(job.Spec.Pod.GetContainer().GetEnv())
 
@@ -887,13 +911,12 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 		},
 	}
 
-	if job.Spec.HasCustomOutput() {
+	if job.Spec.Outputs != nil && (job.Spec.Outputs.HasManagedPVC() || job.Spec.Outputs.HasExistingPVC()) {
 		outputPVCMount := corev1.VolumeMount{
 			Name:      "outputs",
 			MountPath: OutputPath,
 		}
 		volumeMounts = append(volumeMounts, outputPVCMount)
-
 	}
 
 	var volumes = []corev1.Volume{
@@ -904,7 +927,7 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 		},
 	}
 
-	if job.Spec.HasCustomOutput() {
+	if job.Spec.Outputs != nil && (job.Spec.Outputs.HasManagedPVC() || job.Spec.Outputs.HasExistingPVC()) {
 
 		var claimName string
 		if job.Spec.Outputs.HasManagedPVC() {
@@ -965,7 +988,7 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 	if job.Spec.AllowCodeExecution != nil && *job.Spec.AllowCodeExecution {
 		// Disable remote code execution by default
 
-		if !svcOpts.AllowCodeExecution {
+		if !permConfig.AllowCodeExecution {
 			log.Error(fmt.Errorf("code execution not allowed by the operator"), "change this setting and redeploy the operator")
 			envVars = append(envVars, disallowRemoteCodeEnvVars...)
 		} else {
@@ -1002,7 +1025,7 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 	// Enforce offline mode by default
 	if job.Spec.AllowOnline != nil && *job.Spec.AllowOnline {
 
-		if !svcOpts.AllowOnline {
+		if !permConfig.AllowOnline {
 			log.Error(fmt.Errorf("online mode not allowed by the operator"), "change this setting and redeploy the operator")
 			envVars = append(envVars, offlineHuggingFaceEnvVars...)
 		}
@@ -1142,6 +1165,120 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 
 	}
 
+	// Always add OCI env vars if configured, regardless of offline/online mode
+	if job.Spec.HasOCIOutput() && job.Spec.Outputs != nil && job.Spec.Outputs.OCISpec != nil {
+		ociEnvVars := []corev1.EnvVar{
+			{
+				Name: "OCI_REGISTRY",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: job.Spec.Outputs.OCISpec.Registry.Name,
+						},
+						Key: job.Spec.Outputs.OCISpec.Registry.Key,
+					},
+				},
+			},
+			{
+				Name: "OCI_REPOSITORY",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: job.Spec.Outputs.OCISpec.Repository.Name,
+						},
+						Key: job.Spec.Outputs.OCISpec.Repository.Key,
+					},
+				},
+			},
+			{
+				Name:  "OCI_PATH",
+				Value: job.Spec.Outputs.OCISpec.Path,
+			},
+		}
+
+		// Add tag if specified, otherwise driver will use job name as default
+		if job.Spec.Outputs.OCISpec.Tag != "" {
+			ociEnvVars = append(ociEnvVars, corev1.EnvVar{
+				Name:  "OCI_TAG",
+				Value: job.Spec.Outputs.OCISpec.Tag,
+			})
+		}
+
+		// Add subject if specified
+		if job.Spec.Outputs.OCISpec.Subject != "" {
+			ociEnvVars = append(ociEnvVars, corev1.EnvVar{
+				Name:  "OCI_SUBJECT",
+				Value: job.Spec.Outputs.OCISpec.Subject,
+			})
+		}
+
+		// Handle authentication - either username/password or token
+		if job.Spec.Outputs.OCISpec.HasUsernamePassword() {
+			ociAuthEnvVars := []corev1.EnvVar{
+				{
+					Name: "OCI_USERNAME",
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: job.Spec.Outputs.OCISpec.UsernameRef,
+					},
+				},
+				{
+					Name: "OCI_PASSWORD",
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: job.Spec.Outputs.OCISpec.PasswordRef,
+					},
+				},
+			}
+			ociEnvVars = append(ociEnvVars, ociAuthEnvVars...)
+		} else if job.Spec.Outputs.OCISpec.HasToken() {
+			ociTokenEnvVar := corev1.EnvVar{
+				Name: "OCI_TOKEN",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: job.Spec.Outputs.OCISpec.TokenRef,
+				},
+			}
+			ociEnvVars = append(ociEnvVars, ociTokenEnvVar)
+		}
+
+		// Handle SSL verification
+		ociVerifySSL := "true"
+		if job.Spec.Outputs.OCISpec.VerifySSL != nil {
+			ociVerifySSL = strconv.FormatBool(*job.Spec.Outputs.OCISpec.VerifySSL)
+		}
+		ociEnvVars = append(ociEnvVars, corev1.EnvVar{
+			Name:  "OCI_VERIFY_SSL",
+			Value: ociVerifySSL,
+		})
+
+		envVars = append(envVars, ociEnvVars...)
+
+		// If certificates are specified, create volume to hold them
+		if job.Spec.Outputs.OCISpec.HasCertificates() {
+			ociCertificatesMount := corev1.VolumeMount{
+				Name:      "certificates-oci",
+				MountPath: "/etc/certificates/oci",
+			}
+			volumeMounts = append(volumeMounts, ociCertificatesMount)
+
+			ociCertificatesVolume := corev1.Volume{
+				Name: "certificates-oci",
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: job.Spec.Outputs.OCISpec.CABundle.Name,
+						},
+					},
+				},
+			}
+			volumes = append(volumes, ociCertificatesVolume)
+
+			ociCertificateEnvVar := corev1.EnvVar{
+				Name:  "OCI_CA_BUNDLE",
+				Value: fmt.Sprintf("/etc/certificates/oci/%s", job.Spec.Outputs.OCISpec.CABundle.Key),
+			}
+			envVars = append(envVars, ociCertificateEnvVar)
+		}
+	}
+
 	volumes = append(volumes, job.Spec.Pod.GetVolumes()...)
 	volumeMounts = append(volumeMounts, job.Spec.Pod.GetContainer().GetVolumMounts()...)
 	labels := getPodLabels(job.Labels, log)
@@ -1156,7 +1293,7 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, log logr.Lo
 			Image:           svcOpts.PodImage,
 			ImagePullPolicy: svcOpts.ImagePullPolicy,
 			Env:             envVars,
-			Command:         generateCmd(svcOpts, job),
+			Command:         generateCmd(svcOpts, job, permConfig),
 			Args:            generateArgs(svcOpts, job, log),
 			SecurityContext: mainSecurityContext,
 			VolumeMounts:    volumeMounts,
@@ -1401,7 +1538,7 @@ func concatTasks(tasks lmesv1alpha1.TaskList) []string {
 	return append(tasks.TaskNames, recipesName...)
 }
 
-func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string {
+func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig *PermissionConfig) []string {
 	if job == nil {
 		return nil
 	}
@@ -1414,6 +1551,10 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 		cmds = append(cmds, "--download-assets-s3")
 	}
 
+	if job.Spec.HasOCIOutput() {
+		cmds = append(cmds, "--upload-to-oci")
+	}
+
 	if svcOpts.DetectDevice {
 		cmds = append(cmds, "--detect-device")
 	}
@@ -1422,7 +1563,7 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob) []string 
 		cmds = append(cmds, "--listen-port", fmt.Sprintf("%d", svcOpts.DriverPort))
 	}
 
-	if job.Spec.AllowOnline != nil && *job.Spec.AllowOnline && svcOpts.AllowOnline {
+	if job.Spec.AllowOnline != nil && *job.Spec.AllowOnline && permConfig.AllowOnline {
 		cmds = append(cmds, "--allow-online")
 	}
 
