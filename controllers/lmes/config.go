@@ -139,10 +139,7 @@ type PermissionConfig struct {
 // returning the effective permissions (DSC config overrides defaults)
 func ReadEffectivePermissions(ctx context.Context, client client.Client, namespace, configMapName string, log *logr.Logger) (*PermissionConfig, error) {
 	// Start with default values
-	config := &PermissionConfig{
-		AllowOnline:        false,
-		AllowCodeExecution: false,
-	}
+	config := NewDefaultPermissionConfig()
 
 	// Read default configmap first
 	var cm corev1.ConfigMap
@@ -179,7 +176,7 @@ func ReadEffectivePermissions(ctx context.Context, client client.Client, namespa
 	return config, nil
 }
 
-// NewDefaultPermissionConfig creates a permission config with default values for testing
+// NewDefaultPermissionConfig creates a permission config with default values
 func NewDefaultPermissionConfig() *PermissionConfig {
 	return &PermissionConfig{
 		AllowOnline:        false,
