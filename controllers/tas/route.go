@@ -5,7 +5,7 @@ import (
 	"reflect"
 
 	routev1 "github.com/openshift/api/route/v1"
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -24,7 +24,7 @@ type RouteConfig struct {
 	PortName  string
 }
 
-func (r *TrustyAIServiceReconciler) createRouteObject(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (*routev1.Route, error) {
+func (r *TrustyAIServiceReconciler) createRouteObject(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) (*routev1.Route, error) {
 
 	config := RouteConfig{
 		Name:      instance.Name,
@@ -47,8 +47,8 @@ func (r *TrustyAIServiceReconciler) createRouteObject(ctx context.Context, insta
 
 // Reconcile will manage the creation, update and deletion of the route returned
 // by the newRoute function
-func (r *TrustyAIServiceReconciler) reconcileRouteAuth(instance *trustyaiopendatahubiov1alpha1.TrustyAIService,
-	ctx context.Context, newRoute func(context.Context, *trustyaiopendatahubiov1alpha1.TrustyAIService) (*routev1.Route, error)) error {
+func (r *TrustyAIServiceReconciler) reconcileRouteAuth(instance *trustyaiopendatahubiov1.TrustyAIService,
+	ctx context.Context, newRoute func(context.Context, *trustyaiopendatahubiov1.TrustyAIService) (*routev1.Route, error)) error {
 
 	// Generate the desired route
 	desiredRoute, err := newRoute(ctx, instance)
@@ -92,11 +92,11 @@ func (r *TrustyAIServiceReconciler) reconcileRouteAuth(instance *trustyaiopendat
 // ReconcileRoute will manage the creation, update and deletion of the
 // TLS route when the service is reconciled
 func (r *TrustyAIServiceReconciler) ReconcileRoute(
-	instance *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
+	instance *trustyaiopendatahubiov1.TrustyAIService, ctx context.Context) error {
 	return r.reconcileRouteAuth(instance, ctx, r.createRouteObject)
 }
 
-func (r *TrustyAIServiceReconciler) checkRouteReady(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (bool, error) {
+func (r *TrustyAIServiceReconciler) checkRouteReady(ctx context.Context, cr *trustyaiopendatahubiov1.TrustyAIService) (bool, error) {
 	existingRoute := &routev1.Route{}
 
 	err := r.Client.Get(ctx, types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, existingRoute)

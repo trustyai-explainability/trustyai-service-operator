@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func checkCondition(conditions []trustyaiopendatahubiov1alpha1.Condition, conditionType string, expectedStatus corev1.ConditionStatus, allowMissing bool) (*trustyaiopendatahubiov1alpha1.Condition, bool, error) {
+func checkCondition(conditions []trustyaiopendatahubiov1.Condition, conditionType string, expectedStatus corev1.ConditionStatus, allowMissing bool) (*trustyaiopendatahubiov1.Condition, bool, error) {
 	for _, cond := range conditions {
 		if cond.Type == conditionType {
 			isExpectedStatus := cond.Status == expectedStatus
@@ -28,7 +28,7 @@ func checkCondition(conditions []trustyaiopendatahubiov1alpha1.Condition, condit
 	return nil, false, fmt.Errorf("%s condition not found", conditionType)
 }
 
-func setupAndTestStatusNoComponent(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, namespace string) {
+func setupAndTestStatusNoComponent(instance *trustyaiopendatahubiov1.TrustyAIService, namespace string) {
 	WaitFor(func() error {
 		return createNamespace(ctx, k8sClient, namespace)
 	}, "failed to create namespace")
@@ -54,7 +54,7 @@ var _ = Describe("Status and condition tests", func() {
 	BeforeEach(func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).WithStatusSubresource(
 			&routev1.Route{},
-			&trustyaiopendatahubiov1alpha1.TrustyAIService{},
+			&trustyaiopendatahubiov1.TrustyAIService{},
 		).Build()
 		recorder = record.NewFakeRecorder(10)
 		reconciler = &TrustyAIServiceReconciler{
@@ -66,7 +66,7 @@ var _ = Describe("Status and condition tests", func() {
 	})
 
 	Context("When no component exists", func() {
-		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+		var instance *trustyaiopendatahubiov1.TrustyAIService
 		It("Should not be available in PVC-mode", func() {
 			namespace := "statuses-test-namespace-1-pvc"
 			instance = createDefaultPVCCustomResource(namespace)
@@ -86,7 +86,7 @@ var _ = Describe("Status and condition tests", func() {
 	})
 
 	Context("When route, deployment and PVC component, but not inference service, exist", func() {
-		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+		var instance *trustyaiopendatahubiov1.TrustyAIService
 		It("Should be available in PVC-mode", func() {
 			namespace := "statuses-test-namespace-2-pvc"
 			instance = createDefaultPVCCustomResource(namespace)
@@ -294,7 +294,7 @@ var _ = Describe("Status and condition tests", func() {
 	})
 
 	Context("When route, deployment, PVC and inference service components exist", func() {
-		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+		var instance *trustyaiopendatahubiov1.TrustyAIService
 		It("Should be available", func() {
 			namespace := "statuses-test-namespace-2"
 			instance = createDefaultPVCCustomResource(namespace)

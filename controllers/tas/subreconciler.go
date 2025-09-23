@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -33,4 +33,4 @@ func RequeueWithDelayAndError(dur time.Duration, e error) (reconcile.Result, err
 }
 func DoNotRequeue() (reconcile.Result, error) { return ctrl.Result{Requeue: false}, nil }
 
-type SubReconciler = func(context.Context, ctrl.Request, *trustyaiopendatahubiov1alpha1.TrustyAIService) (*ctrl.Result, error)
+type SubReconciler = func(context.Context, ctrl.Request, *trustyaiopendatahubiov1.TrustyAIService) (*ctrl.Result, error)

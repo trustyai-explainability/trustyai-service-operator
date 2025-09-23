@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -24,7 +24,7 @@ func (r *TrustyAIServiceReconciler) getSecret(ctx context.Context, name, namespa
 }
 
 // findDatabaseSecret finds the DB configuration secret named (specified or default) in the same namespace as the CR
-func (r *TrustyAIServiceReconciler) findDatabaseSecret(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (*corev1.Secret, error) {
+func (r *TrustyAIServiceReconciler) findDatabaseSecret(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) (*corev1.Secret, error) {
 
 	databaseConfigurationsName := instance.Spec.Storage.DatabaseConfigurations
 	defaultDatabaseConfigurationsName := instance.Name + dbCredentialsSuffix

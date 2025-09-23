@@ -33,7 +33,7 @@ import (
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -91,24 +91,24 @@ func WaitFor(operation func() error, errorMsg string) {
 }
 
 // createDefaultPVCCustomResource creates a TrustyAIService instance with default values and PVC backend
-func createDefaultPVCCustomResource(namespaceCurrent string) *trustyaiopendatahubiov1alpha1.TrustyAIService {
-	service := trustyaiopendatahubiov1alpha1.TrustyAIService{
+func createDefaultPVCCustomResource(namespaceCurrent string) *trustyaiopendatahubiov1.TrustyAIService {
+	service := trustyaiopendatahubiov1.TrustyAIService{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      defaultServiceName,
 			Namespace: namespaceCurrent,
 			UID:       types.UID(uuid.New().String()),
 		},
-		Spec: trustyaiopendatahubiov1alpha1.TrustyAIServiceSpec{
-			Storage: trustyaiopendatahubiov1alpha1.StorageSpec{
+		Spec: trustyaiopendatahubiov1.TrustyAIServiceSpec{
+			Storage: trustyaiopendatahubiov1.StorageSpec{
 				Format: STORAGE_PVC,
 				Folder: "/data",
 				Size:   "1Gi",
 			},
-			Data: trustyaiopendatahubiov1alpha1.DataSpec{
+			Data: trustyaiopendatahubiov1.DataSpec{
 				Filename: "data.csv",
 				Format:   "CSV",
 			},
-			Metrics: trustyaiopendatahubiov1alpha1.MetricsSpec{
+			Metrics: trustyaiopendatahubiov1.MetricsSpec{
 				Schedule: "5s",
 			},
 		},
@@ -117,19 +117,19 @@ func createDefaultPVCCustomResource(namespaceCurrent string) *trustyaiopendatahu
 }
 
 // createDefaultDBCustomResource creates a TrustyAIService instance with default values and DB backend
-func createDefaultDBCustomResource(namespaceCurrent string) *trustyaiopendatahubiov1alpha1.TrustyAIService {
-	service := trustyaiopendatahubiov1alpha1.TrustyAIService{
+func createDefaultDBCustomResource(namespaceCurrent string) *trustyaiopendatahubiov1.TrustyAIService {
+	service := trustyaiopendatahubiov1.TrustyAIService{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      defaultServiceName,
 			Namespace: namespaceCurrent,
 			UID:       types.UID(uuid.New().String()),
 		},
-		Spec: trustyaiopendatahubiov1alpha1.TrustyAIServiceSpec{
-			Storage: trustyaiopendatahubiov1alpha1.StorageSpec{
+		Spec: trustyaiopendatahubiov1.TrustyAIServiceSpec{
+			Storage: trustyaiopendatahubiov1.StorageSpec{
 				Format:                 STORAGE_DATABASE,
 				DatabaseConfigurations: defaultDatabaseConfigurationName,
 			},
-			Metrics: trustyaiopendatahubiov1alpha1.MetricsSpec{
+			Metrics: trustyaiopendatahubiov1.MetricsSpec{
 				Schedule: "5s",
 			},
 		},
@@ -138,25 +138,25 @@ func createDefaultDBCustomResource(namespaceCurrent string) *trustyaiopendatahub
 }
 
 // createDefaultMigrationCustomResource creates a TrustyAIService instance with default values and both PVC and DB backend
-func createDefaultMigrationCustomResource(namespaceCurrent string) *trustyaiopendatahubiov1alpha1.TrustyAIService {
-	service := trustyaiopendatahubiov1alpha1.TrustyAIService{
+func createDefaultMigrationCustomResource(namespaceCurrent string) *trustyaiopendatahubiov1.TrustyAIService {
+	service := trustyaiopendatahubiov1.TrustyAIService{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      defaultServiceName,
 			Namespace: namespaceCurrent,
 			UID:       types.UID(uuid.New().String()),
 		},
-		Spec: trustyaiopendatahubiov1alpha1.TrustyAIServiceSpec{
-			Storage: trustyaiopendatahubiov1alpha1.StorageSpec{
+		Spec: trustyaiopendatahubiov1.TrustyAIServiceSpec{
+			Storage: trustyaiopendatahubiov1.StorageSpec{
 				Format:                 STORAGE_DATABASE,
 				DatabaseConfigurations: defaultDatabaseConfigurationName,
 				Folder:                 "/data",
 				Size:                   "1Gi",
 			},
-			Data: trustyaiopendatahubiov1alpha1.DataSpec{
+			Data: trustyaiopendatahubiov1.DataSpec{
 				Filename: "data.csv",
 				Format:   "CSV",
 			},
-			Metrics: trustyaiopendatahubiov1alpha1.MetricsSpec{
+			Metrics: trustyaiopendatahubiov1.MetricsSpec{
 				Schedule: "5s",
 			},
 		},
@@ -278,7 +278,7 @@ func createMockPV(ctx context.Context, k8sClient client.Client, pvName string, s
 	return nil
 }
 
-func createTestPVC(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+func createTestPVC(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1.TrustyAIService) error {
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name + "-pvc",
@@ -332,7 +332,7 @@ func createInferenceService(name string, namespace string) *kservev1beta1.Infere
 	}
 }
 
-func makePVCReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+func makePVCReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1.TrustyAIService) error {
 	pvc := &corev1.PersistentVolumeClaim{}
 	pvcName := types.NamespacedName{
 		Name:      generatePVCName(instance),
@@ -346,7 +346,7 @@ func makePVCReady(ctx context.Context, k8sClient client.Client, instance *trusty
 	return k8sClient.Status().Update(ctx, pvc)
 }
 
-func makeDeploymentReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+func makeDeploymentReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1.TrustyAIService) error {
 	deployment := &appsv1.Deployment{}
 	deploymentName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
 
@@ -432,7 +432,7 @@ func makeDeploymentReady(ctx context.Context, k8sClient client.Client, instance 
 	return nil
 }
 
-func makeRouteReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+func makeRouteReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1.TrustyAIService) error {
 	route := &routev1.Route{}
 	routeName := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
 
@@ -454,7 +454,7 @@ func makeRouteReady(ctx context.Context, k8sClient client.Client, instance *trus
 	return k8sClient.Status().Update(ctx, route)
 }
 
-func checkServiceAccountAnnotations(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, k8sClient client.Client) {
+func checkServiceAccountAnnotations(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, k8sClient client.Client) {
 	serviceAccount := &corev1.ServiceAccount{}
 	serviceAccountName := generateServiceAccountName(instance)
 	err := k8sClient.Get(ctx, types.NamespacedName{Name: serviceAccountName, Namespace: instance.Namespace}, serviceAccount)
@@ -488,7 +488,7 @@ func checkServiceAccountAnnotations(ctx context.Context, instance *trustyaiopend
 	Expect(annotation).To(Equal(string(oauthRedirectRefJSON)))
 }
 
-func checkClusterRoleBinding(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, k8sClient client.Client) {
+func checkClusterRoleBinding(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, k8sClient client.Client) {
 	clusterRoleBindingName := instance.Name + "-" + instance.Namespace + "-proxy-rolebinding"
 
 	clusterRoleBinding := &rbacv1.ClusterRoleBinding{}
@@ -525,7 +525,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
-	err = trustyaiopendatahubiov1alpha1.AddToScheme(scheme.Scheme)
+	err = trustyaiopendatahubiov1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// Add Monitoring
