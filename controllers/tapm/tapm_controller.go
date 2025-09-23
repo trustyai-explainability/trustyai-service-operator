@@ -97,11 +97,7 @@ func (r *TrustyAIPipelineManifestReconciler) Reconcile(ctx context.Context, req 
 			},
 			Data: imageMap,
 		}
-
-		if err != nil {
-			log.FromContext(ctx).Error(err, "Failed to define configmap", "configmap", tapm.GetName(), "namespace", tapm.GetNamespace())
-			return ctrl.Result{}, err
-		}
+		
 		log.FromContext(ctx).Info("Creating a new ConfigMap", "ConfigMap.Namespace", tapm.Namespace, "ConfigMap.Name", cm.Name)
 		err = r.Create(ctx, cm)
 		if err != nil {
