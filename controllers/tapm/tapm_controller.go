@@ -30,6 +30,7 @@ type TrustyAIPipelineManifestReconciler struct {
 const (
 	pipelineManifestConfigMap = "trustyai-pipeline-manifest"
 	ServiceName               = "TAPM"
+	finalizer                 = "trustyai.opendatahub.io/tapm-finalizer"
 )
 
 // List of image keys to use in the pipeline manifest
@@ -76,6 +77,37 @@ func (r *TrustyAIPipelineManifestReconciler) Reconcile(ctx context.Context, req 
 		return ctrl.Result{}, err
 	}
 
+	// Handle deletion
+	if tapm.GetDeletionTimestamp() != nil {
+		// Delete the ConfigMap if it exists
+		cm := &corev1.ConfigMap{}
+		err := r.Get(ctx, types.NamespacedName{Name: pipelineManifestConfigMap, Namespace: tapm.GetNamespace()}, cm)
+		if err == nil {
+			if delErr := r.Delete(ctx, cm); delErr != nil && !errors.IsNotFound(delErr) {
+				logger.Error(delErr, "Failed to delete ConfigMap during finalization", "ConfigMap.Namespace", cm.Namespace, "ConfigMap.Name", cm.Name)
+				return ctrl.Result{}, delErr
+			}
+		}
+		// Remove the finalizer and update
+		if containsString(tapm.GetFinalizers(), finalizer) {
+			tapm.SetFinalizers(removeString(tapm.GetFinalizers(), finalizer))
+			if err := r.Update(ctx, tapm); err != nil {
+				logger.Error(err, "Failed to remove finalizer from TrustyAIPipelineManifest")
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Add finalizer if not present
+	if !containsString(tapm.GetFinalizers(), finalizer) {
+		tapm.SetFinalizers(append(tapm.GetFinalizers(), finalizer))
+		if err := r.Update(ctx, tapm); err != nil {
+			logger.Error(err, "Failed to add finalizer to TrustyAIPipelineManifest")
+			return ctrl.Result{}, err
+		}
+	}
+
 	// load corresponding images
 	var imageMap = make(map[string]string)
 	for _, key := range pipelineImageKeys {
@@ -117,6 +149,26 @@ func (r *TrustyAIPipelineManifestReconciler) Reconcile(ctx context.Context, req 
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// Helper functions for finalizer management
+func containsString(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
+func removeString(slice []string, s string) []string {
+	var result []string
+	for _, item := range slice {
+		if item != s {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 // SetupWithManager sets up the controller with the Manager.
