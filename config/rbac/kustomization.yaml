@@ -12,8 +12,8 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the Project itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
-- kfpipelineimages_editor_role.yaml
-- kfpipelineimages_viewer_role.yaml
+  - trustyaipipelinemanifest_editor_role.yaml
+  - trustyaipipelinemanifest_viewer_role.yaml
   - trustyaiservice_editor_role.yaml
   - trustyaiservice_viewer_role.yaml
   - non_admin_lmeval_role.yaml

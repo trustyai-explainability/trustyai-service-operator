@@ -62,7 +62,7 @@ func (r *TrustyAIPipelineManifestReconciler) Reconcile(ctx context.Context, req 
 	}
 
 	// load corresponding images
-	var imageMap map[string]string
+	var imageMap = make(map[string]string)
 	for _, key := range pipelineImageKeys {
 		image, err := utils.GetImageFromConfigMap(ctx, r.Client, key, constants.ConfigMap, r.Namespace)
 		if err != nil {

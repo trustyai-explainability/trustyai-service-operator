@@ -19,6 +19,7 @@ package tapm
 import (
 	"context"
 	trustyaiv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tapm/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -78,6 +79,25 @@ var _ = Describe("TrustyAIPipelineManifest Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
 			// Example: If you expect a certain status condition after reconciliation, verify it here.
+		})
+
+		AfterEach(func() {
+			// Cleanup logic after each test, like removing the resource instance and associated ConfigMap.
+			resource := &trustyaiv1alpha1.TrustyAIPipelineManifest{}
+			err := k8sClient.Get(ctx, typeNamespacedName, resource)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Cleanup the specific resource instance TrustyAIPipelineManifest")
+			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+
+			By("Cleanup the ConfigMap created by the controller")
+			configMap := &corev1.ConfigMap{}
+			configMapName := resourceName // Adjust if the ConfigMap uses a different naming convention
+			configMapNamespace := "default"
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: configMapNamespace}, configMap)
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, configMap)).To(Succeed())
+			}
 		})
 	})
 })

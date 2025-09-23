@@ -2,7 +2,7 @@ resources:
   - bases/trustyai.opendatahub.io_trustyaiservices.yaml
   - bases/trustyai.opendatahub.io_lmevaljobs.yaml
   - bases/trustyai.opendatahub.io_guardrailsorchestrators.yaml
-- bases/trustyai.opendatahub.io_kfpipelineimages.yaml
+  - bases/trustyai.opendatahub.io_trustyaipipelinemanifests.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge: []
