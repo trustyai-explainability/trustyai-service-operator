@@ -131,7 +131,7 @@ func (r *TrustyAIPipelineManifestReconciler) Reconcile(ctx context.Context, req 
 			Data: imageMap,
 		}
 
-		log.FromContext(ctx).Info("Creating a new ConfigMap", "ConfigMap.Namespace", tapm.Namespace, "ConfigMap.Name", cm.Name)
+		log.FromContext(ctx).Info("Creating a new TrustyAIPipelineManifest ConfigMap", "ConfigMap.Namespace", tapm.Namespace, "ConfigMap.Name", cm.Name)
 		err = r.Create(ctx, cm)
 		if err != nil {
 			log.FromContext(ctx).Error(err, "Failed to create new ConfigMap", "ConfigMap.Namespace", cm.Namespace, "ConfigMap.Name", cm.Name)
@@ -175,5 +175,6 @@ func removeString(slice []string, s string) []string {
 func (r *TrustyAIPipelineManifestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&trustyaiv1alpha1.TrustyAIPipelineManifest{}).
+		Owns(&corev1.ConfigMap{}).
 		Complete(r)
 }
