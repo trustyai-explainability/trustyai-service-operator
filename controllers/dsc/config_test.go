@@ -26,12 +26,12 @@ func TestDSCConfigReader_ReadDSCConfig(t *testing.T) {
 		expectedCode   bool
 	}{
 		{
-			name:           "ConfigMap not found - should use defaults",
+			name:           "ConfigMap not found - should return nil",
 			namespace:      "test-namespace",
 			configMapData:  nil,
 			expectError:    false,
-			expectedOnline: false, // Default value
-			expectedCode:   false, // Default value
+			expectedOnline: false, // Should not be applied
+			expectedCode:   false, // Should not be applied
 		},
 		{
 			name:      "Valid configuration with both settings enabled",
@@ -121,9 +121,14 @@ func TestDSCConfigReader_ReadDSCConfig(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			// Assert configuration values
-			assert.Equal(t, tt.expectedOnline, dscConfig.AllowOnline, "AllowOnline should match expected value")
-			assert.Equal(t, tt.expectedCode, dscConfig.AllowCodeExecution, "AllowCodeExecution should match expected value")
+			// Assert configuration values - only if dscConfig is not nil
+			if dscConfig != nil {
+				assert.Equal(t, tt.expectedOnline, dscConfig.AllowOnline, "AllowOnline should match expected value")
+				assert.Equal(t, tt.expectedCode, dscConfig.AllowCodeExecution, "AllowCodeExecution should match expected value")
+			} else {
+				// When ConfigMap is not found, dscConfig should be nil
+				assert.Nil(t, dscConfig, "DSC config should be nil when ConfigMap is not found")
+			}
 		})
 	}
 }
@@ -146,9 +151,8 @@ func TestDSCConfigReader_ReadDSCConfig_ConfigMapNotFound(t *testing.T) {
 	// Should not return error when ConfigMap is not found
 	assert.NoError(t, err)
 
-	// Values should be at defaults
-	assert.False(t, dscConfig.AllowOnline)
-	assert.False(t, dscConfig.AllowCodeExecution)
+	// DSC config should be nil when ConfigMap is not found
+	assert.Nil(t, dscConfig, "DSC config should be nil when ConfigMap is not found")
 }
 
 func TestDSCConfigReader_ReadDSCConfig_ClientError(t *testing.T) {

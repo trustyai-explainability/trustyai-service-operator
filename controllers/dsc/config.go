@@ -50,7 +50,7 @@ func (r *DSCConfigReader) ReadDSCConfig(ctx context.Context, log *logr.Logger) (
 		if errors.IsNotFound(err) {
 			log.V(1).Info("DSC ConfigMap not found, using default configuration",
 				"configmap", configMapKey)
-			return &DSCConfig{}, nil
+			return nil, nil
 		}
 		return nil, fmt.Errorf("error reading DSC ConfigMap %s: %w", configMapKey, err)
 	}
