@@ -1,7 +1,7 @@
 package controllers
 
-import "github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes"
+import "github.com/trustyai-explainability/trustyai-service-operator/controllers/tapm"
 
 func init() {
-	registerService(lmes.ServiceName, lmes.ControllerSetUp)
+	registerService(tapm.ServiceName, tapm.ControllerSetUp)
 }

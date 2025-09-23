@@ -9,6 +9,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -19,18 +21,30 @@ import (
 // TrustyAIPipelineManifestReconciler reconciles a TrustyAIPipelineManifest object
 type TrustyAIPipelineManifestReconciler struct {
 	client.Client
-	Namespace string
 	Scheme    *runtime.Scheme
+	Namespace string
+	Recorder  record.EventRecorder
 }
 
 const (
 	pipelineManifestConfigMap = "trustyai-pipeline-manifest"
+	ServiceName               = "TAPM"
 )
 
 // List of image keys to use in the pipeline manifest
 var pipelineImageKeys = []string{
 	"pipeline-ragas-image",
 	"pipeline-garak-image",
+}
+
+// The registered function to set up GORCH controller
+func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) error {
+	return (&TrustyAIPipelineManifestReconciler{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Namespace: ns,
+		Recorder:  recorder,
+	}).SetupWithManager(mgr)
 }
 
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=trustyaipipelinemanifest,verbs=get;list;watch;create;update;patch;delete
