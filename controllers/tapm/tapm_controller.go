@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -68,10 +69,10 @@ func (r *TrustyAIPipelineManifestReconciler) Reconcile(ctx context.Context, req 
 	err := r.Get(context.TODO(), req.NamespacedName, tapm)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			logger.Info("NemoGuardrails resource not found. Ignoring since object must be deleted.")
+			logger.Info("TrustyAIPipelineManifest resource not found. Ignoring since object must be deleted.")
 			return ctrl.Result{}, nil
 		}
-		logger.Error(err, "Failed to get NemoGuardrails.")
+		logger.Error(err, "Failed to get TrustyAIPipelineManifest.")
 		return ctrl.Result{}, err
 	}
 
@@ -97,11 +98,17 @@ func (r *TrustyAIPipelineManifestReconciler) Reconcile(ctx context.Context, req 
 			},
 			Data: imageMap,
 		}
-		
+
 		log.FromContext(ctx).Info("Creating a new ConfigMap", "ConfigMap.Namespace", tapm.Namespace, "ConfigMap.Name", cm.Name)
 		err = r.Create(ctx, cm)
 		if err != nil {
 			log.FromContext(ctx).Error(err, "Failed to create new ConfigMap", "ConfigMap.Namespace", cm.Namespace, "ConfigMap.Name", cm.Name)
+			return ctrl.Result{}, err
+		}
+
+		err = controllerutil.SetControllerReference(tapm, cm, r.Scheme)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to set controller reference on ConfigMap", "ConfigMap.Namespace", cm.Namespace, "ConfigMap.Name", cm.Name)
 			return ctrl.Result{}, err
 		}
 	} else if err != nil {
