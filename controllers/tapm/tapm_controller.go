@@ -37,6 +37,10 @@ var pipelineImageKeys = []string{
 	"pipeline-garak-image",
 }
 
+// +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=trustyaipipelinemanifests,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=trustyaipipelinemanifests/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=trustyaipipelinemanifests/finalizers,verbs=update
+
 // The registered function to set up GORCH controller
 func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) error {
 	return (&TrustyAIPipelineManifestReconciler{
@@ -46,10 +50,6 @@ func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.
 		Recorder:  recorder,
 	}).SetupWithManager(mgr)
 }
-
-//+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=trustyaipipelinemanifest,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=trustyaipipelinemanifest/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=trustyaipipelinemanifest/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
