@@ -1,0 +1,8 @@
+apiVersion: trustyai.opendatahub.io/v1alpha1
+kind: TrustyAIPipelineManifest
+metadata:
+  labels:
+    app.kubernetes.io/name: trustyai-service-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: trustyai-pipeline-manifest
+spec:

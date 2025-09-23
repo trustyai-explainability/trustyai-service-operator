@@ -23,7 +23,6 @@ resources:
 - api:
     crdVersion: v1
     namespaced: true
-  controller: false
   domain: opendatahub.io
   group: trustyai
   kind: TrustyAIService
@@ -50,5 +49,14 @@ resources:
   group: trustyai
   kind: GuardrailsOrchestrator
   path: github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: opendatahub.io
+  group: trustyai
+  kind: TrustyAIPipelineManifest
+  path: github.com/trustyai-explainability/trustyai-service-operator/api/tapm/v1alpha1
   version: v1alpha1
 version: "3"
