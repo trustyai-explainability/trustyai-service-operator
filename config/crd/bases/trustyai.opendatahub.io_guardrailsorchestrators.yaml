@@ -108,6 +108,12 @@ spec:
                   Number of replicas
                 format: int32
                 type: integer
+              tlsSecrets:
+                description: Define TLS secrets to be mounted to the orchestrator.
+                  Secrets will be mounted at /etc/tls/$SECRET_NAME
+                items:
+                  type: string
+                type: array
             required:
             - replicas
             type: object
