@@ -245,7 +245,7 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 			}
 		}
 	}
-	if detectedGenerationService.Hostname == "" || detectedGenerationService.Port == "" {
+	if detectedGenerationService == nil || detectedGenerationService.Hostname == "" || detectedGenerationService.Port == "" {
 		return nil, nil, nil, nil, fmt.Errorf("could not find InferenceService with name %q in namespace %s", inferenceServiceToGuardrail, namespace)
 	} else {
 		log.V(2).Info("Generation service resolved", "Generation service", detectedGenerationService)

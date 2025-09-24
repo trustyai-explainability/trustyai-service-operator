@@ -25,6 +25,7 @@ const (
 )
 
 const (
+	PhaseError       = "Error"
 	PhaseProgressing = "Progressing"
 	PhaseReady       = "Ready"
 )
@@ -33,6 +34,7 @@ const (
 	ReconcileFailed           = "ReconcileFailed"
 	ReconcileInit             = "ReconcileInit"
 	ReconcileCompleted        = "ReconcileCompleted"
+	AutoConfigFailed          = "AutoConfigFailed"
 	ReconcileCompletedMessage = "Reconcile completed successfully"
 	ReconcileFailedMessage    = "Reconcile failed"
 )
@@ -88,7 +90,24 @@ func SetProgressingCondition(conditions *[]gorchv1alpha1.Condition, reason strin
 		Reason:  reason,
 		Message: message,
 	})
+}
 
+func UnsetProgressingCondition(conditions *[]gorchv1alpha1.Condition, reason string, message string) {
+	SetStatusCondition(conditions, gorchv1alpha1.Condition{
+		Type:    ConditionProgessing,
+		Status:  corev1.ConditionFalse,
+		Reason:  reason,
+		Message: message,
+	})
+}
+
+func SetFailedCondition(conditions *[]gorchv1alpha1.Condition, reason string, message string) {
+	SetStatusCondition(conditions, gorchv1alpha1.Condition{
+		Type:    ReconcileFailed,
+		Status:  corev1.ConditionTrue,
+		Reason:  reason,
+		Message: message,
+	})
 }
 
 func SetResourceCondition(conditions *[]gorchv1alpha1.Condition, component string, reason string, message string, status corev1.ConditionStatus) {
