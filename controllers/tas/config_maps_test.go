@@ -51,21 +51,21 @@ var _ = Describe("ConfigMap tests", func() {
 		It("Should get back the correct values", func() {
 
 			serviceImage := "custom-service-image:foo"
-			oauthImage := "custom-oauth-proxy:bar"
+			kubeRBACProxyImage := "custom-kube-rbac-proxy:bar"
 
 			WaitFor(func() error {
-				configMap := createConfigMap(operatorNamespace, oauthImage, serviceImage)
+				configMap := createConfigMap(operatorNamespace, kubeRBACProxyImage, serviceImage)
 				return k8sClient.Create(ctx, configMap)
 			}, "failed to create ConfigMap")
 
-			var actualOAuthImage string
+			var actualKubeRBACProxyImage string
 			var actualServiceImage string
 
 			WaitFor(func() error {
 				var err error
-				actualOAuthImage, err = reconciler.getImageFromConfigMap(ctx, configMapOAuthProxyImageKey, defaultOAuthProxyImage)
+				actualKubeRBACProxyImage, err = reconciler.getImageFromConfigMap(ctx, configMapKubeRBACProxyImageKey, defaultKubeRBACProxyImage)
 				return err
-			}, "failed to get oauth image from ConfigMap")
+			}, "failed to get kube-rbac-proxy image from ConfigMap")
 
 			WaitFor(func() error {
 				var err error
@@ -73,7 +73,7 @@ var _ = Describe("ConfigMap tests", func() {
 				return err
 			}, "failed to get service image from ConfigMap")
 
-			Expect(actualOAuthImage).Should(Equal(oauthImage))
+			Expect(actualKubeRBACProxyImage).Should(Equal(kubeRBACProxyImage))
 			Expect(actualServiceImage).Should(Equal(serviceImage))
 		})
 	})
@@ -82,14 +82,14 @@ var _ = Describe("ConfigMap tests", func() {
 
 		It("Should get back the default values", func() {
 
-			var actualOAuthImage string
+			var actualKubeRBACProxyImage string
 			var actualServiceImage string
 
 			WaitFor(func() error {
 				var err error
-				actualOAuthImage, err = reconciler.getImageFromConfigMap(ctx, configMapOAuthProxyImageKey, defaultOAuthProxyImage)
+				actualKubeRBACProxyImage, err = reconciler.getImageFromConfigMap(ctx, configMapKubeRBACProxyImageKey, defaultKubeRBACProxyImage)
 				return err
-			}, "failed to get oauth image from ConfigMap")
+			}, "failed to get kube-rbac-proxy image from ConfigMap")
 
 			WaitFor(func() error {
 				var err error
@@ -97,7 +97,7 @@ var _ = Describe("ConfigMap tests", func() {
 				return err
 			}, "failed to get service image from ConfigMap")
 
-			Expect(actualOAuthImage).Should(Equal(defaultOAuthProxyImage))
+			Expect(actualKubeRBACProxyImage).Should(Equal(defaultKubeRBACProxyImage))
 			Expect(actualServiceImage).Should(Equal(defaultImage))
 		})
 	})
@@ -107,7 +107,7 @@ var _ = Describe("ConfigMap tests", func() {
 		It("Should get back the default values", func() {
 
 			serviceImage := "custom-service-image:foo"
-			oauthImage := "custom-oauth-proxy:bar"
+			kubeRBACProxyImage := "custom-kube-rbac-proxy:bar"
 
 			WaitFor(func() error {
 				configMap := &corev1.ConfigMap{
@@ -116,31 +116,31 @@ var _ = Describe("ConfigMap tests", func() {
 						Namespace: operatorNamespace,
 					},
 					Data: map[string]string{
-						"foo-oauth-image": oauthImage,
-						"foo-image":       serviceImage,
+						"foo-kube-rbac-proxy-image": kubeRBACProxyImage,
+						"foo-image":                 serviceImage,
 					},
 				}
 				return k8sClient.Create(ctx, configMap)
 			}, "failed to create ConfigMap")
 
-			var actualOAuthImage string
+			var actualKubeRBACProxyImage string
 			var actualServiceImage string
 
 			configMapPath := operatorNamespace + "/" + constants.ConfigMap
 
 			Eventually(func() error {
 				var err error
-				actualOAuthImage, err = reconciler.getImageFromConfigMap(ctx, configMapOAuthProxyImageKey, defaultOAuthProxyImage)
+				actualKubeRBACProxyImage, err = reconciler.getImageFromConfigMap(ctx, configMapKubeRBACProxyImageKey, defaultKubeRBACProxyImage)
 				return err
-			}, defaultTimeout, defaultPolling).Should(MatchError(fmt.Sprintf("configmap %s does not contain necessary keys", configMapPath)), "failed to get oauth image from ConfigMap")
+			}, defaultTimeout, defaultPolling).Should(MatchError(fmt.Sprintf("configmap %s does not contain necessary keys", configMapPath)), "failed to get kube-rbac-proxy image from ConfigMap")
 
 			Eventually(func() error {
 				var err error
 				actualServiceImage, err = reconciler.getImageFromConfigMap(ctx, configMapServiceImageKey, defaultImage)
 				return err
-			}, defaultTimeout, defaultPolling).Should(MatchError(fmt.Sprintf("configmap %s does not contain necessary keys", configMapPath)), "failed to get oauth image from ConfigMap")
+			}, defaultTimeout, defaultPolling).Should(MatchError(fmt.Sprintf("configmap %s does not contain necessary keys", configMapPath)), "failed to get service image from ConfigMap")
 
-			Expect(actualOAuthImage).Should(Equal(defaultOAuthProxyImage))
+			Expect(actualKubeRBACProxyImage).Should(Equal(defaultKubeRBACProxyImage))
 			Expect(actualServiceImage).Should(Equal(defaultImage))
 		})
 	})

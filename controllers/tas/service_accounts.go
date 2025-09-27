@@ -45,7 +45,7 @@ func (r *TrustyAIServiceReconciler) createServiceAccount(ctx context.Context, in
 
 	// Check if this ServiceAccount already exists
 	found := &corev1.ServiceAccount{}
-	err = r.Get(ctx, types.NamespacedName{Name: sa.Name, Namespace: sa.Namespace}, found)
+	err := r.Get(ctx, types.NamespacedName{Name: sa.Name, Namespace: sa.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
 		log.FromContext(ctx).Info("Creating a new ServiceAccount", "Namespace", sa.Namespace, "Name", sa.Name)
 		err = r.Create(ctx, sa)

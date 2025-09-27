@@ -27,20 +27,18 @@ const (
 
 // Configuration constants
 const (
-	imageConfigMap                = "trustyai-service-operator-config"
-	configMapOAuthProxyImageKey   = "oauthProxyImage"
+	imageConfigMap                 = "trustyai-service-operator-config"
 	configMapKubeRBACProxyImageKey = "kubeRBACProxyImage"
-	configMapServiceImageKey      = "trustyaiServiceImage"
-	configMapkServeServerlessKey  = "kServeServerless"
+	configMapServiceImageKey       = "trustyaiServiceImage"
+	configMapkServeServerlessKey   = "kServeServerless"
 )
-
 
 // Kube-RBAC-Proxy constants
 const (
-	KubeRBACProxyServicePort       = 8443
-	KubeRBACProxyName              = "kube-rbac-proxy"
-	KubeRBACProxyServicePortName   = "https"
-	defaultKubeRBACProxyImage      = "quay.io/openshift/origin-kube-rbac-proxy:4.19"
+	KubeRBACProxyServicePort     = 8443
+	KubeRBACProxyName            = "kube-rbac-proxy"
+	KubeRBACProxyServicePortName = "https"
+	defaultKubeRBACProxyImage    = "quay.io/openshift/origin-kube-rbac-proxy:4.19"
 )
 
 // Status types
