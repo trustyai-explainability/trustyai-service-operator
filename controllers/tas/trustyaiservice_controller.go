@@ -139,6 +139,12 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return RequeueWithError(err)
 	}
 
+	// Ensure kube-rbac-proxy ConfigMap
+	err = r.ensureKubeRBACProxyConfigMap(ctx, instance)
+	if err != nil {
+		return RequeueWithError(err)
+	}
+
 	// CR found, add or update the URL
 	// Call the function to patch environment variables for Deployments that match the label
 	shouldContinue, err := r.handleInferenceServices(ctx, instance, req.Namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, req.Name, false)

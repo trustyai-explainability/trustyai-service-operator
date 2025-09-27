@@ -8,7 +8,7 @@ import (
 	"text/template"
 )
 
-//go:embed service/*.tmpl.yaml
+//go:embed service/*.tmpl.yaml kube-rbac-proxy/*.tmpl.yaml
 var templateFS embed.FS
 
 // executeTemplate parses the template file and executes it with the provided data.
