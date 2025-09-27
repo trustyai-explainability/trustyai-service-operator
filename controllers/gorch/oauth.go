@@ -10,14 +10,14 @@ import (
 )
 
 type KubeRBACProxyConfig struct {
-	Suffix               string
-	Name                 string
-	Namespace            string
-	KubeRBACProxyImage   string
-	UpstreamProtocol     string
-	UpstreamHost         string
-	UpstreamPort         int
-	DownstreamPort       int
+	Suffix             string
+	Name               string
+	Namespace          string
+	KubeRBACProxyImage string
+	UpstreamProtocol   string
+	UpstreamHost       string
+	UpstreamPort       int
+	DownstreamPort     int
 }
 
 // requiresOAuth checks if the oauth annotation key is set in the orchestrator CR
@@ -36,25 +36,25 @@ func (r *GuardrailsOrchestratorReconciler) configureKubeRBACProxy(ctx context.Co
 	log.FromContext(ctx).Info("Using kube-rbac-proxy image " + kubeRBACProxyImage + " " + "from configmap " + r.Namespace + ":" + constants.ConfigMap)
 
 	deploymentConfig.OrchestratorKubeRBACProxy = &KubeRBACProxyConfig{
-		Suffix:               "orchestrator",
-		Namespace:            orchestrator.Namespace,
-		Name:                 orchestrator.Name,
-		KubeRBACProxyImage:   kubeRBACProxyImage,
-		DownstreamPort:       8432,
-		UpstreamProtocol:     "https",
-		UpstreamHost:         fmt.Sprintf("%s-service.%s.svc", orchestrator.Name, orchestrator.Namespace), // use full service name to avoid certificate validation issues
-		UpstreamPort:         8032,
+		Suffix:             "orchestrator",
+		Namespace:          orchestrator.Namespace,
+		Name:               orchestrator.Name,
+		KubeRBACProxyImage: kubeRBACProxyImage,
+		DownstreamPort:     8432,
+		UpstreamProtocol:   "https",
+		UpstreamHost:       fmt.Sprintf("%s-service.%s.svc", orchestrator.Name, orchestrator.Namespace), // use full service name to avoid certificate validation issues
+		UpstreamPort:       8032,
 	}
 	if orchestrator.Spec.EnableGuardrailsGateway {
 		deploymentConfig.GatewayKubeRBACProxy = &KubeRBACProxyConfig{
-			Suffix:               "gateway",
-			Namespace:            orchestrator.Namespace,
-			Name:                 orchestrator.Name,
-			KubeRBACProxyImage:   kubeRBACProxyImage,
-			DownstreamPort:       8490,
-			UpstreamProtocol:     "http",
-			UpstreamHost:         "localhost",
-			UpstreamPort:         8090,
+			Suffix:             "gateway",
+			Namespace:          orchestrator.Namespace,
+			Name:               orchestrator.Name,
+			KubeRBACProxyImage: kubeRBACProxyImage,
+			DownstreamPort:     8490,
+			UpstreamProtocol:   "http",
+			UpstreamHost:       "localhost",
+			UpstreamPort:       8090,
 		}
 	}
 	return nil

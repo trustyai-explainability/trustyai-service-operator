@@ -30,10 +30,10 @@ type ContainerImages struct {
 }
 
 type DeploymentConfig struct {
-	Orchestrator                 *gorchv1alpha1.GuardrailsOrchestrator
-	ContainerImages              ContainerImages
-	OrchestratorKubeRBACProxy    *KubeRBACProxyConfig
-	GatewayKubeRBACProxy         *KubeRBACProxyConfig
+	Orchestrator              *gorchv1alpha1.GuardrailsOrchestrator
+	ContainerImages           ContainerImages
+	OrchestratorKubeRBACProxy *KubeRBACProxyConfig
+	GatewayKubeRBACProxy      *KubeRBACProxyConfig
 }
 
 func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (*appsv1.Deployment, error) {
@@ -69,10 +69,10 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 	}
 
 	deploymentConfig := DeploymentConfig{
-		Orchestrator:                 orchestrator,
-		ContainerImages:              containerImages,
-		OrchestratorKubeRBACProxy:    nil,
-		GatewayKubeRBACProxy:         nil,
+		Orchestrator:              orchestrator,
+		ContainerImages:           containerImages,
+		OrchestratorKubeRBACProxy: nil,
+		GatewayKubeRBACProxy:      nil,
 	}
 
 	if requiresOAuth(orchestrator) {
