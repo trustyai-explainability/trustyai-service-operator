@@ -158,15 +158,19 @@ spec:
             - --config-file=/etc/kube-rbac-proxy/config.yaml
             - --tls-cert-file=/etc/tls/private/tls.crt
             - --tls-private-key-file=/etc/tls/private/tls.key
+            - --proxy-endpoints-port=9443
             - --v=0
           ports:
             - containerPort: 8443
               name: https
               protocol: TCP
+            - containerPort: 9443
+              name: proxy-healthz
+              protocol: TCP
           readinessProbe:
             httpGet:
               path: /healthz
-              port: https
+              port: 9443
               scheme: HTTPS
             initialDelaySeconds: 5
             periodSeconds: 5
@@ -176,7 +180,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /healthz
-              port: https
+              port: 9443
               scheme: HTTPS
             initialDelaySeconds: 30
             periodSeconds: 10

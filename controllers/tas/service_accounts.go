@@ -97,9 +97,18 @@ func (r *TrustyAIServiceReconciler) createClusterRoleBinding(ctx context.Context
 		log.FromContext(ctx).Info("Creating a new ClusterRoleBinding", "Name", clusterRoleBinding.Name)
 		err = r.Create(ctx, clusterRoleBinding)
 		if err != nil {
+			if errors.IsAlreadyExists(err) {
+				log.FromContext(ctx).Info("ClusterRoleBinding already exists", "Name", clusterRoleBinding.Name)
+				return nil
+			}
 			log.FromContext(ctx).Error(err, "Error creating a new ClusterRoleBinding")
 			return err
 		}
+	} else if err == nil {
+		log.FromContext(ctx).V(1).Info("ClusterRoleBinding already exists", "Name", clusterRoleBinding.Name)
+	} else {
+		log.FromContext(ctx).Error(err, "Error checking for existing ClusterRoleBinding")
+		return err
 	}
 
 	return nil
