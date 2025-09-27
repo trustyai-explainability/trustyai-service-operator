@@ -17,6 +17,7 @@ limitations under the License.
 package lmes
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -27,6 +28,8 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/dsc"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes/driver"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // set by job_mgr controllerSetup func
@@ -118,9 +121,65 @@ func constructOptionsFromConfigMap(log *logr.Logger, configmap *corev1.ConfigMap
 }
 
 // ApplyDSCConfig applies DSC configuration to the LMES Options
+// Only applies configuration if DSC config is available and not nil
 func ApplyDSCConfig(dscConfig *dsc.DSCConfig) {
 	if dscConfig != nil {
 		Options.AllowOnline = dscConfig.AllowOnline
 		Options.AllowCodeExecution = dscConfig.AllowCodeExecution
+	}
+}
+
+// PermissionConfig holds the effective permissions for LMEval jobs
+type PermissionConfig struct {
+	AllowOnline        bool
+	AllowCodeExecution bool
+}
+
+// ReadEffectivePermissions reads both the default configmap and DSC config,
+// returning the effective permissions (DSC config overrides defaults)
+func ReadEffectivePermissions(ctx context.Context, client client.Client, namespace, configMapName string, log *logr.Logger) (*PermissionConfig, error) {
+	// Start with default values
+	config := NewDefaultPermissionConfig()
+
+	// Read default configmap first
+	var cm corev1.ConfigMap
+	if err := client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: configMapName}, &cm); err != nil {
+		log.Error(err, "failed to get default configmap", "namespace", namespace, "name", configMapName)
+		return nil, err
+	}
+
+	// Apply default config values for permissions
+	if allowOnlineStr, found := cm.Data[AllowOnline]; found {
+		if allowOnline, err := strconv.ParseBool(allowOnlineStr); err == nil {
+			config.AllowOnline = allowOnline
+		}
+	}
+	if allowCodeExecutionStr, found := cm.Data[AllowCodeExecution]; found {
+		if allowCodeExecution, err := strconv.ParseBool(allowCodeExecutionStr); err == nil {
+			config.AllowCodeExecution = allowCodeExecution
+		}
+	}
+
+	// Read DSC configuration if available and override defaults
+	dscReader := dsc.NewDSCConfigReader(client, namespace)
+	if dscConfig, err := dscReader.ReadDSCConfig(ctx, log); err != nil {
+		log.Error(err, "failed to read DSC configuration, using default config")
+		// Continue with default config - DSC config is optional
+	} else if dscConfig != nil {
+		config.AllowOnline = dscConfig.AllowOnline
+		config.AllowCodeExecution = dscConfig.AllowCodeExecution
+		log.V(1).Info("Applied DSC configuration overrides",
+			"allowOnline", dscConfig.AllowOnline,
+			"allowCodeExecution", dscConfig.AllowCodeExecution)
+	}
+
+	return config, nil
+}
+
+// NewDefaultPermissionConfig creates a permission config with default values
+func NewDefaultPermissionConfig() *PermissionConfig {
+	return &PermissionConfig{
+		AllowOnline:        false,
+		AllowCodeExecution: false,
 	}
 }
