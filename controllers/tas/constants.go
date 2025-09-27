@@ -34,13 +34,6 @@ const (
 	configMapkServeServerlessKey  = "kServeServerless"
 )
 
-// OAuth constants
-const (
-	OAuthServicePort       = 443
-	OAuthName              = "oauth-proxy"
-	OAuthServicePortName   = "oauth-proxy"
-	defaultOAuthProxyImage = "registry.redhat.io/openshift4/ose-oauth-proxy:latest"
-)
 
 // Kube-RBAC-Proxy constants
 const (
