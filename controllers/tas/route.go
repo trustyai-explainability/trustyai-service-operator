@@ -29,7 +29,7 @@ func (r *TrustyAIServiceReconciler) createRouteObject(ctx context.Context, insta
 	config := RouteConfig{
 		Name:      instance.Name,
 		Namespace: instance.Namespace,
-		PortName:  OAuthServicePortName,
+		PortName:  KubeRBACProxyServicePortName,
 	}
 
 	var route *routev1.Route
