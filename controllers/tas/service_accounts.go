@@ -7,7 +7,6 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/json"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -21,46 +20,14 @@ func generateServiceAccountName(instance *trustyaiopendatahubiov1alpha1.TrustyAI
 	return instance.Name + "-proxy"
 }
 
-// createServiceAccount creates a service account for this instance's OAuth proxy
+// createServiceAccount creates a service account for this instance's kube-rbac-proxy
 func (r *TrustyAIServiceReconciler) createServiceAccount(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
-	routeName := instance.Name
 	serviceAccountName := generateServiceAccountName(instance)
-
-	// Define the OAuth redirect reference
-	oauthRedirectRef := struct {
-		Kind       string `json:"kind"`
-		APIVersion string `json:"apiVersion"`
-		Reference  struct {
-			Kind string `json:"kind"`
-			Name string `json:"name"`
-		} `json:"reference"`
-	}{
-		Kind:       "OAuthRedirectReference",
-		APIVersion: "v1",
-		Reference: struct {
-			Kind string `json:"kind"`
-			Name string `json:"name"`
-		}{
-			Kind: "Route",
-			Name: routeName,
-		},
-	}
-
-	// Marshal the struct into JSON format for the annotation
-	oauthRedirectRefJSON, err := json.Marshal(oauthRedirectRef)
-
-	if err != nil {
-		// Handle error
-		return err
-	}
 
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceAccountName,
 			Namespace: instance.Namespace,
-			Annotations: map[string]string{
-				"serviceaccounts.openshift.io/oauth-redirectreference.primary": string(oauthRedirectRefJSON),
-			},
 			Labels: map[string]string{
 				"app":                        componentName,
 				"app.kubernetes.io/name":     serviceAccountName,
