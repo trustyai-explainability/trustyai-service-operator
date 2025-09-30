@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -44,7 +44,7 @@ func (r *TrustyAIServiceReconciler) isDestinationRuleCRDPresent(ctx context.Cont
 	return true, nil
 }
 
-func (r *TrustyAIServiceReconciler) ensureDestinationRule(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+func (r *TrustyAIServiceReconciler) ensureDestinationRule(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) error {
 
 	destinationRuleName := instance.Name + "-internal"
 

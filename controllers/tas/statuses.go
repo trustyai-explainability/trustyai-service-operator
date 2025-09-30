@@ -3,7 +3,7 @@ package tas
 import (
 	"context"
 
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -26,9 +26,9 @@ type AvailabilityStatus struct {
 	DBReady               bool
 }
 
-func (r *TrustyAIServiceReconciler) updateStatus(ctx context.Context, original *trustyaiopendatahubiov1alpha1.TrustyAIService, update func(saved *trustyaiopendatahubiov1alpha1.TrustyAIService),
-) (*trustyaiopendatahubiov1alpha1.TrustyAIService, error) {
-	saved := &trustyaiopendatahubiov1alpha1.TrustyAIService{}
+func (r *TrustyAIServiceReconciler) updateStatus(ctx context.Context, original *trustyaiopendatahubiov1.TrustyAIService, update func(saved *trustyaiopendatahubiov1.TrustyAIService),
+) (*trustyaiopendatahubiov1.TrustyAIService, error) {
+	saved := &trustyaiopendatahubiov1.TrustyAIService{}
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		err := r.Client.Get(ctx, client.ObjectKeyFromObject(original), saved)
 		if err != nil {
@@ -48,7 +48,7 @@ func (r *TrustyAIServiceReconciler) updateStatus(ctx context.Context, original *
 }
 
 // reconcileStatuses checks the readiness status of required resources
-func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (ctrl.Result, error) {
+func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) (ctrl.Result, error) {
 	var err error
 	status := AvailabilityStatus{}
 
@@ -72,7 +72,7 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 
 	// All checks passed, resources are ready
 	if status.IsAllReady(instance.Spec.Storage.Format) {
-		_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+		_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1.TrustyAIService) {
 
 			if status.InferenceServiceReady {
 				UpdateInferenceServicePresent(saved)
@@ -103,7 +103,7 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 			return RequeueWithErrorMessage(ctx, err, "Failed to update status")
 		}
 	} else {
-		_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+		_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1.TrustyAIService) {
 
 			if status.InferenceServiceReady {
 				UpdateInferenceServicePresent(saved)
@@ -141,62 +141,62 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 	return ctrl.Result{}, nil
 }
 
-func UpdateInferenceServiceNotPresent(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+func UpdateInferenceServiceNotPresent(saved *trustyaiopendatahubiov1.TrustyAIService) {
 	saved.SetStatus(StatusTypeInferenceServicesPresent, StatusReasonInferenceServicesNotFound, "InferenceServices not found", v1.ConditionFalse)
 	saved.Status.Ready = v1.ConditionFalse
 
 }
 
-func UpdateInferenceServicePresent(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+func UpdateInferenceServicePresent(saved *trustyaiopendatahubiov1.TrustyAIService) {
 	saved.SetStatus(StatusTypeInferenceServicesPresent, StatusReasonInferenceServicesFound, "InferenceServices found", v1.ConditionTrue)
 }
 
-func UpdatePVCNotAvailable(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+func UpdatePVCNotAvailable(saved *trustyaiopendatahubiov1.TrustyAIService) {
 	saved.SetStatus(StatusTypePVCAvailable, StatusReasonPVCNotFound, "PersistentVolumeClaim not found", v1.ConditionFalse)
 	saved.Status.Phase = PhaseNotReady
 	saved.Status.Ready = v1.ConditionFalse
 }
 
-func UpdatePVCAvailable(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+func UpdatePVCAvailable(saved *trustyaiopendatahubiov1.TrustyAIService) {
 	saved.SetStatus(StatusTypePVCAvailable, StatusReasonPVCFound, "PersistentVolumeClaim found", v1.ConditionTrue)
 }
 
-func UpdateRouteAvailable(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+func UpdateRouteAvailable(saved *trustyaiopendatahubiov1.TrustyAIService) {
 	saved.SetStatus(StatusTypeRouteAvailable, StatusReasonRouteFound, "Route found", v1.ConditionTrue)
 }
 
-func UpdateRouteNotAvailable(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+func UpdateRouteNotAvailable(saved *trustyaiopendatahubiov1.TrustyAIService) {
 	saved.SetStatus(StatusTypeRouteAvailable, StatusReasonRouteNotFound, "Route not found", v1.ConditionFalse)
 }
 
-func UpdateTrustyAIServiceAvailable(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+func UpdateTrustyAIServiceAvailable(saved *trustyaiopendatahubiov1.TrustyAIService) {
 	saved.SetStatus(StatusTypeAvailable, StatusAvailable, StatusAvailable, v1.ConditionTrue)
 }
 
-func UpdateTrustyAIServiceNotAvailable(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+func UpdateTrustyAIServiceNotAvailable(saved *trustyaiopendatahubiov1.TrustyAIService) {
 	saved.SetStatus(StatusTypeAvailable, StatusNotAvailable, "Not all components available", v1.ConditionFalse)
 	saved.Status.Phase = PhaseNotReady
 	saved.Status.Ready = v1.ConditionFalse
 }
 
-func UpdateDBCredentialsNotFound(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+func UpdateDBCredentialsNotFound(saved *trustyaiopendatahubiov1.TrustyAIService) {
 	saved.SetStatus(StatusTypeDBAvailable, StatusDBCredentialsNotFound, "Database credentials not found", v1.ConditionFalse)
 	saved.Status.Phase = PhaseNotReady
 	saved.Status.Ready = v1.ConditionFalse
 }
 
-func UpdateDBCredentialsError(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+func UpdateDBCredentialsError(saved *trustyaiopendatahubiov1.TrustyAIService) {
 	saved.SetStatus(StatusTypeDBAvailable, StatusDBCredentialsError, "Error with database credentials", v1.ConditionFalse)
 	saved.Status.Phase = PhaseNotReady
 	saved.Status.Ready = v1.ConditionFalse
 }
 
-func UpdateDBConnectionError(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+func UpdateDBConnectionError(saved *trustyaiopendatahubiov1.TrustyAIService) {
 	saved.SetStatus(StatusTypeDBAvailable, StatusDBConnectionError, "Error connecting to database", v1.ConditionFalse)
 	saved.Status.Phase = PhaseNotReady
 	saved.Status.Ready = v1.ConditionFalse
 }
 
-func UpdateDBAvailable(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+func UpdateDBAvailable(saved *trustyaiopendatahubiov1.TrustyAIService) {
 	saved.SetStatus(StatusTypeDBAvailable, StatusDBAvailable, "Database available", v1.ConditionTrue)
 }

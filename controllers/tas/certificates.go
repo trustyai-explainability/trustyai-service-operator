@@ -3,7 +3,7 @@ package tas
 import (
 	"context"
 
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -20,7 +20,7 @@ type TLSCertVolumes struct {
 }
 
 // createFor creates the required volumes and volume mount for the TLS certificates for a specific Kubernetes secret
-func (cert *TLSCertVolumes) createFor(instance *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+func (cert *TLSCertVolumes) createFor(instance *trustyaiopendatahubiov1.TrustyAIService) {
 	volume := corev1.Volume{
 		Name: instance.Name + "-internal",
 		VolumeSource: corev1.VolumeSource{
@@ -39,7 +39,7 @@ func (cert *TLSCertVolumes) createFor(instance *trustyaiopendatahubiov1alpha1.Tr
 	cert.volumeMount = volumeMount
 }
 
-func (r *TrustyAIServiceReconciler) GetCustomCertificatesBundle(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) CustomCertificatesBundle {
+func (r *TrustyAIServiceReconciler) GetCustomCertificatesBundle(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) CustomCertificatesBundle {
 
 	var customCertificatesBundle CustomCertificatesBundle
 	// Check for custom certificate bundle config map presence

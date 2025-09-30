@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -38,7 +38,7 @@ func (r *TrustyAIServiceReconciler) GetDeploymentsByLabel(ctx context.Context, n
 	return deployments.Items, nil
 }
 
-func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, deployments []appsv1.Deployment, envVarName string, url string, remove bool) (bool, error) {
+func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, deployments []appsv1.Deployment, envVarName string, url string, remove bool) (bool, error) {
 	// Create volume and volume mount for this intance's TLS secrets
 	certVolumes := TLSCertVolumes{}
 	certVolumes.createFor(instance)
@@ -158,7 +158,7 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 	return true, nil
 }
 
-func (r *TrustyAIServiceReconciler) patchEnvVarsByLabelForDeployments(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, namespace string, labelKey string, labelValue string, envVarName string, crName string, remove bool) (bool, error) {
+func (r *TrustyAIServiceReconciler) patchEnvVarsByLabelForDeployments(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, namespace string, labelKey string, labelValue string, envVarName string, crName string, remove bool) (bool, error) {
 	// Get all Deployments for the label
 	deployments, err := r.GetDeploymentsByLabel(ctx, namespace, labelKey, labelValue)
 	if err != nil {
@@ -211,7 +211,7 @@ func generateEnvVarValue(currentValue, newValue string, remove bool) string {
 	return currentValue
 }
 
-func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, namespace string, labelKey, labelValue, envVarName, crName string, remove bool) (bool, error) {
+func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, namespace string, labelKey, labelValue, envVarName, crName string, remove bool) (bool, error) {
 	var inferenceServices kservev1beta1.InferenceServiceList
 
 	if err := r.List(ctx, &inferenceServices, client.InNamespace(namespace)); err != nil {
@@ -268,7 +268,7 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 }
 
 // patchKServe adds a TrustyAI service as an InferenceLogger to a KServe InferenceService
-func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, infService kservev1beta1.InferenceService, namespace string, crName string, remove bool, useHTTPS bool) error {
+func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, infService kservev1beta1.InferenceService, namespace string, crName string, remove bool, useHTTPS bool) error {
 
 	var url string
 	if useHTTPS {

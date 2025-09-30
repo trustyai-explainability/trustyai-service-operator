@@ -4,7 +4,7 @@ import (
 	"context"
 	"reflect"
 
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	corev1 "k8s.io/api/core/v1"
@@ -23,13 +23,13 @@ type OAuthConfig struct {
 }
 
 type ServiceTLSConfig struct {
-	Instance                 *trustyaiopendatahubiov1alpha1.TrustyAIService
+	Instance                 *trustyaiopendatahubiov1.TrustyAIService
 	CustomCertificatesBundle CustomCertificatesBundle
 	Version                  string
 }
 
 // generateTrustyAIOAuthService defines the desired OAuth service object
-func generateTrustyAIOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, caBundle CustomCertificatesBundle) (*corev1.Service, error) {
+func generateTrustyAIOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, caBundle CustomCertificatesBundle) (*corev1.Service, error) {
 
 	serviceTLSConfig := ServiceTLSConfig{
 		Instance:                 instance,
@@ -49,7 +49,7 @@ func generateTrustyAIOAuthService(ctx context.Context, instance *trustyaiopendat
 
 // reconcileOAuthService will manage the OAuth service reconciliation required
 // by the service's OAuth proxy
-func (r *TrustyAIServiceReconciler) reconcileOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, caBundle CustomCertificatesBundle) error {
+func (r *TrustyAIServiceReconciler) reconcileOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, caBundle CustomCertificatesBundle) error {
 
 	// Generate the desired OAuth service object
 	desiredService, err := generateTrustyAIOAuthService(ctx, instance, caBundle)

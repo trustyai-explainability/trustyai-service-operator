@@ -1,4 +1,4 @@
-apiVersion: trustyai.opendatahub.io/v1alpha1
+apiVersion: trustyai.opendatahub.io/v1
 kind: TrustyAIService
 metadata:
   name: example-trustyai-service

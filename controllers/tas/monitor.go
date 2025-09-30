@@ -5,7 +5,7 @@ import (
 	"reflect"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -91,7 +91,7 @@ func createLocalServiceMonitorObject(ctx context.Context, deploymentNamespace st
 }
 
 // ensureLocalServiceMonitor ensures that the local ServiceMonitor is created
-func (r *TrustyAIServiceReconciler) ensureLocalServiceMonitor(cr *trustyaiopendatahubiov1alpha1.TrustyAIService, ctx context.Context) error {
+func (r *TrustyAIServiceReconciler) ensureLocalServiceMonitor(cr *trustyaiopendatahubiov1.TrustyAIService, ctx context.Context) error {
 	serviceMonitor, err := createLocalServiceMonitorObject(ctx, cr.Namespace, cr.Name)
 	if err != nil {
 		return err

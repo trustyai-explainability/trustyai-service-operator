@@ -4,7 +4,7 @@ import (
 	"context"
 	"reflect"
 
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	corev1 "k8s.io/api/core/v1"
@@ -22,7 +22,7 @@ type ServiceConfig struct {
 	Version   string
 }
 
-func (r *TrustyAIServiceReconciler) reconcileService(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService) (*corev1.Service, error) {
+func (r *TrustyAIServiceReconciler) reconcileService(ctx context.Context, cr *trustyaiopendatahubiov1.TrustyAIService) (*corev1.Service, error) {
 
 	serviceConfig := ServiceConfig{
 		Name:      cr.Name,

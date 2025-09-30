@@ -3,12 +3,12 @@ package tas
 import (
 	"context"
 
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // deleteExternalDependency removes the payload processor from the ModelMesh deployment
-func (r *TrustyAIServiceReconciler) deleteExternalDependency(crName string, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, namespace string, ctx context.Context) error {
+func (r *TrustyAIServiceReconciler) deleteExternalDependency(crName string, instance *trustyaiopendatahubiov1.TrustyAIService, namespace string, ctx context.Context) error {
 	log.FromContext(ctx).Info("Deleting external dependencies")
 	// Call handleInferenceServices with remove set to true
 	_, err := r.handleInferenceServices(ctx, instance, namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, instance.Name, true)
