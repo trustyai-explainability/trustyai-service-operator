@@ -122,10 +122,10 @@ spec:
           configMap:
             name: {{.Orchestrator.Name }}-ca-bundle
             defaultMode: 420
-{{- if .Orchestrator.Spec.CustomDetectorConfig }}
+{{- if .Orchestrator.Spec.CustomDetectorsConfig }}
         - name: customer-detector-config
           configMap:
-            name: {{.Orchestrator.Spec.CustomDetectorConfig}}
+            name: {{.Orchestrator.Spec.CustomDetectorsConfig}}
             defaultMode: 420
 {{- end }}
       serviceAccountName: {{.Orchestrator.Name}}-serviceaccount
