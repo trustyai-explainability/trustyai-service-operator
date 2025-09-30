@@ -2797,6 +2797,11 @@ func Test_OnlineMode(t *testing.T) {
 		},
 	}
 
+	permConfig := &PermissionConfig{
+		AllowOnline:        true,
+		AllowCodeExecution: false,
+	}
+
 	expect := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test",
@@ -2846,7 +2851,7 @@ func Test_OnlineMode(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job, NewDefaultPermissionConfig()),
+					Command:         generateCmd(svcOpts, job, permConfig),
 					Args:            generateArgs(svcOpts, job, log),
 					Ports: []corev1.ContainerPort{
 						{
@@ -2924,7 +2929,7 @@ func Test_OnlineMode(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod := CreatePod(svcOpts, job, permConfig, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -2970,6 +2975,11 @@ func Test_AllowCodeOnlineMode(t *testing.T) {
 			AllowOnline:        &allowOnline,
 			AllowCodeExecution: &allowCode,
 		},
+	}
+
+	permConfig := &PermissionConfig{
+		AllowOnline:        true,
+		AllowCodeExecution: true,
 	}
 
 	expect := &corev1.Pod{
@@ -3021,7 +3031,7 @@ func Test_AllowCodeOnlineMode(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job, NewDefaultPermissionConfig()),
+					Command:         generateCmd(svcOpts, job, permConfig),
 					Args:            generateArgs(svcOpts, job, log),
 					Ports: []corev1.ContainerPort{
 						{
@@ -3099,7 +3109,7 @@ func Test_AllowCodeOnlineMode(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod := CreatePod(svcOpts, job, permConfig, log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -3112,6 +3122,11 @@ func Test_AllowCodeOfflineMode(t *testing.T) {
 		DriverImage:        "driver:latest",
 		ImagePullPolicy:    corev1.PullAlways,
 		AllowOnline:        true,
+		AllowCodeExecution: true,
+	}
+
+	permConfig := &PermissionConfig{
+		AllowOnline:        false,
 		AllowCodeExecution: true,
 	}
 
@@ -3194,7 +3209,7 @@ func Test_AllowCodeOfflineMode(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job, NewDefaultPermissionConfig()),
+					Command:         generateCmd(svcOpts, job, permConfig),
 					Args:            generateArgs(svcOpts, job, log),
 					Ports: []corev1.ContainerPort{
 						{
@@ -3292,7 +3307,7 @@ func Test_AllowCodeOfflineMode(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod := CreatePod(svcOpts, job, permConfig, log)
 
 	assert.Equal(t, expect, newPod)
 }
