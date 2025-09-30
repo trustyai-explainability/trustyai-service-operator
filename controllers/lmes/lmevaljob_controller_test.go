@@ -3125,6 +3125,11 @@ func Test_AllowCodeOfflineMode(t *testing.T) {
 		AllowCodeExecution: true,
 	}
 
+	permConfig := &PermissionConfig{
+		AllowOnline:        false,
+		AllowCodeExecution: true,
+	}
+
 	jobName := "test"
 	pvcName := "my-pvc"
 	allowCode := true
@@ -3204,7 +3209,7 @@ func Test_AllowCodeOfflineMode(t *testing.T) {
 					Name:            "main",
 					Image:           svcOpts.PodImage,
 					ImagePullPolicy: svcOpts.ImagePullPolicy,
-					Command:         generateCmd(svcOpts, job, NewDefaultPermissionConfig()),
+					Command:         generateCmd(svcOpts, job, permConfig),
 					Args:            generateArgs(svcOpts, job, log),
 					Ports: []corev1.ContainerPort{
 						{
@@ -3302,7 +3307,7 @@ func Test_AllowCodeOfflineMode(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod := CreatePod(svcOpts, job, permConfig, log)
 
 	assert.Equal(t, expect, newPod)
 }
