@@ -127,6 +127,7 @@ spec:
           configMap:
             name: {{.Orchestrator.Spec.CustomDetectorConfig}}
             defaultMode: 420
+{{- end }}
       serviceAccountName: {{.Orchestrator.Name}}-serviceaccount
       containers:
         - name: {{.Orchestrator.Name}}
@@ -246,9 +247,8 @@ spec:
           volumeMounts:
             - name: custom-detector-config
               readOnly: true
-              mountPath: /app/detectors/built_in/user_detectors/user_detectors.py
-              subPath: user_detectors.py
-
+              mountPath: /app/detectors/built_in/user_detectors/custom_detectors.py
+              subPath: custom_detectors.py
           {{end}}
         {{end}}
         {{- if .OrchestratorOAuthProxy -}}
