@@ -6,15 +6,19 @@
             - --config-file=/etc/kube-rbac-proxy/config.yaml
             - --tls-cert-file=/etc/tls/private/tls.crt
             - --tls-private-key-file=/etc/tls/private/tls.key
+            - --proxy-endpoints-port={{ .HealthPort }}
             - --v=0
           ports:
             - containerPort: {{ .DownstreamPort }}
               name: https
               protocol: TCP
+            - containerPort: {{ .HealthPort }}
+              name: proxy-healthz
+              protocol: TCP
           readinessProbe:
             httpGet:
               path: /healthz
-              port: https
+              port: {{ .HealthPort }}
               scheme: HTTPS
             initialDelaySeconds: 5
             periodSeconds: 5
@@ -24,7 +28,7 @@
           livenessProbe:
             httpGet:
               path: /healthz
-              port: https
+              port: {{ .HealthPort }}
               scheme: HTTPS
             initialDelaySeconds: 30
             periodSeconds: 10

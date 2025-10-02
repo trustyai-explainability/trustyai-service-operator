@@ -9,7 +9,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-//go:embed *.tmpl.yaml
+//go:embed *.tmpl.yaml kube-rbac-proxy/*.tmpl.yaml
 var templateFS embed.FS
 
 // executeTemplate parses the template file and executes it with the provided data.

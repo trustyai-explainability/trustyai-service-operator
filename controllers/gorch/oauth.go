@@ -18,6 +18,7 @@ type KubeRBACProxyConfig struct {
 	UpstreamHost       string
 	UpstreamPort       int
 	DownstreamPort     int
+	HealthPort         int
 }
 
 // requiresOAuth checks if the oauth annotation key is set in the orchestrator CR
@@ -41,6 +42,7 @@ func (r *GuardrailsOrchestratorReconciler) configureKubeRBACProxy(ctx context.Co
 		Name:               orchestrator.Name,
 		KubeRBACProxyImage: kubeRBACProxyImage,
 		DownstreamPort:     8432,
+		HealthPort:         9443,
 		UpstreamProtocol:   "https",
 		UpstreamHost:       fmt.Sprintf("%s-service.%s.svc", orchestrator.Name, orchestrator.Namespace), // use full service name to avoid certificate validation issues
 		UpstreamPort:       8032,
@@ -52,6 +54,7 @@ func (r *GuardrailsOrchestratorReconciler) configureKubeRBACProxy(ctx context.Co
 			Name:               orchestrator.Name,
 			KubeRBACProxyImage: kubeRBACProxyImage,
 			DownstreamPort:     8490,
+			HealthPort:         9444,
 			UpstreamProtocol:   "http",
 			UpstreamHost:       "localhost",
 			UpstreamPort:       8090,
