@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Orchestrator.Name }}-orchestrator-kube-rbac-config
+  name: {{ .Orchestrator.Name }}-kube-rbac-proxy-orchestrator-config
   namespace: {{ .Orchestrator.Namespace }}
   labels:
     app: {{ .Orchestrator.Name }}
