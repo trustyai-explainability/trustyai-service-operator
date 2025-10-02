@@ -23,6 +23,7 @@ on:
 jobs:
   # Ensure that tests pass before publishing a new image.
   build-and-push-ci:
+    if: github.repository == 'trustyai-explainability/trustyai-service-operator'
     runs-on: ubuntu-latest
     permissions:
       contents: read
