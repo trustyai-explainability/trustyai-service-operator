@@ -221,6 +221,7 @@ rules:
   resources:
   - guardrailsorchestrators
   - lmevaljobs
+  - nemoguardrails
   - trustyaiservices
   verbs:
   - create
@@ -235,6 +236,7 @@ rules:
   resources:
   - guardrailsorchestrators/finalizers
   - lmevaljobs/finalizers
+  - nemoguardrails/finalizers
   - trustyaiservices/finalizers
   verbs:
   - update
@@ -243,6 +245,7 @@ rules:
   resources:
   - guardrailsorchestrators/status
   - lmevaljobs/status
+  - nemoguardrails/status
   - trustyaiservices/status
   verbs:
   - get

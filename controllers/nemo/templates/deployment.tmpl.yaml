@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{.NemoGuardrails.Name}}
+  namespace: {{.NemoGuardrails.Namespace}}
+  labels:
+    app: {{.NemoGuardrails.Name}}
+    component: {{.NemoGuardrails.Name}}
+    deploy-name: {{.NemoGuardrails.Name}}
+    app.kubernetes.io/instance: {{.NemoGuardrails.Name}}
+    app.kubernetes.io/name: {{.NemoGuardrails.Name}}
+    app.kubernetes.io/part-of: trustyai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nemo-guardrails
+  template:
+    metadata:
+      labels:
+        app: {{.NemoGuardrails.Name}}
+        component: {{.NemoGuardrails.Name}}
+        deploy-name: {{.NemoGuardrails.Name}}
+        app.kubernetes.io/instance: {{.NemoGuardrails.Name}}
+        app.kubernetes.io/name: {{.NemoGuardrails.Name}}
+        app.kubernetes.io/part-of: trustyai
+    spec:
+      containers:
+      - name: nemo-guardrails
+        image: {{.ContainerImages.NemoGuardrailsImage}}
+        env:
+        - name: CONFIG_ID
+          value: rails-custom-action
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          timeoutSeconds: 10
+          periodSeconds: 20
+          successThreshold: 1
+          failureThreshold: 3
+        ports:
+        - containerPort: 8000
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config/rails-custom-action
+      - name: oauth-proxy
+        image: {{ .ContainerImages.OAuthProxyImage }}
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+          requests:
+            cpu: 100m
+            memory: 64Mi
+        readinessProbe:
+          httpGet:
+            path: /oauth/healthz
+            port: oauth-proxy
+            scheme: HTTPS
+          initialDelaySeconds: 5
+          timeoutSeconds: 1
+          periodSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /oauth/healthz
+            port: oauth-proxy
+            scheme: HTTPS
+          initialDelaySeconds: 30
+          timeoutSeconds: 1
+          periodSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        env:
+          - name: NAMESPACE
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+        ports:
+          - name: oauth-proxy
+            containerPort: 8443
+            protocol: TCP
+        volumeMounts:
+        - name: {{.NemoGuardrails.Name}}-tls
+          mountPath: /etc/tls/private
+        args:
+          - '--cookie-secret=SECRET'
+          - '--https-address=:8443'
+          - '--email-domain=*'
+          - '--openshift-service-account={{ .NemoGuardrails.Name }}-proxy'
+          - '--provider=openshift'
+          - '--tls-cert=/etc/tls/private/tls.crt'
+          - '--tls-key=/etc/tls/private/tls.key'
+          - '--upstream=http://localhost:8000'
+          - '--skip-auth-regex=''(^/apis/v1beta1/healthz)'''
+          - >-
+            --openshift-sar={"namespace":"{{ .NemoGuardrails.Namespace }}","resource":"pods","verb":"get"}
+          - >-
+            --openshift-delegate-urls={"/": {"namespace": "{{ .NemoGuardrails.Namespace }}", "resource":
+            "pods", "verb": "get"}}
+      volumes:
+      - name: config-volume
+        configMap:
+          name: {{.NemoGuardrails.Spec.NemoConfig}}
+      - name: {{.NemoGuardrails.Name}}-tls
+        secret:
+          secretName: {{.NemoGuardrails.Name}}-tls
+          defaultMode: 420
