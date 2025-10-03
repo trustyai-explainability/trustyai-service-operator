@@ -52,6 +52,9 @@ type GuardrailsOrchestratorSpec struct {
 	// Boolean flag to enable/disable built-in detectors
 	// +optional
 	EnableBuiltInDetectors bool `json:"enableBuiltInDetectors,omitempty"`
+	// Name of configmap containing user-defined Python detectors. This is only used if EnableBuiltInDetectors is true
+	// +optional
+	CustomDetectorsConfig *string `json:"customDetectorsConfig,omitempty"`
 	// Boolean flag to enable/disable the guardrails sidecar gateway
 	// +optional
 	EnableGuardrailsGateway bool `json:"enableGuardrailsGateway,omitempty"`

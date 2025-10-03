@@ -57,6 +57,9 @@ spec:
                 required:
                 - inferenceServiceToGuardrail
                 type: object
+              customDetectorsConfig:
+                description: Name of configmap containing user-defined Python detectors
+                type: string
               enableBuiltInDetectors:
                 description: Boolean flag to enable/disable built-in detectors
                 type: boolean

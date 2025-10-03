@@ -19,6 +19,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sort"
 	"strconv"
 	"strings"
@@ -151,6 +152,7 @@ func (r *GuardrailsOrchestratorReconciler) getInferenceServicesAndServingRuntime
 	if err := r.List(ctx, &servingRuntimes, &client.ListOptions{
 		Namespace: namespace,
 	}); err != nil || len(servingRuntimes.Items) == 0 {
+		log.FromContext(ctx).Error(err, "could not list all ServingRuntimes in namespace %s", namespace)
 		return kservev1beta1.InferenceServiceList{}, v1alpha1.ServingRuntimeList{}, fmt.Errorf("could not automatically find serving runtimes: %w", err)
 	}
 
