@@ -64,6 +64,9 @@ type GuardrailsOrchestratorSpec struct {
 	// Set log level in the orchestrator deployment
 	// +optional
 	LogLevel *string `json:"logLevel,omitempty"`
+	// Define TLS secrets to be mounted to the orchestrator. Secrets will be mounted at /etc/tls/$SECRET_NAME
+	// +optional
+	TLSSecrets *[]string `json:"tlsSecrets,omitempty"`
 }
 
 // OtelExporter defines the environment variables for configuring the OTLP exporter.

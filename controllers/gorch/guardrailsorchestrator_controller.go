@@ -261,6 +261,19 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 			return ctrl.Result{}, err
 		}
 
+		if orchestrator.Spec.TLSSecrets != nil && len(*orchestrator.Spec.TLSSecrets) > 0 {
+			for _, tlsSecret := range *orchestrator.Spec.TLSSecrets {
+				tlsMounts = append(tlsMounts, gorchv1alpha1.DetectedService{
+					Name:      "",
+					Type:      "",
+					Scheme:    "",
+					Hostname:  "",
+					Port:      "",
+					TLSSecret: tlsSecret,
+				})
+			}
+		}
+
 		// add TLS mounts to deployment
 		err = r.addTLSMounts(ctx, orchestrator, deployment, tlsMounts)
 		if err != nil {
