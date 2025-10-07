@@ -28,7 +28,7 @@ const (
 // Configuration constants
 const (
 	imageConfigMap                 = "trustyai-service-operator-config"
-	configMapKubeRBACProxyImageKey = "kubeRBACProxyImage"
+	configMapKubeRBACProxyImageKey = "kube-rbac-proxy"
 	configMapServiceImageKey       = "trustyaiServiceImage"
 	configMapkServeServerlessKey   = "kServeServerless"
 )
