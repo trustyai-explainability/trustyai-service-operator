@@ -134,7 +134,13 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	caBundle := r.GetCustomCertificatesBundle(ctx, instance)
 
-	err = r.reconcileOAuthService(ctx, instance, caBundle)
+	err = r.reconcileTLSService(ctx, instance, caBundle)
+	if err != nil {
+		return RequeueWithError(err)
+	}
+
+	// Ensure kube-rbac-proxy ConfigMap
+	err = r.ensureKubeRBACProxyConfigMap(ctx, instance)
 	if err != nil {
 		return RequeueWithError(err)
 	}

@@ -28,8 +28,8 @@ type ServiceTLSConfig struct {
 	Version                  string
 }
 
-// generateTrustyAIOAuthService defines the desired OAuth service object
-func generateTrustyAIOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, caBundle CustomCertificatesBundle) (*corev1.Service, error) {
+// generateTrustyAITLSService defines the desired TLS service object
+func generateTrustyAITLSService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, caBundle CustomCertificatesBundle) (*corev1.Service, error) {
 
 	serviceTLSConfig := ServiceTLSConfig{
 		Instance:                 instance,
@@ -47,18 +47,18 @@ func generateTrustyAIOAuthService(ctx context.Context, instance *trustyaiopendat
 	return serviceTLS, nil
 }
 
-// reconcileOAuthService will manage the OAuth service reconciliation required
-// by the service's OAuth proxy
-func (r *TrustyAIServiceReconciler) reconcileOAuthService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, caBundle CustomCertificatesBundle) error {
+// reconcileTLSService will manage the TLS service reconciliation required
+// by the service's kube-rbac-proxy
+func (r *TrustyAIServiceReconciler) reconcileTLSService(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, caBundle CustomCertificatesBundle) error {
 
-	// Generate the desired OAuth service object
-	desiredService, err := generateTrustyAIOAuthService(ctx, instance, caBundle)
+	// Generate the desired TLS service object
+	desiredService, err := generateTrustyAITLSService(ctx, instance, caBundle)
 	if err != nil {
-		// Error creating the oauth service resource object
+		// Error creating the TLS service resource object
 		return err
 	}
 
-	// Create the OAuth service if it does not already exist
+	// Create the TLS service if it does not already exist
 	foundService := &corev1.Service{}
 	err = r.Get(ctx, types.NamespacedName{
 		Name:      desiredService.GetName(),
@@ -66,22 +66,22 @@ func (r *TrustyAIServiceReconciler) reconcileOAuthService(ctx context.Context, i
 	}, foundService)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			log.FromContext(ctx).Info("Creating OAuth Service")
-			// Add .metatada.ownerReferences to the OAuth service to be deleted by
+			log.FromContext(ctx).Info("Creating TLS Service")
+			// Add .metadata.ownerReferences to the TLS service to be deleted by
 			// the Kubernetes garbage collector if the service is deleted
 			err = ctrl.SetControllerReference(instance, desiredService, r.Scheme)
 			if err != nil {
-				log.FromContext(ctx).Error(err, "Unable to add OwnerReference to the OAuth Service")
+				log.FromContext(ctx).Error(err, "Unable to add OwnerReference to the TLS Service")
 				return err
 			}
-			// Create the OAuth service in the Openshift cluster
+			// Create the TLS service in the OpenShift cluster
 			err = r.Create(ctx, desiredService)
 			if err != nil && !errors.IsAlreadyExists(err) {
-				log.FromContext(ctx).Error(err, "Unable to create the OAuth Service")
+				log.FromContext(ctx).Error(err, "Unable to create the TLS Service")
 				return err
 			}
 		} else {
-			log.FromContext(ctx).Error(err, "Unable to fetch the OAuth Service")
+			log.FromContext(ctx).Error(err, "Unable to fetch the TLS Service")
 			return err
 		}
 	}

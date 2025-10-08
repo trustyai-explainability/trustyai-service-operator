@@ -18,7 +18,6 @@ package tas
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -186,7 +185,7 @@ func createNamespace(ctx context.Context, k8sClient client.Client, namespace str
 }
 
 // createConfigMap creates a configuration in the specified namespace
-func createConfigMap(namespace string, oauthImage string, trustyaiServiceImage string) *corev1.ConfigMap {
+func createConfigMap(namespace string, kubeRBACProxyImage string, trustyaiServiceImage string) *corev1.ConfigMap {
 	// Define the ConfigMap with the necessary data
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -194,8 +193,8 @@ func createConfigMap(namespace string, oauthImage string, trustyaiServiceImage s
 			Namespace: namespace,
 		},
 		Data: map[string]string{
-			configMapOAuthProxyImageKey: oauthImage,
-			configMapServiceImageKey:    trustyaiServiceImage,
+			configMapKubeRBACProxyImageKey: kubeRBACProxyImage,
+			configMapServiceImageKey:       trustyaiServiceImage,
 		},
 	}
 }
@@ -454,38 +453,18 @@ func makeRouteReady(ctx context.Context, k8sClient client.Client, instance *trus
 	return k8sClient.Status().Update(ctx, route)
 }
 
-func checkServiceAccountAnnotations(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, k8sClient client.Client) {
+func checkServiceAccountRBACProxy(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, k8sClient client.Client) {
 	serviceAccount := &corev1.ServiceAccount{}
 	serviceAccountName := generateServiceAccountName(instance)
 	err := k8sClient.Get(ctx, types.NamespacedName{Name: serviceAccountName, Namespace: instance.Namespace}, serviceAccount)
 	Expect(err).ToNot(HaveOccurred())
 	Expect(serviceAccount).ToNot(BeNil())
 
-	// Build the OAuth redirect reference
-	oauthRedirectRef := struct {
-		Kind       string `json:"kind"`
-		APIVersion string `json:"apiVersion"`
-		Reference  struct {
-			Kind string `json:"kind"`
-			Name string `json:"name"`
-		} `json:"reference"`
-	}{
-		Kind:       "OAuthRedirectReference",
-		APIVersion: "v1",
-		Reference: struct {
-			Kind string `json:"kind"`
-			Name string `json:"name"`
-		}{
-			Kind: "Route",
-			Name: instance.Name,
-		},
-	}
-
-	oauthRedirectRefJSON, err := json.Marshal(oauthRedirectRef)
-	Expect(err).ToNot(HaveOccurred())
-
-	annotation := serviceAccount.Annotations["serviceaccounts.openshift.io/oauth-redirectreference.primary"]
-	Expect(annotation).To(Equal(string(oauthRedirectRefJSON)))
+	// Verify service account has correct labels for RBAC proxy
+	Expect(serviceAccount.Labels["app"]).To(Equal(componentName))
+	Expect(serviceAccount.Labels["app.kubernetes.io/name"]).To(Equal(serviceAccountName))
+	Expect(serviceAccount.Labels["app.kubernetes.io/instance"]).To(Equal(instance.Name))
+	Expect(serviceAccount.Labels["app.kubernetes.io/part-of"]).To(Equal(componentName))
 }
 
 func checkClusterRoleBinding(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, k8sClient client.Client) {

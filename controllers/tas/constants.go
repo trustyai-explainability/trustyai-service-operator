@@ -27,18 +27,18 @@ const (
 
 // Configuration constants
 const (
-	imageConfigMap               = "trustyai-service-operator-config"
-	configMapOAuthProxyImageKey  = "oauthProxyImage"
-	configMapServiceImageKey     = "trustyaiServiceImage"
-	configMapkServeServerlessKey = "kServeServerless"
+	imageConfigMap                 = "trustyai-service-operator-config"
+	configMapKubeRBACProxyImageKey = "kube-rbac-proxy"
+	configMapServiceImageKey       = "trustyaiServiceImage"
+	configMapkServeServerlessKey   = "kServeServerless"
 )
 
-// OAuth constants
+// Kube-RBAC-Proxy constants
 const (
-	OAuthServicePort       = 443
-	OAuthName              = "oauth-proxy"
-	OAuthServicePortName   = "oauth-proxy"
-	defaultOAuthProxyImage = "registry.redhat.io/openshift4/ose-oauth-proxy:latest"
+	KubeRBACProxyServicePort     = 8443
+	KubeRBACProxyName            = "kube-rbac-proxy"
+	KubeRBACProxyServicePortName = "https"
+	defaultKubeRBACProxyImage    = "quay.io/openshift/origin-kube-rbac-proxy:4.19"
 )
 
 // Status types

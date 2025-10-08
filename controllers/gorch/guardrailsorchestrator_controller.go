@@ -272,6 +272,21 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, nil
 	}
 
+	// Ensure kube-rbac-proxy ConfigMaps exist if OAuth is required
+	if requiresOAuth(orchestrator) {
+		if err := r.ensureOrchestratorKubeRBACProxyConfigMap(ctx, orchestrator); err != nil {
+			log.Error(err, "Failed to ensure orchestrator kube-rbac-proxy ConfigMap")
+			return ctrl.Result{}, err
+		}
+
+		if orchestrator.Spec.EnableGuardrailsGateway {
+			if err := r.ensureGatewayKubeRBACProxyConfigMap(ctx, orchestrator); err != nil {
+				log.Error(err, "Failed to ensure gateway kube-rbac-proxy ConfigMap")
+				return ctrl.Result{}, err
+			}
+		}
+	}
+
 	existingDeployment := &appsv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingDeployment)
 	if err != nil && errors.IsNotFound(err) {

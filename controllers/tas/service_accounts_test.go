@@ -61,8 +61,8 @@ var _ = Describe("Service Accounts", func() {
 			Expect(serviceAccount2.Name).To(Equal(generateServiceAccountName(instance2)))
 			Expect(serviceAccountName2).To(Equal(generateServiceAccountName(instance2)))
 
-			checkServiceAccountAnnotations(ctx, instance1, k8sClient)
-			checkServiceAccountAnnotations(ctx, instance2, k8sClient)
+			checkServiceAccountRBACProxy(ctx, instance1, k8sClient)
+			checkServiceAccountRBACProxy(ctx, instance2, k8sClient)
 
 			checkClusterRoleBinding(ctx, instance1, k8sClient)
 			checkClusterRoleBinding(ctx, instance2, k8sClient)

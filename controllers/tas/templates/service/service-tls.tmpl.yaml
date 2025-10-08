@@ -14,7 +14,7 @@ metadata:
         trustyai-service-name: {{ .Instance.Name }}
 spec:
     ports:
-        - name: oauth-proxy
+        - name: https
           protocol: TCP
           port: 443
           targetPort: 8443

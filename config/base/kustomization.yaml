@@ -35,13 +35,13 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.trustyaiOperatorImage
-  - name: oauthProxyImage
+  - name: kube-rbac-proxy
     objref:
       kind: ConfigMap
       name: config
       apiVersion: v1
     fieldref:
-      fieldpath: data.oauthProxyImage
+      fieldpath: data.kube-rbac-proxy
   - name: kServeServerless
     objref:
       kind: ConfigMap

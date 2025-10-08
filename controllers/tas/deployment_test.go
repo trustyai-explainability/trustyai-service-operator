@@ -52,7 +52,7 @@ func setupAndTestDeploymentDefault(instance *trustyaiopendatahubiov1alpha1.Trust
 
 	Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
 	Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
-	Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("registry.redhat.io/openshift4/ose-oauth-proxy:latest"))
+	Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("quay.io/openshift/origin-kube-rbac-proxy:4.19"))
 
 	WaitFor(func() error {
 		service, _ := reconciler.reconcileService(ctx, instance)
@@ -70,35 +70,33 @@ func setupAndTestDeploymentDefault(instance *trustyaiopendatahubiov1alpha1.Trust
 	Expect(service.Namespace).Should(Equal(namespace))
 
 	WaitFor(func() error {
-		err := reconciler.reconcileOAuthService(ctx, instance, caBundle)
+		err := reconciler.createServiceAccount(ctx, instance)
 		return err
-	}, "failed to create oauth service")
+	}, "failed to create service account")
 
-	desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance, caBundle)
-	Expect(err).ToNot(HaveOccurred())
-
-	oauthService := &corev1.Service{}
+	// Verify service account was created for RBAC proxy
+	serviceAccountName := generateServiceAccountName(instance)
+	serviceAccount := &corev1.ServiceAccount{}
 	WaitFor(func() error {
-		return k8sClient.Get(ctx, types.NamespacedName{Name: desiredOAuthService.Name, Namespace: namespace}, oauthService)
-	}, "failed to get OAuth Service")
+		return k8sClient.Get(ctx, types.NamespacedName{Name: serviceAccountName, Namespace: namespace}, serviceAccount)
+	}, "failed to get Service Account")
 
-	// Check if the OAuth service has the expected labels
-	Expect(oauthService.Labels["app"]).Should(Equal(instance.Name))
-	Expect(oauthService.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
-	Expect(oauthService.Labels["app.kubernetes.io/name"]).Should(Equal(instance.Name))
-	Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
-	Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
-	Expect(oauthService.Labels["trustyai-service-name"]).Should(Equal(instance.Name))
+	// Check if the service account has the expected labels
+	Expect(serviceAccount.Labels["app"]).Should(Equal(componentName))
+	Expect(serviceAccount.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
+	Expect(serviceAccount.Labels["app.kubernetes.io/name"]).Should(Equal(serviceAccountName))
+	Expect(serviceAccount.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
+	Expect(serviceAccount.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
 
 }
 
 func setupAndTestDeploymentConfigMap(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, namespace string) {
 	serviceImage := "custom-service-image:foo"
-	oauthImage := "custom-oauth-proxy:bar"
+	kubeRBACProxyImage := "custom-kube-rbac-proxy:bar"
 	Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
 
 	WaitFor(func() error {
-		configMap := createConfigMap(operatorNamespace, oauthImage, serviceImage)
+		configMap := createConfigMap(operatorNamespace, kubeRBACProxyImage, serviceImage)
 		return k8sClient.Create(ctx, configMap)
 	}, "failed to create ConfigMap")
 
@@ -127,7 +125,7 @@ func setupAndTestDeploymentConfigMap(instance *trustyaiopendatahubiov1alpha1.Tru
 
 	Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
 	Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal(serviceImage))
-	Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal(oauthImage))
+	Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal(kubeRBACProxyImage))
 
 	WaitFor(func() error {
 		service, _ := reconciler.reconcileService(ctx, instance)
@@ -145,25 +143,23 @@ func setupAndTestDeploymentConfigMap(instance *trustyaiopendatahubiov1alpha1.Tru
 	Expect(service.Namespace).Should(Equal(namespace))
 
 	WaitFor(func() error {
-		err := reconciler.reconcileOAuthService(ctx, instance, caBundle)
+		err := reconciler.createServiceAccount(ctx, instance)
 		return err
-	}, "failed to create oauth service")
+	}, "failed to create service account")
 
-	desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance, caBundle)
-	Expect(err).ToNot(HaveOccurred())
-
-	oauthService := &corev1.Service{}
+	// Verify service account was created for RBAC proxy
+	serviceAccountName := generateServiceAccountName(instance)
+	serviceAccount := &corev1.ServiceAccount{}
 	WaitFor(func() error {
-		return k8sClient.Get(ctx, types.NamespacedName{Name: desiredOAuthService.Name, Namespace: namespace}, oauthService)
-	}, "failed to get OAuth Service")
+		return k8sClient.Get(ctx, types.NamespacedName{Name: serviceAccountName, Namespace: namespace}, serviceAccount)
+	}, "failed to get Service Account")
 
-	// Check if the OAuth service has the expected labels
-	Expect(oauthService.Labels["app"]).Should(Equal(instance.Name))
-	Expect(oauthService.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
-	Expect(oauthService.Labels["app.kubernetes.io/name"]).Should(Equal(instance.Name))
-	Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
-	Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
-	Expect(oauthService.Labels["trustyai-service-name"]).Should(Equal(instance.Name))
+	// Check if the service account has the expected labels
+	Expect(serviceAccount.Labels["app"]).Should(Equal(componentName))
+	Expect(serviceAccount.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
+	Expect(serviceAccount.Labels["app.kubernetes.io/name"]).Should(Equal(serviceAccountName))
+	Expect(serviceAccount.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
+	Expect(serviceAccount.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
 
 }
 
@@ -297,25 +293,23 @@ func setupAndTestDeploymentInferenceService(instance *trustyaiopendatahubiov1alp
 	Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
 
 	WaitFor(func() error {
-		err := reconciler.reconcileOAuthService(ctx, instance, caBundle)
+		err := reconciler.createServiceAccount(ctx, instance)
 		return err
-	}, "failed to create oauth service")
+	}, "failed to create service account")
 
-	desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance, caBundle)
-	Expect(err).ToNot(HaveOccurred())
-
-	oauthService := &corev1.Service{}
+	// Verify service account was created for RBAC proxy
+	serviceAccountName := generateServiceAccountName(instance)
+	serviceAccount := &corev1.ServiceAccount{}
 	WaitFor(func() error {
-		return k8sClient.Get(ctx, types.NamespacedName{Name: desiredOAuthService.Name, Namespace: namespace}, oauthService)
-	}, "failed to get OAuth Service")
+		return k8sClient.Get(ctx, types.NamespacedName{Name: serviceAccountName, Namespace: namespace}, serviceAccount)
+	}, "failed to get Service Account")
 
-	// Check if the OAuth service has the expected labels
-	Expect(oauthService.Labels["app"]).Should(Equal(instance.Name))
-	Expect(oauthService.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
-	Expect(oauthService.Labels["app.kubernetes.io/name"]).Should(Equal(instance.Name))
-	Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
-	Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
-	Expect(oauthService.Labels["trustyai-service-name"]).Should(Equal(instance.Name))
+	// Check if the service account has the expected labels
+	Expect(serviceAccount.Labels["app"]).Should(Equal(componentName))
+	Expect(serviceAccount.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
+	Expect(serviceAccount.Labels["app.kubernetes.io/name"]).Should(Equal(serviceAccountName))
+	Expect(serviceAccount.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
+	Expect(serviceAccount.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
 
 }
 
@@ -893,28 +887,26 @@ var _ = Describe("TrustyAI operator", func() {
 
 				Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
 				Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
-				Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("registry.redhat.io/openshift4/ose-oauth-proxy:latest"))
+				Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("quay.io/openshift/origin-kube-rbac-proxy:4.19"))
 
 				WaitFor(func() error {
-					err := reconciler.reconcileOAuthService(ctx, instance, caBundle)
+					err := reconciler.createServiceAccount(ctx, instance)
 					return err
-				}, "failed to create oauth service")
+				}, "failed to create service account")
 
-				desiredOAuthService, err := generateTrustyAIOAuthService(ctx, instance, caBundle)
-				Expect(err).ToNot(HaveOccurred())
-
-				oauthService := &corev1.Service{}
+				// Verify service account was created for RBAC proxy
+				serviceAccountName := generateServiceAccountName(instance)
+				serviceAccount := &corev1.ServiceAccount{}
 				WaitFor(func() error {
-					return k8sClient.Get(ctx, types.NamespacedName{Name: desiredOAuthService.Name, Namespace: instance.Namespace}, oauthService)
-				}, "failed to get OAuth Service")
+					return k8sClient.Get(ctx, types.NamespacedName{Name: serviceAccountName, Namespace: instance.Namespace}, serviceAccount)
+				}, "failed to get Service Account")
 
-				// Check if the OAuth service has the expected labels
-				Expect(oauthService.Labels["app"]).Should(Equal(instance.Name))
-				Expect(oauthService.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
-				Expect(oauthService.Labels["app.kubernetes.io/name"]).Should(Equal(instance.Name))
-				Expect(oauthService.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
-				Expect(oauthService.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
-				Expect(oauthService.Labels["trustyai-service-name"]).Should(Equal(instance.Name))
+				// Check if the service account has the expected labels
+				Expect(serviceAccount.Labels["app"]).Should(Equal(componentName))
+				Expect(serviceAccount.Labels["app.kubernetes.io/instance"]).Should(Equal(instance.Name))
+				Expect(serviceAccount.Labels["app.kubernetes.io/name"]).Should(Equal(serviceAccountName))
+				Expect(serviceAccount.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
+				Expect(serviceAccount.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
 
 			}
 		})

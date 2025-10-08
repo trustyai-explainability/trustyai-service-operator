@@ -150,72 +150,63 @@ spec:
               mountPath: /etc/tls/db
               readOnly: true
             {{ end }}
-        - resources:
+        - name: kube-rbac-proxy
+          image: {{ .KubeRBACProxyImage }}
+          args:
+            - --secure-listen-address=0.0.0.0:8443
+            - --upstream=http://127.0.0.1:8080/
+            - --config-file=/etc/kube-rbac-proxy/config.yaml
+            - --tls-cert-file=/etc/tls/private/tls.crt
+            - --tls-private-key-file=/etc/tls/private/tls.key
+            - --proxy-endpoints-port=9443
+            - --v=0
+          ports:
+            - containerPort: 8443
+              name: https
+              protocol: TCP
+            - containerPort: 9443
+              name: proxy-healthz
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9443
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 1
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9443
+              scheme: HTTPS
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 1
+            successThreshold: 1
+            failureThreshold: 3
+          resources:
             limits:
               cpu: 100m
               memory: 64Mi
             requests:
-              cpu: 100m
-              memory: 64Mi
-          readinessProbe:
-            httpGet:
-              path: /oauth/healthz
-              port: oauth-proxy
-              scheme: HTTPS
-            initialDelaySeconds: 5
-            timeoutSeconds: 1
-            periodSeconds: 5
-            successThreshold: 1
-            failureThreshold: 3
-          name: oauth-proxy
-          livenessProbe:
-            httpGet:
-              path: /oauth/healthz
-              port: oauth-proxy
-              scheme: HTTPS
-            initialDelaySeconds: 30
-            timeoutSeconds: 1
-            periodSeconds: 5
-            successThreshold: 1
-            failureThreshold: 3
-          env:
-            - name: NAMESPACE
-              valueFrom:
-                fieldRef:
-                  apiVersion: v1
-                  fieldPath: metadata.namespace
-          ports:
-            - name: oauth-proxy
-              containerPort: 8443
-              protocol: TCP
+              cpu: 50m
+              memory: 32Mi
           volumeMounts:
-          {{ if .CustomCertificatesBundle.IsDefined }}
+            - name: {{ .Instance.Name }}-tls
+              mountPath: /etc/tls/private
+              readOnly: true
+            - name: kube-rbac-proxy-config
+              mountPath: /etc/kube-rbac-proxy
+              readOnly: true
+            {{ if .CustomCertificatesBundle.IsDefined }}
             - name: {{ .CustomCertificatesBundle.VolumeName }}
               readOnly: true
               mountPath: /etc/ssl/certs/ca-bundle.crt
               subPath: ca-bundle.crt
-              {{ end }}
-            - name: {{ .Instance.Name }}-tls
-              mountPath: /etc/tls/private
-          image: {{ .OAuthImage }}
-          args:
-            - '--cookie-secret=SECRET'
-            - '--https-address=:8443'
-            - '--email-domain=*'
-            - '--openshift-service-account={{ .Instance.Name }}-proxy'
-            {{ if .CustomCertificatesBundle.IsDefined }}
-            - '--openshift-ca=/etc/ssl/certs/ca-bundle.crt'
             {{ end }}
-            - '--provider=openshift'
-            - '--tls-cert=/etc/tls/private/tls.crt'
-            - '--tls-key=/etc/tls/private/tls.key'
-            - '--upstream=http://localhost:8080'
-            - '--skip-auth-regex=''(^/apis/v1beta1/healthz)'''
-            - >-
-              --openshift-sar={"namespace":"{{ .Instance.Namespace }}","resource":"pods","verb":"get"}
-            - >-
-              --openshift-delegate-urls={"/": {"namespace": "{{ .Instance.Namespace }}", "resource":
-              "pods", "verb": "get"}}
       serviceAccount: {{ .Instance.Name }}-proxy
       volumes:
         {{ if or (eq .Instance.Spec.Storage.Format "PVC") ( .Instance.IsMigration) }}
@@ -236,6 +227,10 @@ spec:
         - name: {{ .Instance.Name}}-internal
           secret:
             secretName: {{ .Instance.Name }}-internal
+            defaultMode: 420
+        - name: kube-rbac-proxy-config
+          configMap:
+            name: {{ .Instance.Name }}-kube-rbac-proxy-config
             defaultMode: 420
         {{ if .UseDBTLSCerts }}
         - name: db-ca-cert
