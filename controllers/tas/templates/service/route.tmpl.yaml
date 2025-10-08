@@ -13,6 +13,6 @@ spec:
     port:
         targetPort: {{ .PortName }}
     tls:
-        termination: passthrough
+        termination: reencrypt
         insecureEdgeTerminationPolicy: Redirect
 
