@@ -122,6 +122,12 @@ spec:
           configMap:
             name: {{.Orchestrator.Name }}-ca-bundle
             defaultMode: 420
+{{- if .Orchestrator.Spec.CustomDetectorsConfig }}
+        - name: custom-detectors-config
+          configMap:
+            name: {{.Orchestrator.Spec.CustomDetectorsConfig}}
+            defaultMode: 420
+{{- end }}
       serviceAccountName: {{.Orchestrator.Name}}-serviceaccount
       containers:
         - name: {{.Orchestrator.Name}}
@@ -237,6 +243,13 @@ spec:
         - name: {{.Orchestrator.Name}}-detectors
           image: {{.ContainerImages.DetectorImage}}
           command: [ "/app/bin/regex-detector" ]
+          {{ if .Orchestrator.Spec.CustomDetectorsConfig }}
+          volumeMounts:
+            - name: custom-detectors-config
+              readOnly: true
+              mountPath: /app/custom_detectors/custom_detectors.py
+              subPath: custom_detectors.py
+          {{end}}
         {{end}}
         {{- if .OrchestratorOAuthProxy -}}
         - {{- template "oAuthProxy" .OrchestratorOAuthProxy }}
