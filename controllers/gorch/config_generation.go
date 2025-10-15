@@ -19,6 +19,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sort"
 	"strconv"
 	"strings"
@@ -151,6 +152,7 @@ func (r *GuardrailsOrchestratorReconciler) getInferenceServicesAndServingRuntime
 	if err := r.List(ctx, &servingRuntimes, &client.ListOptions{
 		Namespace: namespace,
 	}); err != nil || len(servingRuntimes.Items) == 0 {
+		log.FromContext(ctx).Error(err, "could not list all ServingRuntimes in namespace %s", namespace)
 		return kservev1beta1.InferenceServiceList{}, v1alpha1.ServingRuntimeList{}, fmt.Errorf("could not automatically find serving runtimes: %w", err)
 	}
 
@@ -245,7 +247,7 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 			}
 		}
 	}
-	if detectedGenerationService.Hostname == "" || detectedGenerationService.Port == "" {
+	if detectedGenerationService == nil || detectedGenerationService.Hostname == "" || detectedGenerationService.Port == "" {
 		return nil, nil, nil, nil, fmt.Errorf("could not find InferenceService with name %q in namespace %s", inferenceServiceToGuardrail, namespace)
 	} else {
 		log.V(2).Info("Generation service resolved", "Generation service", detectedGenerationService)

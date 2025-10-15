@@ -80,10 +80,12 @@ func createGuardrailsOrchestratorSidecar(ctx context.Context, orchestratorConfig
 
 func createGuardrailsOrchestratorOtelExporter(ctx context.Context, orchestratorConfigMap string) error {
 	typedNamespacedName := types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}
-	otelExporter := gorchv1alpha1.OtelExporter{
-		Protocol:     "grpc",
-		OTLPEndpoint: "localhost:4317",
-		OTLPExport:   "traces",
+	otelExporter := gorchv1alpha1.OTelExporter{
+		OTLPProtocol:        "grpc",
+		OTLPTracesEndpoint:  "localhost:4317",
+		OTLPMetricsEndpoint: "localhost:4318",
+		EnableTraces:        true,
+		EnableMetrics:       true,
 	}
 	err := k8sClient.Get(ctx, typedNamespacedName, &gorchv1alpha1.GuardrailsOrchestrator{})
 	if err != nil && errors.IsNotFound(err) {
@@ -95,7 +97,7 @@ func createGuardrailsOrchestratorOtelExporter(ctx context.Context, orchestratorC
 			Spec: gorchv1alpha1.GuardrailsOrchestratorSpec{
 				Replicas:           1,
 				OrchestratorConfig: &orchestratorConfigMap,
-				OtelExporter:       otelExporter,
+				OTelExporter:       otelExporter,
 			},
 		}
 		err = k8sClient.Create(ctx, gorch)
@@ -373,12 +375,15 @@ func testCreateDeleteGuardrailsOrchestratorOtelExporter(namespaceName string) {
 			envVar = getEnvVar("OTEL_EXPORTER_OTLP_PROTOCOL", container.Env)
 			Expect(envVar).ShouldNot(BeNil())
 			Expect(envVar.Value).To(Equal("grpc"))
-			envVar = getEnvVar("OTEL_EXPORTER_OTLP_ENDPOINT", container.Env)
+			envVar = getEnvVar("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", container.Env)
 			Expect(envVar).ShouldNot(BeNil())
 			Expect(envVar.Value).To(Equal("localhost:4317"))
+			envVar = getEnvVar("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", container.Env)
+			Expect(envVar).ShouldNot(BeNil())
+			Expect(envVar.Value).To(Equal("localhost:4318"))
 			envVar = getEnvVar("OTLP_EXPORT", container.Env)
 			Expect(envVar).ShouldNot(BeNil())
-			Expect(envVar.Value).To(Equal("traces"))
+			Expect(envVar.Value).To(Equal("traces,metrics"))
 
 			service := &corev1.Service{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-service", Namespace: namespaceName}, service); err != nil {

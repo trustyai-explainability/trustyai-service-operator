@@ -52,6 +52,9 @@ type GuardrailsOrchestratorSpec struct {
 	// Boolean flag to enable/disable built-in detectors
 	// +optional
 	EnableBuiltInDetectors bool `json:"enableBuiltInDetectors,omitempty"`
+	// Name of configmap containing user-defined Python detectors. This is only used if EnableBuiltInDetectors is true
+	// +optional
+	CustomDetectorsConfig *string `json:"customDetectorsConfig,omitempty"`
 	// Boolean flag to enable/disable the guardrails sidecar gateway
 	// +optional
 	EnableGuardrailsGateway bool `json:"enableGuardrailsGateway,omitempty"`
@@ -60,35 +63,35 @@ type GuardrailsOrchestratorSpec struct {
 	SidecarGatewayConfig *string `json:"guardrailsGatewayConfig,omitempty"`
 	// List of orchestrator enviroment variables for configuring the OTLP exporter
 	// +optional
-	OtelExporter OtelExporter `json:"otelExporter,omitempty"`
+	OTelExporter OTelExporter `json:"otelExporter,omitempty"`
 	// Set log level in the orchestrator deployment
 	// +optional
 	LogLevel *string `json:"logLevel,omitempty"`
+	// Define TLS secrets to be mounted to the orchestrator. Secrets will be mounted at /etc/tls/$SECRET_NAME
+	// +optional
+	TLSSecrets *[]string `json:"tlsSecrets,omitempty"`
 }
 
-// OtelExporter defines the environment variables for configuring the OTLP exporter.
-type OtelExporter struct {
-	// Sets the protocol for all the OTLP endpoints
+// OTelExporter defines the environment variables for configuring the OTLP exporter.
+type OTelExporter struct {
+	// Sets the protocol for both traces and metrics
 	// +optional
-	Protocol string `json:"protocol,omitempty"`
-	// Overrides the protocol for traces
-	// +optional
-	TracesProtocol string `json:"tracesProtocol,omitempty"`
-	// Overrides the protocol for traces
-	// +optional
-	MetricsProtocol string `json:"metricsProtocol,omitempty"`
-	// Sets the OTLP endpoint
-	// +optional
-	OTLPEndpoint string `json:"otlpEndpoint,omitempty"`
-	// Overrides the OTLP endpoint for metrics
-	// +optional
-	MetricsEndpoint string `json:"metricsEndpoint,omitempty"`
+	// +kubebuilder:default=grpc
+	OTLPProtocol string `json:"otlpProtocol,omitempty"`
 	// Overrides the OTLP endpoint for traces
 	// +optional
-	TracesEndpoint string `json:"tracesEndpoint,omitempty"`
-	// Specifies which data types to export
+	OTLPTracesEndpoint string `json:"otlpTracesEndpoint,omitempty"`
+	// Overrides the OTLP endpoint for metrics
 	// +optional
-	OTLPExport string `json:"otlpExport,omitempty"`
+	OTLPMetricsEndpoint string `json:"otlpMetricsEndpoint,omitempty"`
+	// Specifies whether to enable tracing data export
+	// +optional
+	// +kubebuilder:default=true
+	EnableTraces bool `json:"enableTraces,omitempty"`
+	// Specifies whether to enable metrics data export
+	// +optional
+	// +kubebuilder:default=true
+	EnableMetrics bool `json:"enableMetrics,omitempty"`
 }
 
 type ConditionType string

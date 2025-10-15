@@ -57,6 +57,7 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 		log.FromContext(ctx).Info("Using detector image " + detectorImage + " " + "from configmap " + r.Namespace + ":" + constants.ConfigMap)
 		containerImages.DetectorImage = detectorImage
 	}
+
 	// Check if the guardrails sidecar gateway is enabled
 	if orchestrator.Spec.EnableGuardrailsGateway {
 		guardrailsGatewayImage, err := r.getImageFromConfigMap(ctx, gatewayImageKey, constants.ConfigMap, r.Namespace)

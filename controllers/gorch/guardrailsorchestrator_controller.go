@@ -99,6 +99,19 @@ func (r *GuardrailsOrchestratorReconciler) refreshOrchestrator(ctx context.Conte
 	return latestOrchestrator, nil
 }
 
+func (r *GuardrailsOrchestratorReconciler) handleReconciliationError(ctx context.Context, log logr.Logger, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, err error, reason string, message string) {
+	r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, reason, message)
+}
+
+func (r *GuardrailsOrchestratorReconciler) handleReconciliationErrorWithTrace(ctx context.Context, log logr.Logger, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, err error, reason string, message string, keysAndValues ...any) {
+	log.Info("Marking " + orchestrator.Name + " as failed. Reconciliation will not be reattempted.")
+	orchestrator, err = r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
+		UnsetProgressingCondition(&saved.Status.Conditions, reason, "")
+		SetFailedCondition(&saved.Status.Conditions, reason, message)
+		saved.Status.Phase = PhaseError
+	})
+}
+
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // TODO(user): Modify the Reconcile function to compare the state specified by
@@ -119,7 +132,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 			log.Info("GuardrailsOrchestrator resource not found. Ignoring since object must be deleted.")
 			return ctrl.Result{}, nil
 		}
-		log.Error(err, "Failed to get GuardrailsOrchestrator")
+		r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get GuardrailsOrchestrator")
 		return ctrl.Result{}, err
 	}
 
@@ -132,10 +145,9 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 			saved.Status.Phase = PhaseProgressing
 		})
 		if err != nil {
-			log.Error(err, "Failed to update GuardrailsOrchestrator status during initialization")
+			r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to update GuardrailsOrchestrator status during initialization")
 			return ctrl.Result{}, err
 		}
-
 		createOrchestratorCreationMetrics(orchestrator)
 	}
 
@@ -181,6 +193,15 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, nil
 	}
 
+	if orchestrator.Status.Conditions != nil {
+		// skip reconciliation of failed GuardrailsOrchestrator
+		for _, cond := range orchestrator.Status.Conditions {
+			if cond.Type == ReconcileFailed && cond.Status == corev1.ConditionTrue {
+				return ctrl.Result{}, nil
+			}
+		}
+	}
+
 	existingServiceAccount := &corev1.ServiceAccount{}
 	var serviceAccountName string
 	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-serviceaccount", Namespace: orchestrator.Namespace}, existingServiceAccount)
@@ -189,12 +210,12 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		log.Info("Creating a new ServiceAccount", "ServiceAccount.Namespace", serviceAccount.Namespace, "ServiceAccount.Name", serviceAccount.Name)
 		err = r.Create(ctx, serviceAccount)
 		if err != nil {
-			log.Error(err, "Failed to create new ServiceAccount", "ServiceAccount.Namespace", serviceAccount.Namespace, "ServiceAccount.Name", serviceAccount.Name)
+			r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, ReconcileFailed, "Failed to create new ServiceAccount", "ServiceAccount.Namespace", serviceAccount.Namespace, "ServiceAccount.Name", serviceAccount.Name)
 			return ctrl.Result{}, err
 		}
 		serviceAccountName = serviceAccount.Name
 	} else if err != nil {
-		log.Error(err, "Failed to get ServiceAccount")
+		r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get ServiceAccount")
 		return ctrl.Result{}, err
 	} else {
 		serviceAccountName = existingServiceAccount.Name
@@ -207,11 +228,11 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		log.Info("Creating a new ClusterRoleBinding", "clusterRoleBinding.Namespace", clusterRoleBinding.Namespace, "clusterRoleBinding.Name", clusterRoleBinding.Name)
 		err = r.Create(ctx, clusterRoleBinding)
 		if err != nil {
-			log.Error(err, "Failed to create new ClusterRoleBinding", "clusterRoleBinding.Namespace", clusterRoleBinding.Namespace, "clusterRoleBinding.Name", clusterRoleBinding.Name)
+			r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, ReconcileFailed, "Failed to create new ClusterRoleBinding", "clusterRoleBinding.Namespace", clusterRoleBinding.Namespace, "clusterRoleBinding.Name", clusterRoleBinding.Name)
 			return ctrl.Result{}, err
 		}
 	} else if err != nil {
-		log.Error(err, "Failed to get ClusterRoleBinding")
+		r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get ClusterRoleBinding")
 		return ctrl.Result{}, err
 	}
 
@@ -220,13 +241,13 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		// Only perform autoconfig logic if the relevant resources have changed
 		shouldRegen, err := r.shouldRegenerateAutoConfig(ctx, orchestrator)
 		if err != nil {
-			log.Error(err, "Failed to check if autoconfig should be regenerated")
+			r.handleReconciliationError(ctx, log, orchestrator, err, AutoConfigFailed, "Failed to check if autoconfig should be regenerated")
 			return ctrl.Result{}, err
 		}
 		if shouldRegen {
 			tlsMounts, err = r.runAutoConfig(ctx, orchestrator)
 			if err != nil {
-				log.Error(err, "Failed to perform AutoConfig")
+				r.handleReconciliationError(ctx, log, orchestrator, err, AutoConfigFailed, "Failed to perform AutoConfig")
 				return ctrl.Result{}, err
 			}
 			orchestrator, _ = r.refreshOrchestrator(ctx, orchestrator, log)
@@ -238,8 +259,8 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		existingConfigMap := &corev1.ConfigMap{}
 		err = r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.OrchestratorConfig, Namespace: orchestrator.Namespace}, existingConfigMap)
 		if err != nil {
-			log.Error(err, "Failed to get existing ConfigMap", "ConfigMap.Name", *orchestrator.Spec.OrchestratorConfig, "ConfigMap.Namespace", orchestrator.Namespace)
 			if client.IgnoreNotFound(err) != nil {
+				r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get existing ConfigMap", "ConfigMap.Name", *orchestrator.Spec.OrchestratorConfig, "ConfigMap.Namespace", orchestrator.Namespace)
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{}, nil
@@ -272,8 +293,21 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		// Create a new deployment
 		deployment, err := r.createDeployment(ctx, orchestrator)
 		if err != nil {
-			log.Error(err, "Failed to create Deployment", "Deployment", orchestrator.Name, "Namespace", orchestrator.Namespace)
+			r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, ReconcileFailed, "Failed to create Deployment", "Deployment", orchestrator.Name, "Namespace", orchestrator.Namespace)
 			return ctrl.Result{}, err
+		}
+
+		if orchestrator.Spec.TLSSecrets != nil && len(*orchestrator.Spec.TLSSecrets) > 0 {
+			for _, tlsSecret := range *orchestrator.Spec.TLSSecrets {
+				tlsMounts = append(tlsMounts, gorchv1alpha1.DetectedService{
+					Name:      "",
+					Type:      "",
+					Scheme:    "",
+					Hostname:  "",
+					Port:      "",
+					TLSSecret: tlsSecret,
+				})
+			}
 		}
 
 		// add TLS mounts to deployment
@@ -283,7 +317,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 				log.Info("Could not find required TLS serving secrets, will try again.")
 				return ctrl.Result{}, nil
 			}
-			log.Error(err, "Failed to add TLS Mounts")
+			r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to add TLS Mounts")
 			return ctrl.Result{}, err
 		}
 
@@ -299,17 +333,18 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 
 		err = r.Create(ctx, deployment)
 		if err != nil {
-			log.Error(err, "Failed to create new Deployment", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
+			r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, ReconcileFailed, "Failed to create new Deployment", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
 			return ctrl.Result{}, err
 		}
 	} else if err != nil {
-		log.Error(err, "Failed to get Deployment")
+		r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get Deployment")
 		return ctrl.Result{}, err
 	}
 
 	// monitor the orchestrator or gateway config for changes
 	if getOrchestratorConfigMap(orchestrator) != nil {
 		if result, err := r.redeployOnConfigMapChange(ctx, log, orchestrator, tlsMounts); err != nil {
+			r.handleReconciliationError(ctx, log, orchestrator, err, AutoConfigFailed, "Failed to monitor autoconfig configmaps for changes")
 			return result, err
 		}
 	}
@@ -322,11 +357,11 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		log.Info("Creating a new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
 		err = r.Create(ctx, service)
 		if err != nil {
-			log.Error(err, "Failed to create new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
+			r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, ReconcileFailed, "Failed to create new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
 			return ctrl.Result{}, err
 		}
 	} else if err != nil {
-		log.Error(err, "Failed to get Service")
+		r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get Service")
 		return ctrl.Result{}, err
 	}
 
@@ -338,10 +373,10 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		log.Info("Creating a new ConfigMap", "ConfigMap.Namespace", caBundleConfigMap.Namespace, "ConfigMap.Name", caBundleConfigMap.Name)
 		err = r.Create(ctx, caBundleConfigMap)
 		if err != nil {
-			log.Error(err, "Failed to create new ConfigMap", "ConfigMap.Namespace", caBundleConfigMap.Namespace, "ConfigMap.Name", caBundleConfigMap.Name)
+			r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, ReconcileFailed, "Failed to create new ConfigMap", "ConfigMap.Namespace", caBundleConfigMap.Namespace, "ConfigMap.Name", caBundleConfigMap.Name)
 		}
 	} else if err != nil {
-		log.Error(err, "Failed to get ConfigMap")
+		r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get ConfigMap")
 		return ctrl.Result{}, err
 	}
 
@@ -353,10 +388,10 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		log.Info("Creating a new Route", "Route.Namespace", httpRoute.Namespace, "Route.Name", httpRoute.Name)
 		err = r.Create(ctx, httpRoute)
 		if err != nil {
-			log.Error(err, "Failed to create new Route", "Route.Namespace", httpRoute.Namespace, "Route.Name", httpRoute.Name)
+			r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, ReconcileFailed, "Failed to create new Route", "Route.Namespace", httpRoute.Namespace, "Route.Name", httpRoute.Name)
 		}
 	} else if err != nil {
-		log.Error(err, "Failed to get Route")
+		r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get Route")
 		return ctrl.Result{}, err
 	}
 
@@ -367,10 +402,10 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		log.Info("Creating a new Route", "Route.Namespace", healthRoute.Namespace, "Route.Name", healthRoute.Name)
 		err = r.Create(ctx, healthRoute)
 		if err != nil {
-			log.Error(err, "Failed to create new Route", "Route.Namespace", healthRoute.Namespace, "Route.Name", healthRoute.Name)
+			r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, ReconcileFailed, "Failed to create new Route", "Route.Namespace", healthRoute.Namespace, "Route.Name", healthRoute.Name)
 		}
 	} else if err != nil {
-		log.Error(err, "Failed to get Route")
+		r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get Route")
 		return ctrl.Result{}, err
 	}
 
@@ -382,10 +417,10 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 			log.Info("Creating a new Route", "Route.Namespace", gatewayRoute.Namespace, "Route.Name", gatewayRoute.Name)
 			err = r.Create(ctx, gatewayRoute)
 			if err != nil {
-				log.Error(err, "Failed to create new Route", "Route.Namespace", gatewayRoute.Namespace, "Route.Name", gatewayRoute.Name)
+				r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, ReconcileFailed, "Failed to create new Route", "Route.Namespace", gatewayRoute.Namespace, "Route.Name", gatewayRoute.Name)
 			}
 		} else if err != nil {
-			log.Error(err, "Failed to get Route")
+			r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get Route")
 			return ctrl.Result{}, err
 		}
 	}
