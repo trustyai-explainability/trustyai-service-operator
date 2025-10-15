@@ -145,27 +145,26 @@ spec:
               value: /etc/tls/private/tls.key
             - name: RUST_LOG
               value: '{{if .Orchestrator.Spec.LogLevel}}{{.Orchestrator.Spec.LogLevel}}{{else}}info{{end}}'
-            {{- if .Orchestrator.Spec.OtelExporter.Protocol }}
+            {{- if .Orchestrator.Spec.OTelExporter.OTLPProtocol }}
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
-              value: {{.Orchestrator.Spec.OtelExporter.Protocol }}{{end}}
-            {{- if .Orchestrator.Spec.OtelExporter.TracesProtocol }}
-            - name: OTEL_EXPORTER_OTLP_TRACES_PROTOCOL
-              value: {{.Orchestrator.Spec.OtelExporter.TracesProtocol}}{{end}}
-            {{- if .Orchestrator.Spec.OtelExporter.MetricsProtocol }}
-            - name: OTEL_EXPORTER_OTLP_METRICS_PROTOCOL
-              value: {{.Orchestrator.Spec.OtelExporter.MetricsProtocol}}{{end}}
-            {{- if .Orchestrator.Spec.OtelExporter.OTLPEndpoint }}
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{.Orchestrator.Spec.OtelExporter.OTLPEndpoint}}{{end}}
-            {{- if .Orchestrator.Spec.OtelExporter.TracesEndpoint}}
+              value: {{.Orchestrator.Spec.OTelExporter.OTLPProtocol}}
+          {{end}}
+          {{if .Orchestrator.Spec.OTelExporter.OTLPTracesEndpoint}}
             - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
-              value: {{.Orchestrator.Spec.OtelExporter.TracesEndpoint}}{{end}}
-            {{- if .Orchestrator.Spec.OtelExporter.MetricsEndpoint}}
+              value: {{.Orchestrator.Spec.OTelExporter.OTLPTracesEndpoint}}{{end}}
+            {{- if .Orchestrator.Spec.OTelExporter.OTLPMetricsEndpoint}}
             - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
-              value: {{.Orchestrator.Spec.OtelExporter.MetricsEndpoint}}{{end}}
-            {{- if .Orchestrator.Spec.OtelExporter.OTLPExport}}
+              value: {{.Orchestrator.Spec.OTelExporter.OTLPMetricsEndpoint}}{{end}}
+            {{- if and .Orchestrator.Spec.OTelExporter.EnableTraces .Orchestrator.Spec.OTelExporter.EnableMetrics}}
             - name: OTLP_EXPORT
-              value: {{.Orchestrator.Spec.OtelExporter.OTLPExport}}{{end}}
+              value: "traces,metrics"
+          {{else if .Orchestrator.Spec.OTelExporter.EnableTraces}}
+            - name: OTLP_EXPORT
+              value: "traces"
+          {{else if .Orchestrator.Spec.OTelExporter.EnableMetrics}}
+            - name: OTLP_EXPORT
+              value: "metrics"
+          {{end}}
           volumeMounts:
             - name: {{.Orchestrator.Name}}-config
               readOnly: true

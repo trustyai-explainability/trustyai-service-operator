@@ -82,26 +82,23 @@ spec:
                 description: List of orchestrator enviroment variables for configuring
                   the OTLP exporter
                 properties:
-                  metricsEndpoint:
+                  enableMetrics:
+                    default: true
+                    description: Specifies whether to enable metrics data export
+                    type: boolean
+                  enableTraces:
+                    default: true
+                    description: Specifies whether to enable tracing data export
+                    type: boolean
+                  otlpMetricsEndpoint:
                     description: Overrides the OTLP endpoint for metrics
                     type: string
-                  metricsProtocol:
-                    description: Overrides the protocol for traces
+                  otlpProtocol:
+                    default: grpc
+                    description: Sets the protocol for both traces and metrics
                     type: string
-                  otlpEndpoint:
-                    description: Sets the OTLP endpoint
-                    type: string
-                  otlpExport:
-                    description: Specifies which data types to export
-                    type: string
-                  protocol:
-                    description: Sets the protocol for all the OTLP endpoints
-                    type: string
-                  tracesEndpoint:
+                  otlpTracesEndpoint:
                     description: Overrides the OTLP endpoint for traces
-                    type: string
-                  tracesProtocol:
-                    description: Overrides the protocol for traces
                     type: string
                 type: object
               replicas:
