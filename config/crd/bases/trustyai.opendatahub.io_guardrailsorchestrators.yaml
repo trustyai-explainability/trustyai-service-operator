@@ -58,7 +58,8 @@ spec:
                 - inferenceServiceToGuardrail
                 type: object
               customDetectorsConfig:
-                description: Name of configmap containing user-defined Python detectors
+                description: Name of configmap containing user-defined Python detectors.
+                  This is only used if EnableBuiltInDetectors is true
                 type: string
               enableBuiltInDetectors:
                 description: Boolean flag to enable/disable built-in detectors
@@ -83,11 +84,9 @@ spec:
                   the OTLP exporter
                 properties:
                   enableMetrics:
-                    default: true
                     description: Specifies whether to enable metrics data export
                     type: boolean
                   enableTraces:
-                    default: true
                     description: Specifies whether to enable tracing data export
                     type: boolean
                   otlpMetricsEndpoint:

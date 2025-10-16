@@ -86,11 +86,9 @@ type OTelExporter struct {
 	OTLPMetricsEndpoint string `json:"otlpMetricsEndpoint,omitempty"`
 	// Specifies whether to enable tracing data export
 	// +optional
-	// +kubebuilder:default=true
 	EnableTraces bool `json:"enableTraces,omitempty"`
 	// Specifies whether to enable metrics data export
 	// +optional
-	// +kubebuilder:default=true
 	EnableMetrics bool `json:"enableMetrics,omitempty"`
 }
 
