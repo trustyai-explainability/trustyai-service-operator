@@ -7,7 +7,8 @@ metadata:
     service.beta.openshift.io/serving-cert-secret-name: {{ .Orchestrator.Name }}-tls
   labels:
     app: {{.Orchestrator.Name}}
-    component: {{.Orchestrator.Name}}
+    component: {{ .Orchestrator.Name }}
+
 spec:
   ipFamilies:
     - IPv4
@@ -32,6 +33,12 @@ spec:
       protocol: TCP
       port: 8034
       targetPort: 8034
+    {{if .Orchestrator.Spec.EnableBuiltInDetectors}}
+    - name: detector-metrics
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+    {{end}}
   internalTrafficPolicy: Cluster
   type: ClusterIP
   ipFamilyPolicy: SingleStack

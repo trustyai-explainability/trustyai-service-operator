@@ -20,6 +20,7 @@ import (
 	"context"
 	"github.com/go-logr/logr"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/metrics"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -406,6 +407,34 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 			}
 		} else if err != nil {
 			r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get Route")
+			return ctrl.Result{}, err
+		}
+	}
+
+	existingSM := &monitoringv1.ServiceMonitor{}
+	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-service-monitor", Namespace: orchestrator.Namespace}, existingSM)
+	if orchestrator.Spec.EnableBuiltInDetectors {
+		if err != nil && errors.IsNotFound(err) {
+			// Define a new route
+			serviceMonitor := r.createServiceMonitor(ctx, orchestrator)
+			log.Info("Creating a new Service Monitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
+			err = r.Create(ctx, serviceMonitor)
+			if err != nil {
+				r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, ReconcileFailed, "Failed to create new ServiceMonitor", "ServiceMonitor.Namespace", serviceMonitor.Namespace, "ServiceMonitor.Name", serviceMonitor.Name)
+			}
+		} else if err != nil {
+			r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get ServiceMonitor")
+			return ctrl.Result{}, err
+		}
+	} else {
+		if err == nil {
+			log.Info("Deleting ServiceMonitor because EnableBuiltInDetectors is false", "ServiceMonitor.Namespace", existingSM.Namespace, "ServiceMonitor.Name", existingSM.Name)
+			if delErr := r.Delete(ctx, existingSM); delErr != nil && !errors.IsNotFound(delErr) {
+				r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, delErr, ReconcileFailed, "Failed to delete ServiceMonitor", "ServiceMonitor.Namespace", existingSM.Namespace, "ServiceMonitor.Name", existingSM.Name)
+				return ctrl.Result{}, delErr
+			}
+		} else if err != nil && !errors.IsNotFound(err) {
+			r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get ServiceMonitor for deletion")
 			return ctrl.Result{}, err
 		}
 	}
