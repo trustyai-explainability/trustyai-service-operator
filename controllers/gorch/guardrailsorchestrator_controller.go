@@ -412,7 +412,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	existingSM := &monitoringv1.ServiceMonitor{}
-	err = r.Get(ctx, types.NamespacedName{Name: serviceMonitorName, Namespace: orchestrator.Namespace}, existingSM)
+	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-service-monitor", Namespace: orchestrator.Namespace}, existingSM)
 	if orchestrator.Spec.EnableBuiltInDetectors {
 		if err != nil && errors.IsNotFound(err) {
 			// Define a new route

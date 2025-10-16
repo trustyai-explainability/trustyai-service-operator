@@ -45,4 +45,4 @@ spec:
   sessionAffinity: None
   selector:
     app: {{.Orchestrator.Name}}
-    component: {{ .ComponentName }}
+    component: {{.Orchestrator.Name}}

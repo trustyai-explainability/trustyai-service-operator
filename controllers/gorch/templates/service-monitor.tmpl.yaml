@@ -2,6 +2,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
     name: {{ .Orchestrator.Name }}-service-monitor
+    namespace: {{.Orchestrator.Namespace}}
     labels:
         component: {{ .Orchestrator.Name }}
 spec:
