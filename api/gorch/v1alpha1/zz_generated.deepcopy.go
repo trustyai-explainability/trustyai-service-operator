@@ -173,6 +173,11 @@ func (in *GuardrailsOrchestratorSpec) DeepCopyInto(out *GuardrailsOrchestratorSp
 		*out = new(AutoConfig)
 		**out = **in
 	}
+	if in.CustomDetectorsConfig != nil {
+		in, out := &in.CustomDetectorsConfig, &out.CustomDetectorsConfig
+		*out = new(string)
+		**out = **in
+	}
 	if in.SidecarGatewayConfig != nil {
 		in, out := &in.SidecarGatewayConfig, &out.SidecarGatewayConfig
 		*out = new(string)
