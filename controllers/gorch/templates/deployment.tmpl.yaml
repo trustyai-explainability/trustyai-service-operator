@@ -1,67 +1,54 @@
-{{ define "oAuthProxy" }} name: oauth-proxy-{{ .Suffix }}
-          image: {{ .OAuthProxyImage}}
+{{ define "kubeRBACProxy" }} name: kube-rbac-proxy-{{ .Suffix }}
+          image: {{ .KubeRBACProxyImage}}
+          args:
+            - --secure-listen-address=0.0.0.0:{{ .DownstreamPort }}
+            - --upstream={{ .UpstreamProtocol }}://{{ .UpstreamHost }}:{{ .UpstreamPort }}/
+            - --config-file=/etc/kube-rbac-proxy/config.yaml
+            - --tls-cert-file=/etc/tls/private/tls.crt
+            - --tls-private-key-file=/etc/tls/private/tls.key
+            - --proxy-endpoints-port={{ .HealthPort }}
+            - --v=0
+          ports:
+            - containerPort: {{ .DownstreamPort }}
+              name: https
+              protocol: TCP
+            - containerPort: {{ .HealthPort }}
+              name: proxy-healthz
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .HealthPort }}
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 1
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .HealthPort }}
+              scheme: HTTPS
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 1
+            successThreshold: 1
+            failureThreshold: 3
           resources:
             limits:
               cpu: 100m
               memory: 64Mi
             requests:
-              cpu: 100m
-              memory: 64Mi
-          readinessProbe:
-            httpGet:
-              path: /oauth/healthz
-              port: oauth-proxy
-              scheme: HTTPS
-            initialDelaySeconds: 5
-            timeoutSeconds: 1
-            periodSeconds: 5
-            successThreshold: 1
-            failureThreshold: 3
-          livenessProbe:
-            httpGet:
-              path: /oauth/healthz
-              port: oauth-proxy
-              scheme: HTTPS
-            initialDelaySeconds: 30
-            timeoutSeconds: 1
-            periodSeconds: 5
-            successThreshold: 1
-            failureThreshold: 3
-          env:
-            - name: NAMESPACE
-              valueFrom:
-                fieldRef:
-                  apiVersion: v1
-                  fieldPath: metadata.namespace
-          ports:
-            - name: oauth-proxy
-              containerPort: {{ .DownstreamPort }}
-              protocol: TCP
+              cpu: 50m
+              memory: 32Mi
           volumeMounts:
             - name: tls-certs
               mountPath: /etc/tls/private
               readOnly: true
-            - name: tls-ca-bundle
-              mountPath: /etc/tls/ca
+            - name: kube-rbac-proxy-{{ .Suffix }}-config
+              mountPath: /etc/kube-rbac-proxy
               readOnly: true
-          args:
-            - '--cookie-secret=SECRET'
-            - '--https-address=:{{.DownstreamPort}}'
-            - '--http-address='
-            - '--email-domain=*'
-            - '--openshift-service-account={{ .Name }}-serviceaccount'
-            - '--provider=openshift'
-            - '--pass-user-bearer-token'
-            - '--tls-cert=/etc/tls/private/tls.crt'
-            - '--tls-key=/etc/tls/private/tls.key'
-            - '--upstream={{.UpstreamProtocol}}://{{.UpstreamHost}}:{{.UpstreamPort}}'
-            - '--upstream-ca=/etc/tls/ca/service-ca.crt'
-            - '--skip-auth-regex=''(^/apis/v1beta1/healthz)'''
-            - >-
-              --openshift-sar={"namespace":"{{ .Namespace }}","resource":"pods","verb":"get"}
-            - >-
-              --openshift-delegate-urls={"/": {"namespace": "{{ .Namespace }}", "resource":
-              "pods", "verb": "get"}}
 {{ end }}
 
 kind: Deployment
@@ -122,6 +109,18 @@ spec:
           configMap:
             name: {{.Orchestrator.Name }}-ca-bundle
             defaultMode: 420
+        {{- if .OrchestratorKubeRBACProxy }}
+        - name: kube-rbac-proxy-orchestrator-config
+          configMap:
+            name: {{.Orchestrator.Name}}-kube-rbac-proxy-orchestrator-config
+            defaultMode: 420
+        {{- end }}
+        {{- if .GatewayKubeRBACProxy }}
+        - name: kube-rbac-proxy-gateway-config
+          configMap:
+            name: {{.Orchestrator.Name}}-kube-rbac-proxy-gateway-config
+            defaultMode: 420
+        {{- end }}
 {{- if .Orchestrator.Spec.CustomDetectorsConfig }}
         - name: custom-detectors-config
           configMap:
@@ -234,8 +233,8 @@ spec:
               value: '{{if .Orchestrator.Spec.LogLevel}}{{.Orchestrator.Spec.LogLevel}}{{else}}info{{end}}'
             - name: GATEWAY_USE_MTLS
               value: 'false'
-        {{ if .GatewayOAuthProxy }}
-        - {{- template "oAuthProxy" .GatewayOAuthProxy }}
+        {{ if .GatewayKubeRBACProxy }}
+        - {{- template "kubeRBACProxy" .GatewayKubeRBACProxy }}
         {{end}}
         {{end}}
         {{ if .Orchestrator.Spec.EnableBuiltInDetectors }}
@@ -250,6 +249,6 @@ spec:
               subPath: custom_detectors.py
           {{end}}
         {{end}}
-        {{- if .OrchestratorOAuthProxy -}}
-        - {{- template "oAuthProxy" .OrchestratorOAuthProxy }}
+        {{- if .OrchestratorKubeRBACProxy -}}
+        - {{- template "kubeRBACProxy" .OrchestratorKubeRBACProxy }}
         {{end}}

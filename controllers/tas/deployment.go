@@ -33,7 +33,7 @@ type CustomCertificatesBundle struct {
 type DeploymentConfig struct {
 	Instance                 *trustyaiopendatahubiov1alpha1.TrustyAIService
 	ServiceImage             string
-	OAuthImage               string
+	KubeRBACProxyImage       string
 	Schedule                 string
 	VolumeMountName          string
 	PVCClaimName             string
@@ -55,16 +55,16 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	}
 
 	pvcName := generatePVCName(instance)
-	// Get OAuth-proxy image from ConfigMap
-	oauthProxyImage, err := r.getImageFromConfigMap(ctx, configMapOAuthProxyImageKey, defaultOAuthProxyImage)
+	// Get Kube-RBAC-proxy image from ConfigMap
+	kubeRBACProxyImage, err := r.getImageFromConfigMap(ctx, configMapKubeRBACProxyImageKey, defaultKubeRBACProxyImage)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Error getting OAuth image from ConfigMap. Using the default image value of "+defaultOAuthProxyImage)
+		log.FromContext(ctx).Error(err, "Error getting Kube-RBAC-Proxy image from ConfigMap. Using the default image value of "+defaultKubeRBACProxyImage)
 	}
 
 	deploymentConfig := DeploymentConfig{
 		Instance:                 instance,
 		ServiceImage:             serviceImage,
-		OAuthImage:               oauthProxyImage,
+		KubeRBACProxyImage:       kubeRBACProxyImage,
 		Schedule:                 strconv.Itoa(batchSize),
 		VolumeMountName:          volumeMountName,
 		PVCClaimName:             pvcName,
