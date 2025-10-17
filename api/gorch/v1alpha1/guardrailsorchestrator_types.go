@@ -35,6 +35,11 @@ type AutoConfig struct {
 	*/
 	// +optional
 	DetectorServiceLabelToMatch string `json:"detectorServiceLabelToMatch,omitempty"`
+
+	// Whether the autoconfig should set up TLS connections to detectors and the generative model
+	// TLS connections are not currently supported if using kube-rbac-proxy to authenticate to the orchestrator.
+	// +optional
+	UseTLS bool `json:"useTLS,omitempty"`
 }
 
 // GuardrailsOrchestratorSpec defines the desired state of GuardrailsOrchestrator.
