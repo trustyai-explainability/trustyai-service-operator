@@ -256,7 +256,6 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 			tlsMounts = getTLSInfo(*orchestrator)
 		}
 	} else {
-		log.Info("Using manually-configured OrchestratorConfig")
 		existingConfigMap := &corev1.ConfigMap{}
 		err = r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.OrchestratorConfig, Namespace: orchestrator.Namespace}, existingConfigMap)
 		if err != nil {
