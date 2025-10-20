@@ -200,7 +200,7 @@ func TestGenerateOrchestratorConfigMap(t *testing.T) {
 	expectedData := `chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
-    port: 8080
+    port: 7000
 detectors:
   my-inference-service-1:
     type: text_contents
@@ -334,7 +334,7 @@ func TestGenerateOrchestratorConfigMapDetectorLabels(t *testing.T) {
 	expectedData := `chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
-    port: 8080
+    port: 7000
 detectors:
   my-inference-service-3:
     type: text_contents
@@ -384,7 +384,7 @@ func TestGenerateOrchestratorConfigMapBuiltInDetectors(t *testing.T) {
 	expectedData := fmt.Sprintf(`chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
-    port: 8080
+    port: 7000
 detectors:
   my-inference-service-1:
     type: text_contents
@@ -457,7 +457,7 @@ func TestGenerateOrchestratorConfigMapBuiltInDetectorsAndGateway(t *testing.T) {
 	expectedData := fmt.Sprintf(`chat_generation:
   service:
     hostname: my-generation-service.test-ns.svc.cluster.local
-    port: 8080
+    port: 7000
 detectors:
   my-inference-service-1:
     type: text_contents
@@ -591,6 +591,7 @@ func TestHTTPSInferenceServiceTLSMounting(t *testing.T) {
 	isvcs, srs, secrets := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" }, func(i int) bool { return i%2 == 0 }, false)
 	autoConfig := gorchv1alpha1.AutoConfig{
 		InferenceServiceToGuardrail: "my-generation-service",
+		UseTLS:                      true,
 	}
 	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, secrets, true, true)
 
@@ -680,6 +681,7 @@ func TestHTTPSInferenceServiceTLSGenerationTLS(t *testing.T) {
 	isvcs, srs, secrets := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" }, func(i int) bool { return i%2 == 0 }, true)
 	autoConfig := gorchv1alpha1.AutoConfig{
 		InferenceServiceToGuardrail: "my-generation-service",
+		UseTLS:                      true,
 	}
 	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, secrets, true, true)
 
@@ -799,6 +801,7 @@ func TestHTTPSInferenceServiceTLSGenerationTLSOauth(t *testing.T) {
 	isvcs, srs, secrets := setupTestObjects(ns, func(i int) string { return "trustyai/guardrails" }, func(i int) bool { return i%2 == 0 }, true)
 	autoConfig := gorchv1alpha1.AutoConfig{
 		InferenceServiceToGuardrail: "my-generation-service",
+		UseTLS:                      true,
 	}
 	reconciler, orchestrator := setupTestReconcilerAndOrchestrator(ns, orchestratorName, autoConfig, isvcs, srs, secrets, true, true)
 	orchestrator.Annotations = make(map[string]string)
