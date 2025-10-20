@@ -563,8 +563,15 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
-	cancel()
+	By("Deleting the operator namespace")
+	err := k8sClient.Delete(context.Background(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: operatorNamespace}})
+	if err != nil && !errors.IsNotFound(err) {
+		// Only fail if it's not a "not found" error
+		Expect(err).To(Not(HaveOccurred()))
+	}
+
 	By("tearing down the test environment")
-	err := testEnv.Stop()
+	cancel()
+	err = testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })
