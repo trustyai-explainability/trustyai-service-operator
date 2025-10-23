@@ -6,6 +6,7 @@
             - --config-file=/etc/kube-rbac-proxy/config.yaml
             - --tls-cert-file=/etc/tls/private/tls.crt
             - --tls-private-key-file=/etc/tls/private/tls.key
+            - --upstream-ca-file=/etc/tls/ca/service-ca.crt
             - --proxy-endpoints-port={{ .HealthPort }}
             - --v=0
           ports:
@@ -45,6 +46,9 @@
           volumeMounts:
             - name: tls-certs
               mountPath: /etc/tls/private
+              readOnly: true
+            - name: tls-ca-bundle
+              mountPath: /etc/tls/ca
               readOnly: true
             - name: kube-rbac-proxy-{{ .Suffix }}-config
               mountPath: /etc/kube-rbac-proxy
