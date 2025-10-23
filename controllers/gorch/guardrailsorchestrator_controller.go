@@ -180,7 +180,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 			}
 
 			if requiresOAuth(orchestrator) {
-				if err = r.cleanupClusterRoleBinding(ctx, orchestrator); err != nil {
+				if err = r.cleanupClusterRoleBinding(ctx, orchestrator); err != nil && !errors.IsNotFound(err) {
 					log.Error(err, "Failed to cleanup ClusterRoleBinding")
 					return ctrl.Result{}, err
 				}
