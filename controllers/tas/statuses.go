@@ -2,6 +2,7 @@ package tas
 
 import (
 	"context"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
 	v1 "k8s.io/api/core/v1"
@@ -65,7 +66,7 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 	}
 
 	// Check for route readiness
-	status.RouteReady, err = r.checkRouteReady(ctx, instance)
+	status.RouteReady, err = utils.CheckRouteReady(ctx, r.Client, instance.Name, instance.Namespace)
 
 	// Check if InferenceServices present
 	status.InferenceServiceReady, err = r.checkInferenceServicesPresent(ctx, instance.Namespace)

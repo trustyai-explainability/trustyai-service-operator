@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Orchestrator.Name }}-kube-rbac-proxy-gateway-config
-  namespace: {{ .Orchestrator.Namespace }}
+  name: {{ .Name }}
+  namespace: {{ .Owner.Namespace }}
   labels:
-    app: {{ .Orchestrator.Name }}
-    app.kubernetes.io/instance: {{ .Orchestrator.Name }}
-    app.kubernetes.io/name: {{ .Orchestrator.Name }}
+    app: {{ .Owner.Name }}
+    app.kubernetes.io/instance: {{ .Owner.Name }}
+    app.kubernetes.io/name: {{ .Owner.Name }}
     app.kubernetes.io/part-of: trustyai
     app.kubernetes.io/component: kube-rbac-proxy
     component: gateway
@@ -14,9 +14,9 @@ data:
   config.yaml: |
     authorization:
       resourceAttributes:
-        namespace: "{{ .Orchestrator.Namespace }}"
+        namespace: "{{ .Owner.Namespace }}"
         resource: "services"
-        resourceName: "{{ .Orchestrator.Name }}-gateway-service"
+        resourceName: "{{ .Owner.Name }}-service"
         verb: "get"
         apiGroup: ""
     upstreamConfig:

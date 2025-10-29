@@ -3,6 +3,7 @@ package tas
 import (
 	"context"
 	"fmt"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -63,13 +64,13 @@ var _ = Describe("ConfigMap tests", func() {
 
 			WaitFor(func() error {
 				var err error
-				actualKubeRBACProxyImage, err = reconciler.getImageFromConfigMap(ctx, configMapKubeRBACProxyImageKey, defaultKubeRBACProxyImage)
+				actualKubeRBACProxyImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapKubeRBACProxyImageKey, constants.ConfigMap, operatorNamespace, defaultKubeRBACProxyImage)
 				return err
 			}, "failed to get kube-rbac-proxy image from ConfigMap")
 
 			WaitFor(func() error {
 				var err error
-				actualServiceImage, err = reconciler.getImageFromConfigMap(ctx, configMapServiceImageKey, defaultImage)
+				actualServiceImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapServiceImageKey, constants.ConfigMap, operatorNamespace, defaultImage)
 				return err
 			}, "failed to get service image from ConfigMap")
 
@@ -87,14 +88,22 @@ var _ = Describe("ConfigMap tests", func() {
 
 			WaitFor(func() error {
 				var err error
-				actualKubeRBACProxyImage, err = reconciler.getImageFromConfigMap(ctx, configMapKubeRBACProxyImageKey, defaultKubeRBACProxyImage)
-				return err
+				actualKubeRBACProxyImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapKubeRBACProxyImageKey, constants.ConfigMap, operatorNamespace, defaultKubeRBACProxyImage)
+				if err != nil {
+					Expect(err).To(MatchError(fmt.Sprintf("configmap %s not found in namespace %s", constants.ConfigMap, operatorNamespace)))
+					return nil
+				}
+				return nil
 			}, "failed to get kube-rbac-proxy image from ConfigMap")
 
 			WaitFor(func() error {
 				var err error
-				actualServiceImage, err = reconciler.getImageFromConfigMap(ctx, configMapServiceImageKey, defaultImage)
-				return err
+				actualServiceImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapServiceImageKey, constants.ConfigMap, operatorNamespace, defaultImage)
+				if err != nil {
+					Expect(err).To(MatchError(fmt.Sprintf("configmap %s not found in namespace %s", constants.ConfigMap, operatorNamespace)))
+					return nil
+				}
+				return nil
 			}, "failed to get service image from ConfigMap")
 
 			Expect(actualKubeRBACProxyImage).Should(Equal(defaultKubeRBACProxyImage))
@@ -126,19 +135,17 @@ var _ = Describe("ConfigMap tests", func() {
 			var actualKubeRBACProxyImage string
 			var actualServiceImage string
 
-			configMapPath := operatorNamespace + "/" + constants.ConfigMap
+			Eventually(func() error {
+				var err error
+				actualKubeRBACProxyImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapKubeRBACProxyImageKey, constants.ConfigMap, operatorNamespace, defaultKubeRBACProxyImage)
+				return err
+			}, defaultTimeout, defaultPolling).Should(MatchError(fmt.Sprintf("configmap %s in namespace %s does not contain key %s", constants.ConfigMap, operatorNamespace, configMapKubeRBACProxyImageKey)), "failed to get kube-rbac-proxy image from ConfigMap")
 
 			Eventually(func() error {
 				var err error
-				actualKubeRBACProxyImage, err = reconciler.getImageFromConfigMap(ctx, configMapKubeRBACProxyImageKey, defaultKubeRBACProxyImage)
+				actualServiceImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapServiceImageKey, constants.ConfigMap, operatorNamespace, defaultImage)
 				return err
-			}, defaultTimeout, defaultPolling).Should(MatchError(fmt.Sprintf("configmap %s does not contain necessary keys", configMapPath)), "failed to get kube-rbac-proxy image from ConfigMap")
-
-			Eventually(func() error {
-				var err error
-				actualServiceImage, err = reconciler.getImageFromConfigMap(ctx, configMapServiceImageKey, defaultImage)
-				return err
-			}, defaultTimeout, defaultPolling).Should(MatchError(fmt.Sprintf("configmap %s does not contain necessary keys", configMapPath)), "failed to get service image from ConfigMap")
+			}, defaultTimeout, defaultPolling).Should(MatchError(fmt.Sprintf("configmap %s in namespace %s does not contain key %s", constants.ConfigMap, operatorNamespace, configMapServiceImageKey)), "failed to get service image from ConfigMap")
 
 			Expect(actualKubeRBACProxyImage).Should(Equal(defaultKubeRBACProxyImage))
 			Expect(actualServiceImage).Should(Equal(defaultImage))

@@ -2,6 +2,7 @@ package gorch
 
 import (
 	"context"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"time"
 
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
@@ -147,8 +148,8 @@ func (r *GuardrailsOrchestratorReconciler) updateStatus(ctx context.Context, ori
 func (r *GuardrailsOrchestratorReconciler) reconcileStatuses(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (ctrl.Result, error) {
 	generatorReady, _ = r.checkGeneratorPresent(ctx, orchestrator.Namespace)
 	deploymentReady, _ = r.checkDeploymentReady(ctx, orchestrator)
-	httpRouteReady, _ := r.checkRouteReady(ctx, orchestrator, "-http")
-	healthRouteReady, _ := r.checkRouteReady(ctx, orchestrator, "-health")
+	httpRouteReady, _ := utils.CheckRouteReady(ctx, r.Client, orchestrator.Name+"-http", orchestrator.Namespace)
+	healthRouteReady, _ := utils.CheckRouteReady(ctx, r.Client, orchestrator.Name+"-health", orchestrator.Namespace)
 	routeReady = httpRouteReady && healthRouteReady
 	if generatorReady && deploymentReady && routeReady {
 		_, updateErr := r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
