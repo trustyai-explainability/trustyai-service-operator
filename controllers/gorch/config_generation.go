@@ -159,44 +159,62 @@ func (r *GuardrailsOrchestratorReconciler) getInferenceServicesAndServingRuntime
 	return inferenceServices, servingRuntimes, nil
 }
 
+// getServiceByName retrieves a Service with the given name in the specified namespace.
+func getServiceByName(ctx context.Context, c client.Client, name, namespace string) (*corev1.Service, error) {
+	svc := &corev1.Service{}
+	err := c.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, svc)
+	if err != nil {
+		return nil, err
+	}
+	return svc, nil
+}
+
 // extractInferenceServiceInfo reads an inference service (and corresponding serving runtime) to determine the ISVC's protocol, URL, and port
 func (r *GuardrailsOrchestratorReconciler) extractInferenceServiceInfo(ctx context.Context, namespace string, isvc kservev1beta1.InferenceService, servingRuntimes v1alpha1.ServingRuntimeList, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (*gorchv1alpha1.DetectedService, error) {
 	log := ctrl.Log.WithName("AutoConfigurator | Orchestrator ConfigMap Definer |")
-	url, err := url.Parse(isvc.Status.URL.String())
+
+	// extract the ISVC's URL
+	parsedUrl, err := url.Parse(isvc.Status.URL.String())
 	if err != nil {
 		return nil, fmt.Errorf("could not parse URL %s from generator service status %s", isvc.Status.URL.String(), isvc.Name)
 	}
+	scheme := parsedUrl.Scheme
+	hostname := parsedUrl.Hostname()
+	var port string
 
-	port := url.Port()
-	// if the ISVC is not listing a port, find it from the serving runtime
-	if !orchestrator.Spec.AutoConfig.UseTLS || port == "" {
-		var matchingGenerationRuntime *v1alpha1.ServingRuntime
-		for _, servingRuntime := range servingRuntimes.Items {
-			if servingRuntime.Name == *isvc.Spec.Predictor.Model.Runtime {
-				matchingGenerationRuntime = &servingRuntime
-				break
+	// find the predictor service that matches the ISVC
+	targetService := isvc.Name + "-predictor"
+	svc, err := getServiceByName(ctx, r.Client, targetService, namespace)
+	if err == nil {
+		port = fmt.Sprintf("%d", svc.Spec.Ports[0].Port) //warning: assumes the predictor service only has one port!
+	} else {
+		log.Error(err, fmt.Sprintf("could not find service by name %s in namespace %s, falling back to legacy URL and port extraction logic", targetService, namespace))
+		port = parsedUrl.Port()
+		// if the ISVC is not listing a port, find it from the serving runtime
+		if port == "" {
+			var matchingGenerationRuntime *v1alpha1.ServingRuntime
+			for _, servingRuntime := range servingRuntimes.Items {
+				if servingRuntime.Name == *isvc.Spec.Predictor.Model.Runtime {
+					matchingGenerationRuntime = &servingRuntime
+					break
+				}
+			}
+			if matchingGenerationRuntime == nil {
+				log.Error(nil, "model service port could not be identified because 1) the InferenceService did not provide a port and 2) no matching ServingRuntime could be found", "inference service", isvc.Name, "expected serving runtime", *isvc.Spec.Predictor.Model.Runtime)
+			} else {
+				port = strconv.Itoa(int(matchingGenerationRuntime.Spec.Containers[0].Ports[0].ContainerPort))
 			}
 		}
-		if matchingGenerationRuntime == nil {
-			log.Error(nil, "model service port could not be identified because 1) the InferenceService did not provide a port and 2) no matching ServingRuntime could be found", "inference service", isvc.Name, "expected serving runtime", *isvc.Spec.Predictor.Model.Runtime)
-		} else {
-			port = strconv.Itoa(int(matchingGenerationRuntime.Spec.Containers[0].Ports[0].ContainerPort))
-		}
 	}
 
-	// enforce http if auto-config tls is turned off
-	if !orchestrator.Spec.AutoConfig.UseTLS {
-		url.Scheme = "http"
-	}
-
-	if url.Scheme == "https" {
+	if scheme == "https" {
 		matchingSecret, err := r.findPredictorServingCertSecret(ctx, namespace, isvc.Name)
 		if err != nil {
 			return nil, fmt.Errorf("could not find serving secret for InferenceService %q in namespace %s", isvc.Name, namespace)
 		}
-		return &gorchv1alpha1.DetectedService{Name: isvc.Name, Hostname: url.Hostname(), Port: port, Scheme: url.Scheme, Type: generationType, TLSSecret: matchingSecret.Name}, nil
+		return &gorchv1alpha1.DetectedService{Name: isvc.Name, Hostname: hostname, Port: port, Scheme: scheme, Type: generationType, TLSSecret: matchingSecret.Name}, nil
 	} else {
-		return &gorchv1alpha1.DetectedService{Name: isvc.Name, Hostname: url.Hostname(), Port: port, Scheme: url.Scheme, Type: generationType}, nil
+		return &gorchv1alpha1.DetectedService{Name: isvc.Name, Hostname: hostname, Port: port, Scheme: scheme, Type: generationType}, nil
 	}
 }
 
