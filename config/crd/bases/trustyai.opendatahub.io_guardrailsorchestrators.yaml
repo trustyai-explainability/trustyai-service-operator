@@ -54,11 +54,6 @@ spec:
                     description: The name of the inference service that provides the
                       vLLM generation model to-be-guardrailed
                     type: string
-                  useTLS:
-                    description: |-
-                      Whether the autoconfig should set up TLS connections to detectors and the generative model
-                      TLS connections are not currently supported if using kube-rbac-proxy to authenticate to the orchestrator.
-                    type: boolean
                 required:
                 - inferenceServiceToGuardrail
                 type: object
