@@ -152,10 +152,12 @@ func (r *GuardrailsOrchestratorReconciler) getInferenceServicesAndServingRuntime
 	if err := r.List(ctx, &servingRuntimes, &client.ListOptions{
 		Namespace: namespace,
 	}); err != nil || len(servingRuntimes.Items) == 0 {
-		log.FromContext(ctx).Error(err, "could not list all ServingRuntimes in namespace %s", namespace)
+		if len(servingRuntimes.Items) == 0 {
+			err = fmt.Errorf("no ServingRuntimes found in namespace %s", namespace)
+		}
+		log.FromContext(ctx).Error(err, "could not list all ServingRuntimes in", "namespace", namespace)
 		return kservev1beta1.InferenceServiceList{}, v1alpha1.ServingRuntimeList{}, fmt.Errorf("could not automatically find serving runtimes: %w", err)
 	}
-
 	return inferenceServices, servingRuntimes, nil
 }
 
