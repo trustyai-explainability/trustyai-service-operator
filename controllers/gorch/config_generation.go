@@ -187,7 +187,8 @@ func (r *GuardrailsOrchestratorReconciler) extractInferenceServiceInfo(ctx conte
 	// find the predictor service that matches the ISVC
 	targetService := isvc.Name + "-predictor"
 	svc, err := getServiceByName(ctx, r.Client, targetService, namespace)
-	if err == nil {
+	if false && err == nil {
+		// to-do: dynamically chose whether we pick port from the service or Servingruntime depending on the headless/headed field of the inference config
 		port = fmt.Sprintf("%d", svc.Spec.Ports[0].Port) //warning: assumes the predictor service only has one port!
 	} else {
 		log.Error(err, fmt.Sprintf("could not find service by name %s in namespace %s, falling back to legacy URL and port extraction logic", targetService, namespace))
