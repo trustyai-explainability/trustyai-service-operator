@@ -84,7 +84,7 @@ spec:
   storage:
     format: "PVC"
     folder: "/inputs"
-    size: "1Gi"
+    size: "1Gi"  # Optional, defaults to "5Gi" if not specified when using PVC mode
   data:
     filename: "data.csv"
     format: "CSV"

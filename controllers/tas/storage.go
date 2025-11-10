@@ -18,16 +18,21 @@ func generatePVCName(instance *trustyaiopendatahubiov1alpha1.TrustyAIService) st
 }
 
 func (r *TrustyAIServiceReconciler) ensurePVC(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
-	pvcName := generatePVCName(instance)
+	// Skip PVC creation for database mode, unless it's a migration
+	if instance.Spec.Storage.IsStorageDatabase() && !instance.IsMigration() {
+		log.FromContext(ctx).Info("Skipping PVC check for database mode")
+		return nil
+	}
 
+	pvcName := generatePVCName(instance)
 	pvc := &corev1.PersistentVolumeClaim{}
 
+	// Check if PVC already exists
 	err := r.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: instance.Namespace}, pvc)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
+			// PVC doesn't exist, create it
 			log.FromContext(ctx).Info("PVC not found. Creating.")
-			// The PVC doesn't exist, so we need to create it
-
 			creationErr := r.createPVC(ctx, instance)
 			if creationErr == nil {
 				// Creation successful, emit Event
@@ -39,10 +44,36 @@ func (r *TrustyAIServiceReconciler) ensurePVC(ctx context.Context, instance *tru
 		return err
 	}
 
+	// For migration case, we've found an existing PVC  and will use it
+	if instance.IsMigration() {
+		log.FromContext(ctx).Info("Found existing PVC for migration case. Using it.")
+	}
+
 	return nil
 }
 
 func (r *TrustyAIServiceReconciler) createPVC(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+	// Skip PVC creation for database storage, unless it's a migration
+	if instance.Spec.Storage.IsStorageDatabase() && !instance.IsMigration() {
+		log.FromContext(ctx).Info("Skipping PVC creation for database mode")
+		return nil
+	}
+
+	// For migration, use DefaultPVCSize regardless of what's in the CR
+	var size string
+	if instance.IsMigration() {
+		size = trustyaiopendatahubiov1alpha1.DefaultPVCSize
+		log.FromContext(ctx).Info("Using size of " + size + " for migration PVC")
+	} else {
+		// For regular PVC mode, get the size from the CR or use default
+		size = instance.Spec.Storage.GetSize()
+	}
+
+	if size == "" {
+		log.FromContext(ctx).Info("Skipping PVC creation because size is empty")
+		return nil
+	}
+
 	pvcName := generatePVCName(instance)
 
 	pvc := &corev1.PersistentVolumeClaim{
@@ -56,7 +87,7 @@ func (r *TrustyAIServiceReconciler) createPVC(ctx context.Context, instance *tru
 			},
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse(instance.Spec.Storage.Size),
+					corev1.ResourceStorage: resource.MustParse(size),
 				},
 			},
 		},
