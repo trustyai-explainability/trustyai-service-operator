@@ -70,7 +70,7 @@ func (r *TrustyAIServiceReconciler) ensureDestinationRule(ctx context.Context, i
 	}
 
 	var destinationRule *unstructured.Unstructured
-	destinationRule, err = templateParser.ParseResource[unstructured.Unstructured](destinationRuleTemplatePath, destinationRuleConfig, reflect.TypeOf(&unstructured.Unstructured{}))
+	destinationRule, err = templateParser.ParseResource[*unstructured.Unstructured](destinationRuleTemplatePath, destinationRuleConfig, reflect.TypeOf(&unstructured.Unstructured{}))
 	if err != nil {
 		log.FromContext(ctx).Error(err, "could not parse the DestinationRule template")
 		return err

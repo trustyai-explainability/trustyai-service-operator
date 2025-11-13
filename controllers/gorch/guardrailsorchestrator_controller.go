@@ -21,7 +21,9 @@ import (
 	"github.com/go-logr/logr"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/gorch/templates"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/metrics"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -29,7 +31,6 @@ import (
 	"strconv"
 	"time"
 
-	routev1 "github.com/openshift/api/route/v1"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -365,62 +366,28 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	existingConfigMap := &corev1.ConfigMap{}
-	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-ca-bundle", Namespace: orchestrator.Namespace}, existingConfigMap)
-	if err != nil && errors.IsNotFound(err) {
-		// Define a new configmap
-		caBundleConfigMap := r.createConfigMap(ctx, "ca-bundle-configmap.tmpl.yaml", orchestrator)
-		log.Info("Creating a new ConfigMap", "ConfigMap.Namespace", caBundleConfigMap.Namespace, "ConfigMap.Name", caBundleConfigMap.Name)
-		err = r.Create(ctx, caBundleConfigMap)
-		if err != nil {
-			r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, ReconcileFailed, "Failed to create new ConfigMap", "ConfigMap.Namespace", caBundleConfigMap.Namespace, "ConfigMap.Name", caBundleConfigMap.Name)
-		}
-	} else if err != nil {
-		r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get ConfigMap")
+	_, _, err = utils.ReconcileConfigMap(ctx, r.Client, orchestrator, orchestrator.Name+"-ca-bundle", "", "ca-bundle-configmap.tmpl.yaml", templateParser.ParseResource)
+	if err != nil {
+		r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "CA Bundle ConfigMap reconciliation failed")
 		return ctrl.Result{}, err
 	}
 
-	existingRoute := &routev1.Route{}
-	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingRoute)
-	if err != nil && errors.IsNotFound(err) {
-		// Define a new route
-		httpRoute := r.createRoute(ctx, "https-route.tmpl.yaml", orchestrator)
-		log.Info("Creating a new Route", "Route.Namespace", httpRoute.Namespace, "Route.Name", httpRoute.Name)
-		err = r.Create(ctx, httpRoute)
-		if err != nil {
-			r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, ReconcileFailed, "Failed to create new Route", "Route.Namespace", httpRoute.Namespace, "Route.Name", httpRoute.Name)
-		}
-	} else if err != nil {
-		r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get Route")
+	err = r.reconcileOrchestratorRoute(ctx, orchestrator)
+	if err != nil {
+		r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Main orchestrator route reconciliation failed")
 		return ctrl.Result{}, err
 	}
 
-	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-health", Namespace: orchestrator.Namespace}, existingRoute)
-	if err != nil && errors.IsNotFound(err) {
-		// Define a new route
-		healthRoute := r.createRoute(ctx, "health-route.tmpl.yaml", orchestrator)
-		log.Info("Creating a new Route", "Route.Namespace", healthRoute.Namespace, "Route.Name", healthRoute.Name)
-		err = r.Create(ctx, healthRoute)
-		if err != nil {
-			r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, ReconcileFailed, "Failed to create new Route", "Route.Namespace", healthRoute.Namespace, "Route.Name", healthRoute.Name)
-		}
-	} else if err != nil {
-		r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get Route")
+	err = r.reconcileHealthRoute(ctx, orchestrator)
+	if err != nil {
+		r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Health route reconciliation failed")
 		return ctrl.Result{}, err
 	}
 
 	if orchestrator.Spec.EnableGuardrailsGateway {
-		err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-gateway", Namespace: orchestrator.Namespace}, existingRoute)
-		if err != nil && errors.IsNotFound(err) {
-			// Define a new route
-			gatewayRoute := r.createRoute(ctx, "gateway-route.tmpl.yaml", orchestrator)
-			log.Info("Creating a new Route", "Route.Namespace", gatewayRoute.Namespace, "Route.Name", gatewayRoute.Name)
-			err = r.Create(ctx, gatewayRoute)
-			if err != nil {
-				r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, ReconcileFailed, "Failed to create new Route", "Route.Namespace", gatewayRoute.Namespace, "Route.Name", gatewayRoute.Name)
-			}
-		} else if err != nil {
-			r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Failed to get Route")
+		err = r.reconcileGatewayRoute(ctx, orchestrator)
+		if err != nil {
+			r.handleReconciliationError(ctx, log, orchestrator, err, ReconcileFailed, "Gateway route reconciliation failed")
 			return ctrl.Result{}, err
 		}
 	}

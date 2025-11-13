@@ -38,7 +38,7 @@ func generateTrustyAITLSService(ctx context.Context, instance *trustyaiopendatah
 	}
 
 	var serviceTLS *corev1.Service
-	serviceTLS, err := templateParser.ParseResource[corev1.Service](tlsServiceTemplatePath, serviceTLSConfig, reflect.TypeOf(&corev1.Service{}))
+	serviceTLS, err := templateParser.ParseResource[*corev1.Service](tlsServiceTemplatePath, serviceTLSConfig, reflect.TypeOf(&corev1.Service{}))
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error parsing the service's deployment template")
 		return nil, err

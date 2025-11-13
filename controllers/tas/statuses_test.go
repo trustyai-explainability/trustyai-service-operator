@@ -96,7 +96,7 @@ var _ = Describe("Status and condition tests", func() {
 			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
 			WaitFor(func() error {
-				return reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
+				return reconciler.ReconcileRoute(instance, ctx, k8sClient)
 			}, "failed to create route")
 			WaitFor(func() error {
 				return makeRouteReady(ctx, k8sClient, instance)
@@ -166,7 +166,7 @@ var _ = Describe("Status and condition tests", func() {
 			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
 			WaitFor(func() error {
-				return reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
+				return reconciler.ReconcileRoute(instance, ctx, k8sClient)
 			}, "failed to create route")
 			WaitFor(func() error {
 				return makeRouteReady(ctx, k8sClient, instance)
@@ -230,7 +230,7 @@ var _ = Describe("Status and condition tests", func() {
 			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
 			WaitFor(func() error {
-				return reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
+				return reconciler.ReconcileRoute(instance, ctx, k8sClient)
 			}, "failed to create route")
 			WaitFor(func() error {
 				return makeRouteReady(ctx, k8sClient, instance)
@@ -304,7 +304,7 @@ var _ = Describe("Status and condition tests", func() {
 			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
 			WaitFor(func() error {
-				return reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
+				return reconciler.ReconcileRoute(instance, ctx, k8sClient)
 			}, "failed to create route")
 			WaitFor(func() error {
 				return makeRouteReady(ctx, k8sClient, instance)

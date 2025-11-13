@@ -34,7 +34,7 @@ func createCentralServiceMonitorObject(ctx context.Context, deploymentNamespace 
 	}
 
 	var serviceMonitor *monitoringv1.ServiceMonitor
-	serviceMonitor, err := templateParser.ParseResource[monitoringv1.ServiceMonitor](centralServiceMonitorTemplatePath, config, reflect.TypeOf(&monitoringv1.ServiceMonitor{}))
+	serviceMonitor, err := templateParser.ParseResource[*monitoringv1.ServiceMonitor](centralServiceMonitorTemplatePath, config, reflect.TypeOf(&monitoringv1.ServiceMonitor{}))
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error parsing the central ServiceMonitor template")
 		return nil, err
@@ -80,7 +80,7 @@ func createLocalServiceMonitorObject(ctx context.Context, deploymentNamespace st
 	}
 
 	var serviceMonitor *monitoringv1.ServiceMonitor
-	serviceMonitor, err := templateParser.ParseResource[monitoringv1.ServiceMonitor](localServiceMonitorTemplatePath, config, reflect.TypeOf(&monitoringv1.ServiceMonitor{}))
+	serviceMonitor, err := templateParser.ParseResource[*monitoringv1.ServiceMonitor](localServiceMonitorTemplatePath, config, reflect.TypeOf(&monitoringv1.ServiceMonitor{}))
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error parsing the central ServiceMonitor template")
 		return nil, err

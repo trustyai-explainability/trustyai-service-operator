@@ -25,7 +25,7 @@ func (r *GuardrailsOrchestratorReconciler) createService(ctx context.Context, or
 	}
 
 	var service *corev1.Service
-	service, err := templateParser.ParseResource[corev1.Service](serviceTemplatePath, serviceConfig, reflect.TypeOf(&corev1.Service{}))
+	service, err := templateParser.ParseResource[*corev1.Service](serviceTemplatePath, serviceConfig, reflect.TypeOf(&corev1.Service{}))
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to parse service template")
 	}

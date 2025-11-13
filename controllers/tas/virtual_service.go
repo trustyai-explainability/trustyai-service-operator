@@ -70,7 +70,7 @@ func (r *TrustyAIServiceReconciler) ensureVirtualService(ctx context.Context, in
 	}
 
 	var virtualService *unstructured.Unstructured
-	virtualService, err = templateParser.ParseResource[unstructured.Unstructured](virtualServiceTemplatePath, virtualServiceConfig, reflect.TypeOf(&unstructured.Unstructured{}))
+	virtualService, err = templateParser.ParseResource[*unstructured.Unstructured](virtualServiceTemplatePath, virtualServiceConfig, reflect.TypeOf(&unstructured.Unstructured{}))
 	if err != nil {
 		log.FromContext(ctx).Error(err, "could not parse the VirtualService template")
 		return err
