@@ -13,7 +13,7 @@ const kubeRBACProxyConfigTemplatePath = "kube-rbac-proxy/config.tmpl.yaml"
 
 // createKubeRBACProxyConfigMapObject creates the ConfigMap object from template
 func (r *TrustyAIServiceReconciler) createKubeRBACProxyConfigMapObject(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (*corev1.ConfigMap, error) {
-	return utils.CreateConfigMap(ctx, r.Client, instance, instance.Name+"-kube-rbac-proxy-config", constants.Version, kubeRBACProxyConfigTemplatePath, templateParser.ParseResource)
+	return utils.DefineConfigMap(ctx, r.Client, instance, instance.Name+"-kube-rbac-proxy-config", constants.Version, kubeRBACProxyConfigTemplatePath, templateParser.ParseResource)
 }
 
 // ensureKubeRBACProxyConfigMap ensures the kube-rbac-proxy ConfigMap exists

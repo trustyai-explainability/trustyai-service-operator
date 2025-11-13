@@ -24,15 +24,15 @@ const configMapResourceKind = "configmap"
 
 // === GENERIC FUNCTIONS ===============================================================================================
 
-// CreateConfigMap will create a ConfigMap object in the owner's namespace, but does not deploy anything to the cluster
-func CreateConfigMap(ctx context.Context, c client.Client, owner metav1.Object, configMapName string, version string, configMapTemplatePath string, parser ResourceParserFunc[*corev1.ConfigMap]) (*corev1.ConfigMap, error) {
+// DefineConfigMap will create a ConfigMap object in the owner's namespace, but does not deploy anything to the cluster
+func DefineConfigMap(ctx context.Context, c client.Client, owner metav1.Object, configMapName string, version string, configMapTemplatePath string, parser ResourceParserFunc[*corev1.ConfigMap]) (*corev1.ConfigMap, error) {
 	configMapConfig := ConfigMapConfig{
 		Owner:   owner,
 		Name:    configMapName,
 		Version: version,
 	}
 	genericConfig := GetGenericConfig(StringPointer(configMapName), StringPointer(owner.GetNamespace()), configMapConfig)
-	return CreateGeneric[*corev1.ConfigMap](ctx, c, owner, configMapResourceKind, genericConfig, configMapTemplatePath, parser)
+	return DefineGeneric[*corev1.ConfigMap](ctx, c, owner, configMapResourceKind, genericConfig, configMapTemplatePath, parser)
 }
 
 // ReconcileConfigMap holds reconciliation logic for a generic ConfigMap in the owner's namespace.
@@ -138,10 +138,10 @@ func EnsureConfigMap(ctx context.Context, c client.Client, owner metav1.Object, 
 	}
 
 	// ConfigMap exists, check if update is needed by comparing data
-	expectedConfigMap, createErr := CreateConfigMap(ctx, c, owner, configMapName, version, templatePath, parserFunc)
-	if createErr != nil {
+	expectedConfigMap, err := DefineConfigMap(ctx, c, owner, configMapName, version, templatePath, parserFunc)
+	if err != nil {
 		LogErrorCreating(ctx, err, "expected comparison "+configMapResourceKind, configMapName, owner.GetNamespace())
-		return createErr
+		return err
 	}
 
 	// check if update is needed by comparing data

@@ -30,7 +30,7 @@ func GetGenericConfig(name *string, namespace *string, specificConfig interface{
 	}
 }
 
-// CreateGeneric defines a generic object of type T, but does not deploy it to the cluster.
+// DefineGeneric defines a generic object of type T, but does not deploy it to the cluster.
 /*
 T must be a pointer to a k8s object, e.g., *corev1.ConfigMap
 
@@ -38,8 +38,8 @@ Returns:
 - the newly created object
 - any error
 */
-func CreateGeneric[T client.Object](ctx context.Context, c client.Client, owner metav1.Object, resourceKind string, config GenericConfig, templatePath string, parser ResourceParserFunc[T]) (T, error) {
-	// Parse template of resource to define a new instance of the object
+func DefineGeneric[T client.Object](ctx context.Context, c client.Client, owner metav1.Object, resourceKind string, config GenericConfig, templatePath string, parser ResourceParserFunc[T]) (T, error) {
+	// Parse the template of resource to define a new instance of the object
 	obj, err := parser(templatePath, config.SpecificData, reflect.TypeOf(new(T)).Elem())
 
 	if err != nil {
@@ -83,7 +83,7 @@ func ReconcileGeneric[T client.Object](ctx context.Context, c client.Client, own
 	err := c.Get(ctx, types.NamespacedName{Name: *config.Name, Namespace: *config.Namespace}, existingObj)
 	if err != nil && errors.IsNotFound(err) {
 		// Object that we want doesn't exist, so define a new instance of a resource according to the config
-		obj, err := CreateGeneric[T](ctx, c, owner, resourceKind, config, templatePath, parserFunc)
+		obj, err := DefineGeneric[T](ctx, c, owner, resourceKind, config, templatePath, parserFunc)
 		if err != nil {
 			LogErrorDefining(ctx, err, resourceKind, *config.Name, *config.Namespace)
 			return zero, false, err
@@ -93,16 +93,16 @@ func ReconcileGeneric[T client.Object](ctx context.Context, c client.Client, own
 		// deploy the resource onto the cluster
 		err = c.Create(ctx, obj)
 		if err != nil {
-			LogInfoCreatedSuccessfully(ctx, resourceKind, obj.GetName(), obj.GetNamespace())
+			LogErrorCreating(ctx, err, resourceKind, obj.GetName(), obj.GetNamespace())
 			return zero, false, err
 		}
-		// we just created a new object, return obj + true
+		// we just created a new object, return the obj and true
 		return obj, true, nil
 	} else if err != nil {
 		LogErrorRetrieving(ctx, err, resourceKind, *config.Name, *config.Namespace)
 		return zero, false, err
 	}
 
-	// object already existed, return existingObj + false
+	// object already existed, return the existingObj and false
 	return existingObj, false, nil
 }

@@ -39,7 +39,7 @@ func setupAndTestSameRouteCreation(instance *trustyaiopendatahubiov1alpha1.Trust
 		ServiceName: instance.Name + "-tls",
 		PortName:    KubeRBACProxyServicePortName,
 	}
-	existingRoute, err := utils.CreateRoute(ctx, k8sClient, instance, routeConfig, routeTemplatePath, templateParser.ParseResource)
+	existingRoute, err := utils.DefineRoute(ctx, k8sClient, instance, routeConfig, routeTemplatePath, templateParser.ParseResource)
 	Expect(err).ToNot(HaveOccurred())
 	Expect(reconciler.Client.Create(ctx, existingRoute)).To(Succeed())
 

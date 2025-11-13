@@ -32,11 +32,11 @@ const routeResourceKind = "route"
 
 // === GENERIC FUNCTIONS ===============================================================================================
 
-// CreateRoute creates a route object, but does not deploy it to the cluster
-func CreateRoute(ctx context.Context, c client.Client, owner metav1.Object, routeConfig RouteConfig, routeTemplatePath string, parser ResourceParserFunc[*routev1.Route]) (*routev1.Route, error) {
+// DefineRoute creates a route object, but does not deploy it to the cluster
+func DefineRoute(ctx context.Context, c client.Client, owner metav1.Object, routeConfig RouteConfig, routeTemplatePath string, parser ResourceParserFunc[*routev1.Route]) (*routev1.Route, error) {
 	// Create route object
 	genericConfig := processConfig(owner, routeConfig)
-	return CreateGeneric[*routev1.Route](ctx, c, owner, routeResourceKind, genericConfig, routeTemplatePath, parser)
+	return DefineGeneric[*routev1.Route](ctx, c, owner, routeResourceKind, genericConfig, routeTemplatePath, parser)
 }
 
 // ReconcileRoute contains logic for generic route reconciliation
@@ -71,11 +71,13 @@ func CheckRouteReady(ctx context.Context, c client.Client, name string, namespac
 	var existingRoute *routev1.Route
 	err := retry.OnError(
 		wait.Backoff{
+			Steps:    5,
 			Duration: time.Second * 5,
+			Factor:   1.0,
 		},
 		func(err error) bool {
 			// Retry on transient errors, such as network errors or resource not found
-			return errors.IsNotFound(err) || err != nil
+			return errors.IsNotFound(err)
 		},
 		func() error {
 			// Fetch the Route resource

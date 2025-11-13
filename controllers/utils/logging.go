@@ -50,17 +50,12 @@ func LogInfoCreating(ctx context.Context, resourceKind string, resourceName stri
 	LogInfoVerb(ctx, "creating", resourceKind, resourceName, namespace)
 }
 
-// LogInfoCreating produces a log message regarding starting the creation of some resource
+// LogInfoUpdating produces a log message regarding starting the creation of some resource
 func LogInfoUpdating(ctx context.Context, resourceKind string, resourceName string, namespace string) {
 	LogInfoVerb(ctx, "updating", resourceKind, resourceName, namespace)
 }
 
-// LogInfoCreatedSuccessfully produces a log message regarding the successful creation of some resource
-func LogInfoCreatedSuccessfully(ctx context.Context, resourceKind string, resourceName string, namespace string) {
-	LogInfoVerb(ctx, "created", resourceKind, resourceName, namespace)
-}
-
-// LogInfoVerbb produces an info message regarding the $VERB of some resource
+// LogInfoVerb produces an info message regarding the $VERB of some resource
 func LogInfoVerb(ctx context.Context, verb string, resourceKind string, resourceName string, namespace string) {
 	log.FromContext(ctx).Info(fmt.Sprintf("%s %s %s in namespace %s", verb, resourceKind, resourceName, namespace))
 }
