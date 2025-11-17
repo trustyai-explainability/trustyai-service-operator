@@ -70,6 +70,8 @@ type GuardrailsOrchestratorSpec struct {
 	// Define TLS secrets to be mounted to the orchestrator. Secrets will be mounted at /etc/tls/$SECRET_NAME
 	// +optional
 	TLSSecrets *[]string `json:"tlsSecrets,omitempty"`
+	// Define environment variables. These will be added to the orchestrator, gateway, and built-in detector pods.
+	EnvVars *[]corev1.EnvVar `json:"env,omitempty"`
 }
 
 // OTelExporter defines the environment variables for configuring the OTLP exporter.
