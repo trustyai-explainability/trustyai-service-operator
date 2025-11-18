@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
@@ -89,6 +90,18 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 		log.FromContext(ctx).Error(err, "Failed to parse deployment template")
 		return nil, err
 	}
+
+	// add env vars to the deployment
+	if orchestrator.Spec.EnvVars != nil && len(*orchestrator.Spec.EnvVars) > 0 {
+		for i := range deployment.Spec.Template.Spec.Containers {
+			if !isKubeRBACProxyContainer(deployment.Spec.Template.Spec.Containers[i].Name) {
+				deployment.Spec.Template.Spec.Containers[i].Env = append(
+					deployment.Spec.Template.Spec.Containers[i].Env,
+					*orchestrator.Spec.EnvVars...)
+			}
+		}
+	}
+
 	if err := controllerutil.SetControllerReference(orchestrator, deployment, r.Scheme); err != nil {
 		log.FromContext(ctx).Error(err, "Failed to set controller reference for deployment")
 		return nil, err
@@ -175,4 +188,9 @@ func patchDeployment(existingDeployment, newDeployment *appsv1.Deployment) bool 
 	}
 
 	return changed
+}
+
+// isKubeRBACProxyContainer checks if a pod name corresponding to a kube-rbac-proxy pod
+func isKubeRBACProxyContainer(name string) bool {
+	return strings.HasPrefix(name, "kube-rbac-proxy")
 }
