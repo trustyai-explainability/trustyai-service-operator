@@ -3899,7 +3899,7 @@ func Test_OCICommandGeneration(t *testing.T) {
 			},
 		}
 
-		cmds := generateCmd(svcOpts, job)
+		cmds := generateCmd(svcOpts, job, NewDefaultPermissionConfig())
 		assert.Contains(t, cmds, "--upload-to-oci", "Should include OCI upload flag")
 	})
 
@@ -3917,7 +3917,7 @@ func Test_OCICommandGeneration(t *testing.T) {
 			},
 		}
 
-		cmds := generateCmd(svcOpts, job)
+		cmds := generateCmd(svcOpts, job, NewDefaultPermissionConfig())
 		assert.NotContains(t, cmds, "--upload-to-oci", "Should not include OCI upload flag")
 	})
 }
@@ -3971,7 +3971,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 		hasOCI := job.Spec.HasOCIOutput()
 		assert.True(t, hasOCI, "Job should have OCI output configured")
 
-		pod := CreatePod(svcOpts, job, logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
@@ -4034,7 +4034,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			},
 		}
 
-		pod := CreatePod(svcOpts, job, logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
@@ -4086,7 +4086,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			},
 		}
 
-		pod := CreatePod(svcOpts, job, logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
@@ -4133,7 +4133,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			},
 		}
 
-		pod := CreatePod(svcOpts, job, logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
@@ -4179,7 +4179,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			},
 		}
 
-		pod := CreatePod(svcOpts, job, logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
@@ -4225,7 +4225,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			},
 		}
 
-		pod := CreatePod(svcOpts, job, logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
@@ -4271,7 +4271,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			},
 		}
 
-		pod := CreatePod(svcOpts, job, logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
@@ -4318,7 +4318,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			},
 		}
 
-		pod := CreatePod(svcOpts, job, logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
@@ -4369,7 +4369,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			},
 		}
 
-		pod := CreatePod(svcOpts, job, logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
