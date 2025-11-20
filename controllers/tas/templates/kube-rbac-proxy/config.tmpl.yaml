@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Instance.Name }}-kube-rbac-proxy-config
-  namespace: {{ .Instance.Namespace }}
+  name: {{ .Name }}
+  namespace: {{ .Owner.Namespace }}
   labels:
-    app: {{ .Instance.Name }}
-    app.kubernetes.io/instance: {{ .Instance.Name }}
-    app.kubernetes.io/name: {{ .Instance.Name }}
+    app: {{ .Owner.Name }}
+    app.kubernetes.io/instance: {{ .Owner.Name }}
+    app.kubernetes.io/name: {{ .Owner.Name }}
     app.kubernetes.io/part-of: trustyai
     app.kubernetes.io/version: {{ .Version }}
     app.kubernetes.io/component: kube-rbac-proxy
@@ -14,9 +14,9 @@ data:
   config.yaml: |
     authorization:
       resourceAttributes:
-        namespace: "{{ .Instance.Namespace }}"
+        namespace: "{{ .Owner.Namespace }}"
         resource: "services"
-        resourceName: "{{ .Instance.Name }}"
+        resourceName: "{{ .Owner.Name }}"
         verb: "get"
         apiGroup: ""
     upstreamConfig:

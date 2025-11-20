@@ -5,6 +5,7 @@ import (
 	"fmt"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"strings"
 )
@@ -29,7 +30,7 @@ func requiresOAuth(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) bool {
 
 // configureKubeRBACProxy creates the kube-rbac-proxy config structs to be used in the deployment template
 func (r *GuardrailsOrchestratorReconciler) configureKubeRBACProxy(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, deploymentConfig *DeploymentConfig) error {
-	kubeRBACProxyImage, err := r.getImageFromConfigMap(ctx, kubeRBACProxyImageKey, constants.ConfigMap, r.Namespace)
+	kubeRBACProxyImage, err := utils.GetImageFromConfigMap(ctx, r.Client, kubeRBACProxyImageKey, constants.ConfigMap, r.Namespace)
 	if kubeRBACProxyImage == "" || err != nil {
 		log.FromContext(ctx).Error(err, "Error getting Kube-RBAC-Proxy image from ConfigMap.")
 		return err

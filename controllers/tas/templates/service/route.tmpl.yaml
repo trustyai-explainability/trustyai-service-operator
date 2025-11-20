@@ -8,7 +8,7 @@ metadata:
 spec:
     to:
         kind: Service
-        name: {{ .Name }}-tls
+        name: {{ .ServiceName }}
         weight: 100
     port:
         targetPort: {{ .PortName }}

@@ -22,7 +22,7 @@ func (r *GuardrailsOrchestratorReconciler) createServiceAccount(ctx context.Cont
 		Orchestrator: orchestrator,
 	}
 	var serviceAccount *corev1.ServiceAccount
-	serviceAccount, err := templateParser.ParseResource[corev1.ServiceAccount](serviceAccountTemplatePath, serviceAccountConfig, reflect.TypeOf(&corev1.ServiceAccount{}))
+	serviceAccount, err := templateParser.ParseResource[*corev1.ServiceAccount](serviceAccountTemplatePath, serviceAccountConfig, reflect.TypeOf(&corev1.ServiceAccount{}))
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to parse service account template")
 	}

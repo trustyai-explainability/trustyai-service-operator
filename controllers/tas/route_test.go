@@ -2,11 +2,12 @@ package tas
 
 import (
 	"context"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
@@ -17,7 +18,7 @@ func setupAndTestRouteCreation(instance *trustyaiopendatahubiov1alpha1.TrustyAIS
 		return createNamespace(ctx, k8sClient, namespace)
 	}, "failed to create namespace")
 
-	err := reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
+	err := reconciler.ReconcileRoute(instance, ctx, k8sClient)
 	Expect(err).ToNot(HaveOccurred())
 
 	route := &routev1.Route{}
@@ -34,11 +35,15 @@ func setupAndTestSameRouteCreation(instance *trustyaiopendatahubiov1alpha1.Trust
 	}, "failed to create namespace")
 
 	// Create a Route with the expected spec
-	existingRoute, err := reconciler.createRouteObject(ctx, instance)
+	routeConfig := utils.RouteConfig{
+		ServiceName: instance.Name + "-tls",
+		PortName:    KubeRBACProxyServicePortName,
+	}
+	existingRoute, err := utils.DefineRoute(ctx, k8sClient, instance, routeConfig, routeTemplatePath, templateParser.ParseResource)
 	Expect(err).ToNot(HaveOccurred())
 	Expect(reconciler.Client.Create(ctx, existingRoute)).To(Succeed())
 
-	err = reconciler.reconcileRouteAuth(instance, ctx, reconciler.createRouteObject)
+	err = reconciler.ReconcileRoute(instance, ctx, k8sClient)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Fetch the Route

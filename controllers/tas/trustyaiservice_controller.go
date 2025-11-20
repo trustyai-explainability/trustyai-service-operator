@@ -262,7 +262,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// Create route
 	// TODO: Change argument order
-	err = r.ReconcileRoute(instance, ctx)
+	err = r.ReconcileRoute(instance, ctx, r.Client)
 	//err = r.reconcileRoute(instance, ctx)
 	if err != nil {
 		// Could not create Route object, update status and return.

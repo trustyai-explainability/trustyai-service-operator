@@ -627,7 +627,7 @@ func TestDeploymentTemplateRenders(t *testing.T) {
 	// Use the actual template path
 	templatePath := "deployment.tmpl.yaml"
 
-	deployment, err := templates.ParseResource[appsv1.Deployment](templatePath, deploymentConfig, reflect.TypeOf(&appsv1.Deployment{}))
+	deployment, err := templates.ParseResource[*appsv1.Deployment](templatePath, deploymentConfig, reflect.TypeOf(&appsv1.Deployment{}))
 	assert.NoError(t, err)
 	assert.NotNil(t, deployment)
 	assert.Equal(t, "test-orchestrator", deployment.Name)

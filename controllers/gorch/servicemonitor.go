@@ -23,7 +23,7 @@ func (r *GuardrailsOrchestratorReconciler) createServiceMonitor(ctx context.Cont
 	}
 
 	var serviceMonitor *monitoringv1.ServiceMonitor
-	serviceMonitor, err := templateParser.ParseResource[monitoringv1.ServiceMonitor](serviceMonitorTemplatePath, serviceMonitorConfig, reflect.TypeOf(&monitoringv1.ServiceMonitor{}))
+	serviceMonitor, err := templateParser.ParseResource[*monitoringv1.ServiceMonitor](serviceMonitorTemplatePath, serviceMonitorConfig, reflect.TypeOf(&monitoringv1.ServiceMonitor{}))
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to parse service monitor template")
 	}
