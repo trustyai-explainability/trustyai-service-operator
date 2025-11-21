@@ -3,6 +3,9 @@ FROM registry.access.redhat.com/ubi9/python-311@sha256:fccda5088dd13d2a3f2659e4c
 USER root
 RUN sed -i.bak 's/include-system-site-packages = false/include-system-site-packages = true/' /opt/app-root/pyvenv.cfg
 
+# TODO: revisit best placement, I've tried using the one in the other repo (:facepalm)
+RUN dnf install -y skopeo && dnf clean all
+
 USER default
 WORKDIR /opt/app-root/src
 RUN mkdir /opt/app-root/src/hf_home && chmod g+rwx /opt/app-root/src/hf_home
