@@ -489,9 +489,9 @@ type OCISpec struct {
 	// Password for registry authentication
 	// +optional
 	PasswordRef *corev1.SecretKeySelector `json:"password,omitempty"`
-	// Token for registry authentication (alternative to username/password)
+	// DockerConfigJson for registry authentication (alternative to username/password)
 	// +optional
-	TokenRef *corev1.SecretKeySelector `json:"token,omitempty"`
+	DockerConfigJsonRef *corev1.SecretKeySelector `json:"dockerConfigJson,omitempty"`
 	// Whether to verify SSL certificates
 	// +optional
 	VerifySSL *bool `json:"verifySSL,omitempty"`
@@ -638,8 +638,8 @@ func (s *OCISpec) HasUsernamePassword() bool {
 	return s.UsernameRef != nil && s.PasswordRef != nil
 }
 
-func (s *OCISpec) HasToken() bool {
-	return s.TokenRef != nil
+func (s *OCISpec) HasDockerConfigJson() bool {
+	return s.DockerConfigJsonRef != nil
 }
 
 // HasCustomOutput returns whether an LMEvalJobSpec defines custom outputs or not

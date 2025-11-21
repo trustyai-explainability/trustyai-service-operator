@@ -1562,15 +1562,15 @@ func Test_OCISpecHelperMethods(t *testing.T) {
 		assert.True(t, ociSpec.HasUsernamePassword(), "Should return true when both are present")
 	})
 
-	t.Run("HasToken", func(t *testing.T) {
+	t.Run("HasDockerConfigJson", func(t *testing.T) {
 		ociSpec := &lmesv1alpha1.OCISpec{}
-		assert.False(t, ociSpec.HasToken(), "Should return false when token is nil")
+		assert.False(t, ociSpec.HasDockerConfigJson(), "Should return false when dockerConfigJson is nil")
 
-		ociSpec.TokenRef = &corev1.SecretKeySelector{
-			LocalObjectReference: corev1.LocalObjectReference{Name: "token-secret"},
-			Key:                  "token",
+		ociSpec.DockerConfigJsonRef = &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "docker-secret"},
+			Key:                  ".dockerconfigjson",
 		}
-		assert.True(t, ociSpec.HasToken(), "Should return true when token is present")
+		assert.True(t, ociSpec.HasDockerConfigJson(), "Should return true when dockerConfigJson is present")
 	})
 }
 
@@ -1685,18 +1685,18 @@ func Test_ValidateOCIAuth(t *testing.T) {
 		assert.NoError(t, err, "Should accept valid username/password authentication")
 	})
 
-	t.Run("ValidToken", func(t *testing.T) {
+	t.Run("ValidDockerConfigJson", func(t *testing.T) {
 		ociSpec := &lmesv1alpha1.OCISpec{
-			TokenRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: "token-secret"},
-				Key:                  "token",
+			DockerConfigJsonRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "docker-secret"},
+				Key:                  ".dockerconfigjson",
 			},
 		}
 		err := ValidateOCIAuth(ociSpec)
-		assert.NoError(t, err, "Should accept valid token authentication")
+		assert.NoError(t, err, "Should accept valid dockerConfigJson authentication")
 	})
 
-	t.Run("BothUsernamePasswordAndToken", func(t *testing.T) {
+	t.Run("BothUsernamePasswordAndDockerConfigJson", func(t *testing.T) {
 		ociSpec := &lmesv1alpha1.OCISpec{
 			UsernameRef: &corev1.SecretKeySelector{
 				LocalObjectReference: corev1.LocalObjectReference{Name: "creds"},
@@ -1706,9 +1706,9 @@ func Test_ValidateOCIAuth(t *testing.T) {
 				LocalObjectReference: corev1.LocalObjectReference{Name: "creds"},
 				Key:                  "password",
 			},
-			TokenRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: "token-secret"},
-				Key:                  "token",
+			DockerConfigJsonRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "docker-secret"},
+				Key:                  ".dockerconfigjson",
 			},
 		}
 		err := ValidateOCIAuth(ociSpec)

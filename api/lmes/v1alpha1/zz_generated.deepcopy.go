@@ -448,8 +448,8 @@ func (in *OCISpec) DeepCopyInto(out *OCISpec) {
 		*out = new(v1.SecretKeySelector)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.TokenRef != nil {
-		in, out := &in.TokenRef, &out.TokenRef
+	if in.DockerConfigJsonRef != nil {
+		in, out := &in.DockerConfigJsonRef, &out.DockerConfigJsonRef
 		*out = new(v1.SecretKeySelector)
 		(*in).DeepCopyInto(*out)
 	}

@@ -1229,14 +1229,36 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 				},
 			}
 			ociEnvVars = append(ociEnvVars, ociAuthEnvVars...)
-		} else if job.Spec.Outputs.OCISpec.HasToken() {
-			ociTokenEnvVar := corev1.EnvVar{
-				Name: "OCI_TOKEN",
-				ValueFrom: &corev1.EnvVarSource{
-					SecretKeyRef: job.Spec.Outputs.OCISpec.TokenRef,
+		} else if job.Spec.Outputs.OCISpec.HasDockerConfigJson() {
+			dockerConfigMount := corev1.VolumeMount{
+				Name:      "docker-config",
+				MountPath: "/tmp/.docker/config.json",
+				SubPath:   "config.json",
+				ReadOnly:  true,
+			}
+			volumeMounts = append(volumeMounts, dockerConfigMount)
+
+			dockerConfigVolume := corev1.Volume{
+				Name: "docker-config",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: job.Spec.Outputs.OCISpec.DockerConfigJsonRef.Name,
+						Items: []corev1.KeyToPath{
+							{
+								Key:  job.Spec.Outputs.OCISpec.DockerConfigJsonRef.Key,
+								Path: "config.json",
+							},
+						},
+					},
 				},
 			}
-			ociEnvVars = append(ociEnvVars, ociTokenEnvVar)
+			volumes = append(volumes, dockerConfigVolume)
+
+			ociDockerConfigEnvVar := corev1.EnvVar{
+				Name:  "DOCKER_CONFIG",
+				Value: "/tmp/.docker",
+			}
+			ociEnvVars = append(ociEnvVars, ociDockerConfigEnvVar)
 		}
 
 		// Handle SSL verification

@@ -573,16 +573,16 @@ func ValidateOCIAuth(ociSpec *lmesv1alpha1.OCISpec) error {
 		return fmt.Errorf("OCI spec cannot be nil")
 	}
 
-	// Must have either username/password or token, but not both
+	// Must have either username/password or dockerConfigJson, but not both
 	hasUsernamePassword := ociSpec.HasUsernamePassword()
-	hasToken := ociSpec.HasToken()
+	hasDockerConfigJson := ociSpec.HasDockerConfigJson()
 
-	if !hasUsernamePassword && !hasToken {
-		return fmt.Errorf("OCI authentication requires either username/password or token")
+	if !hasUsernamePassword && !hasDockerConfigJson {
+		return fmt.Errorf("OCI authentication requires either username/password or dockerConfigJson")
 	}
 
-	if hasUsernamePassword && hasToken {
-		return fmt.Errorf("OCI authentication cannot have both username/password and token")
+	if hasUsernamePassword && hasDockerConfigJson {
+		return fmt.Errorf("OCI authentication cannot have both username/password and dockerConfigJson")
 	}
 
 	// If using username/password, both must be present

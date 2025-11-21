@@ -4003,10 +4003,10 @@ func Test_OCIPodConfiguration(t *testing.T) {
 		assert.Equal(t, "password", envMap["OCI_PASSWORD"].ValueFrom.SecretKeyRef.Key)
 	})
 
-	t.Run("OCIWithToken", func(t *testing.T) {
+	t.Run("OCIWithDockerConfigJson", func(t *testing.T) {
 		job := &lmesv1alpha1.LMEvalJob{
 			ObjectMeta: v1.ObjectMeta{
-				Name:      "test-oci-token",
+				Name:      "test-oci-dockerconfig",
 				Namespace: "default",
 			},
 			Spec: lmesv1alpha1.LMEvalJobSpec{
@@ -4025,9 +4025,9 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							Key:                  "repository",
 						},
 						Path: "results",
-						TokenRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
-							Key:                  "token",
+						DockerConfigJsonRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
+							Key:                  ".dockerconfigjson",
 						},
 					},
 				},
@@ -4044,14 +4044,38 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			envMap[env.Name] = env
 		}
 
-		// Verify token authentication is used
-		assert.Contains(t, envMap, "OCI_TOKEN", "Should have OCI_TOKEN env var")
+		// Verify
 		assert.NotContains(t, envMap, "OCI_USERNAME", "Should not have OCI_USERNAME env var")
 		assert.NotContains(t, envMap, "OCI_PASSWORD", "Should not have OCI_PASSWORD env var")
 
-		// Verify token source
-		assert.Equal(t, "oci-token", envMap["OCI_TOKEN"].ValueFrom.SecretKeyRef.Name)
-		assert.Equal(t, "token", envMap["OCI_TOKEN"].ValueFrom.SecretKeyRef.Key)
+		// Verify volume mount
+		volumeMounts := pod.Spec.Containers[0].VolumeMounts
+		var dockerConfigMount *corev1.VolumeMount
+		for i := range volumeMounts {
+			if volumeMounts[i].Name == "docker-config" {
+				dockerConfigMount = &volumeMounts[i]
+				break
+			}
+		}
+		assert.NotNil(t, dockerConfigMount, "Should have docker-config volume mount")
+		assert.Equal(t, "/tmp/.docker/config.json", dockerConfigMount.MountPath)
+		assert.Equal(t, "config.json", dockerConfigMount.SubPath)
+		assert.True(t, dockerConfigMount.ReadOnly)
+
+		// Verify volume source
+		volumes := pod.Spec.Volumes
+		var dockerConfigVolume *corev1.Volume
+		for i := range volumes {
+			if volumes[i].Name == "docker-config" {
+				dockerConfigVolume = &volumes[i]
+				break
+			}
+		}
+		assert.NotNil(t, dockerConfigVolume, "Should have docker-config volume")
+		assert.NotNil(t, dockerConfigVolume.VolumeSource.Secret)
+		assert.Equal(t, "oci-docker", dockerConfigVolume.VolumeSource.Secret.SecretName)
+		assert.Equal(t, ".dockerconfigjson", dockerConfigVolume.VolumeSource.Secret.Items[0].Key)
+		assert.Equal(t, "config.json", dockerConfigVolume.VolumeSource.Secret.Items[0].Path)
 	})
 
 	t.Run("OCIWithCustomTag", func(t *testing.T) {
@@ -4077,9 +4101,9 @@ func Test_OCIPodConfiguration(t *testing.T) {
 						},
 						Tag:  "custom-tag-v1.0",
 						Path: "results",
-						TokenRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
-							Key:                  "token",
+						DockerConfigJsonRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
+							Key:                  ".dockerconfigjson",
 						},
 					},
 				},
@@ -4124,9 +4148,9 @@ func Test_OCIPodConfiguration(t *testing.T) {
 						},
 						Subject: "llama-2-7b-chat",
 						Path:    "results",
-						TokenRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
-							Key:                  "token",
+						DockerConfigJsonRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
+							Key:                  ".dockerconfigjson",
 						},
 					},
 				},
@@ -4170,9 +4194,9 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							Key:                  "repository",
 						},
 						Path: "results",
-						TokenRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
-							Key:                  "token",
+						DockerConfigJsonRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
+							Key:                  ".dockerconfigjson",
 						},
 					},
 				},
@@ -4216,9 +4240,9 @@ func Test_OCIPodConfiguration(t *testing.T) {
 						},
 						Subject: "",
 						Path:    "results",
-						TokenRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
-							Key:                  "token",
+						DockerConfigJsonRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
+							Key:                  ".dockerconfigjson",
 						},
 					},
 				},
@@ -4262,9 +4286,9 @@ func Test_OCIPodConfiguration(t *testing.T) {
 						},
 						Subject: "valid-subject-123",
 						Path:    "results",
-						TokenRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
-							Key:                  "token",
+						DockerConfigJsonRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
+							Key:                  ".dockerconfigjson",
 						},
 					},
 				},
@@ -4309,9 +4333,9 @@ func Test_OCIPodConfiguration(t *testing.T) {
 						},
 						Subject: "sha256:a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef12345678",
 						Path:    "results",
-						TokenRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
-							Key:                  "token",
+						DockerConfigJsonRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
+							Key:                  ".dockerconfigjson",
 						},
 					},
 				},
@@ -4355,9 +4379,9 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							Key:                  "repository",
 						},
 						Path: "results",
-						TokenRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-token"},
-							Key:                  "token",
+						DockerConfigJsonRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
+							Key:                  ".dockerconfigjson",
 						},
 						CABundle: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "ca-bundle"},
