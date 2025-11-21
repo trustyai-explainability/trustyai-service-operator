@@ -170,6 +170,10 @@ jobs:
           
           rm -Rf $(ls . | grep -v config)
           rm -Rf .gitignore .dockerignore .github .git .yamllint.yaml
+
+          cat ./config/base/params.env
+          cat ./config/overlays/odh/params.env
+          cat ./config/overlays/rhoai/params.env
       # pysh to ci-manifest repo
       - uses: cpina/github-action-push-to-another-repository@main
         if: env.BUILD_CONTEXT == 'ci'
