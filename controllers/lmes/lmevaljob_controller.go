@@ -1189,13 +1189,15 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 			},
 		}
 
-		// Add tag if specified, otherwise driver will use job name as default
+		// Add tag value if specified, otherwise use pod name as default
+		tagValue := job.GetPodName()
 		if job.Spec.Outputs.OCISpec.Tag != "" {
-			ociEnvVars = append(ociEnvVars, corev1.EnvVar{
-				Name:  "OCI_TAG",
-				Value: job.Spec.Outputs.OCISpec.Tag,
-			})
+			tagValue = job.Spec.Outputs.OCISpec.Tag
 		}
+		ociEnvVars = append(ociEnvVars, corev1.EnvVar{
+			Name:  "OCI_TAG",
+			Value: tagValue,
+		})
 
 		// Add subject if specified
 		if job.Spec.Outputs.OCISpec.Subject != "" {
