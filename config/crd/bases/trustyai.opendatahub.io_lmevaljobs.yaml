@@ -341,7 +341,6 @@ spec:
                         type: object
                         x-kubernetes-map-type: atomic
                       path:
-                        description: Path within the results to package as artifact
                         pattern: ^[a-zA-Z0-9._/-]*$
                         type: string
                       registry:
@@ -366,24 +365,8 @@ spec:
                         x-kubernetes-map-type: atomic
                       repository:
                         description: Repository path (e.g., myorg/evaluation-results)
-                        properties:
-                          key:
-                            description: The key of the secret to select from.  Must
-                              be a valid secret key.
-                            type: string
-                          name:
-                            description: |-
-                              Name of the referent.
-                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                            type: string
-                          optional:
-                            description: Specify whether the Secret or its key must
-                              be defined
-                            type: boolean
-                        required:
-                        - key
-                        type: object
-                        x-kubernetes-map-type: atomic
+                        pattern: ^[a-zA-Z0-9._/-]*$
+                        type: string
                       subject:
                         description: Subject for the OCI artifact
                         maxLength: 255

@@ -1667,7 +1667,7 @@ func Test_ValidateOCIAuth(t *testing.T) {
 		ociSpec := &lmesv1alpha1.OCISpec{}
 		err := ValidateOCIAuth(ociSpec)
 		assert.Error(t, err, "Should reject spec with no authentication")
-		assert.Contains(t, err.Error(), "requires either username/password or token")
+		assert.Contains(t, err.Error(), "requires either username/password or dockerConfigJson")
 	})
 
 	t.Run("ValidUsernamePassword", func(t *testing.T) {
@@ -1725,7 +1725,7 @@ func Test_ValidateOCIAuth(t *testing.T) {
 		}
 		err := ValidateOCIAuth(ociSpec)
 		assert.Error(t, err, "Should reject spec with only username")
-		assert.Contains(t, err.Error(), "OCI authentication requires either username/password or token")
+		assert.Contains(t, err.Error(), "OCI authentication requires either username/password or dockerConfigJson")
 	})
 
 	t.Run("OnlyPassword", func(t *testing.T) {
@@ -1737,7 +1737,7 @@ func Test_ValidateOCIAuth(t *testing.T) {
 		}
 		err := ValidateOCIAuth(ociSpec)
 		assert.Error(t, err, "Should reject spec with only password")
-		assert.Contains(t, err.Error(), "OCI authentication requires either username/password or token")
+		assert.Contains(t, err.Error(), "OCI authentication requires either username/password or dockerConfigJson")
 	})
 }
 

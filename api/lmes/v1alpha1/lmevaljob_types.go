@@ -470,12 +470,13 @@ type OCISpec struct {
 	// Registry URL (e.g., quay.io, registry.redhat.com)
 	Registry corev1.SecretKeySelector `json:"registry"`
 	// Repository path (e.g., myorg/evaluation-results)
-	Repository corev1.SecretKeySelector `json:"repository"`
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._/-]*$`
+	Repository string `json:"repository"`
 	// Optional tag for the artifact (defaults to job name if not specified)
 	// +optional
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._-]*$`
 	Tag string `json:"tag,omitempty"`
-	// Path within the results to package as artifact
+	// TODO: why we need this anyway? Path within the results to package as artifact
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._/-]*$`
 	Path string `json:"path"`
 	// Subject for the OCI artifact

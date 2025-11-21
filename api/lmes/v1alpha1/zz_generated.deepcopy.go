@@ -437,7 +437,6 @@ func (in *Metric) DeepCopy() *Metric {
 func (in *OCISpec) DeepCopyInto(out *OCISpec) {
 	*out = *in
 	in.Registry.DeepCopyInto(&out.Registry)
-	in.Repository.DeepCopyInto(&out.Repository)
 	if in.UsernameRef != nil {
 		in, out := &in.UsernameRef, &out.UsernameRef
 		*out = new(v1.SecretKeySelector)

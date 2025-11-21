@@ -1180,15 +1180,8 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 				},
 			},
 			{
-				Name: "OCI_REPOSITORY",
-				ValueFrom: &corev1.EnvVarSource{
-					SecretKeyRef: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: job.Spec.Outputs.OCISpec.Repository.Name,
-						},
-						Key: job.Spec.Outputs.OCISpec.Repository.Key,
-					},
-				},
+				Name:  "OCI_REPOSITORY",
+				Value: job.Spec.Outputs.OCISpec.Repository,
 			},
 			{
 				Name:  "OCI_PATH",
@@ -1253,12 +1246,6 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 				},
 			}
 			volumes = append(volumes, dockerConfigVolume)
-
-			ociDockerConfigEnvVar := corev1.EnvVar{
-				Name:  "DOCKER_CONFIG",
-				Value: "/tmp/.docker",
-			}
-			ociEnvVars = append(ociEnvVars, ociDockerConfigEnvVar)
 		}
 
 		// Handle SSL verification

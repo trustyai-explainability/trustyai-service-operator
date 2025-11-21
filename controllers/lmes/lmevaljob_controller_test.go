@@ -3889,10 +3889,7 @@ func Test_OCICommandGeneration(t *testing.T) {
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
 							Key:                  "registry",
 						},
-						Repository: corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
-							Key:                  "repository",
-						},
+						Repository: "myorg/evaluation-results",
 						Path: "results",
 					},
 				},
@@ -3949,10 +3946,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
 							Key:                  "registry",
 						},
-						Repository: corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
-							Key:                  "repository",
-						},
+						Repository: "myorg/evaluation-results",
 						Path: "results",
 						UsernameRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
@@ -3993,8 +3987,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 		// Verify environment variable sources
 		assert.Equal(t, "oci-secret", envMap["OCI_REGISTRY"].ValueFrom.SecretKeyRef.Name)
 		assert.Equal(t, "registry", envMap["OCI_REGISTRY"].ValueFrom.SecretKeyRef.Key)
-		assert.Equal(t, "oci-secret", envMap["OCI_REPOSITORY"].ValueFrom.SecretKeyRef.Name)
-		assert.Equal(t, "repository", envMap["OCI_REPOSITORY"].ValueFrom.SecretKeyRef.Key)
+		assert.Equal(t, "myorg/evaluation-results", envMap["OCI_REPOSITORY"].Value)
 		assert.Equal(t, "results", envMap["OCI_PATH"].Value)
 		assert.Equal(t, "true", envMap["OCI_VERIFY_SSL"].Value)
 		assert.Equal(t, "oci-secret", envMap["OCI_USERNAME"].ValueFrom.SecretKeyRef.Name)
@@ -4020,10 +4013,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
 							Key:                  "registry",
 						},
-						Repository: corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
-							Key:                  "repository",
-						},
+						Repository: "myorg/evaluation-results",
 						Path: "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
@@ -4095,10 +4085,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
 							Key:                  "registry",
 						},
-						Repository: corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
-							Key:                  "repository",
-						},
+						Repository: "myorg/evaluation-results",
 						Tag:  "custom-tag-v1.0",
 						Path: "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
@@ -4142,10 +4129,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
 							Key:                  "registry",
 						},
-						Repository: corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
-							Key:                  "repository",
-						},
+						Repository: "myorg/evaluation-results",
 						Subject: "llama-2-7b-chat",
 						Path:    "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
@@ -4189,10 +4173,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
 							Key:                  "registry",
 						},
-						Repository: corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
-							Key:                  "repository",
-						},
+						Repository: "myorg/evaluation-results",
 						Path: "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
@@ -4234,10 +4215,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
 							Key:                  "registry",
 						},
-						Repository: corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
-							Key:                  "repository",
-						},
+						Repository: "myorg/evaluation-results",
 						Subject: "",
 						Path:    "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
@@ -4280,10 +4258,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
 							Key:                  "registry",
 						},
-						Repository: corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
-							Key:                  "repository",
-						},
+						Repository: "myorg/evaluation-results",
 						Subject: "valid-subject-123",
 						Path:    "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
@@ -4327,10 +4302,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
 							Key:                  "registry",
 						},
-						Repository: corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
-							Key:                  "repository",
-						},
+						Repository: "myorg/evaluation-results",
 						Subject: "sha256:a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef12345678",
 						Path:    "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
@@ -4374,10 +4346,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
 							Key:                  "registry",
 						},
-						Repository: corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
-							Key:                  "repository",
-						},
+						Repository: "myorg/evaluation-results",
 						Path: "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
