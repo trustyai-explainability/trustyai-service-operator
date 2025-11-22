@@ -4975,6 +4975,20 @@ spec:
               message:
                 description: Message about the current/final status
                 type: string
+              pod:
+                description: Attempt to display children resources in OKD/OCP consolle
+                properties:
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - kind
+                - name
+                - namespace
+                type: object
               podName:
                 description: The name of the Pod that runs the evaluation job
                 type: string
