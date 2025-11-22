@@ -550,9 +550,14 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 	// Create metrics
 	createJobCreationMetrics(log, job)
 
-	// Create the pod successfully. Wait for the driver to update the status
+	// Created the pod successfully. Wait for the driver to update the status
 	job.Status.State = lmesv1alpha1.ScheduledJobState
 	job.Status.PodName = job.GetPodName()
+	job.Status.Pod = lmesv1alpha1.ChildResourceRef{
+		Kind:      "Pod",
+		Namespace: job.Namespace,
+		Name:      job.GetPodName(),
+	}
 	job.Status.LastScheduleTime = &currentTime
 	if err := r.Status().Update(ctx, job); err != nil {
 		log.Error(err, "unable to update LMEvalJob status (pod creation done)")

@@ -604,6 +604,13 @@ func (o *Outputs) HasExistingPVC() bool {
 	return o.PersistentVolumeClaimName != nil
 }
 
+// Attempt to display children resources in OKD/OCP consolle
+type ChildResourceRef struct {
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
 // LMEvalJobStatus defines the observed state of LMEvalJob
 type LMEvalJobStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
@@ -611,6 +618,8 @@ type LMEvalJobStatus struct {
 	// The name of the Pod that runs the evaluation job
 	// +optional
 	PodName string `json:"podName,omitempty"`
+	// +optional
+	Pod ChildResourceRef `json:"pod,omitempty"`
 	// State of the job
 	// +optional
 	State JobState `json:"state,omitempty"`
