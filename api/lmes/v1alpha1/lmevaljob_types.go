@@ -393,6 +393,33 @@ type PersistentVolumeClaimManaged struct {
 	Size string `json:"size,omitempty"`
 }
 
+// MLFlowExportType defines what to export to MLFlow
+// +kubebuilder:validation:Enum=metrics;artifacts
+type MLFlowExportType string
+
+const (
+	// Export evaluation metrics to MLFlow
+	MLFlowMetricsExport MLFlowExportType = "metrics"
+	// Export evaluation artifacts to MLFlow
+	MLFlowArtifactsExport MLFlowExportType = "artifacts"
+)
+
+// MLFlowOutput defines the configuration for MLFlow output
+type MLFlowOutput struct {
+	// TrackingUri is the MLFlow tracking server URI
+	// +kubebuilder:validation:Pattern=`^https?://[a-zA-Z0-9.-]+(:[0-9]+)?(/.*)?$`
+	TrackingUri string `json:"trackingUri"`
+	// ExperimentName is the name of the MLFlow experiment
+	// +optional
+	ExperimentName *string `json:"experimentName,omitempty"`
+	// RunId is the specific MLFlow run ID to use (optional)
+	// +optional
+	RunId *string `json:"runId,omitempty"`
+	// Export defines what to export to MLFlow (metrics, artifacts, or both)
+	// +optional
+	Export []MLFlowExportType `json:"export,omitempty"`
+}
+
 type Outputs struct {
 	// Use an existing PVC to store the outputs
 	// +optional
@@ -400,6 +427,9 @@ type Outputs struct {
 	// Create an operator managed PVC
 	// +optional
 	PersistentVolumeClaimManaged *PersistentVolumeClaimManaged `json:"pvcManaged,omitempty"`
+	// Export results to MLFlow tracking server
+	// +optional
+	MLFlow *MLFlowOutput `json:"mlflow,omitempty"`
 }
 
 func (c *LMEvalContainer) GetSecurityContext() *corev1.SecurityContext {
@@ -602,6 +632,37 @@ func (o *Outputs) HasManagedPVC() bool {
 // HasExistingPVC returns whether the outputs define an existing PVC
 func (o *Outputs) HasExistingPVC() bool {
 	return o.PersistentVolumeClaimName != nil
+}
+
+// HasMLFlow returns whether the outputs define MLFlow configuration
+func (o *Outputs) HasMLFlow() bool {
+	return o.MLFlow != nil
+}
+
+// HasMLFlowMetrics returns whether MLFlow export includes metrics
+func (m *MLFlowOutput) HasMLFlowMetrics() bool {
+	if m == nil || len(m.Export) == 0 {
+		return false
+	}
+	for _, export := range m.Export {
+		if export == MLFlowMetricsExport {
+			return true
+		}
+	}
+	return false
+}
+
+// HasMLFlowArtifacts returns whether MLFlow export includes artifacts
+func (m *MLFlowOutput) HasMLFlowArtifacts() bool {
+	if m == nil || len(m.Export) == 0 {
+		return false
+	}
+	for _, export := range m.Export {
+		if export == MLFlowArtifactsExport {
+			return true
+		}
+	}
+	return false
 }
 
 // LMEvalJobStatus defines the observed state of LMEvalJob
