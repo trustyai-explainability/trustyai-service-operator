@@ -32,8 +32,8 @@ You can also build your own image, and use that as your TrustyAI operator:
 ```shell
 OPERATOR_NAMESPACE=opendatahub
 OPERATOR_IMAGE=quay.io/yourorg/your-image-name:latest
-podman build -t $IMAGE --platform linux/amd64 -f Dockerfile .
-podman push $IMAGE
+podman build -t $OPERATOR_IMAGE --platform linux/amd64 -f Dockerfile .
+podman push $OPERATOR_IMAGE
 make manifest-gen NAMESPACE=$OPERATOR_NAMESPACE OPERATOR_IMAGE=$OPERATOR_IMAGE
 oc apply -f release/trustyai_bundle.yaml
 ```
