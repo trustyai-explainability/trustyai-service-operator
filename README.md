@@ -16,7 +16,7 @@ inference data to enable model explainability, fairness monitoring, and drift tr
 ## Prerequisites
 - Kubernetes cluster v1.19+ or OpenShift cluster v4.6+
 - `kubectl` v1.19+ or `oc` client v4.6+
-
+- `kustomize` v5+
 ## Installation
 
 This operator is available as an [image on Quay.io](https://quay.io/repository/trustyai/trustyai-service-operator?tab=history). 
@@ -24,7 +24,7 @@ To deploy it on your cluster:
 
 ```shell
 OPERATOR_NAMESPACE=opendatahub
-make manifest-gen NAMESPACE=$OPERATOR_NAMESPACE
+make manifest-gen NAMESPACE=$OPERATOR_NAMESPACE KUSTOMIZE=kustomize
 oc apply -f release/trustyai_bundle.yaml
 ```
 You can also build your own image, and use that as your TrustyAI operator:
@@ -34,7 +34,7 @@ OPERATOR_NAMESPACE=opendatahub
 OPERATOR_IMAGE=quay.io/yourorg/your-image-name:latest
 podman build -t $OPERATOR_IMAGE --platform linux/amd64 -f Dockerfile .
 podman push $OPERATOR_IMAGE
-make manifest-gen NAMESPACE=$OPERATOR_NAMESPACE OPERATOR_IMAGE=$OPERATOR_IMAGE
+make manifest-gen NAMESPACE=$OPERATOR_NAMESPACE OPERATOR_IMAGE=$OPERATOR_IMAGE KUSTOMIZE=kustomize
 oc apply -f release/trustyai_bundle.yaml
 ```
 
