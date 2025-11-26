@@ -7,169 +7,39 @@
 
 ## Overview
 
-The TrustyAI Kubernetes Operator aims at simplifying the deployment and management of the [TrustyAI service](https://github.com/trustyai-explainability/trustyai-explainability/tree/main/explainability-service) on Kubernetes and OpenShift clusters by watching for custom resources of kind `TrustyAIService` in the `trustyai.opendatahub.io` API group and manages deployments, services, and optionally, routes and `ServiceMonitors` corresponding to these resources.
-
-The operator ensures the service is properly configured, is discoverable by Prometheus for metrics scraping (on both Kubernetes and OpenShift), and is accessible via a Route on OpenShift.
+The TrustyAI Kubernetes Operator aims at simplifying the deployment and management of various TrustyAI Kubernetes components, such as:
+- [TrustyAI Service](https://github.com/trustyai-explainability/trustyai-explainability): A service that deploys alongside KServe models and collects
+inference data to enable model explainability, fairness monitoring, and drift tracking.
+- [FMS-Guardrails](https://github.com/foundation-model-stack/fms-guardrails-orchestrator): A modular framework for guardrailing LLMs
+- [LM-Eval](https://github.com/EleutherAI/lm-evaluation-harness/tree/main): A job-based architecture for deploying and managing LLM evaluations, based on EleutherAI's lm-evaluation-harness library.
 
 ## Prerequisites
-
 - Kubernetes cluster v1.19+ or OpenShift cluster v4.6+
 - `kubectl` v1.19+ or `oc` client v4.6+
 
-## Installation using pre-built Operator image
+## Installation
 
 This operator is available as an [image on Quay.io](https://quay.io/repository/trustyai/trustyai-service-operator?tab=history). 
 To deploy it on your cluster:
 
-1. **Install the Custom Resource Definition (CRD):**
-
-   Apply the CRD to your cluster (replace the URL with the relevant one, if using another repository):
-
-    ```bash
-    kubectl apply -f https://raw.githubusercontent.com/trustyai-explainability/trustyai-service-operator/main/config/crd/bases/trustyai.opendatahub.io_trustyaiservices.yaml
-    ```
-
-2. **Deploy the Operator:**
-
-   Apply the following Kubernetes manifest to deploy the operator:
-
-    ```yaml
-    apiVersion: apps/v1
-    kind: Deployment
-    metadata:
-      name: trustyai-operator
-      namespace: trustyai-operator-system
-    spec:
-      replicas: 1
-      selector:
-        matchLabels:
-          control-plane: trustyai-operator
-      template:
-        metadata:
-          labels:
-            control-plane: trustyai-operator
-        spec:
-          containers:
-            - name: trustyai-operator
-              image: quay.io/trustyai/trustyai-service-operator:latest
-              command:
-                - /manager
-              resources:
-                limits:
-                  cpu: 100m
-                  memory: 30Mi
-                requests:
-                  cpu: 100m
-                  memory: 20Mi
-    ```
-
-   or run
-
-   ```shell
-   kubectl apply -f https://raw.githubusercontent.com/trustyai-explainability/trustyai-service-operator/main/artifacts/examples/deploy-operator.yaml   
-   ```
-
-## Usage
-
-Once the operator is installed, you can create `TrustyAIService` resources, and the operator will create corresponding TrustyAI deployments, services, and (on OpenShift) routes.
-
-Here's an example `TrustyAIService` manifest:
-
-```yaml
-apiVersion: trustyai.opendatahub.io/v1alpha1
-kind: TrustyAIService
-metadata:
-  name: trustyai-service-example
-spec:
-  storage:
-    format: "PVC"
-    folder: "/inputs"
-    size: "1Gi"
-  data:
-    filename: "data.csv"
-    format: "CSV"
-  metrics:
-    schedule: "5s"
-    batchSize: 5000 # Optional, defaults to 5000
+```shell
+OPERATOR_NAMESPACE=opendatahub
+make manifest-gen NAMESPACE=$OPERATOR_NAMESPACE
+oc apply -f release/trustyai_bundle.yaml
 ```
-
-You can apply this manifest with 
+You can also build your own image, and use that as your TrustyAI operator:
 
 ```shell
-kubectl apply -f <file-name.yaml> -n $NAMESPACE
+OPERATOR_NAMESPACE=opendatahub
+OPERATOR_IMAGE=quay.io/yourorg/your-image-name:latest
+podman build -t $IMAGE --platform linux/amd64 -f Dockerfile .
+podman push $IMAGE
+make manifest-gen NAMESPACE=$OPERATOR_NAMESPACE OPERATOR_IMAGE=$OPERATOR_IMAGE
+oc apply -f release/trustyai_bundle.yaml
 ```
-to create a service, where `$NAMESPACE` is the namespace where you want to deploy it.
 
-
-Additionally, in that namespace:
-
-* a `ServiceMonitor` will be created to allow Prometheus to scrape metrics from the service.
-* (if on OpenShift) a `Route` will be created to allow external access to the service.
-
-### Custom Image Configuration using ConfigMap
-You can specify a custom TrustyAI-service image via adding parameters to the TrustyAI-Operator KFDef, for example:
-
-```yaml
-apiVersion: kfdef.apps.kubeflow.org/v1
-kind: KfDef
-metadata:
-  name: trustyai-service-operator
-  namespace: opendatahub
-spec:
-  applications:
-  - kustomizeConfig:
-      repoRef:
-        name: manifests
-        path: config
-      parameters:
-         - name: trustyaiServiceImage
-           value: NEW_IMAGE_NAME
-    name: trustyai-service-operator
-  repos:
-  - name: manifests
-    uri: https://github.com/trustyai-explainability/trustyai-service-operator/tarball/main
-  version: v1.0.0
-```
-If these parameters are unspecified, the [default image and tag](config/base/params.env) will be used.
-
-
-If you'd like to change the service image/tag after deploying the operator, simply change the parameters in the KFDef. Any
-TrustyAI service deployed subsequently will use the new image and tag. 
-
-### `TrustyAIService` Status Updates
-
-The `TrustyAIService` custom resource tracks the availability of `InferenceServices` and `PersistentVolumeClaims (PVCs)` 
-through its `status` field. Below are the status types and reasons that are available:
-
-#### `InferenceService` Status
-
-| Status Type                   | Status Reason                     | Description                       |
-|-------------------------------|-----------------------------------|-----------------------------------|
-| `InferenceServicesPresent`    | `InferenceServicesNotFound`       | InferenceServices were not found. |
-| `InferenceServicesPresent`    | `InferenceServicesFound`          | InferenceServices were found.     |
-
-#### `PersistentVolumeClaim` (PVCs) Status
-
-| Status Type      | Status Reason   | Description                        |
-|------------------|-----------------|------------------------------------|
-| `PVCAvailable`   | `PVCNotFound`   | `PersistentVolumeClaim` not found.  |
-| `PVCAvailable`   | `PVCFound`      | `PersistentVolumeClaim` found.      |
-
-#### Database Status
-
-| Status Type   | Status Reason           | Description                                       |
-|---------------|-------------------------|---------------------------------------------------|
-| `DBAvailable` | `DBCredentialsNotFound` | Database credentials secret not found             |
-| `DBAvailable` | `DBCredentialsError`    | Database credentials malformed (e.g. missing key) |
-| `DBAvailable` | `DBConnectionError`     | Service error connecting to the database          |
-| `DBAvailable` | `DBAvailable`           | Successfully connected to the database            |
-
-
-#### Status Behavior
-
-- If a PVC is not available, the `Ready` status of `TrustyAIService` will be set to `False`.
-- If on database mode, any `DBAvailable` reason other than `DBAvailable` will set the `TrustyAIService` to `Not Ready`
-- However, if `InferenceServices` are not found, the `Ready` status of `TrustyAIService` will not be affected, _i.e._, it is `Ready` by all other conditions, it will remain so.
+## Usage
+For usage information, please see the [OpenDataHub documentation of TrustyAI](https://opendatahub.io/docs/monitoring-data-science-models/#configuring-trustyai_monitor).
 
 ## Contributing
 
