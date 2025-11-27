@@ -108,7 +108,7 @@ func (r GuardrailsOrchestratorReconciler) addTLSMounts(ctx context.Context, orch
 			MountSecret(deployment, tlsMounts[i].TLSSecret)
 
 			// validate that the TLS serving secrets indeed exist before creating deployment
-			_, err := utils.GetSecret(ctx, r.Client, orchestrator.Namespace, tlsMounts[i].TLSSecret)
+			_, err := utils.GetSecret(ctx, r.Client, tlsMounts[i].TLSSecret, orchestrator.Namespace)
 			if err != nil {
 				return err
 			}
