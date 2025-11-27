@@ -3,7 +3,7 @@ FROM registry.access.redhat.com/ubi9/python-311@sha256:fccda5088dd13d2a3f2659e4c
 USER root
 RUN sed -i.bak 's/include-system-site-packages = false/include-system-site-packages = true/' /opt/app-root/pyvenv.cfg
 
-# TODO: revisit best placement, I've tried using the one in the other repo (:facepalm)
+# required dependency for oci.py in lmes-job; put here for the `needs-lmes-build`, but already incorporated here: https://github.com/opendatahub-io/lm-evaluation-harness/blob/3c4dec006a4a096b546d60c3364c78acbe33cd48/Dockerfile.lmes-job#L16
 RUN dnf install -y skopeo && dnf clean all
 
 USER default
@@ -15,10 +15,10 @@ RUN mkdir -p /opt/app-root/src/my_catalogs/cards && chmod -R g+rwx /opt/app-root
 RUN mkdir -p /opt/app-root/src/.cache
 ENV PATH="/opt/app-root/bin:/opt/app-root/src/.local/bin/:/opt/app-root/src/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-RUN curl -L https://github.com/tarilabs/lm-evaluation-harness/archive/refs/heads/tarilabs-20250917.zip -o repo.zip && \
+RUN curl -L https://github.com/opendatahub-io/lm-evaluation-harness/archive/refs/heads/incubation.zip -o repo.zip && \
     unzip repo.zip && \
-    cp -r lm-evaluation-harness-tarilabs-20250917/* . && \
-    rm -rf lm-evaluation-harness-tarilabs-20250917 repo.zip && \
+    cp -r lm-evaluation-harness-incubation/* . && \
+    rm -rf lm-evaluation-harness-incubation repo.zip && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -e .
 
