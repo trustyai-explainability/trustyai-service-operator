@@ -35,13 +35,13 @@ const routeResourceKind = "route"
 // DefineRoute creates a route object, but does not deploy it to the cluster
 func DefineRoute(ctx context.Context, c client.Client, owner metav1.Object, routeConfig RouteConfig, routeTemplatePath string, parser ResourceParserFunc[*routev1.Route]) (*routev1.Route, error) {
 	// Create route object
-	genericConfig := processConfig(owner, routeConfig)
+	genericConfig := processRouteConfig(owner, routeConfig)
 	return DefineGeneric[*routev1.Route](ctx, c, owner, routeResourceKind, genericConfig, routeTemplatePath, parser)
 }
 
 // ReconcileRoute contains logic for generic route reconciliation
 func ReconcileRoute(ctx context.Context, c client.Client, owner metav1.Object, routeConfig RouteConfig, routeTemplatePath string, parserFunc ResourceParserFunc[*routev1.Route]) error {
-	genericConfig := processConfig(owner, routeConfig)
+	genericConfig := processRouteConfig(owner, routeConfig)
 	_, _, err := ReconcileGeneric[*routev1.Route](ctx, c, owner, routeResourceKind, genericConfig, routeTemplatePath, parserFunc)
 	return err
 }
@@ -49,7 +49,7 @@ func ReconcileRoute(ctx context.Context, c client.Client, owner metav1.Object, r
 // === SPECIFIC ROUTE FUNCTIONS ========================================================================================
 
 // processConfig sets default values for the RouteConfig if not provided, then converts into a GenericConfig
-func processConfig(owner metav1.Object, routeConfig RouteConfig) GenericConfig {
+func processRouteConfig(owner metav1.Object, routeConfig RouteConfig) GenericConfig {
 	if routeConfig.Name == nil {
 		routeConfig.Name = StringPointer(owner.GetName())
 	}

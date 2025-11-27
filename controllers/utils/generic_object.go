@@ -58,7 +58,50 @@ func DefineGeneric[T client.Object](ctx context.Context, c client.Client, owner 
 	return obj, nil
 }
 
-// ReconcileGeneric reconciles a generic object of type T.
+// ReconcileGenericManuallyDefined reconciles a generic object of type T, where the definition of the object is handled manually
+/*
+T must be a pointer to a k8s object, e.g., *corev1.ConfigMap
+
+Returns:
+- the created/found object
+- a boolean flag indicating whether the returned object was created during the Reconcile call,
+- any error
+*/
+func ReconcileGenericManuallyDefined[T client.Object](ctx context.Context, c client.Client, resourceKind string, preDefinedObject T) (T, bool, error) {
+	// Allocate a new pointer to the struct that T points to, and cast to T
+	// e.g., replaces existingRoute := &routev1.Route{}
+	var zero T
+	var existingObj T
+	tType := reflect.TypeOf((*T)(nil)).Elem()
+	if tType.Kind() != reflect.Ptr {
+		return zero, false, fmt.Errorf("T must be a pointer type")
+	}
+	existingObjValue := reflect.New(tType.Elem())
+	existingObj = existingObjValue.Interface().(T)
+
+	// attempt to retrieve a matching object from the cluster
+	err := c.Get(ctx, types.NamespacedName{Name: preDefinedObject.GetName(), Namespace: preDefinedObject.GetNamespace()}, existingObj)
+	if err != nil && errors.IsNotFound(err) {
+		LogInfoCreating(ctx, resourceKind, preDefinedObject.GetName(), preDefinedObject.GetNamespace())
+
+		// deploy the resource onto the cluster
+		err = c.Create(ctx, preDefinedObject)
+		if err != nil {
+			LogErrorCreating(ctx, err, resourceKind, preDefinedObject.GetName(), preDefinedObject.GetNamespace())
+			return zero, false, err
+		}
+		// we just created a new object, return the obj and true
+		return preDefinedObject, true, nil
+	} else if err != nil {
+		LogErrorRetrieving(ctx, err, resourceKind, preDefinedObject.GetName(), preDefinedObject.GetNamespace())
+		return zero, false, err
+	}
+
+	// object already existed, return the existingObj and false
+	return existingObj, false, nil
+}
+
+// ReconcileGeneric reconciles a generic object of type T, where definition of the object is handled by a TemplateParser
 /*
 T must be a pointer to a k8s object, e.g., *corev1.ConfigMap
 

@@ -75,7 +75,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	}
 
 	if instance.Spec.Storage.IsStorageDatabase() {
-		_, err := r.getSecret(ctx, instance.Name+"-db-ca", instance.Namespace)
+		_, err := utils.GetSecret(ctx, r.Client, instance.Name+"-db-ca", instance.Namespace)
 		if err != nil {
 			deploymentConfig.UseDBTLSCerts = false
 			log.FromContext(ctx).Info("Using insecure database connection. Certificates " + instance.Name + "-db-ca not found")
