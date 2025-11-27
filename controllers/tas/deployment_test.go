@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -55,8 +57,8 @@ func setupAndTestDeploymentDefault(instance *trustyaiopendatahubiov1alpha1.Trust
 	Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("quay.io/openshift/origin-kube-rbac-proxy:4.19"))
 
 	WaitFor(func() error {
-		service, _ := reconciler.reconcileService(ctx, instance)
-		return reconciler.Create(ctx, service)
+		internalServiceConfig := getServiceConfig(instance.Name, instance)
+		return utils.ReconcileService(ctx, reconciler.Client, instance, internalServiceConfig, serviceTemplatePath, templateParser.ParseResource)
 	}, "failed to create service")
 
 	service := &corev1.Service{}
@@ -128,8 +130,8 @@ func setupAndTestDeploymentConfigMap(instance *trustyaiopendatahubiov1alpha1.Tru
 	Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal(kubeRBACProxyImage))
 
 	WaitFor(func() error {
-		service, _ := reconciler.reconcileService(ctx, instance)
-		return reconciler.Create(ctx, service)
+		internalServiceConfig := getServiceConfig(instance.Name, instance)
+		return utils.ReconcileService(ctx, reconciler.Client, instance, internalServiceConfig, serviceTemplatePath, templateParser.ParseResource)
 	}, "failed to create service")
 
 	service := &corev1.Service{}

@@ -2,23 +2,14 @@ package gorch
 
 import (
 	"context"
-	"fmt"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
-	"reflect"
-	"strings"
-	"time"
-
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/gorch/templates"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
+	"reflect"
+	"strings"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/util/retry"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -110,48 +101,6 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 	return deployment, nil
 }
 
-func (r *GuardrailsOrchestratorReconciler) checkDeploymentReady(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (bool, error) {
-	var err error
-	var deployment *appsv1.Deployment
-	err = retry.OnError(
-		wait.Backoff{
-			Duration: 5 * time.Second,
-		},
-		func(err error) bool {
-			return errors.IsNotFound(err) || err != nil
-		},
-		func() error {
-			err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, deployment)
-			if err != nil {
-				return err
-			}
-			for _, condition := range deployment.Status.Conditions {
-				if condition.Type == appsv1.DeploymentAvailable && condition.Status == "True" {
-					err = r.checkPodsReady(ctx, *deployment)
-				}
-			}
-			return fmt.Errorf("deployment %s is not ready", deployment.Name)
-		},
-	)
-	return true, nil
-}
-
-func (r GuardrailsOrchestratorReconciler) checkPodsReady(ctx context.Context, deployment appsv1.Deployment) error {
-	podList := &corev1.PodList{}
-	if err := r.List(ctx, podList, client.InNamespace(deployment.Namespace)); err != nil {
-		return err
-	}
-	// check if all pods are all ready
-	for _, pod := range podList.Items {
-		for _, cs := range pod.Status.ContainerStatuses {
-			if !cs.Ready {
-				return fmt.Errorf("pod %s is not ready", pod.Name)
-			}
-		}
-	}
-	return nil
-}
-
 // addTLSMounts adds secret mounts for each TLS serving secret required by the orchestrator
 func (r GuardrailsOrchestratorReconciler) addTLSMounts(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, deployment *appsv1.Deployment, tlsMounts []gorchv1alpha1.DetectedService) error {
 	if len(tlsMounts) > 0 {
@@ -159,7 +108,7 @@ func (r GuardrailsOrchestratorReconciler) addTLSMounts(ctx context.Context, orch
 			MountSecret(deployment, tlsMounts[i].TLSSecret)
 
 			// validate that the TLS serving secrets indeed exist before creating deployment
-			_, err := getSecret(ctx, r.Client, orchestrator.Namespace, tlsMounts[i].TLSSecret)
+			_, err := utils.GetSecret(ctx, r.Client, orchestrator.Namespace, tlsMounts[i].TLSSecret)
 			if err != nil {
 				return err
 			}

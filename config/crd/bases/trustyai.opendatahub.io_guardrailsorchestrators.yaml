@@ -187,8 +187,8 @@ spec:
                 description: Set log level in the orchestrator deployment
                 type: string
               orchestratorConfig:
-                description: Name of configmap containing generator,detector,and chunker
-                  arguments
+                description: Name of configmap containing generator, detector, and
+                  chunker arguments
                 type: string
               otelExporter:
                 description: List of orchestrator enviroment variables for configuring

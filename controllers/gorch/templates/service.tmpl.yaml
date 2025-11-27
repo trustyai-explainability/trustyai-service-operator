@@ -1,29 +1,29 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{.Orchestrator.Name}}-service
-  namespace: {{.Orchestrator.Namespace}}
+  name: {{.Name}}
+  namespace: {{.Namespace}}
   annotations:
-    service.beta.openshift.io/serving-cert-secret-name: {{ .Orchestrator.Name }}-tls
+    service.beta.openshift.io/serving-cert-secret-name: {{ .Owner.Name }}-tls
   labels:
-    app: {{.Orchestrator.Name}}
-    component: {{ .Orchestrator.Name }}
+    app: {{.Owner.Name}}
+    component: {{ .Owner.Name }}
 
 spec:
   ipFamilies:
     - IPv4
   ports:
-    {{if .Orchestrator.Spec.EnableGuardrailsGateway}}
+    {{if .Owner.Spec.EnableGuardrailsGateway}}
     - name: gateway
       protocol: TCP
-      port: {{if .UseOAuthProxy}}8490{{else}}8090{{end}}
-      targetPort: {{if .UseOAuthProxy}}8490{{else}}8090{{end}}
+      port: {{if .UseAuthProxy}}8490{{else}}8090{{end}}
+      targetPort: {{if .UseAuthProxy}}8490{{else}}8090{{end}}
     {{end -}}
     - name: https
       protocol: TCP
-      port: {{if .UseOAuthProxy}}8432{{else}}8032{{end}}
-      targetPort: {{if .UseOAuthProxy}}8432{{else}}8032{{end}}
-    {{if .UseOAuthProxy}}
+      port: {{if .UseAuthProxy}}8432{{else}}8032{{end}}
+      targetPort: {{if .UseAuthProxy}}8432{{else}}8032{{end}}
+    {{if .UseAuthProxy}}
     - name: https-tls
       protocol: TCP
       port: 8032
@@ -33,7 +33,7 @@ spec:
       protocol: TCP
       port: 8034
       targetPort: 8034
-    {{if .Orchestrator.Spec.EnableBuiltInDetectors}}
+    {{if .Owner.Spec.EnableBuiltInDetectors}}
     - name: detector-metrics
       protocol: TCP
       port: 8080
@@ -44,5 +44,5 @@ spec:
   ipFamilyPolicy: SingleStack
   sessionAffinity: None
   selector:
-    app: {{.Orchestrator.Name}}
-    component: {{.Orchestrator.Name}}
+    app: {{.Owner.Name}}
+    component: {{.Owner.Name}}

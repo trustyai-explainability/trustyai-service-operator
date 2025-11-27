@@ -12,3 +12,7 @@ const (
 	ServiceName           = "GORCH"
 	builtInDetectorName   = "built-in-detector"
 )
+
+const (
+	serviceAccountTemplatePath = "serviceaccount.tmpl.yaml"
+)

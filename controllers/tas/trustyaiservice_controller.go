@@ -19,6 +19,7 @@ package tas
 import (
 	"context"
 	goerrors "errors"
+	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	"time"
 
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
@@ -134,7 +135,9 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	caBundle := r.GetCustomCertificatesBundle(ctx, instance)
 
-	err = r.reconcileTLSService(ctx, instance, caBundle)
+	// deploy TLS service
+	tlsServiceConfig := getServiceConfig(instance.Name+"-tls", instance)
+	err = utils.ReconcileService(ctx, r.Client, instance, tlsServiceConfig, serviceTLSTemplatePath, templateParser.ParseResource)
 	if err != nil {
 		return RequeueWithError(err)
 	}
@@ -226,26 +229,12 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	// Fetch the TrustyAIService instance
-	trustyAIServiceService := &trustyaiopendatahubiov1alpha1.TrustyAIService{}
-	err = r.Get(ctx, req.NamespacedName, trustyAIServiceService)
-	if err != nil {
-		return RequeueWithErrorMessage(ctx, err, "Could not fetch service.")
-	}
-
-	// Create service
-	service, err := r.reconcileService(ctx, trustyAIServiceService)
+	// Deploy the internal service
+	internalServiceConfig := getServiceConfig(instance.Name, instance)
+	err = utils.ReconcileService(ctx, r.Client, instance, internalServiceConfig, serviceTemplatePath, templateParser.ParseResource)
 	if err != nil {
 		// handle error
 		return RequeueWithError(err)
-	}
-	if err := r.Create(ctx, service); err != nil {
-		if errors.IsAlreadyExists(err) {
-			// Service already exists, no problem
-		} else {
-			// handle any other error
-			return RequeueWithError(err)
-		}
 	}
 
 	// Local Service Monitor
