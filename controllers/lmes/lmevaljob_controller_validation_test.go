@@ -1524,17 +1524,6 @@ func Test_OCIHelperMethods(t *testing.T) {
 }
 
 func Test_OCISpecHelperMethods(t *testing.T) {
-	t.Run("HasCertificates", func(t *testing.T) {
-		ociSpec := &lmesv1alpha1.OCISpec{}
-		assert.False(t, ociSpec.HasCertificates(), "Should return false when CABundle is nil")
-
-		ociSpec.CABundle = &corev1.SecretKeySelector{
-			LocalObjectReference: corev1.LocalObjectReference{Name: "ca-bundle"},
-			Key:                  "ca.crt",
-		}
-		assert.True(t, ociSpec.HasCertificates(), "Should return true when CABundle is present")
-	})
-
 	t.Run("HasUsernamePassword", func(t *testing.T) {
 		ociSpec := &lmesv1alpha1.OCISpec{}
 		assert.False(t, ociSpec.HasUsernamePassword(), "Should return false when both are nil")

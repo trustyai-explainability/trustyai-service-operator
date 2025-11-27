@@ -493,9 +493,6 @@ type OCISpec struct {
 	// Whether to verify SSL certificates
 	// +optional
 	VerifySSL *bool `json:"verifySSL,omitempty"`
-	// CA bundle for custom certificates
-	// +optional
-	CABundle *corev1.SecretKeySelector `json:"caBundle,omitempty"`
 }
 
 // OfflineStorageSpec defines the storage configuration for LMEvalJob's offline mode
@@ -625,10 +622,6 @@ func (s *LMEvalJobSpec) HasOCIOutput() bool {
 }
 
 func (s *OfflineS3Spec) HasCertificates() bool {
-	return s.CABundle != nil
-}
-
-func (s *OCISpec) HasCertificates() bool {
 	return s.CABundle != nil
 }
 

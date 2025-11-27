@@ -1257,33 +1257,6 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 		})
 
 		envVars = append(envVars, ociEnvVars...)
-
-		// If certificates are specified, create volume to hold them
-		if job.Spec.Outputs.OCISpec.HasCertificates() {
-			ociCertificatesMount := corev1.VolumeMount{
-				Name:      "certificates-oci",
-				MountPath: "/etc/certificates/oci",
-			}
-			volumeMounts = append(volumeMounts, ociCertificatesMount)
-
-			ociCertificatesVolume := corev1.Volume{
-				Name: "certificates-oci",
-				VolumeSource: corev1.VolumeSource{
-					ConfigMap: &corev1.ConfigMapVolumeSource{
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: job.Spec.Outputs.OCISpec.CABundle.Name,
-						},
-					},
-				},
-			}
-			volumes = append(volumes, ociCertificatesVolume)
-
-			ociCertificateEnvVar := corev1.EnvVar{
-				Name:  "OCI_CA_BUNDLE",
-				Value: fmt.Sprintf("/etc/certificates/oci/%s", job.Spec.Outputs.OCISpec.CABundle.Key),
-			}
-			envVars = append(envVars, ociCertificateEnvVar)
-		}
 	}
 
 	volumes = append(volumes, job.Spec.Pod.GetVolumes()...)
