@@ -1751,7 +1751,6 @@ func Test_ValidateUserInputWithOCI(t *testing.T) {
 				},
 				Outputs: &lmesv1alpha1.Outputs{
 					OCISpec: &lmesv1alpha1.OCISpec{
-						Path: "results",
 						UsernameRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-creds"},
 							Key:                  "username",
@@ -1768,7 +1767,7 @@ func Test_ValidateUserInputWithOCI(t *testing.T) {
 		assert.NoError(t, err, "Should accept valid OCI configuration")
 	})
 
-	t.Run("InvalidOCIPath", func(t *testing.T) {
+	t.Run("ValidOCIConfigurationDockerConfigJSon", func(t *testing.T) {
 		job := &lmesv1alpha1.LMEvalJob{
 			Spec: lmesv1alpha1.LMEvalJobSpec{
 				Model: "hf",
@@ -1777,22 +1776,16 @@ func Test_ValidateUserInputWithOCI(t *testing.T) {
 				},
 				Outputs: &lmesv1alpha1.Outputs{
 					OCISpec: &lmesv1alpha1.OCISpec{
-						Path: "../malicious",
-						UsernameRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-creds"},
-							Key:                  "username",
-						},
-						PasswordRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-creds"},
-							Key:                  "password",
+						DockerConfigJsonRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "my-odh-connection"},
+							Key:                  ".dockerconfigjson",
 						},
 					},
 				},
 			},
 		}
 		err := ValidateUserInput(job)
-		assert.Error(t, err, "Should reject invalid OCI path")
-		assert.Contains(t, err.Error(), "invalid OCI path")
+		assert.NoError(t, err, "Should accept valid OCI configuration")
 	})
 
 	t.Run("InvalidOCIAuth", func(t *testing.T) {
@@ -1804,7 +1797,6 @@ func Test_ValidateUserInputWithOCI(t *testing.T) {
 				},
 				Outputs: &lmesv1alpha1.Outputs{
 					OCISpec: &lmesv1alpha1.OCISpec{
-						Path: "results",
 						// No authentication specified
 					},
 				},

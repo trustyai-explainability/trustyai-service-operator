@@ -340,9 +340,6 @@ spec:
                         - key
                         type: object
                         x-kubernetes-map-type: atomic
-                      path:
-                        pattern: ^[a-zA-Z0-9._/-]*$
-                        type: string
                       registry:
                         description: Registry URL (e.g., quay.io, registry.redhat.com)
                         properties:
@@ -401,7 +398,6 @@ spec:
                         description: Whether to verify SSL certificates
                         type: boolean
                     required:
-                    - path
                     - registry
                     - repository
                     type: object

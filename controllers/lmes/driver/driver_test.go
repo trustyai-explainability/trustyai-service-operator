@@ -450,7 +450,6 @@ func Test_OCIUploadSuccess(t *testing.T) {
 
 	// Set up environment variables for OCI
 	os.Setenv("OCI_REGISTRY", "registry.example.com")
-	os.Setenv("OCI_PATH", "results")
 	defer func() {
 		os.Unsetenv("OCI_REGISTRY")
 		os.Unsetenv("OCI_PATH")
@@ -533,7 +532,6 @@ func Test_OCIUploadToOCIFunction(t *testing.T) {
 		name           string
 		uploadToOCI    bool
 		registryEnv    string
-		pathEnv        string
 		expectError    bool
 		expectedErrMsg string
 	}{
@@ -553,7 +551,6 @@ func Test_OCIUploadToOCIFunction(t *testing.T) {
 			name:           "script execution fails",
 			uploadToOCI:    true,
 			registryEnv:    "registry.example.com",
-			pathEnv:        "results",
 			expectError:    true,
 			expectedErrMsg: "failed to upload results to OCI",
 		},
@@ -565,10 +562,6 @@ func Test_OCIUploadToOCIFunction(t *testing.T) {
 			if tt.registryEnv != "" {
 				os.Setenv("OCI_REGISTRY", tt.registryEnv)
 				defer os.Unsetenv("OCI_REGISTRY")
-			}
-			if tt.pathEnv != "" {
-				os.Setenv("OCI_PATH", tt.pathEnv)
-				defer os.Unsetenv("OCI_PATH")
 			}
 
 			driver := &driverImpl{

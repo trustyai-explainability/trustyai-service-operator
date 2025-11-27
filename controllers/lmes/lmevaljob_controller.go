@@ -1183,10 +1183,6 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 				Name:  "OCI_REPOSITORY",
 				Value: job.Spec.Outputs.OCISpec.Repository,
 			},
-			{
-				Name:  "OCI_PATH",
-				Value: job.Spec.Outputs.OCISpec.Path,
-			},
 		}
 
 		// Add tag value if specified, otherwise use pod name as default

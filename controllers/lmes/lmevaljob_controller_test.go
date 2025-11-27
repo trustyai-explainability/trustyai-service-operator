@@ -3890,7 +3890,6 @@ func Test_OCICommandGeneration(t *testing.T) {
 							Key:                  "registry",
 						},
 						Repository: "myorg/evaluation-results",
-						Path:       "results",
 					},
 				},
 			},
@@ -3947,7 +3946,6 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							Key:                  "registry",
 						},
 						Repository: "myorg/evaluation-results",
-						Path:       "results",
 						UsernameRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
 							Key:                  "username",
@@ -4014,7 +4012,6 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							Key:                  "registry",
 						},
 						Repository: "myorg/evaluation-results",
-						Path:       "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
 							Key:                  ".dockerconfigjson",
@@ -4087,7 +4084,6 @@ func Test_OCIPodConfiguration(t *testing.T) {
 						},
 						Repository: "myorg/evaluation-results",
 						Tag:        "custom-tag-v1.0",
-						Path:       "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
 							Key:                  ".dockerconfigjson",
@@ -4131,7 +4127,6 @@ func Test_OCIPodConfiguration(t *testing.T) {
 						},
 						Repository: "myorg/evaluation-results",
 						Subject:    "llama-2-7b-chat",
-						Path:       "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
 							Key:                  ".dockerconfigjson",
@@ -4174,7 +4169,6 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							Key:                  "registry",
 						},
 						Repository: "myorg/evaluation-results",
-						Path:       "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
 							Key:                  ".dockerconfigjson",
@@ -4217,7 +4211,6 @@ func Test_OCIPodConfiguration(t *testing.T) {
 						},
 						Repository: "myorg/evaluation-results",
 						Subject:    "",
-						Path:       "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
 							Key:                  ".dockerconfigjson",
@@ -4260,7 +4253,6 @@ func Test_OCIPodConfiguration(t *testing.T) {
 						},
 						Repository: "myorg/evaluation-results",
 						Subject:    "valid-subject-123",
-						Path:       "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
 							Key:                  ".dockerconfigjson",
@@ -4304,7 +4296,6 @@ func Test_OCIPodConfiguration(t *testing.T) {
 						},
 						Repository: "myorg/evaluation-results",
 						Subject:    "sha256:a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef12345678",
-						Path:       "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
 							Key:                  ".dockerconfigjson",
@@ -4347,7 +4338,6 @@ func Test_OCIPodConfiguration(t *testing.T) {
 							Key:                  "registry",
 						},
 						Repository: "myorg/evaluation-results",
-						Path:       "results",
 						DockerConfigJsonRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-docker"},
 							Key:                  ".dockerconfigjson",

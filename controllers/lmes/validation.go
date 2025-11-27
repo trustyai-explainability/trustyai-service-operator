@@ -114,9 +114,6 @@ func ValidateUserInput(job *lmesv1alpha1.LMEvalJob) error {
 
 	// Validate OCI path and authentication
 	if job.Spec.HasOCIOutput() {
-		if err := ValidateOCIPath(job.Spec.Outputs.OCISpec.Path); err != nil {
-			return fmt.Errorf("invalid OCI path: %w", err)
-		}
 		if err := ValidateOCIAuth(job.Spec.Outputs.OCISpec); err != nil {
 			return fmt.Errorf("invalid OCI authentication: %w", err)
 		}

@@ -476,9 +476,6 @@ type OCISpec struct {
 	// +optional
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._-]*$`
 	Tag string `json:"tag,omitempty"`
-	// TODO: why we need this anyway? Path within the results to package as artifact
-	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._/-]*$`
-	Path string `json:"path"`
 	// Subject for the OCI artifact
 	// +optional
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._:/@-]*$`
