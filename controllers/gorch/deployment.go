@@ -69,7 +69,7 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 		GatewayKubeRBACProxy:      nil,
 	}
 
-	if requiresOAuth(orchestrator) {
+	if utils.RequiresAuth(orchestrator) {
 		if err = r.configureKubeRBACProxy(ctx, orchestrator, &deploymentConfig); err != nil {
 			log.FromContext(ctx).Error(err, "Error configuring Kube-RBAC-Proxy.")
 			return nil, err

@@ -7,7 +7,6 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"strings"
 )
 
 type KubeRBACProxyConfig struct {
@@ -20,12 +19,6 @@ type KubeRBACProxyConfig struct {
 	UpstreamPort       int
 	DownstreamPort     int
 	HealthPort         int
-}
-
-// requiresOAuth checks if the oauth annotation key is set in the orchestrator CR
-func requiresOAuth(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) bool {
-	val, ok := orchestrator.Annotations[oAuthAnnotationKey]
-	return ok && strings.ToLower(val) == "true"
 }
 
 // configureKubeRBACProxy creates the kube-rbac-proxy config structs to be used in the deployment template

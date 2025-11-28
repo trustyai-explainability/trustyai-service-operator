@@ -33,6 +33,11 @@ func LogErrorCreating(ctx context.Context, err error, resourceKind string, resou
 	LogErrorVerb(ctx, err, "creating", resourceKind, resourceName, namespace)
 }
 
+// LogErrorReconciling produces a log message regarding the failed reconciliation of some resource
+func LogErrorReconciling(ctx context.Context, err error, resourceKind string, resourceName string, namespace string) {
+	LogErrorVerb(ctx, err, "reconciling", resourceKind, resourceName, namespace)
+}
+
 // LogErrorControllerReference produces a log message regarding a failure when setting a resource's controller reference
 func LogErrorControllerReference(ctx context.Context, err error, resourceKind string, resourceName string, namespace string) {
 	LogErrorVerb(ctx, err, "setting controller reference for", resourceKind, resourceName, namespace)

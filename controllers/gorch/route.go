@@ -14,7 +14,7 @@ const (
 
 func (r *GuardrailsOrchestratorReconciler) reconcileGatewayRoute(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) error {
 	gatewayTermination := utils.Edge
-	if requiresOAuth(orchestrator) {
+	if utils.RequiresAuth(orchestrator) {
 		gatewayTermination = utils.Reencrypt
 	}
 	routeConfig := utils.RouteConfig{

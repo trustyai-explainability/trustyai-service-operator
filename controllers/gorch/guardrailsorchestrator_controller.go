@@ -180,7 +180,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 				return ctrl.Result{Requeue: true}, nil
 			}
 
-			if requiresOAuth(orchestrator) {
+			if utils.RequiresAuth(orchestrator) {
 				if err = r.cleanupClusterRoleBinding(ctx, orchestrator); err != nil && !errors.IsNotFound(err) {
 					log.Error(err, "Failed to cleanup ClusterRoleBinding")
 					return ctrl.Result{}, err
@@ -257,7 +257,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	// Ensure kube-rbac-proxy ConfigMaps exist if OAuth is required
-	if requiresOAuth(orchestrator) {
+	if utils.RequiresAuth(orchestrator) {
 		if err := r.ensureOrchestratorKubeRBACProxyConfigMap(ctx, orchestrator); err != nil {
 			log.Error(err, "Failed to ensure orchestrator kube-rbac-proxy ConfigMap")
 			return ctrl.Result{}, err

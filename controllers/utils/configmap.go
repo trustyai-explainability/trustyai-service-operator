@@ -48,7 +48,6 @@ func ReconcileConfigMap(ctx context.Context, c client.Client, owner metav1.Objec
 }
 
 // === SPECIFIC CONFIGMAP FUNCTIONS ====================================================================================
-
 // GetConfigMapByName retrieves a configmap by name in the given namespace
 func GetConfigMapByName(ctx context.Context, c client.Client, configMapName string, namespace string) (*corev1.ConfigMap, error) {
 	configMap := &corev1.ConfigMap{}
