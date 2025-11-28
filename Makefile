@@ -272,5 +272,5 @@ manifest-gen: kustomize
 	@echo "Example: make manifest-gen NAMESPACE=my-namespace OPERATOR_IMAGE=quay.io/myorg/trustyai-service-operator:latest"
 	mkdir -p release
 	@if [ -z "$(NAMESPACE)" ]; then echo "Error: NAMESPACE argument is required"; exit 1; fi
-	$(KUSTOMIZE) build config/base | sed "s|namespace: system|namespace: $(NAMESPACE)|g" | sed "s|quay.io/trustyai/trustyai-service-operator:latest|$(OPERATOR_IMAGE)|g" > release/trustyai_bundle.yaml
+	$(KUSTOMIZE) build config/overlays/odh | sed "s|namespace: system|namespace: $(NAMESPACE)|g" | sed "s|quay.io/trustyai/trustyai-service-operator:latest|$(OPERATOR_IMAGE)|g" > release/trustyai_bundle.yaml
 	@echo "Release manifest generated at release/trustyai_bundle.yaml with namespace '$(NAMESPACE)' and operator image '$(OPERATOR_IMAGE)'"
