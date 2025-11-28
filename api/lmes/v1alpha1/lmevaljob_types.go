@@ -474,7 +474,8 @@ type OCISpec struct {
 	Repository string `json:"repository"`
 	// Optional tag for the artifact (defaults to job name if not specified)
 	// +optional
-	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._-]*$`
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$`
+	// +kubebuilder:validation:MaxLength=128
 	Tag string `json:"tag,omitempty"`
 	// Subject for the OCI artifact
 	// +optional

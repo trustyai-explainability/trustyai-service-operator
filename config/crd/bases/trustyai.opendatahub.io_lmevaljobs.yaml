@@ -352,7 +352,8 @@ spec:
                       tag:
                         description: Optional tag for the artifact (defaults to job
                           name if not specified)
-                        pattern: ^[a-zA-Z0-9._-]*$
+                        maxLength: 128
+                        pattern: ^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$
                         type: string
                       username:
                         description: Username for registry authentication
