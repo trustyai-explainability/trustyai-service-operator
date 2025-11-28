@@ -444,7 +444,10 @@ func Test_ProgramError(t *testing.T) {
 	assert.Nil(t, driver.Shutdown())
 }
 
-func Test_OCIUploadSuccess(t *testing.T) {
+func Test_OCIUploadDefaultFlow(t *testing.T) {
+	// this test simulates the OCI upload standard flow of ops;
+	// since testing environment does not contain the script,
+	// below we will check the invocation to have failed at script invocation.
 	info := setupTest(t, true)
 	defer info.tearDown(t)
 
