@@ -261,9 +261,9 @@ func (d *driverImpl) uploadToOCI() error {
 	// <lmeval subdir>, sterr.log, stout.log, lost+found(directory) and the script
 	// can figure out how to best handle it.
 	outputPath := d.Option.OutputPath
+	scriptPath := "/opt/app-root/src/scripts/oci.py"
 
-	cmd := []string{"python", "/opt/app-root/src/scripts/oci.py", registryFromEnv, outputPath}
-	fmt.Printf("[DEBUG] OCI upload CLI: %v\n", cmd)
+	fmt.Printf("[DEBUG] OCI upload CLI: python %s %s %s\n", scriptPath, registryFromEnv, outputPath)
 
 	// List all files and directories in resultsLocation
 	fmt.Printf("[DEBUG] Contents of results location (%s):\n", outputPath)
@@ -283,12 +283,7 @@ func (d *driverImpl) uploadToOCI() error {
 		return nil
 	})
 
-	output, err := exec.Command(
-		"python",
-		"/opt/app-root/src/scripts/oci.py",
-		registryFromEnv,
-		outputPath,
-	).Output()
+	output, err := exec.Command("python", scriptPath, registryFromEnv, outputPath).Output()
 	fmt.Println(string(output))
 	if err != nil {
 		return fmt.Errorf("failed to upload results to OCI: %v", err)
