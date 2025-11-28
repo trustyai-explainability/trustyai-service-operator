@@ -276,6 +276,33 @@ spec:
               outputs:
                 description: Outputs specifies storage for evaluation results
                 properties:
+                  mlflow:
+                    description: Export results to MLFlow tracking server
+                    properties:
+                      experimentName:
+                        description: ExperimentName is the name of the MLFlow experiment
+                        type: string
+                      export:
+                        description: Export defines what to export to MLFlow (metrics,
+                          artifacts, or both)
+                        items:
+                          description: MLFlowExportType defines what to export to
+                            MLFlow
+                          enum:
+                          - metrics
+                          - artifacts
+                          type: string
+                        type: array
+                      runId:
+                        description: RunId is the specific MLFlow run ID to use (optional)
+                        type: string
+                      trackingUri:
+                        description: TrackingUri is the MLFlow tracking server URI
+                        pattern: ^https?://[a-zA-Z0-9.-]+(:[0-9]+)?(/.*)?$
+                        type: string
+                    required:
+                    - trackingUri
+                    type: object
                   pvcManaged:
                     description: Create an operator managed PVC
                     properties:

@@ -909,7 +909,8 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 		},
 	}
 
-	if job.Spec.HasCustomOutput() {
+	// Only add PVC volume mount if PVC outputs are configured
+	if job.Spec.HasCustomOutput() && (job.Spec.Outputs.HasManagedPVC() || job.Spec.Outputs.HasExistingPVC()) {
 		outputPVCMount := corev1.VolumeMount{
 			Name:      "outputs",
 			MountPath: OutputPath,
@@ -926,7 +927,8 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 		},
 	}
 
-	if job.Spec.HasCustomOutput() {
+	// Only add PVC volume if PVC outputs are configured
+	if job.Spec.HasCustomOutput() && (job.Spec.Outputs.HasManagedPVC() || job.Spec.Outputs.HasExistingPVC()) {
 
 		var claimName string
 		if job.Spec.Outputs.HasManagedPVC() {
@@ -1423,6 +1425,83 @@ func concatTasks(tasks lmesv1alpha1.TaskList) []string {
 	return append(tasks.TaskNames, recipesName...)
 }
 
+func buildMLFlowParams(job *lmesv1alpha1.LMEvalJob) string {
+	if job == nil {
+		return ""
+	}
+
+	params := map[string]any{
+		"crName":    job.Name,
+		"namespace": job.Namespace,
+		"model":     job.Spec.Model,
+		"tasks":     concatTasks(job.Spec.TaskList),
+	}
+
+	if len(job.Spec.TaskList.TaskNames) > 0 {
+		params["taskNames"] = job.Spec.TaskList.TaskNames
+	}
+
+	if len(job.Spec.TaskList.TaskRecipes) > 0 {
+		params["taskRecipes"] = job.Spec.TaskList.TaskRecipes
+	}
+
+	if job.Spec.TaskList.CustomArtifacts != nil {
+		params["customArtifacts"] = job.Spec.TaskList.CustomArtifacts
+	}
+
+	if job.Spec.TaskList.HasCustomTasksWithGit() {
+		params["customTasksGit"] = job.Spec.TaskList.CustomTasks.Source.GitSource
+	}
+
+	if len(job.Spec.ModelArgs) > 0 {
+		params["modelArgs"] = job.Spec.ModelArgs
+	}
+
+	if len(job.Spec.GenArgs) > 0 {
+		params["genArgs"] = job.Spec.GenArgs
+	}
+
+	if job.Spec.NumFewShot != nil {
+		params["numFewShot"] = job.Spec.NumFewShot
+	}
+
+	if job.Spec.Limit != "" {
+		params["limit"] = job.Spec.Limit
+	}
+
+	if job.Spec.LogSamples != nil {
+		params["logSamples"] = job.Spec.LogSamples
+	}
+
+	if job.Spec.BatchSize != nil {
+		params["batchSize"] = job.Spec.BatchSize
+	}
+
+	if job.Spec.AllowOnline != nil {
+		params["allowOnline"] = job.Spec.AllowOnline
+	}
+
+	if job.Spec.AllowCodeExecution != nil {
+		params["allowCodeExecution"] = job.Spec.AllowCodeExecution
+	}
+
+	if job.Spec.SystemInstruction != "" {
+		params["systemInstruction"] = job.Spec.SystemInstruction
+	}
+
+	if job.Spec.ChatTemplate != nil {
+		params["chatTemplate"] = job.Spec.ChatTemplate
+	}
+
+	paramsJSON, err := json.Marshal(params)
+	if err != nil {
+		ctrl.Log.WithName("mlflow").Error(err, "failed to marshal MLFlow parameters for LMEvalJob", "jobName", job.Name)
+		return ""
+	}
+
+	return string(paramsJSON)
+}
+
 func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig *PermissionConfig) []string {
 	if job == nil {
 		return nil
@@ -1496,6 +1575,31 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfi
 		appendArtifactCmd("system_prompt", job.Spec.TaskList.CustomArtifacts.GetSystemPrompts())
 		appendArtifactCmd("metric", job.Spec.TaskList.CustomArtifacts.GetMetrics())
 		appendArtifactCmd("task", job.Spec.TaskList.CustomArtifacts.GetTasks())
+	}
+
+	// MLFlow configuration
+	if job.Spec.Outputs != nil && job.Spec.Outputs.HasMLFlow() {
+		mlflow := job.Spec.Outputs.MLFlow
+		cmds = append(cmds, "--mlflow-tracking-uri", mlflow.TrackingUri)
+
+		if mlflow.ExperimentName != nil {
+			cmds = append(cmds, "--mlflow-experiment-name", *mlflow.ExperimentName)
+		}
+
+		if mlflow.RunId != nil {
+			cmds = append(cmds, "--mlflow-run-id", *mlflow.RunId)
+		}
+
+		for _, exportType := range mlflow.Export {
+			cmds = append(cmds, "--mlflow-export-type", string(exportType))
+		}
+
+		cmds = append(cmds, "--mlflow-source-name", fmt.Sprintf("%s/%s", job.Namespace, job.Name))
+		cmds = append(cmds, "--mlflow-source-type", lmesv1alpha1.KindName)
+
+		if paramsJSON := buildMLFlowParams(job); paramsJSON != "" {
+			cmds = append(cmds, "--mlflow-params-json", paramsJSON)
+		}
 	}
 
 	cmds = append(cmds, "--")

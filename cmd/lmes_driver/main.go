@@ -50,28 +50,36 @@ func (t *strArrayArg) String() string {
 }
 
 var (
-	taskRecipes         strArrayArg
-	customArtifactArgs  strArrayArg
-	taskNames           strArrayArg
-	copy                = flag.String("copy", "", "copy this binary to specified destination path")
-	getStatus           = flag.Bool("get-status", false, "Get current status")
-	shutdown            = flag.Bool("shutdown", false, "Shutdown the driver")
-	outputPath          = flag.String("output-path", OutputPath, "output path")
-	detectDevice        = flag.Bool("detect-device", false, "detect available device(s), CUDA or CPU")
-	commPort            = flag.Int("listen-port", driver.DefaultPort, "driver serves APIs on the port")
-	downloadAssetsS3    = flag.Bool("download-assets-s3", false, "Download assets from S3")
-	customTaskGitURL    = flag.String("custom-task-git-url", "", "Git repository URL for custom tasks")
-	customTaskGitBranch = flag.String("custom-task-git-branch", "", "Git repository branch for custom tasks")
-	customTaskGitCommit = flag.String("custom-task-git-commit", "", "Git commit for custom tasks")
-	customTaskGitPath   = flag.String("custom-task-git-path", "", "Custom task path")
-	allowOnline         = flag.Bool("allow-online", false, "Allow LMEval online access")
-	driverLog           = ctrl.Log.WithName("driver")
+	taskRecipes          strArrayArg
+	customArtifactArgs   strArrayArg
+	taskNames            strArrayArg
+	mlflowExportTypes    strArrayArg
+	copy                 = flag.String("copy", "", "copy this binary to specified destination path")
+	getStatus            = flag.Bool("get-status", false, "Get current status")
+	shutdown             = flag.Bool("shutdown", false, "Shutdown the driver")
+	outputPath           = flag.String("output-path", OutputPath, "output path")
+	detectDevice         = flag.Bool("detect-device", false, "detect available device(s), CUDA or CPU")
+	commPort             = flag.Int("listen-port", driver.DefaultPort, "driver serves APIs on the port")
+	downloadAssetsS3     = flag.Bool("download-assets-s3", false, "Download assets from S3")
+	customTaskGitURL     = flag.String("custom-task-git-url", "", "Git repository URL for custom tasks")
+	customTaskGitBranch  = flag.String("custom-task-git-branch", "", "Git repository branch for custom tasks")
+	customTaskGitCommit  = flag.String("custom-task-git-commit", "", "Git commit for custom tasks")
+	customTaskGitPath    = flag.String("custom-task-git-path", "", "Custom task path")
+	allowOnline          = flag.Bool("allow-online", false, "Allow LMEval online access")
+	mlflowTrackingUri    = flag.String("mlflow-tracking-uri", "", "MLFlow tracking server URI")
+	mlflowExperimentName = flag.String("mlflow-experiment-name", "", "MLFlow experiment name")
+	mlflowRunId          = flag.String("mlflow-run-id", "", "MLFlow run ID")
+	mlflowSourceName     = flag.String("mlflow-source-name", "", "Value for mlflow.source.name tag (e.g. CR name)")
+	mlflowSourceType     = flag.String("mlflow-source-type", "", "Value for mlflow.source.type tag")
+	mlflowParamsJSON     = flag.String("mlflow-params-json", "", "JSON-encoded parameters to send to MLFlow")
+	driverLog            = ctrl.Log.WithName("driver")
 )
 
 func init() {
 	flag.Var(&taskRecipes, "task-recipe", "task recipe")
 	flag.Var(&customArtifactArgs, "custom-artifact", "A string contains an artifact's type, name and value. Use | as separator")
 	flag.Var(&taskNames, "task-name", "A task name for custom tasks")
+	flag.Var(&mlflowExportTypes, "mlflow-export-type", "MLFlow export type (metrics, artifacts)")
 }
 
 func main() {
@@ -120,21 +128,28 @@ func main() {
 	}
 
 	driverOpt := driver.DriverOption{
-		Context:             ctx,
-		OutputPath:          *outputPath,
-		DetectDevice:        *detectDevice,
-		Logger:              driverLog,
-		TaskRecipes:         taskRecipes,
-		CustomArtifacts:     customArtifacts,
-		Args:                args,
-		CommPort:            *commPort,
-		DownloadAssetsS3:    *downloadAssetsS3,
-		CustomTaskGitURL:    *customTaskGitURL,
-		CustomTaskGitBranch: *customTaskGitBranch,
-		CustomTaskGitCommit: *customTaskGitCommit,
-		CustomTaskGitPath:   *customTaskGitPath,
-		TaskNames:           taskNames,
-		AllowOnline:         *allowOnline,
+		Context:              ctx,
+		OutputPath:           *outputPath,
+		DetectDevice:         *detectDevice,
+		Logger:               driverLog,
+		TaskRecipes:          taskRecipes,
+		CustomArtifacts:      customArtifacts,
+		Args:                 args,
+		CommPort:             *commPort,
+		DownloadAssetsS3:     *downloadAssetsS3,
+		CustomTaskGitURL:     *customTaskGitURL,
+		CustomTaskGitBranch:  *customTaskGitBranch,
+		CustomTaskGitCommit:  *customTaskGitCommit,
+		CustomTaskGitPath:    *customTaskGitPath,
+		TaskNames:            taskNames,
+		AllowOnline:          *allowOnline,
+		MLFlowTrackingUri:    *mlflowTrackingUri,
+		MLFlowExperimentName: *mlflowExperimentName,
+		MLFlowRunId:          *mlflowRunId,
+		MLFlowExportTypes:    mlflowExportTypes,
+		MLFlowSourceName:     *mlflowSourceName,
+		MLFlowSourceType:     *mlflowSourceType,
+		MLFlowParamsJSON:     *mlflowParamsJSON,
 	}
 
 	driver, err := driver.NewDriver(&driverOpt)

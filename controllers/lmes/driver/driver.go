@@ -73,6 +73,14 @@ type DriverOption struct {
 	CustomTaskGitPath   string
 	TaskNames           []string
 	AllowOnline         bool
+	// MLFlow configuration
+	MLFlowTrackingUri    string
+	MLFlowExperimentName string
+	MLFlowRunId          string
+	MLFlowExportTypes    []string
+	MLFlowSourceName     string
+	MLFlowSourceType     string
+	MLFlowParamsJSON     string
 }
 
 type ArtifactType string
@@ -443,6 +451,15 @@ func (d *driverImpl) updateCompleteStatus(err error) {
 		var results string
 		results, err = d.getResults()
 		d.status.Results = results
+
+		// Export to MLFlow if configured and no errors
+		if err == nil {
+			mlflowErr := d.exportMLFlow()
+			if mlflowErr != nil {
+				d.Option.Logger.Error(mlflowErr, "failed to export results to MLFlow")
+				// Don't fail the job for MLFlow export errors, just log them
+			}
+		}
 	}
 
 	if err != nil {
@@ -708,5 +725,96 @@ func (d *driverImpl) fetchGitCustomTasks() error {
 		return fmt.Errorf("failed to copy tasks to %s: %v, output: %s", d.Option.TaskRecipesPath, err, string(output))
 	}
 
+	return nil
+}
+
+// exportMLFlow exports evaluation results to MLFlow tracking server if configured
+func (d *driverImpl) exportMLFlow() error {
+	// Check if MLFlow is configured
+	if d.Option.MLFlowTrackingUri == "" || len(d.Option.MLFlowExportTypes) == 0 {
+		return nil
+	}
+
+	d.Option.Logger.Info("Exporting results to MLFlow",
+		"trackingUri", d.Option.MLFlowTrackingUri,
+		"experimentName", d.Option.MLFlowExperimentName,
+		"runId", d.Option.MLFlowRunId,
+		"exportTypes", d.Option.MLFlowExportTypes,
+		"sourceName", d.Option.MLFlowSourceName,
+		"sourceType", d.Option.MLFlowSourceType)
+
+	// Build command arguments
+	args := []string{
+		"/opt/app-root/src/scripts/mlflow_export.py",
+		"--output-dir", d.Option.OutputPath,
+		"--tracking-uri", d.Option.MLFlowTrackingUri,
+	}
+
+	if d.Option.MLFlowExperimentName != "" {
+		args = append(args, "--experiment-name", d.Option.MLFlowExperimentName)
+	}
+
+	if d.Option.MLFlowRunId != "" {
+		args = append(args, "--run-id", d.Option.MLFlowRunId)
+	}
+
+	if len(d.Option.MLFlowExportTypes) > 0 {
+		args = append(args, "--export-types")
+		args = append(args, d.Option.MLFlowExportTypes...)
+	}
+
+	if d.Option.MLFlowSourceName != "" {
+		args = append(args, "--source-name", d.Option.MLFlowSourceName)
+	}
+
+	if d.Option.MLFlowSourceType != "" {
+		args = append(args, "--source-type", d.Option.MLFlowSourceType)
+	}
+
+	if d.Option.MLFlowParamsJSON != "" {
+		args = append(args, "--params-json", d.Option.MLFlowParamsJSON)
+	}
+
+	// Execute MLFlow export script
+	cmd := exec.Command("python", args...)
+
+	// Set environment variables for the script
+	env := append(os.Environ(),
+		"MLFLOW_TRACKING_URI="+d.Option.MLFlowTrackingUri)
+
+	if d.Option.MLFlowExperimentName != "" {
+		env = append(env, "MLFLOW_EXPERIMENT_NAME="+d.Option.MLFlowExperimentName)
+	}
+
+	if d.Option.MLFlowRunId != "" {
+		env = append(env, "MLFLOW_RUN_ID="+d.Option.MLFlowRunId)
+	}
+
+	if len(d.Option.MLFlowExportTypes) > 0 {
+		env = append(env, "MLFLOW_EXPORT_TYPES="+strings.Join(d.Option.MLFlowExportTypes, ","))
+	}
+
+	if d.Option.MLFlowSourceName != "" {
+		env = append(env, "MLFLOW_SOURCE_NAME="+d.Option.MLFlowSourceName)
+	}
+
+	if d.Option.MLFlowSourceType != "" {
+		env = append(env, "MLFLOW_SOURCE_TYPE="+d.Option.MLFlowSourceType)
+	}
+
+	if d.Option.MLFlowParamsJSON != "" {
+		env = append(env, "MLFLOW_PARAMS_JSON="+d.Option.MLFlowParamsJSON)
+	}
+
+	cmd.Env = env
+
+	// Capture output and errors
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		d.Option.Logger.Error(err, "MLFlow export script failed", "output", string(output))
+		return fmt.Errorf("MLFlow export failed: %v, output: %s", err, string(output))
+	}
+
+	d.Option.Logger.Info("MLFlow export completed successfully", "output", string(output))
 	return nil
 }
