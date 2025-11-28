@@ -3976,7 +3976,6 @@ func Test_OCIPodConfiguration(t *testing.T) {
 		// Verify OCI environment variables are set
 		assert.Contains(t, envMap, "OCI_REGISTRY", "Should have OCI_REGISTRY env var")
 		assert.Contains(t, envMap, "OCI_REPOSITORY", "Should have OCI_REPOSITORY env var")
-		assert.Contains(t, envMap, "OCI_PATH", "Should have OCI_PATH env var")
 		assert.Contains(t, envMap, "OCI_VERIFY_SSL", "Should have OCI_VERIFY_SSL env var")
 		assert.Contains(t, envMap, "OCI_USERNAME", "Should have OCI_USERNAME env var when auth is configured")
 		assert.Contains(t, envMap, "OCI_PASSWORD", "Should have OCI_PASSWORD env var when auth is configured")
@@ -3986,7 +3985,6 @@ func Test_OCIPodConfiguration(t *testing.T) {
 		assert.Equal(t, "oci-secret", envMap["OCI_REGISTRY"].ValueFrom.SecretKeyRef.Name)
 		assert.Equal(t, "registry", envMap["OCI_REGISTRY"].ValueFrom.SecretKeyRef.Key)
 		assert.Equal(t, "myorg/evaluation-results", envMap["OCI_REPOSITORY"].Value)
-		assert.Equal(t, "results", envMap["OCI_PATH"].Value)
 		assert.Equal(t, "true", envMap["OCI_VERIFY_SSL"].Value)
 		assert.Equal(t, "oci-secret", envMap["OCI_USERNAME"].ValueFrom.SecretKeyRef.Name)
 		assert.Equal(t, "username", envMap["OCI_USERNAME"].ValueFrom.SecretKeyRef.Key)

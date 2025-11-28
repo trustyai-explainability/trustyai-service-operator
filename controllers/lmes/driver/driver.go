@@ -250,33 +250,29 @@ func (d *driverImpl) uploadToOCI() error {
 
 	fmt.Println("Uploading results to OCI registry")
 
-	// Build command arguments: scripts/oci.py <registry> <results_location>
+	// Build command arguments: scripts/oci.py <registry> <output_location>
 	registryFromEnv := os.Getenv("OCI_REGISTRY")
 	if registryFromEnv == "" {
 		return fmt.Errorf("OCI_REGISTRY environment variable not set")
 	}
 
-	pathFromEnv := os.Getenv("OCI_PATH")
-	var resultsLocation string
-	if pathFromEnv == "" {
-		// If OCI_PATH is not set, use the output path directly
-		resultsLocation = d.Option.OutputPath
-	} else {
-		// If OCI_PATH is set, join it with the output path
-		resultsLocation = filepath.Join(d.Option.OutputPath, pathFromEnv)
-	}
+	// Typically the end-user doesn't know how supply the results' subdirectory,
+	// so we hand-over the output path to the script; typically outputPath will contain:
+	// <lmeval subdir>, sterr.log, stout.log, lost+found(directory) and the script
+	// can figure out how to best handle it.
+	outputPath := d.Option.OutputPath
 
-	cmd := []string{"python", "/opt/app-root/src/scripts/oci.py", registryFromEnv, resultsLocation}
+	cmd := []string{"python", "/opt/app-root/src/scripts/oci.py", registryFromEnv, outputPath}
 	fmt.Printf("[DEBUG] OCI upload CLI: %v\n", cmd)
 
 	// List all files and directories in resultsLocation
-	fmt.Printf("[DEBUG] Contents of results location (%s):\n", resultsLocation)
-	_ = filepath.Walk(resultsLocation, func(path string, info os.FileInfo, err error) error {
+	fmt.Printf("[DEBUG] Contents of results location (%s):\n", outputPath)
+	_ = filepath.Walk(outputPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Printf("  [error] %v\n", err)
 			return nil
 		}
-		rel, _ := filepath.Rel(resultsLocation, path)
+		rel, _ := filepath.Rel(outputPath, path)
 		if rel == "." {
 			fmt.Printf("  %s/\n", rel)
 		} else if info.IsDir() {
@@ -291,7 +287,7 @@ func (d *driverImpl) uploadToOCI() error {
 		"python",
 		"/opt/app-root/src/scripts/oci.py",
 		registryFromEnv,
-		resultsLocation,
+		outputPath,
 	).Output()
 	fmt.Println(string(output))
 	if err != nil {

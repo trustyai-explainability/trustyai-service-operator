@@ -452,7 +452,6 @@ func Test_OCIUploadSuccess(t *testing.T) {
 	os.Setenv("OCI_REGISTRY", "registry.example.com")
 	defer func() {
 		os.Unsetenv("OCI_REGISTRY")
-		os.Unsetenv("OCI_PATH")
 	}()
 
 	driver, err := NewDriver(&DriverOption{
