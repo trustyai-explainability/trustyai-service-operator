@@ -25,7 +25,7 @@ To deploy it on your cluster:
 ```shell
 OPERATOR_NAMESPACE=opendatahub
 make manifest-gen NAMESPACE=$OPERATOR_NAMESPACE KUSTOMIZE=kustomize
-oc apply -f release/trustyai_bundle.yaml
+oc apply -f release/trustyai_bundle.yaml -n $OPERATOR_NAMESPACE
 ```
 You can also build your own image, and use that as your TrustyAI operator:
 
@@ -35,7 +35,7 @@ OPERATOR_IMAGE=quay.io/yourorg/your-image-name:latest
 podman build -t $OPERATOR_IMAGE --platform linux/amd64 -f Dockerfile .
 podman push $OPERATOR_IMAGE
 make manifest-gen NAMESPACE=$OPERATOR_NAMESPACE OPERATOR_IMAGE=$OPERATOR_IMAGE KUSTOMIZE=kustomize
-oc apply -f release/trustyai_bundle.yaml
+oc apply -f release/trustyai_bundle.yaml -n $OPERATOR_NAMESPACE
 ```
 
 ## Usage
