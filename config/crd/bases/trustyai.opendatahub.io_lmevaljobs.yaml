@@ -276,6 +276,112 @@ spec:
               outputs:
                 description: Outputs specifies storage for evaluation results
                 properties:
+                  oci:
+                    description: Upload results to OCI registry
+                    properties:
+                      dockerConfigJson:
+                        description: DockerConfigJson for registry authentication
+                          (alternative to username/password)
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            description: |-
+                              Name of the referent.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      password:
+                        description: Password for registry authentication
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            description: |-
+                              Name of the referent.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      registry:
+                        description: Registry URL (e.g., quay.io, registry.redhat.com)
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            description: |-
+                              Name of the referent.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      repository:
+                        description: Repository path (e.g., myorg/evaluation-results)
+                        pattern: ^[a-zA-Z0-9._/-]*$
+                        type: string
+                      subject:
+                        description: Subject for the OCI artifact
+                        maxLength: 255
+                        pattern: ^[a-zA-Z0-9._:/@-]*$
+                        type: string
+                      tag:
+                        description: Optional tag for the artifact (defaults to job
+                          name if not specified)
+                        maxLength: 128
+                        pattern: ^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$
+                        type: string
+                      username:
+                        description: Username for registry authentication
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            description: |-
+                              Name of the referent.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      verifySSL:
+                        description: Whether to verify SSL certificates
+                        type: boolean
+                    required:
+                    - registry
+                    - repository
+                    type: object
                   pvcManaged:
                     description: Create an operator managed PVC
                     properties:

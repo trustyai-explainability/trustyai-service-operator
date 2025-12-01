@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -1486,5 +1487,312 @@ func Test_ComplexValidationScenario(t *testing.T) {
 
 		err = ValidateJSONContent(maliciousJSONContent)
 		assert.Error(t, err, "Should reject JSON with command execution patterns")
+	})
+}
+
+// Test OCI functionality
+func Test_OCIHelperMethods(t *testing.T) {
+	t.Run("HasOCIOutput", func(t *testing.T) {
+		// Test with no outputs
+		job := &lmesv1alpha1.LMEvalJob{
+			Spec: lmesv1alpha1.LMEvalJobSpec{},
+		}
+		assert.False(t, job.Spec.HasOCIOutput(), "Should return false when outputs is nil")
+
+		// Test with outputs but no OCI spec
+		job.Spec.Outputs = &lmesv1alpha1.Outputs{}
+		assert.False(t, job.Spec.HasOCIOutput(), "Should return false when OCI spec is nil")
+
+		// Test with OCI spec
+		job.Spec.Outputs.OCISpec = &lmesv1alpha1.OCISpec{}
+		assert.True(t, job.Spec.HasOCIOutput(), "Should return true when OCI spec is present")
+	})
+
+	t.Run("OutputsHasOCI", func(t *testing.T) {
+		// Test with nil outputs
+		var outputs *lmesv1alpha1.Outputs
+		assert.False(t, outputs.HasOCI(), "Should return false when outputs is nil")
+
+		// Test with outputs but no OCI spec
+		outputs = &lmesv1alpha1.Outputs{}
+		assert.False(t, outputs.HasOCI(), "Should return false when OCI spec is nil")
+
+		// Test with OCI spec
+		outputs.OCISpec = &lmesv1alpha1.OCISpec{}
+		assert.True(t, outputs.HasOCI(), "Should return true when OCI spec is present")
+	})
+}
+
+func Test_OCISpecHelperMethods(t *testing.T) {
+	t.Run("HasUsernamePassword", func(t *testing.T) {
+		ociSpec := &lmesv1alpha1.OCISpec{}
+		assert.False(t, ociSpec.HasUsernamePassword(), "Should return false when both are nil")
+
+		// Test with only username
+		ociSpec.UsernameRef = &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "creds"},
+			Key:                  "username",
+		}
+		assert.False(t, ociSpec.HasUsernamePassword(), "Should return false when password is nil")
+
+		// Test with only password
+		ociSpec.UsernameRef = nil
+		ociSpec.PasswordRef = &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "creds"},
+			Key:                  "password",
+		}
+		assert.False(t, ociSpec.HasUsernamePassword(), "Should return false when username is nil")
+
+		// Test with both
+		ociSpec.UsernameRef = &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "creds"},
+			Key:                  "username",
+		}
+		assert.True(t, ociSpec.HasUsernamePassword(), "Should return true when both are present")
+	})
+
+	t.Run("HasDockerConfigJson", func(t *testing.T) {
+		ociSpec := &lmesv1alpha1.OCISpec{}
+		assert.False(t, ociSpec.HasDockerConfigJson(), "Should return false when dockerConfigJson is nil")
+
+		ociSpec.DockerConfigJsonRef = &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "docker-secret"},
+			Key:                  ".dockerconfigjson",
+		}
+		assert.True(t, ociSpec.HasDockerConfigJson(), "Should return true when dockerConfigJson is present")
+	})
+}
+
+func Test_ValidateOCIPath(t *testing.T) {
+	testCases := []struct {
+		name        string
+		path        string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "EmptyPath",
+			path:        "",
+			expectError: false,
+		},
+		{
+			name:        "ValidSimplePath",
+			path:        "results",
+			expectError: false,
+		},
+		{
+			name:        "ValidNestedPath",
+			path:        "evaluation/results",
+			expectError: false,
+		},
+		{
+			name:        "ValidPathWithDots",
+			path:        "results.json",
+			expectError: false,
+		},
+		{
+			name:        "ValidPathWithUnderscores",
+			path:        "eval_results_2024",
+			expectError: false,
+		},
+		{
+			name:        "ValidPathWithHyphens",
+			path:        "eval-results-v1",
+			expectError: false,
+		},
+		{
+			name:        "InvalidPathTraversal",
+			path:        "../results",
+			expectError: true,
+			errorMsg:    "invalid pattern: ../",
+		},
+		{
+			name:        "InvalidPathTraversalDeep",
+			path:        "results/../../etc",
+			expectError: true,
+			errorMsg:    "invalid pattern: ../",
+		},
+		{
+			name:        "InvalidCurrentDir",
+			path:        "./results",
+			expectError: true,
+			errorMsg:    "invalid pattern: ./",
+		},
+		{
+			name:        "InvalidShellMetacharacters",
+			path:        "results; rm -rf /",
+			expectError: true,
+			errorMsg:    "invalid characters",
+		},
+		{
+			name:        "InvalidSpecialCharacters",
+			path:        "results@#$%",
+			expectError: true,
+			errorMsg:    "invalid characters",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateOCIPath(tc.path)
+			if tc.expectError {
+				assert.Error(t, err, "Expected error for path: %s", tc.path)
+				assert.Contains(t, err.Error(), tc.errorMsg, "Error message should contain: %s", tc.errorMsg)
+			} else {
+				assert.NoError(t, err, "Expected no error for path: %s", tc.path)
+			}
+		})
+	}
+}
+
+func Test_ValidateOCIAuth(t *testing.T) {
+	t.Run("NilSpec", func(t *testing.T) {
+		err := ValidateOCIAuth(nil)
+		assert.Error(t, err, "Should reject nil spec")
+		assert.Contains(t, err.Error(), "cannot be nil")
+	})
+
+	t.Run("NoAuthentication", func(t *testing.T) {
+		ociSpec := &lmesv1alpha1.OCISpec{}
+		err := ValidateOCIAuth(ociSpec)
+		assert.Error(t, err, "Should reject spec with no authentication")
+		assert.Contains(t, err.Error(), "requires either username/password or dockerConfigJson")
+	})
+
+	t.Run("ValidUsernamePassword", func(t *testing.T) {
+		ociSpec := &lmesv1alpha1.OCISpec{
+			UsernameRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "creds"},
+				Key:                  "username",
+			},
+			PasswordRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "creds"},
+				Key:                  "password",
+			},
+		}
+		err := ValidateOCIAuth(ociSpec)
+		assert.NoError(t, err, "Should accept valid username/password authentication")
+	})
+
+	t.Run("ValidDockerConfigJson", func(t *testing.T) {
+		ociSpec := &lmesv1alpha1.OCISpec{
+			DockerConfigJsonRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "docker-secret"},
+				Key:                  ".dockerconfigjson",
+			},
+		}
+		err := ValidateOCIAuth(ociSpec)
+		assert.NoError(t, err, "Should accept valid dockerConfigJson authentication")
+	})
+
+	t.Run("BothUsernamePasswordAndDockerConfigJson", func(t *testing.T) {
+		ociSpec := &lmesv1alpha1.OCISpec{
+			UsernameRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "creds"},
+				Key:                  "username",
+			},
+			PasswordRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "creds"},
+				Key:                  "password",
+			},
+			DockerConfigJsonRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "docker-secret"},
+				Key:                  ".dockerconfigjson",
+			},
+		}
+		err := ValidateOCIAuth(ociSpec)
+		assert.Error(t, err, "Should reject spec with both username/password and token")
+		assert.Contains(t, err.Error(), "cannot have both")
+	})
+
+	t.Run("OnlyUsername", func(t *testing.T) {
+		ociSpec := &lmesv1alpha1.OCISpec{
+			UsernameRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "creds"},
+				Key:                  "username",
+			},
+		}
+		err := ValidateOCIAuth(ociSpec)
+		assert.Error(t, err, "Should reject spec with only username")
+		assert.Contains(t, err.Error(), "OCI authentication requires either username/password or dockerConfigJson")
+	})
+
+	t.Run("OnlyPassword", func(t *testing.T) {
+		ociSpec := &lmesv1alpha1.OCISpec{
+			PasswordRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "creds"},
+				Key:                  "password",
+			},
+		}
+		err := ValidateOCIAuth(ociSpec)
+		assert.Error(t, err, "Should reject spec with only password")
+		assert.Contains(t, err.Error(), "OCI authentication requires either username/password or dockerConfigJson")
+	})
+}
+
+func Test_ValidateUserInputWithOCI(t *testing.T) {
+	t.Run("ValidOCIConfiguration", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "hf",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"hellaswag"},
+				},
+				Outputs: &lmesv1alpha1.Outputs{
+					OCISpec: &lmesv1alpha1.OCISpec{
+						UsernameRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-creds"},
+							Key:                  "username",
+						},
+						PasswordRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-creds"},
+							Key:                  "password",
+						},
+					},
+				},
+			},
+		}
+		err := ValidateUserInput(job)
+		assert.NoError(t, err, "Should accept valid OCI configuration")
+	})
+
+	t.Run("ValidOCIConfigurationDockerConfigJSon", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "hf",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"hellaswag"},
+				},
+				Outputs: &lmesv1alpha1.Outputs{
+					OCISpec: &lmesv1alpha1.OCISpec{
+						DockerConfigJsonRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "my-odh-connection"},
+							Key:                  ".dockerconfigjson",
+						},
+					},
+				},
+			},
+		}
+		err := ValidateUserInput(job)
+		assert.NoError(t, err, "Should accept valid OCI configuration")
+	})
+
+	t.Run("InvalidOCIAuth", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "hf",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"hellaswag"},
+				},
+				Outputs: &lmesv1alpha1.Outputs{
+					OCISpec: &lmesv1alpha1.OCISpec{
+						// No authentication specified
+					},
+				},
+			},
+		}
+		err := ValidateUserInput(job)
+		assert.Error(t, err, "Should reject invalid OCI authentication")
+		assert.Contains(t, err.Error(), "invalid OCI authentication")
 	})
 }

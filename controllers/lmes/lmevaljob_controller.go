@@ -276,6 +276,7 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		if err := constructOptionsFromConfigMap(&log, &cm); err != nil {
 			return err
 		}
+		log.Info("Constructed options from configmap", "options", Options)
 
 		// Read DSC configuration if available
 		dscReader := dsc.NewDSCConfigReader(r.Client, r.Namespace)
@@ -286,6 +287,7 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			ApplyDSCConfig(dscConfig)
 		}
 
+		log.Info("Applied DSC configuration", "options", Options)
 		return nil
 	})); err != nil {
 		return err
@@ -909,13 +911,12 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 		},
 	}
 
-	if job.Spec.HasCustomOutput() {
+	if job.Spec.Outputs != nil && (job.Spec.Outputs.HasManagedPVC() || job.Spec.Outputs.HasExistingPVC()) {
 		outputPVCMount := corev1.VolumeMount{
 			Name:      "outputs",
 			MountPath: OutputPath,
 		}
 		volumeMounts = append(volumeMounts, outputPVCMount)
-
 	}
 
 	var volumes = []corev1.Volume{
@@ -926,7 +927,7 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 		},
 	}
 
-	if job.Spec.HasCustomOutput() {
+	if job.Spec.Outputs != nil && (job.Spec.Outputs.HasManagedPVC() || job.Spec.Outputs.HasExistingPVC()) {
 
 		var claimName string
 		if job.Spec.Outputs.HasManagedPVC() {
@@ -1162,6 +1163,100 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 
 		}
 
+	}
+
+	// Always add OCI env vars if configured, regardless of offline/online mode
+	if job.Spec.HasOCIOutput() && job.Spec.Outputs != nil && job.Spec.Outputs.OCISpec != nil {
+		ociEnvVars := []corev1.EnvVar{
+			{
+				Name: "OCI_REGISTRY",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: job.Spec.Outputs.OCISpec.Registry.Name,
+						},
+						Key: job.Spec.Outputs.OCISpec.Registry.Key,
+					},
+				},
+			},
+			{
+				Name:  "OCI_REPOSITORY",
+				Value: job.Spec.Outputs.OCISpec.Repository,
+			},
+		}
+
+		// Add tag value if specified, otherwise use pod name as default
+		tagValue := job.GetPodName()
+		if job.Spec.Outputs.OCISpec.Tag != "" {
+			tagValue = job.Spec.Outputs.OCISpec.Tag
+		}
+		ociEnvVars = append(ociEnvVars, corev1.EnvVar{
+			Name:  "OCI_TAG",
+			Value: tagValue,
+		})
+
+		// Add subject if specified
+		if job.Spec.Outputs.OCISpec.Subject != "" {
+			ociEnvVars = append(ociEnvVars, corev1.EnvVar{
+				Name:  "OCI_SUBJECT",
+				Value: job.Spec.Outputs.OCISpec.Subject,
+			})
+		}
+
+		// Handle authentication - either username/password or token
+		if job.Spec.Outputs.OCISpec.HasUsernamePassword() {
+			ociAuthEnvVars := []corev1.EnvVar{
+				{
+					Name: "OCI_USERNAME",
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: job.Spec.Outputs.OCISpec.UsernameRef,
+					},
+				},
+				{
+					Name: "OCI_PASSWORD",
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: job.Spec.Outputs.OCISpec.PasswordRef,
+					},
+				},
+			}
+			ociEnvVars = append(ociEnvVars, ociAuthEnvVars...)
+		} else if job.Spec.Outputs.OCISpec.HasDockerConfigJson() {
+			dockerConfigMount := corev1.VolumeMount{
+				Name:      "docker-config",
+				MountPath: "/tmp/.docker/config.json",
+				SubPath:   "config.json",
+				ReadOnly:  true,
+			}
+			volumeMounts = append(volumeMounts, dockerConfigMount)
+
+			dockerConfigVolume := corev1.Volume{
+				Name: "docker-config",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: job.Spec.Outputs.OCISpec.DockerConfigJsonRef.Name,
+						Items: []corev1.KeyToPath{
+							{
+								Key:  job.Spec.Outputs.OCISpec.DockerConfigJsonRef.Key,
+								Path: "config.json",
+							},
+						},
+					},
+				},
+			}
+			volumes = append(volumes, dockerConfigVolume)
+		}
+
+		// Handle SSL verification
+		ociVerifySSL := "true"
+		if job.Spec.Outputs.OCISpec.VerifySSL != nil {
+			ociVerifySSL = strconv.FormatBool(*job.Spec.Outputs.OCISpec.VerifySSL)
+		}
+		ociEnvVars = append(ociEnvVars, corev1.EnvVar{
+			Name:  "OCI_VERIFY_SSL",
+			Value: ociVerifySSL,
+		})
+
+		envVars = append(envVars, ociEnvVars...)
 	}
 
 	volumes = append(volumes, job.Spec.Pod.GetVolumes()...)
@@ -1434,6 +1529,10 @@ func generateCmd(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfi
 
 	if job.Spec.HasOfflineS3() {
 		cmds = append(cmds, "--download-assets-s3")
+	}
+
+	if job.Spec.HasOCIOutput() {
+		cmds = append(cmds, "--upload-to-oci")
 	}
 
 	if svcOpts.DetectDevice {

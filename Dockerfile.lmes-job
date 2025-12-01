@@ -3,6 +3,9 @@ FROM registry.access.redhat.com/ubi9/python-311@sha256:fccda5088dd13d2a3f2659e4c
 USER root
 RUN sed -i.bak 's/include-system-site-packages = false/include-system-site-packages = true/' /opt/app-root/pyvenv.cfg
 
+# required dependency for oci.py in lmes-job; put here for the `needs-lmes-build`, but already incorporated here: https://github.com/opendatahub-io/lm-evaluation-harness/blob/3c4dec006a4a096b546d60c3364c78acbe33cd48/Dockerfile.lmes-job#L16
+RUN dnf install -y skopeo && dnf clean all
+
 USER default
 WORKDIR /opt/app-root/src
 RUN mkdir /opt/app-root/src/hf_home && chmod g+rwx /opt/app-root/src/hf_home
