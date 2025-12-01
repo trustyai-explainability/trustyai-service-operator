@@ -112,6 +112,13 @@ func ValidateUserInput(job *lmesv1alpha1.LMEvalJob) error {
 		}
 	}
 
+	// Validate OCI path and authentication
+	if job.Spec.HasOCIOutput() {
+		if err := ValidateOCIAuth(job.Spec.Outputs.OCISpec); err != nil {
+			return fmt.Errorf("invalid OCI authentication: %w", err)
+		}
+	}
+
 	// Validate batch size
 	if job.Spec.BatchSize != nil {
 		if err := ValidateBatchSizeInput(*job.Spec.BatchSize); err != nil {
@@ -525,6 +532,60 @@ func ValidateGitCommit(commit string) error {
 	// Git commit hashes should be hexadecimal (full SHA-1: 40 chars, short: 7+ chars)
 	if !regexp.MustCompile(`^[a-fA-F0-9]{7,40}$`).MatchString(commit) {
 		return fmt.Errorf("git commit must be a valid hexadecimal hash (7-40 characters)")
+	}
+
+	return nil
+}
+
+// ValidateOCIPath validates OCI artifact paths
+func ValidateOCIPath(path string) error {
+	if path == "" {
+		return nil // Empty path is valid for root
+	}
+
+	// Check for shell metacharacters
+	if ContainsShellMetacharacters(path) {
+		return fmt.Errorf("OCI path contains invalid characters")
+	}
+
+	// OCI paths should not contain invalid patterns
+	dangerousPatterns := []string{"../", "..\\", "./", ".\\"}
+	for _, pattern := range dangerousPatterns {
+		if strings.Contains(path, pattern) {
+			return fmt.Errorf("OCI path contains invalid pattern: %s", pattern)
+		}
+	}
+
+	// OCI paths allowed characters (similar to filesystem paths)
+	if !regexp.MustCompile(`^[a-zA-Z0-9._/-]*$`).MatchString(path) {
+		return fmt.Errorf("OCI path contains invalid characters (only alphanumeric, ., _, /, - allowed)")
+	}
+
+	return nil
+}
+
+// ValidateOCIAuth validates OCI authentication configuration
+func ValidateOCIAuth(ociSpec *lmesv1alpha1.OCISpec) error {
+	if ociSpec == nil {
+		return fmt.Errorf("OCI spec cannot be nil")
+	}
+
+	// Must have either username/password or dockerConfigJson, but not both
+	hasUsernamePassword := ociSpec.HasUsernamePassword()
+	hasDockerConfigJson := ociSpec.HasDockerConfigJson()
+
+	if !hasUsernamePassword && !hasDockerConfigJson {
+		return fmt.Errorf("OCI authentication requires either username/password or dockerConfigJson")
+	}
+
+	if hasUsernamePassword && hasDockerConfigJson {
+		return fmt.Errorf("OCI authentication cannot have both username/password and dockerConfigJson")
+	}
+
+	// If using username/password, both must be present
+	if (ociSpec.UsernameRef != nil && ociSpec.PasswordRef == nil) ||
+		(ociSpec.UsernameRef == nil && ociSpec.PasswordRef != nil) {
+		return fmt.Errorf("OCI authentication with username/password requires both username and password")
 	}
 
 	return nil

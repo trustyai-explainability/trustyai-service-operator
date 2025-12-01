@@ -67,6 +67,7 @@ type DriverOption struct {
 	Args                []string
 	CommPort            int
 	DownloadAssetsS3    bool
+	UploadToOCI         bool
 	CustomTaskGitURL    string
 	CustomTaskGitBranch string
 	CustomTaskGitCommit string
@@ -237,6 +238,55 @@ func (d *driverImpl) downloadS3Assets() error {
 	fmt.Println(string(output))
 	if err != nil {
 		return fmt.Errorf("failed to download assets from S3: %v", err)
+	}
+
+	return nil
+}
+
+func (d *driverImpl) uploadToOCI() error {
+	if d == nil || !d.Option.UploadToOCI {
+		return nil
+	}
+
+	fmt.Println("Uploading results to OCI registry")
+
+	// Build command arguments: scripts/oci.py <registry> <output_location>
+	registryFromEnv := os.Getenv("OCI_REGISTRY")
+	if registryFromEnv == "" {
+		return fmt.Errorf("OCI_REGISTRY environment variable not set")
+	}
+
+	// Typically the end-user doesn't know how supply the results' subdirectory,
+	// so we hand-over the output path to the script; typically outputPath will contain:
+	// <lmeval subdir>, sterr.log, stout.log, lost+found(directory) and the script
+	// can figure out how to best handle it.
+	outputPath := d.Option.OutputPath
+	scriptPath := "/opt/app-root/src/scripts/oci.py"
+
+	fmt.Printf("[DEBUG] OCI upload CLI: python %s %s %s\n", scriptPath, registryFromEnv, outputPath)
+
+	// List all files and directories in resultsLocation
+	fmt.Printf("[DEBUG] Contents of results location (%s):\n", outputPath)
+	_ = filepath.Walk(outputPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Printf("  [error] %v\n", err)
+			return nil
+		}
+		rel, _ := filepath.Rel(outputPath, path)
+		if rel == "." {
+			fmt.Printf("  %s/\n", rel)
+		} else if info.IsDir() {
+			fmt.Printf("  %s/\n", rel)
+		} else {
+			fmt.Printf("  %s\n", rel)
+		}
+		return nil
+	})
+
+	output, err := exec.Command("python", scriptPath, registryFromEnv, outputPath).Output()
+	fmt.Println(string(output))
+	if err != nil {
+		return fmt.Errorf("failed to upload results to OCI: %v", err)
 	}
 
 	return nil
@@ -443,6 +493,11 @@ func (d *driverImpl) updateCompleteStatus(err error) {
 		var results string
 		results, err = d.getResults()
 		d.status.Results = results
+
+		// Upload results to OCI if configured
+		if err == nil {
+			err = d.uploadToOCI()
+		}
 	}
 
 	if err != nil {

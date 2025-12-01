@@ -443,3 +443,146 @@ func Test_ProgramError(t *testing.T) {
 
 	assert.Nil(t, driver.Shutdown())
 }
+
+func Test_OCIUploadDefaultFlow(t *testing.T) {
+	// this test simulates the OCI upload standard flow of ops;
+	// since testing environment does not contain the script,
+	// below we will check the invocation to have failed at script invocation.
+	info := setupTest(t, true)
+	defer info.tearDown(t)
+
+	// Set up environment variables for OCI
+	os.Setenv("OCI_REGISTRY", "registry.example.com")
+	defer func() {
+		os.Unsetenv("OCI_REGISTRY")
+	}()
+
+	driver, err := NewDriver(&DriverOption{
+		Context:     context.Background(),
+		OutputPath:  info.outputPath,
+		CatalogPath: info.catalogPath,
+		Logger:      driverLog,
+		Args:        []string{"sh", "-ec", "echo 'test completed'"},
+		CommPort:    info.port,
+		UploadToOCI: true,
+	})
+	assert.Nil(t, err)
+
+	// This will fail because the OCI script doesn't exist, but we can test the setup
+	msgs, _ := runDriverAndWait4Complete(t, driver, true)
+
+	// Should fail during OCI upload since script doesn't exist
+	assert.Contains(t, msgs[len(msgs)-1], "failed to upload results to OCI")
+
+	assert.Nil(t, driver.Shutdown())
+}
+
+func Test_OCIUploadDisabled(t *testing.T) {
+	info := setupTest(t, true)
+	defer info.tearDown(t)
+
+	driver, err := NewDriver(&DriverOption{
+		Context:     context.Background(),
+		OutputPath:  info.outputPath,
+		CatalogPath: info.catalogPath,
+		Logger:      driverLog,
+		Args:        []string{"sh", "-ec", "echo 'test completed'"},
+		CommPort:    info.port,
+		UploadToOCI: false,
+	})
+	assert.Nil(t, err)
+
+	msgs, _ := runDriverAndWait4Complete(t, driver, false)
+
+	assert.Contains(t, msgs, "job completed", "Should complete successfully")
+	// The first message may vary depending on timing, so just check that we completed
+
+	assert.Nil(t, driver.Shutdown())
+}
+
+func Test_OCIUploadMissingRegistry(t *testing.T) {
+	info := setupTest(t, true)
+	defer info.tearDown(t)
+
+	// Don't set OCI_REGISTRY environment variable
+	os.Unsetenv("OCI_REGISTRY")
+
+	driver, err := NewDriver(&DriverOption{
+		Context:     context.Background(),
+		OutputPath:  info.outputPath,
+		CatalogPath: info.catalogPath,
+		Logger:      driverLog,
+		Args:        []string{"sh", "-ec", "echo 'test completed'"},
+		CommPort:    info.port,
+		UploadToOCI: true,
+	})
+	assert.Nil(t, err)
+
+	msgs, _ := runDriverAndWait4Complete(t, driver, true)
+
+	// Should fail with missing registry error
+	assert.Contains(t, msgs[len(msgs)-1], "OCI_REGISTRY environment variable not set")
+
+	assert.Nil(t, driver.Shutdown())
+}
+
+func Test_OCIUploadToOCIFunction(t *testing.T) {
+	info := setupTest(t, false)
+	defer info.tearDown(t)
+
+	tests := []struct {
+		name           string
+		uploadToOCI    bool
+		registryEnv    string
+		expectError    bool
+		expectedErrMsg string
+	}{
+		{
+			name:        "disabled OCI upload",
+			uploadToOCI: false,
+			expectError: false,
+		},
+		{
+			name:           "missing registry env",
+			uploadToOCI:    true,
+			registryEnv:    "",
+			expectError:    true,
+			expectedErrMsg: "OCI_REGISTRY environment variable not set",
+		},
+		{
+			name:           "script execution fails",
+			uploadToOCI:    true,
+			registryEnv:    "registry.example.com",
+			expectError:    true,
+			expectedErrMsg: "failed to upload results to OCI",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up environment
+			if tt.registryEnv != "" {
+				os.Setenv("OCI_REGISTRY", tt.registryEnv)
+				defer os.Unsetenv("OCI_REGISTRY")
+			}
+
+			driver := &driverImpl{
+				Option: &DriverOption{
+					OutputPath:  info.outputPath,
+					UploadToOCI: tt.uploadToOCI,
+				},
+			}
+
+			err := driver.uploadToOCI()
+
+			if tt.expectError {
+				assert.NotNil(t, err)
+				if tt.expectedErrMsg != "" {
+					assert.Contains(t, err.Error(), tt.expectedErrMsg)
+				}
+			} else {
+				assert.Nil(t, err)
+			}
+		})
+	}
+}
