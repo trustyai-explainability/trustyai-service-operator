@@ -3916,6 +3916,59 @@ func Test_OCICommandGeneration(t *testing.T) {
 		cmds := generateCmd(svcOpts, job, NewDefaultPermissionConfig())
 		assert.NotContains(t, cmds, "--upload-to-oci", "Should not include OCI upload flag")
 	})
+
+	t.Run("WithPVCManagedOnly", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "test",
+				Namespace: "default",
+			},
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "test",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"task1"},
+				},
+				Outputs: &lmesv1alpha1.Outputs{
+					PersistentVolumeClaimManaged: &lmesv1alpha1.PersistentVolumeClaimManaged{
+						Size: "5Gi",
+					},
+				},
+			},
+		}
+
+		cmds := generateCmd(svcOpts, job, NewDefaultPermissionConfig())
+		assert.NotContains(t, cmds, "--upload-to-oci", "Should not include OCI upload flag when only PVC managed is configured")
+	})
+
+	t.Run("WithOCIOutputAndPVCManaged", func(t *testing.T) {
+		job := &lmesv1alpha1.LMEvalJob{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "test",
+				Namespace: "default",
+			},
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				Model: "test",
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"task1"},
+				},
+				Outputs: &lmesv1alpha1.Outputs{
+					PersistentVolumeClaimManaged: &lmesv1alpha1.PersistentVolumeClaimManaged{
+						Size: "5Gi",
+					},
+					OCISpec: &lmesv1alpha1.OCISpec{
+						Registry: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "oci-secret"},
+							Key:                  "registry",
+						},
+						Repository: "myorg/evaluation-results",
+					},
+				},
+			},
+		}
+
+		cmds := generateCmd(svcOpts, job, NewDefaultPermissionConfig())
+		assert.Contains(t, cmds, "--upload-to-oci", "Should include OCI upload flag when both PVC managed and OCI are configured")
+	})
 }
 
 func Test_OCIPodConfiguration(t *testing.T) {
