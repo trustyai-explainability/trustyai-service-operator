@@ -49,3 +49,10 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.kServeServerless
+  - name: evalHubImage
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalHubImage
