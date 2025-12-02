@@ -86,7 +86,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// ====== Deploy kube-rbac-proxy configmap if needed ================================================================
 	if utils.RequiresAuth(nemoGuardrails) {
-		_, _, err := utils.ReconcileConfigMap(ctx, r.Client, nemoGuardrails, nemoGuardrails.Name+"-kube-rbac-proxy-config", constants.Version, "kube-rbac-proxy-config.tmpl.yaml", templateParser.ParseResource)
+		_, _, err := utils.ReconcileConfigMap(ctx, r.Client, nemoGuardrails, GetRBACConfigName(*nemoGuardrails), constants.Version, "kube-rbac-proxy-config.tmpl.yaml", templateParser.ParseResource)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -97,20 +97,9 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	err = r.Get(ctx, types.NamespacedName{Name: nemoGuardrails.Name, Namespace: nemoGuardrails.Namespace}, existingDeployment)
 	if err != nil && errors.IsNotFound(err) {
 		// Create a new deployment
-		deployment, nemoGuardrailsImage, err := r.createDeployment(ctx, nemoGuardrails)
+		deployment, err := r.createDeployment(ctx, nemoGuardrails, caBundleInitContainerConfig, configMapsToMount)
 		if err != nil {
 			return ctrl.Result{}, err
-		}
-
-		err = r.AddCAToDeployment(logger, deployment, caBundleInitContainerConfig, *nemoGuardrailsImage, configMapsToMount)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-
-		// add user environment variables
-		if nemoGuardrails.Spec.Env != nil && len(nemoGuardrails.Spec.Env) > 0 {
-			logger.Info("Updating NemoGuardrails env with user-provided environment variables")
-			deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, nemoGuardrails.Spec.Env...)
 		}
 
 		utils.LogInfoCreating(ctx, "deployment", nemoGuardrails.Name, nemoGuardrails.Namespace)
@@ -139,10 +128,14 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// ====== Reconcile Route ==========================================================================================
+	termination := utils.Edge
+	if utils.RequiresAuth(nemoGuardrails) {
+		termination = utils.Reencrypt
+	}
 	routeConfig := utils.RouteConfig{
-		PortName:    "", // only one available port in the service, so don't need to specify any port name
+		PortName:    nemoGuardrails.Name, // only one available port in the service, so don't need to specify any port name
 		ServiceName: nemoGuardrails.Name,
-		Termination: utils.StringPointer(utils.Passthrough),
+		Termination: utils.StringPointer(termination),
 	}
 	err = utils.ReconcileRoute(ctx, r.Client, nemoGuardrails, routeConfig, routeTemplate, templateParser.ParseResource)
 	if err != nil {

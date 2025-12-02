@@ -25,8 +25,8 @@ type ContainerImages struct {
 type DeploymentConfig struct {
 	Orchestrator              *gorchv1alpha1.GuardrailsOrchestrator
 	ContainerImages           ContainerImages
-	OrchestratorKubeRBACProxy *KubeRBACProxyConfig
-	GatewayKubeRBACProxy      *KubeRBACProxyConfig
+	OrchestratorKubeRBACProxy *utils.KubeRBACProxyConfig
+	GatewayKubeRBACProxy      *utils.KubeRBACProxyConfig
 }
 
 func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (*appsv1.Deployment, error) {

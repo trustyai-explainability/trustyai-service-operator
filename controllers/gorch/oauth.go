@@ -9,18 +9,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-type KubeRBACProxyConfig struct {
-	Suffix             string
-	Name               string
-	Namespace          string
-	KubeRBACProxyImage string
-	UpstreamProtocol   string
-	UpstreamHost       string
-	UpstreamPort       int
-	DownstreamPort     int
-	HealthPort         int
-}
-
 // configureKubeRBACProxy creates the kube-rbac-proxy config structs to be used in the deployment template
 func (r *GuardrailsOrchestratorReconciler) configureKubeRBACProxy(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, deploymentConfig *DeploymentConfig) error {
 	kubeRBACProxyImage, err := utils.GetImageFromConfigMap(ctx, r.Client, kubeRBACProxyImageKey, constants.ConfigMap, r.Namespace)
@@ -30,7 +18,7 @@ func (r *GuardrailsOrchestratorReconciler) configureKubeRBACProxy(ctx context.Co
 	}
 	log.FromContext(ctx).Info("Using kube-rbac-proxy image " + kubeRBACProxyImage + " " + "from configmap " + r.Namespace + ":" + constants.ConfigMap)
 
-	deploymentConfig.OrchestratorKubeRBACProxy = &KubeRBACProxyConfig{
+	deploymentConfig.OrchestratorKubeRBACProxy = &utils.KubeRBACProxyConfig{
 		Suffix:             "orchestrator",
 		Namespace:          orchestrator.Namespace,
 		Name:               orchestrator.Name,
@@ -42,7 +30,7 @@ func (r *GuardrailsOrchestratorReconciler) configureKubeRBACProxy(ctx context.Co
 		UpstreamPort:       8032,
 	}
 	if orchestrator.Spec.EnableGuardrailsGateway {
-		deploymentConfig.GatewayKubeRBACProxy = &KubeRBACProxyConfig{
+		deploymentConfig.GatewayKubeRBACProxy = &utils.KubeRBACProxyConfig{
 			Suffix:             "gateway",
 			Namespace:          orchestrator.Namespace,
 			Name:               orchestrator.Name,

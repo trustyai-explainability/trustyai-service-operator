@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Name }}
+  name: {{ .Owner.Name}}-rbac-proxy-config
   namespace: {{ .Owner.Namespace }}
   labels:
     app: {{ .Owner.Name }}

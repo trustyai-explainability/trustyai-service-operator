@@ -13,12 +13,12 @@ spec:
     - IPv4
   ports:
     {{if .UseAuthProxy }}
-    - name: kube-rbac-proxy
+    - name: {{ .Name }}
       protocol: TCP
       port: 443
       targetPort: 8443
     {{else}}
-    - name: http
+    - name: {{ .Name }}
       protocol: TCP
       port: 80
       targetPort: 8000

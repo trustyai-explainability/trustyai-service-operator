@@ -123,14 +123,16 @@ func (r *NemoGuardrailsReconciler) AddCAToDeployment(logger logr.Logger, deploym
 	}
 	// mount transfer volume to main container
 	deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, volume)
-	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(
-		deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
-		corev1.VolumeMount{
-			Name:      caBundleInitContainerConfig.CABundleTransferVolumeName,
-			MountPath: caBundleMountPath,
-			ReadOnly:  true,
-		},
-	)
+	for idx, _ := range deployment.Spec.Template.Spec.Containers {
+		deployment.Spec.Template.Spec.Containers[idx].VolumeMounts = append(
+			deployment.Spec.Template.Spec.Containers[idx].VolumeMounts,
+			corev1.VolumeMount{
+				Name:      caBundleInitContainerConfig.CABundleTransferVolumeName,
+				MountPath: caBundleMountPath,
+				ReadOnly:  true,
+			},
+		)
+	}
 	// Set Python CA env var
 	deployment.Spec.Template.Spec.Containers[0].Env = append(
 		deployment.Spec.Template.Spec.Containers[0].Env,
