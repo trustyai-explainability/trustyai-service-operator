@@ -15,8 +15,13 @@ func getClusterRoleName(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) stri
 	return orchestrator.Name + "-" + orchestrator.Namespace + "-auth-delegator"
 }
 
+// getServiceAccountName creates a service account name from the orchestrator name
+func getServiceAccountName(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) string {
+	return orchestrator.Name + "-serviceaccount"
+}
+
 // createClusterRoleBinding creates a cluster role binding for the orchestrator oauth service account
-func (r *GuardrailsOrchestratorReconciler) createClusterRoleBinding(orchestrator *gorchv1alpha1.GuardrailsOrchestrator, serviceAccountName string) *rbacv1.ClusterRoleBinding {
+func (r *GuardrailsOrchestratorReconciler) createClusterRoleBinding(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *rbacv1.ClusterRoleBinding {
 	crb := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: getClusterRoleName(orchestrator),
@@ -29,7 +34,7 @@ func (r *GuardrailsOrchestratorReconciler) createClusterRoleBinding(orchestrator
 		Subjects: []rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
-				Name:      serviceAccountName,
+				Name:      getServiceAccountName(orchestrator),
 				Namespace: orchestrator.Namespace,
 			},
 		},
