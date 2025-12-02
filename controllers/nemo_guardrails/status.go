@@ -27,8 +27,16 @@ func (r *NemoGuardrailsReconciler) updateStatus(ctx context.Context, original *n
 }
 
 func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails) (ctrl.Result, error) {
-	deploymentReady, _ := utils.CheckDeploymentReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
-	routeReady, _ := utils.CheckRouteReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
+	deploymentReady, err := utils.CheckDeploymentReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
+	if err != nil {
+		utils.LogErrorVerb(ctx, err, "checking readiness of", "deployment", nemoGuardrails.Name, nemoGuardrails.Namespace)
+		return ctrl.Result{}, err
+	}
+	routeReady, err := utils.CheckRouteReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
+	if err != nil {
+		utils.LogErrorVerb(ctx, err, "checking readiness of", "route", nemoGuardrails.Name, nemoGuardrails.Namespace)
+		return ctrl.Result{}, err
+	}
 
 	if deploymentReady && routeReady {
 		_, updateErr := r.updateStatus(ctx, nemoGuardrails, func(saved *nemoguardrailsv1alpha1.NemoGuardrails) {

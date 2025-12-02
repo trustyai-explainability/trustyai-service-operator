@@ -58,7 +58,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// ====== Fetch instance of NemoGuardrails CR ======================================================================
 	nemoGuardrails := &nemoguardrailsv1alpha1.NemoGuardrails{}
-	err := r.Get(context.TODO(), req.NamespacedName, nemoGuardrails)
+	err := r.Get(ctx, req.NamespacedName, nemoGuardrails)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			logger.Info("NemoGuardrails resource not found. Ignoring since object must be deleted.")

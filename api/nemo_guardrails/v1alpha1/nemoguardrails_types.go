@@ -40,7 +40,7 @@ type NemoGuardrailsSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// NemoConfig should be the names of the configmaps containing NeMO server configuration files. All files in NemoConfigs will be mounted to /app/config/rails-custom-action
+	// NemoConfig should be the names of the configmaps containing NeMO server configuration files. All files in NemoConfigs will be mounted to /app/config/$Name
 	NemoConfigs    []NemoConfig           `json:"nemoConfigs"`
 	CABundleConfig *common.CABundleConfig `json:"caBundleConfig,omitempty"`
 	// Define Env information for the main container

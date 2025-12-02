@@ -65,7 +65,7 @@ func (r *NemoGuardrailsReconciler) LoadCAConfigs(ctx context.Context, logger log
 
 	openshiftServingConfigMap, err := utils.GetConfigMapByName(ctx, r.Client, nemoGuardrails.Name+"-ca-bundle", nemoGuardrails.Namespace)
 	if err != nil {
-		logger.Error(err, "Could not find or load ODH trusted CA bundle configmap, so will not be mounted.")
+		logger.Error(err, "Could not find or load OpenShift serving CA bundle configmap, so will not be mounted.")
 		caStatus.OpenshiftServingCAFound = false
 		caStatus.OpenshiftServingCAError = err.Error()
 	} else {

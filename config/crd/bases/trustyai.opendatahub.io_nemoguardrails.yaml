@@ -176,7 +176,7 @@ spec:
               nemoConfigs:
                 description: NemoConfig should be the names of the configmaps containing
                   NeMO server configuration files. All files in NemoConfigs will be
-                  mounted to /app/config/rails-custom-action
+                  mounted to /app/config/$Name
                 items:
                   description: NemoConfig holds information related to a single configuration
                     of the NeMo Guardrails server
