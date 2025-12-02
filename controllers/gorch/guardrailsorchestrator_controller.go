@@ -204,7 +204,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
-	err = utils.ReconcileServiceAccount(ctx, r.Client, orchestrator, orchestrator.Name+"-serviceaccount", serviceAccountTemplatePath, templateParser.ParseResource)
+	err = utils.ReconcileServiceAccount(ctx, r.Client, orchestrator, getServiceAccountName(orchestrator), serviceAccountTemplatePath, templateParser.ParseResource)
 	if err != nil {
 		r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Failed to get reconcile serviceAccount")
 		return ctrl.Result{}, err
@@ -213,7 +213,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	clusterRoleBinding := &rbacv1.ClusterRoleBinding{}
 	err = r.Get(ctx, types.NamespacedName{Name: getClusterRoleName(orchestrator), Namespace: orchestrator.Namespace}, clusterRoleBinding)
 	if err != nil && errors.IsNotFound(err) {
-		clusterRoleBinding = r.createClusterRoleBinding(orchestrator, orchestrator.GetName())
+		clusterRoleBinding = r.createClusterRoleBinding(orchestrator)
 	}
 	err = utils.ReconcileClusterRoleBinding(ctx, r.Client, clusterRoleBinding)
 	if err != nil {
