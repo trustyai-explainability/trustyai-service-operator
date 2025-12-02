@@ -204,7 +204,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
-	err = utils.ReconcileServiceAccount(ctx, r.Client, orchestrator, orchestratorName+"-serviceaccount", serviceAccountTemplatePath, templateParser.ParseResource)
+	err = utils.ReconcileServiceAccount(ctx, r.Client, orchestrator, orchestrator.Name+"-serviceaccount", serviceAccountTemplatePath, templateParser.ParseResource)
 	if err != nil {
 		r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Failed to get reconcile serviceAccount")
 		return ctrl.Result{}, err
