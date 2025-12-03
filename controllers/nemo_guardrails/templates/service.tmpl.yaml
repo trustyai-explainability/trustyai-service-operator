@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+  labels:
+    app: {{.Owner.Name}}
+    component: {{.Owner.Name}}
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: {{.Owner.Name}}-tls
+spec:
+  ipFamilies:
+    - IPv4
+  ports:
+    {{if .UseAuthProxy }}
+    - name: {{ .Name }}
+      protocol: TCP
+      port: 443
+      targetPort: 8443
+    {{else}}
+    - name: {{ .Name }}
+      protocol: TCP
+      port: 80
+      targetPort: 8000
+    {{end}}
+  internalTrafficPolicy: Cluster
+  type: ClusterIP
+  ipFamilyPolicy: SingleStack
+  sessionAffinity: None
+  selector:
+    app: {{.Owner.Name}}
+    component: {{.Owner.Name}}

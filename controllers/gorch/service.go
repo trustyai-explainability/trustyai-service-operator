@@ -14,6 +14,6 @@ func getServiceConfig(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) utils.
 		Name:         orchestrator.Name + "-service",
 		Namespace:    orchestrator.Namespace,
 		Version:      constants.Version,
-		UseAuthProxy: requiresOAuth(orchestrator),
+		UseAuthProxy: utils.RequiresAuth(orchestrator),
 	}
 }

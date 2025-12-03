@@ -10,6 +10,7 @@ import (
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -345,7 +346,7 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 
 	configYaml.WriteString(orchestratorConclusion)
 
-	if requiresOAuth(orchestrator) {
+	if utils.RequiresAuth(orchestrator) {
 		configYaml.WriteString(oauthHeaderRewrite)
 	}
 
