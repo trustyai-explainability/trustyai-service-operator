@@ -219,6 +219,7 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - evalhubs
   - guardrailsorchestrators
   - lmevaljobs
   - trustyaiservices
@@ -233,6 +234,7 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - evalhubs/finalizers
   - guardrailsorchestrators/finalizers
   - lmevaljobs/finalizers
   - trustyaiservices/finalizers
@@ -241,6 +243,7 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - evalhubs/status
   - guardrailsorchestrators/status
   - lmevaljobs/status
   - trustyaiservices/status
