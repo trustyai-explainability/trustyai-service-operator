@@ -61,6 +61,10 @@ spec:
                 description: Name of configmap containing user-defined Python detectors.
                   This is only used if EnableBuiltInDetectors is true
                 type: string
+              disableOrchestrator:
+                description: ' Boolean flag to disable the orchestrator container,
+                  if running the built-in detectors in standalone mode'
+                type: boolean
               enableBuiltInDetectors:
                 description: Boolean flag to enable/disable built-in detectors
                 type: boolean

@@ -54,7 +54,6 @@
               mountPath: /etc/kube-rbac-proxy
               readOnly: true
 {{ end }}
-
 kind: Deployment
 apiVersion: apps/v1
 metadata:
@@ -125,6 +124,12 @@ spec:
             name: {{.Orchestrator.Name}}-kube-rbac-proxy-gateway-config
             defaultMode: 420
         {{- end }}
+        {{- if .BuiltInKubeRBACProxy }}
+        - name: kube-rbac-proxy-built-in-config
+          configMap:
+            name: {{.Orchestrator.Name}}-kube-rbac-proxy-built-in-config
+            defaultMode: 420
+        {{- end }}
 {{- if .Orchestrator.Spec.CustomDetectorsConfig }}
         - name: custom-detectors-config
           configMap:
@@ -133,6 +138,7 @@ spec:
 {{- end }}
       serviceAccountName: {{.Orchestrator.Name}}-serviceaccount
       containers:
+        {{ if not .Orchestrator.Spec.DisableOrchestrator }}
         - name: {{.Orchestrator.Name}}
           image: {{.ContainerImages.OrchestratorImage}}
           env:
@@ -215,6 +221,10 @@ spec:
             terminationMessagePath: /dev/termination-log
             command:
               - /app/bin/fms-guardrails-orchestr8
+        {{- if .OrchestratorKubeRBACProxy }}
+        - {{- template "kubeRBACProxy" .OrchestratorKubeRBACProxy }}
+        {{- end }}
+        {{ end }}
         {{ if .Orchestrator.Spec.EnableGuardrailsGateway }}
         - name: {{.Orchestrator.Name}}-gateway
           image: {{.ContainerImages.GuardrailsGatewayImage}}
@@ -252,7 +262,7 @@ spec:
               mountPath: /app/custom_detectors/custom_detectors.py
               subPath: custom_detectors.py
           {{end}}
+        {{ if .BuiltInKubeRBACProxy }}
+        - {{- template "kubeRBACProxy" .BuiltInKubeRBACProxy }}
         {{end}}
-        {{- if .OrchestratorKubeRBACProxy -}}
-        - {{- template "kubeRBACProxy" .OrchestratorKubeRBACProxy }}
         {{end}}

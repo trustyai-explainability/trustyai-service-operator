@@ -13,7 +13,7 @@ spec:
           interval: 30s
           path: /metrics
           scheme: http
-          port: detector-metrics
+          port: {{ .TargetPort }}
     selector:
         matchLabels:
             component: {{ .Orchestrator.Name }}
