@@ -14,12 +14,18 @@ const serviceMonitorTemplatePath = "service-monitor.tmpl.yaml"
 
 type ServiceMonitorConfig struct {
 	Orchestrator gorchv1alpha1.GuardrailsOrchestrator
+	TargetPort   string
 }
 
 func (r *GuardrailsOrchestratorReconciler) createServiceMonitor(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *monitoringv1.ServiceMonitor {
+	targetPort := "built-in-detector"
+	if requiresOAuth(orchestrator) {
+		targetPort = "built-in-detector-metrics"
+	}
 
 	serviceMonitorConfig := ServiceMonitorConfig{
 		Orchestrator: *orchestrator,
+		TargetPort:   targetPort,
 	}
 
 	var serviceMonitor *monitoringv1.ServiceMonitor

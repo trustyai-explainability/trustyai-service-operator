@@ -27,6 +27,7 @@ type DeploymentConfig struct {
 	ContainerImages           ContainerImages
 	OrchestratorKubeRBACProxy *KubeRBACProxyConfig
 	GatewayKubeRBACProxy      *KubeRBACProxyConfig
+	BuiltInKubeRBACProxy      *KubeRBACProxyConfig
 }
 
 func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (*appsv1.Deployment, error) {
@@ -58,7 +59,6 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 			log.FromContext(ctx).Error(err, "Error getting guardrails sidecar gateway image from ConfigMap.")
 		}
 		log.FromContext(ctx).Info("Using sidecar gateway image " + guardrailsGatewayImage + " " + "from configmap " + r.Namespace + ":" + constants.ConfigMap)
-
 		containerImages.GuardrailsGatewayImage = guardrailsGatewayImage
 	}
 
@@ -75,7 +75,7 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 			return nil, err
 		}
 	}
-
+	
 	var deployment *appsv1.Deployment
 	deployment, err = templateParser.ParseResource[*appsv1.Deployment](deploymentTemplatePath, deploymentConfig, reflect.TypeOf(&appsv1.Deployment{}))
 	if err != nil {

@@ -72,6 +72,9 @@ type GuardrailsOrchestratorSpec struct {
 	TLSSecrets *[]string `json:"tlsSecrets,omitempty"`
 	// Define environment variables. These will be added to the orchestrator, gateway, and built-in detector pods.
 	EnvVars *[]corev1.EnvVar `json:"env,omitempty"`
+	//  Boolean flag to disable the orchestrator container, if running the built-in detectors in standalone mode
+	// +optional
+	DisableOrchestrator bool `json:"disableOrchestrator,omitempty"`
 }
 
 // OTelExporter defines the environment variables for configuring the OTLP exporter.

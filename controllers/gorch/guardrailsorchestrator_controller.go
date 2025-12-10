@@ -18,6 +18,7 @@ package gorch
 
 import (
 	"context"
+	"fmt"
 	"github.com/go-logr/logr"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -204,6 +205,13 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
+	// == VERIFY DEPLOYMENT CONDITIONS =============================================================================================================
+	if orchestrator.Spec.DisableOrchestrator && !orchestrator.Spec.EnableBuiltInDetectors {
+		err = fmt.Errorf("guardrails orchestrator spec is invalid: if the orchestrator is disabled, the built-in detector must be enabled")
+		return ctrl.Result{}, err
+	}
+
+	// === SERVICE ACCOUNT  ========================================================================================================================
 	err = utils.ReconcileServiceAccount(ctx, r.Client, orchestrator, getServiceAccountName(orchestrator), serviceAccountTemplatePath, templateParser.ParseResource)
 	if err != nil {
 		r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Failed to get reconcile serviceAccount")
@@ -221,6 +229,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
+	// === AUTO CONFIG ========================================================================================================================
 	var tlsMounts []gorchv1alpha1.DetectedService
 	if orchestrator.Spec.AutoConfig != nil {
 		// Only perform autoconfig logic if the relevant resources have changed
@@ -239,7 +248,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		} else {
 			tlsMounts = getTLSInfo(*orchestrator)
 		}
-	} else {
+	} else if orchestrator.Spec.OrchestratorConfig != nil {
 		existingConfigMap := &corev1.ConfigMap{}
 		err = r.Get(ctx, types.NamespacedName{Name: *orchestrator.Spec.OrchestratorConfig, Namespace: orchestrator.Namespace}, existingConfigMap)
 		if err != nil {
@@ -256,11 +265,14 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, nil
 	}
 
+	// === RBAC CONFIGMAPS ========================================================================================================================
 	// Ensure kube-rbac-proxy ConfigMaps exist if OAuth is required
 	if requiresOAuth(orchestrator) {
-		if err := r.ensureOrchestratorKubeRBACProxyConfigMap(ctx, orchestrator); err != nil {
-			log.Error(err, "Failed to ensure orchestrator kube-rbac-proxy ConfigMap")
-			return ctrl.Result{}, err
+		if !orchestrator.Spec.DisableOrchestrator {
+			if err := r.ensureOrchestratorKubeRBACProxyConfigMap(ctx, orchestrator); err != nil {
+				log.Error(err, "Failed to ensure orchestrator kube-rbac-proxy ConfigMap")
+				return ctrl.Result{}, err
+			}
 		}
 
 		if orchestrator.Spec.EnableGuardrailsGateway {
@@ -269,8 +281,16 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 				return ctrl.Result{}, err
 			}
 		}
+
+		if orchestrator.Spec.EnableBuiltInDetectors {
+			if err := r.ensureBuiltInKubeRBACProxyConfigMap(ctx, orchestrator); err != nil {
+				log.Error(err, "Failed to ensure built-in detectors kube-rbac-proxy ConfigMap")
+				return ctrl.Result{}, err
+			}
+		}
 	}
 
+	// === DEPLOYMENT ========================================================================================================================
 	existingDeployment := &appsv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingDeployment)
 	if err != nil && errors.IsNotFound(err) {
@@ -333,6 +353,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
+	// === SERVICE ========================================================================================================================
 	err = utils.ReconcileService(ctx, r.Client, orchestrator, getServiceConfig(orchestrator), serviceTemplatePath, templateParser.ParseResource)
 	if err != nil {
 		r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Failed to reconcile service")
@@ -345,16 +366,19 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	err = r.reconcileOrchestratorRoute(ctx, orchestrator)
-	if err != nil {
-		r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Main orchestrator route reconciliation failed")
-		return ctrl.Result{}, err
-	}
+	// === ROUTES ========================================================================================================================
+	if !orchestrator.Spec.DisableOrchestrator {
+		err = r.reconcileOrchestratorRoute(ctx, orchestrator)
+		if err != nil {
+			r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Main orchestrator route reconciliation failed")
+			return ctrl.Result{}, err
+		}
 
-	err = r.reconcileHealthRoute(ctx, orchestrator)
-	if err != nil {
-		r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Health route reconciliation failed")
-		return ctrl.Result{}, err
+		err = r.reconcileHealthRoute(ctx, orchestrator)
+		if err != nil {
+			r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Health route reconciliation failed")
+			return ctrl.Result{}, err
+		}
 	}
 
 	if orchestrator.Spec.EnableGuardrailsGateway {
@@ -365,6 +389,15 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
+	if orchestrator.Spec.EnableBuiltInDetectors {
+		err = r.reconcileBuiltInDetectorRoute(ctx, orchestrator)
+		if err != nil {
+			r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Built-in route reconciliation failed")
+			return ctrl.Result{}, err
+		}
+	}
+
+	// === METRIC SERVICE MONITOR ======================================================================================================================
 	existingSM := &monitoringv1.ServiceMonitor{}
 	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name + "-service-monitor", Namespace: orchestrator.Namespace}, existingSM)
 	if orchestrator.Spec.EnableBuiltInDetectors {
