@@ -11,6 +11,7 @@ rules:
   - persistentvolumeclaims
   - pods
   - secrets
+  - serviceaccounts
   - services
   verbs:
   - create
@@ -46,17 +47,6 @@ rules:
   - delete
   - get
   - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - serviceaccounts
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - update
   - watch
 - apiGroups:
   - apiextensions.k8s.io
@@ -221,6 +211,7 @@ rules:
   resources:
   - guardrailsorchestrators
   - lmevaljobs
+  - nemoguardrails
   - trustyaiservices
   verbs:
   - create
@@ -235,6 +226,7 @@ rules:
   resources:
   - guardrailsorchestrators/finalizers
   - lmevaljobs/finalizers
+  - nemoguardrails/finalizers
   - trustyaiservices/finalizers
   verbs:
   - update
@@ -243,6 +235,7 @@ rules:
   resources:
   - guardrailsorchestrators/status
   - lmevaljobs/status
+  - nemoguardrails/status
   - trustyaiservices/status
   verbs:
   - get

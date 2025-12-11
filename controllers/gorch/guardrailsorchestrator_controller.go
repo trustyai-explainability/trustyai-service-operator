@@ -181,7 +181,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 				return ctrl.Result{Requeue: true}, nil
 			}
 
-			if requiresOAuth(orchestrator) {
+			if utils.RequiresAuth(orchestrator) {
 				if err = r.cleanupClusterRoleBinding(ctx, orchestrator); err != nil && !errors.IsNotFound(err) {
 					log.Error(err, "Failed to cleanup ClusterRoleBinding")
 					return ctrl.Result{}, err
@@ -212,14 +212,14 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	// === SERVICE ACCOUNT  ========================================================================================================================
-	err = utils.ReconcileServiceAccount(ctx, r.Client, orchestrator, getServiceAccountName(orchestrator), serviceAccountTemplatePath, templateParser.ParseResource)
+	err = utils.ReconcileServiceAccount(ctx, r.Client, orchestrator)
 	if err != nil {
 		r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Failed to get reconcile serviceAccount")
 		return ctrl.Result{}, err
 	}
 
 	clusterRoleBinding := &rbacv1.ClusterRoleBinding{}
-	err = r.Get(ctx, types.NamespacedName{Name: getClusterRoleName(orchestrator), Namespace: orchestrator.Namespace}, clusterRoleBinding)
+	err = r.Get(ctx, types.NamespacedName{Name: utils.GetAuthDelegatorClusterRoleName(orchestrator), Namespace: orchestrator.Namespace}, clusterRoleBinding)
 	if err != nil && errors.IsNotFound(err) {
 		clusterRoleBinding = r.createClusterRoleBinding(orchestrator)
 	}
@@ -267,7 +267,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 
 	// === RBAC CONFIGMAPS ========================================================================================================================
 	// Ensure kube-rbac-proxy ConfigMaps exist if OAuth is required
-	if requiresOAuth(orchestrator) {
+	if utils.RequiresAuth(orchestrator) {
 		if !orchestrator.Spec.DisableOrchestrator {
 			if err := r.ensureOrchestratorKubeRBACProxyConfigMap(ctx, orchestrator); err != nil {
 				log.Error(err, "Failed to ensure orchestrator kube-rbac-proxy ConfigMap")

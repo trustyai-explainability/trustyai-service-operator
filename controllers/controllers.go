@@ -19,11 +19,10 @@ package controllers
 import (
 	"errors"
 	"fmt"
-	"slices"
-	"strings"
-
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"slices"
+	"strings"
 )
 
 // to set up a controller. may include webhook or not

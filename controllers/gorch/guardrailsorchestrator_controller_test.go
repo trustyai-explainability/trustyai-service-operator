@@ -322,7 +322,7 @@ func testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName string) {
 }
 
 func testCreateDeleteGuardrailsOrchestratorOtelExporter(namespaceName string) {
-	It("Should sucessfully reconcile creating a custom resource for the GuardrailsOrchestrator", func() {
+	It("Should successfully reconcile creating a custom resource for the GuardrailsOrchestrator", func() {
 
 		By("Creating a custom resource for the GuardrailsOrchestrator")
 		ctx := context.Background()

@@ -5,6 +5,7 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/gorch/templates"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -19,7 +20,7 @@ type ServiceMonitorConfig struct {
 
 func (r *GuardrailsOrchestratorReconciler) createServiceMonitor(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *monitoringv1.ServiceMonitor {
 	targetPort := "built-in-detector"
-	if requiresOAuth(orchestrator) {
+	if utils.RequiresAuth(orchestrator) {
 		targetPort = "built-in-detector-metrics"
 	}
 

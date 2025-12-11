@@ -3,53 +3,24 @@ package gorch
 import (
 	"context"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// getClusterRoleName creates an auth cluster role name from the orchestrator name and namespace
-func getClusterRoleName(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) string {
-	return orchestrator.Name + "-" + orchestrator.Namespace + "-auth-delegator"
-}
-
-// getServiceAccountName creates a service account name from the orchestrator name
-func getServiceAccountName(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) string {
-	return orchestrator.Name + "-serviceaccount"
-}
-
 // createClusterRoleBinding creates a cluster role binding for the orchestrator oauth service account
 func (r *GuardrailsOrchestratorReconciler) createClusterRoleBinding(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) *rbacv1.ClusterRoleBinding {
-	crb := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: getClusterRoleName(orchestrator),
-			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "trustyai-service-operator",
-				"guardrailsorchestrator":       orchestrator.Name,
-				"guardrailsorchestrator-ns":    orchestrator.Namespace,
-			},
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      getServiceAccountName(orchestrator),
-				Namespace: orchestrator.Namespace,
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			Kind:     "ClusterRole",
-			Name:     "system:auth-delegator",
-			APIGroup: rbacv1.GroupName,
-		},
-	}
+	crb := utils.CreateAuthDelegatorClusterRoleBinding(orchestrator)
+	crb.ObjectMeta.Labels["guardrailsorchestrator"] = orchestrator.Name
+	crb.ObjectMeta.Labels["guardrailsorchestrator-ns"] = orchestrator.Namespace
 	return crb
 }
 
 // cleanupClusterRoleBinding deletes the oauth cluster role upon orchestrator deletion
 func (r *GuardrailsOrchestratorReconciler) cleanupClusterRoleBinding(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) error {
-	crbName := getClusterRoleName(orchestrator)
+	crbName := utils.GetAuthDelegatorClusterRoleName(orchestrator)
 	crb := &rbacv1.ClusterRoleBinding{}
 	err := r.Get(ctx, types.NamespacedName{Name: crbName}, crb)
 	if err == nil {

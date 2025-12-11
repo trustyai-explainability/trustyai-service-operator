@@ -51,4 +51,13 @@ resources:
   kind: GuardrailsOrchestrator
   path: github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: opendatahub.io
+  group: trustyai
+  kind: NemoGuardrails
+  path: github.com/trustyai-explainability/trustyai-service-operator/api/nemo/v1alpha1
+  version: v1alpha1
 version: "3"
