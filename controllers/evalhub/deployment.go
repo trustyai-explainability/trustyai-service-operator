@@ -1,0 +1,191 @@
+package evalhub
+
+import (
+	"context"
+
+	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+)
+
+// reconcileDeployment creates or updates the Deployment for EvalHub
+func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+	log := log.FromContext(ctx)
+	log.Info("Reconciling Deployment", "name", instance.Name)
+
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name,
+			Namespace: instance.Namespace,
+		},
+	}
+
+	// Check if Deployment already exists
+	getErr := r.Get(ctx, client.ObjectKeyFromObject(deployment), deployment)
+	if getErr != nil && !errors.IsNotFound(getErr) {
+		return getErr
+	}
+
+	// Define the desired deployment spec
+	desiredSpec, err := r.buildDeploymentSpec(ctx, instance)
+	if err != nil {
+		return err
+	}
+
+	if errors.IsNotFound(getErr) {
+		// Create new Deployment
+		deployment.Spec = desiredSpec
+		if err := controllerutil.SetControllerReference(instance, deployment, r.Scheme); err != nil {
+			return err
+		}
+		log.Info("Creating Deployment", "name", deployment.Name)
+		return r.Create(ctx, deployment)
+	} else {
+		// Update existing Deployment
+		deployment.Spec = desiredSpec
+		log.Info("Updating Deployment", "name", deployment.Name)
+		return r.Update(ctx, deployment)
+	}
+}
+
+// buildDeploymentSpec builds the deployment specification for EvalHub
+func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *evalhubv1alpha1.EvalHub) (appsv1.DeploymentSpec, error) {
+	labels := map[string]string{
+		"app":       "eval-hub",
+		"instance":  instance.Name,
+		"component": "api",
+	}
+
+	// Get image from ConfigMap with fallback
+	evalHubImage, err := r.getEvalHubImage(ctx)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Error getting EvalHub image from ConfigMap. Using the default image value of "+defaultEvalHubImage)
+		evalHubImage = defaultEvalHubImage
+	}
+
+	// Build environment variables based on k8s examples
+	env := []corev1.EnvVar{
+		{
+			Name:  "API_HOST",
+			Value: "0.0.0.0",
+		},
+		{
+			Name:  "API_PORT",
+			Value: "8000",
+		},
+		{
+			Name:  "LOG_LEVEL",
+			Value: "INFO",
+		},
+		{
+			Name:  "MAX_CONCURRENT_EVALUATIONS",
+			Value: "10",
+		},
+		{
+			Name:  "DEFAULT_TIMEOUT_MINUTES",
+			Value: "60",
+		},
+		{
+			Name:  "MAX_RETRY_ATTEMPTS",
+			Value: "3",
+		},
+	}
+
+	// Add custom environment variables from the CR
+	env = append(env, instance.Spec.Env...)
+
+	// Container definition based on k8s examples
+	container := corev1.Container{
+		Name:            containerName,
+		Image:           evalHubImage,
+		ImagePullPolicy: corev1.PullAlways,
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          "http",
+				ContainerPort: containerPort,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		},
+		Env:             env,
+		Resources:       defaultResourceRequirements,
+		SecurityContext: defaultSecurityContext,
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: "/api/v1/health",
+					Port: intstr.FromString("http"),
+				},
+			},
+			InitialDelaySeconds: 30,
+			PeriodSeconds:       10,
+			TimeoutSeconds:      5,
+			FailureThreshold:    3,
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: "/api/v1/health",
+					Port: intstr.FromString("http"),
+				},
+			},
+			InitialDelaySeconds: 10,
+			PeriodSeconds:       5,
+			TimeoutSeconds:      3,
+			FailureThreshold:    3,
+		},
+	}
+
+	// Pod template
+	podTemplate := corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: labels,
+		},
+		Spec: corev1.PodSpec{
+			Containers:      []corev1.Container{container},
+			SecurityContext: defaultPodSecurityContext,
+			RestartPolicy:   corev1.RestartPolicyAlways,
+		},
+	}
+
+	// Deployment spec
+	replicas := instance.Spec.GetReplicas()
+	return appsv1.DeploymentSpec{
+		Replicas: &replicas,
+		Selector: &metav1.LabelSelector{
+			MatchLabels: labels,
+		},
+		Template: podTemplate,
+		Strategy: appsv1.DeploymentStrategy{
+			Type: appsv1.RollingUpdateDeploymentStrategyType,
+			RollingUpdate: &appsv1.RollingUpdateDeployment{
+				MaxUnavailable: &intstr.IntOrString{
+					Type:   intstr.String,
+					StrVal: "25%",
+				},
+				MaxSurge: &intstr.IntOrString{
+					Type:   intstr.String,
+					StrVal: "25%",
+				},
+			},
+		},
+	}, nil
+}
+
+// getEvalHubImage retrieves the EvalHub image from ConfigMap with fallback to default
+func (r *EvalHubReconciler) getEvalHubImage(ctx context.Context) (string, error) {
+	// Get the namespace where the operator is deployed (where the ConfigMap should be)
+	namespace := r.Namespace
+	if namespace == "" {
+		// Fallback to default namespace if not set
+		namespace = "trustyai-service-operator-system"
+	}
+
+	return utils.GetImageFromConfigMapWithFallback(ctx, r.Client, configMapEvalHubImageKey, configMapName, namespace, defaultEvalHubImage)
+}
