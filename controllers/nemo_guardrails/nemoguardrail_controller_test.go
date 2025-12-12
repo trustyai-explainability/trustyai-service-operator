@@ -3,6 +3,9 @@ package nemo_guardrails
 import (
 	"context"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/tas"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -21,6 +24,8 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		resourceName      = "test-nemoguardrails"
 		namespace         = "test"
 		operatorNamespace = "operator-ns"
+		saName            = resourceName + "-serviceaccount"
+		crbName           = resourceName + "-" + namespace + "-auth-delegator"
 	)
 	var (
 		ctx                = context.Background()
@@ -61,6 +66,7 @@ var _ = Describe("NemoGuardrails Controller", func() {
 			},
 			Data: map[string]string{
 				nemoGuardrailsImageKey: "quay.io/trustyai/nemo-guardrails-server:latest",
+				tas.KubeRBACProxyName:  "quay.io/openshift/origin-kube-rbac-proxy:4.19",
 			},
 		}
 		err = k8sClient.Create(ctx, operatorConfigMap)
@@ -88,10 +94,14 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		nemoguardrail := &nemoguardrailsv1alpha1.NemoGuardrails{}
 		err = k8sClient.Get(ctx, typeNamespacedName, nemoguardrail)
 		if err != nil && errors.IsNotFound(err) {
+			log.FromContext(ctx).Info("Creating a new NemoGuardrails resource")
 			resource := &nemoguardrailsv1alpha1.NemoGuardrails{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      resourceName,
 					Namespace: namespace,
+					Annotations: map[string]string{
+						constants.AuthAnnotationKey: "true",
+					},
 				},
 				Spec: nemoguardrailsv1alpha1.NemoGuardrailsSpec{
 					NemoConfigs: []nemoguardrailsv1alpha1.NemoConfig{
@@ -107,7 +117,10 @@ var _ = Describe("NemoGuardrails Controller", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		} else {
+			log.FromContext(ctx).Info("Reusing old NemoGuardrails resource?")
 		}
+		nemoguardrail.DeletionTimestamp = nil
 	})
 
 	AfterEach(func() {
@@ -116,6 +129,31 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		if err == nil {
 			By("Cleanup the specific resource instance NemoGuardrails")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+
+			// Explicitly trigger reconciliation to handle finalizer removal
+			controllerReconciler := &NemoGuardrailsReconciler{
+				Client:    k8sClient,
+				Scheme:    k8sClient.Scheme(),
+				Namespace: operatorNamespace,
+			}
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Wait for the resource to be deleted
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, typeNamespacedName, resource)
+				return errors.IsNotFound(err)
+			}, time.Second*5, time.Millisecond*100).Should(BeTrue())
+
+			// ClusterRoleBinding should be deleted - oinly check CRB due to envtest issues
+			Eventually(func() bool {
+				// Use unstructured to check for CRB since it's cluster-scoped
+				crb := &rbacv1.ClusterRoleBinding{}
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: crbName, Namespace: namespace}, crb)
+				return errors.IsNotFound(err)
+			}, time.Second*2, time.Millisecond*100).Should(BeTrue())
 		}
 	})
 
@@ -219,5 +257,28 @@ var _ = Describe("NemoGuardrails Controller", func() {
 			}
 			return false
 		}, time.Second*10, time.Millisecond*100).Should(BeTrue())
+	})
+
+	It("should create a ServiceAccount and ClusterRoleBinding and delete them when the instance is deleted", func() {
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		// Check ServiceAccount and ClusterRoleBinding exist after reconciliation
+		Eventually(func() error {
+			sa := &corev1.ServiceAccount{}
+			return k8sClient.Get(ctx, types.NamespacedName{Name: saName, Namespace: namespace}, sa)
+		}, time.Second*10, time.Millisecond*100).Should(Succeed())
+
+		Eventually(func() error {
+			crb := &rbacv1.ClusterRoleBinding{}
+			return k8sClient.Get(ctx, types.NamespacedName{Name: crbName, Namespace: namespace}, crb)
+		}, time.Second*10, time.Millisecond*100).Should(Succeed())
 	})
 })

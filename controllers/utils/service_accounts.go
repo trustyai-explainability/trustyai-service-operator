@@ -24,8 +24,13 @@ func ReconcileServiceAccount(ctx context.Context, c client.Client, owner metav1.
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      GetServiceAccountName(owner),
 			Namespace: owner.GetNamespace(),
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "trustyai-service-operator",
+				"app":                          owner.GetName(),
+				"component":                    owner.GetNamespace(),
+			},
 		},
 	}
-	_, _, err := ReconcileGenericManuallyDefined[*corev1.ServiceAccount](ctx, c, serviceAccountResourceKind, sa)
+	_, _, err := ReconcileGenericManuallyDefined[*corev1.ServiceAccount](ctx, c, serviceAccountResourceKind, owner, sa)
 	return err
 }

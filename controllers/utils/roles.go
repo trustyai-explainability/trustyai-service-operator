@@ -3,7 +3,9 @@ package utils
 import (
 	"context"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -17,12 +19,15 @@ func GetAuthDelegatorClusterRoleName(owner metav1.Object) string {
 }
 
 // createClusterRoleBinding creates a cluster role binding for the orchestrator oauth service account
-func CreateAuthDelegatorClusterRoleBinding(owner metav1.Object) *rbacv1.ClusterRoleBinding {
-	crb := &rbacv1.ClusterRoleBinding{
+func createAuthDelegatorClusterRoleBinding(owner metav1.Object) *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: GetAuthDelegatorClusterRoleName(owner),
+			Name:      GetAuthDelegatorClusterRoleName(owner),
+			Namespace: owner.GetNamespace(),
 			Labels: map[string]string{
 				"app.kubernetes.io/managed-by": "trustyai-service-operator",
+				"app":                          owner.GetName(),
+				"component":                    owner.GetNamespace(),
 			},
 		},
 		Subjects: []rbacv1.Subject{
@@ -38,10 +43,34 @@ func CreateAuthDelegatorClusterRoleBinding(owner metav1.Object) *rbacv1.ClusterR
 			APIGroup: rbacv1.GroupName,
 		},
 	}
-	return crb
 }
 
-func ReconcileClusterRoleBinding(ctx context.Context, c client.Client, crb *rbacv1.ClusterRoleBinding) error {
-	_, _, err := ReconcileGenericManuallyDefined[*rbacv1.ClusterRoleBinding](ctx, c, clusterRoleBindingResourceKind, crb)
+func ReconcileClusterRoleBinding(ctx context.Context, c client.Client, owner metav1.Object, crb *rbacv1.ClusterRoleBinding) error {
+	_, _, err := ReconcileGenericManuallyDefined[*rbacv1.ClusterRoleBinding](ctx, c, clusterRoleBindingResourceKind, owner, crb)
 	return err
+}
+
+func ReconcileAuthDelegatorClusterRoleBinding(ctx context.Context, c client.Client, owner metav1.Object) error {
+	return ReconcileClusterRoleBinding(ctx, c, owner, createAuthDelegatorClusterRoleBinding(owner))
+}
+
+// cleanupClusterRoleBinding deletes the oauth cluster role upon orchestrator deletion
+func CleanupClusterRoleBinding(ctx context.Context, c client.Client, owner metav1.Object) error {
+	crbName := GetAuthDelegatorClusterRoleName(owner)
+	crb := &rbacv1.ClusterRoleBinding{}
+	LogInfoVerb(ctx, "deleting", clusterRoleBindingResourceKind, crbName, owner.GetName())
+	err := c.Get(ctx, types.NamespacedName{Name: crbName}, crb)
+	if err == nil {
+		if delErr := c.Delete(ctx, crb); delErr != nil {
+			LogErrorVerb(ctx, err, "deleting", clusterRoleBindingResourceKind, crbName, crb.GetName())
+			return err
+		}
+		return nil
+	} else if !errors.IsNotFound(err) {
+		LogErrorRetrieving(ctx, err, clusterRoleBindingResourceKind, crbName, crb.GetName())
+		return err
+	} else {
+		// ignore if not found
+		return nil
+	}
 }

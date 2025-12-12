@@ -72,8 +72,26 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			logger.Info("NemoGuardrails resource not found. Ignoring since object must be deleted.")
 			return ctrl.Result{}, nil
 		}
+
 		utils.LogErrorRetrieving(ctx, err, "NemoGuardrails Custom Resource", nemoGuardrails.Name, nemoGuardrails.Namespace)
 		return ctrl.Result{}, err
+	}
+
+	// ====== Deletion handling ========================================================================================
+	if err := utils.AddFinalizerIfNeeded(ctx, r.Client, nemoGuardrails, finalizerName); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// define all the cleanup steps needed before the finalizer can be removed in the CleanupFunc
+	cleanupFunc := func() error {
+		return utils.CleanupClusterRoleBinding(ctx, r.Client, nemoGuardrails)
+	}
+	shouldExit, err := utils.HandleDeletionIfNeeded(ctx, r.Client, nemoGuardrails, finalizerName, cleanupFunc)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if shouldExit {
+		return ctrl.Result{}, nil
 	}
 
 	// ====== Deploy the CA bundle configmap ============================================================================
@@ -105,8 +123,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		// create auth CRB
-		crb := utils.CreateAuthDelegatorClusterRoleBinding(nemoGuardrails)
-		if err := utils.ReconcileClusterRoleBinding(ctx, r.Client, crb); err != nil {
+		if err := utils.ReconcileAuthDelegatorClusterRoleBinding(ctx, r.Client, nemoGuardrails); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -167,6 +184,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if updateErr != nil {
 		return ctrl.Result{}, updateErr
 	}
+	log.FromContext(ctx).Info("RECONCILE DONE")
 	return ctrl.Result{Requeue: true, RequeueAfter: 30 * time.Second}, nil
 }
 

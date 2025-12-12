@@ -25,7 +25,6 @@ import (
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/gorch/templates"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/metrics"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -41,7 +40,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
@@ -154,45 +152,20 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		createOrchestratorCreationMetrics(orchestrator)
 	}
 
-	if !controllerutil.ContainsFinalizer(orchestrator, finalizerName) {
-		log.Info("Adding Finalizer for the GuardrailsOrchestrator")
-		if ok := controllerutil.AddFinalizer(orchestrator, finalizerName); !ok {
-			log.Error(err, "Failed to add a finalizer into the custom resource")
-			return ctrl.Result{Requeue: true}, nil
-		}
-		if err = r.Update(ctx, orchestrator); err != nil {
-			log.Error(err, "Failed to update custom resource to add finalizer")
-			return ctrl.Result{}, err
-		}
+	// === DELETION HANDLING =======================================================================================================
+	if err := utils.AddFinalizerIfNeeded(ctx, r.Client, orchestrator, finalizerName); err != nil {
+		return ctrl.Result{}, err
 	}
 
-	// Check if the GuardrailsOrchestrator is marked to be deleted, which is
-	// indicated by the deletion timestamp being set.
-	isMarkedToBeDeleted := orchestrator.GetDeletionTimestamp() != nil
-	if isMarkedToBeDeleted {
-		if controllerutil.ContainsFinalizer(orchestrator, finalizerName) {
-			if err = r.Get(ctx, req.NamespacedName, orchestrator); err != nil {
-				log.Error(err, "Failed to re-fetch GuardrailsOrchestrator")
-				return ctrl.Result{}, err
-			}
-			log.Info("Removing Finalizer for GuardrailsOrchestrator")
-			if ok := controllerutil.RemoveFinalizer(orchestrator, finalizerName); !ok {
-				log.Error(err, "Failed to remove finalizer from GuardrailsOrchestrator")
-				return ctrl.Result{Requeue: true}, nil
-			}
-
-			if utils.RequiresAuth(orchestrator) {
-				if err = r.cleanupClusterRoleBinding(ctx, orchestrator); err != nil && !errors.IsNotFound(err) {
-					log.Error(err, "Failed to cleanup ClusterRoleBinding")
-					return ctrl.Result{}, err
-				}
-			}
-
-			if err = r.Update(ctx, orchestrator); err != nil {
-				log.Error(err, "Failed to remove finalizer for GuardrailsOrchestrator")
-				return ctrl.Result{}, err
-			}
-		}
+	// define all the cleanup steps needed before the finalizer can be removed in the CleanupFunc
+	cleanupFunc := func() error {
+		return utils.CleanupClusterRoleBinding(ctx, r.Client, orchestrator)
+	}
+	shouldExit, err := utils.HandleDeletionIfNeeded(ctx, r.Client, orchestrator, finalizerName, cleanupFunc)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if shouldExit {
 		return ctrl.Result{}, nil
 	}
 
@@ -218,13 +191,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	clusterRoleBinding := &rbacv1.ClusterRoleBinding{}
-	err = r.Get(ctx, types.NamespacedName{Name: utils.GetAuthDelegatorClusterRoleName(orchestrator), Namespace: orchestrator.Namespace}, clusterRoleBinding)
-	if err != nil && errors.IsNotFound(err) {
-		clusterRoleBinding = r.createClusterRoleBinding(orchestrator)
-	}
-	err = utils.ReconcileClusterRoleBinding(ctx, r.Client, clusterRoleBinding)
-	if err != nil {
+	if err = utils.ReconcileAuthDelegatorClusterRoleBinding(ctx, r.Client, orchestrator); err != nil {
 		r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Failed to reconcile ClusterRoleBinding")
 		return ctrl.Result{}, err
 	}
@@ -290,6 +257,19 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
+	// === SERVICE ========================================================================================================================
+	err = utils.ReconcileService(ctx, r.Client, orchestrator, getServiceConfig(orchestrator), serviceTemplatePath, templateParser.ParseResource)
+	if err != nil {
+		r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Failed to reconcile service")
+		return ctrl.Result{}, err
+	}
+
+	_, _, err = utils.ReconcileConfigMap(ctx, r.Client, orchestrator, orchestrator.Name+"-ca-bundle", "", "ca-bundle-configmap.tmpl.yaml", templateParser.ParseResource)
+	if err != nil {
+		r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "CA Bundle ConfigMap reconciliation failed")
+		return ctrl.Result{}, err
+	}
+
 	// === DEPLOYMENT ========================================================================================================================
 	existingDeployment := &appsv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingDeployment)
@@ -351,19 +331,6 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 			r.handleReconciliationError(ctx, log, orchestrator, err, AutoConfigFailed, "Failed to monitor autoconfig configmaps for changes")
 			return result, err
 		}
-	}
-
-	// === SERVICE ========================================================================================================================
-	err = utils.ReconcileService(ctx, r.Client, orchestrator, getServiceConfig(orchestrator), serviceTemplatePath, templateParser.ParseResource)
-	if err != nil {
-		r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Failed to reconcile service")
-		return ctrl.Result{}, err
-	}
-
-	_, _, err = utils.ReconcileConfigMap(ctx, r.Client, orchestrator, orchestrator.Name+"-ca-bundle", "", "ca-bundle-configmap.tmpl.yaml", templateParser.ParseResource)
-	if err != nil {
-		r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "CA Bundle ConfigMap reconciliation failed")
-		return ctrl.Result{}, err
 	}
 
 	// === ROUTES ========================================================================================================================
