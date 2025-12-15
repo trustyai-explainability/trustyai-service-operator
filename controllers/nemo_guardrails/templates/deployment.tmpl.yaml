@@ -1,0 +1,111 @@
+{{ define "kubeRBACProxy" }} name: kube-rbac-proxy
+        image: {{ .KubeRBACProxyImage}}
+        args:
+          - --secure-listen-address=0.0.0.0:{{ .DownstreamPort }}
+          - --upstream={{ .UpstreamProtocol }}://{{ .UpstreamHost }}:{{ .UpstreamPort }}/
+          - --config-file=/etc/kube-rbac-proxy/config.yaml
+          - --tls-cert-file=/etc/tls/private/tls.crt
+          - --tls-private-key-file=/etc/tls/private/tls.key
+          - --upstream-ca-file=/etc/ssl/certs/ca-certificates.crt
+          - --proxy-endpoints-port={{ .HealthPort }}
+          - --v=0
+        ports:
+          - containerPort: {{ .DownstreamPort }}
+            name: https
+            protocol: TCP
+          - containerPort: {{ .HealthPort }}
+            name: proxy-healthz
+            protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: {{ .HealthPort }}
+            scheme: HTTPS
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 1
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: {{ .HealthPort }}
+            scheme: HTTPS
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 1
+          successThreshold: 1
+          failureThreshold: 3
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+          requests:
+            cpu: 50m
+            memory: 32Mi
+        volumeMounts:
+          - name: tls-certs
+            mountPath: /etc/tls/private
+            readOnly: true
+          - name: kube-rbac-config
+            mountPath: /etc/kube-rbac-proxy
+            readOnly: true
+{{ end }}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{.NemoGuardrails.Name}}
+  namespace: {{.NemoGuardrails.Namespace}}
+  labels:
+    app: {{.NemoGuardrails.Name}}
+    component: {{.NemoGuardrails.Name}}
+    deploy-name: {{.NemoGuardrails.Name}}
+    app.kubernetes.io/instance: {{.NemoGuardrails.Name}}
+    app.kubernetes.io/name: {{.NemoGuardrails.Name}}
+    app.kubernetes.io/part-of: trustyai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{.NemoGuardrails.Name}}
+  template:
+    metadata:
+      labels:
+        app: {{.NemoGuardrails.Name}}
+        component: {{.NemoGuardrails.Name}}
+        deploy-name: {{.NemoGuardrails.Name}}
+        app.kubernetes.io/instance: {{.NemoGuardrails.Name}}
+        app.kubernetes.io/name: {{.NemoGuardrails.Name}}
+        app.kubernetes.io/part-of: trustyai
+    spec:
+      containers:
+      - name: nemo-guardrails
+        image: {{.ContainerImages.NemoGuardrailsImage}}
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          timeoutSeconds: 10
+          periodSeconds: 20
+          successThreshold: 1
+          failureThreshold: 3
+        ports:
+        - containerPort: 8000
+      {{ if .UseAuthProxy }}
+      - {{- template "kubeRBACProxy" .KubeRbacProxyConfig }}
+      serviceAccountName: {{.NemoGuardrails.Name}}-serviceaccount
+      {{ end }}
+      volumes:
+      - name: tls-certs
+        secret:
+          secretName: {{.NemoGuardrails.Name}}-tls
+          defaultMode: 420
+      {{ if .UseAuthProxy }}
+      - name: kube-rbac-config
+        configMap:
+          name: {{ .KubeRbacProxyConfig.Name }}
+          defaultMode: 420
+      {{ end }}

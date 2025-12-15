@@ -8,7 +8,6 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	corev1 "k8s.io/api/core/v1"
@@ -86,14 +85,8 @@ func (r *TrustyAIServiceReconciler) createClusterRoleBinding(ctx context.Context
 		},
 	}
 
-	// Set instance as the owner of the ClusterRoleBinding
-	if err := controllerutil.SetControllerReference(instance, clusterRoleBinding, r.Scheme); err != nil {
+	if err := utils.ReconcileClusterRoleBinding(ctx, r.Client, instance, clusterRoleBinding); err != nil {
 		return err
 	}
-
-	if err := utils.ReconcileClusterRoleBinding(ctx, r.Client, clusterRoleBinding); err != nil {
-		return err
-	}
-
 	return nil
 }

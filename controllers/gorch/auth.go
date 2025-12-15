@@ -8,26 +8,7 @@ import (
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/gorch/templates"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"strings"
 )
-
-type KubeRBACProxyConfig struct {
-	Suffix             string
-	Name               string
-	Namespace          string
-	KubeRBACProxyImage string
-	UpstreamProtocol   string
-	UpstreamHost       string
-	UpstreamPort       int
-	DownstreamPort     int
-	HealthPort         int
-}
-
-// requiresOAuth checks if the oauth annotation key is set in the orchestrator CR
-func requiresOAuth(orchestrator *gorchv1alpha1.GuardrailsOrchestrator) bool {
-	val, ok := orchestrator.Annotations[oAuthAnnotationKey]
-	return ok && strings.ToLower(val) == "true"
-}
 
 // configureKubeRBACProxy creates the kube-rbac-proxy config structs to be used in the deployment template
 func (r *GuardrailsOrchestratorReconciler) configureKubeRBACProxy(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, deploymentConfig *DeploymentConfig) error {
@@ -38,7 +19,7 @@ func (r *GuardrailsOrchestratorReconciler) configureKubeRBACProxy(ctx context.Co
 	}
 	log.FromContext(ctx).Info("Using kube-rbac-proxy image " + kubeRBACProxyImage + " " + "from configmap " + r.Namespace + ":" + constants.ConfigMap)
 
-	deploymentConfig.OrchestratorKubeRBACProxy = &KubeRBACProxyConfig{
+	deploymentConfig.OrchestratorKubeRBACProxy = &utils.KubeRBACProxyConfig{
 		Suffix:             "orchestrator",
 		Namespace:          orchestrator.Namespace,
 		Name:               orchestrator.Name,
@@ -50,7 +31,7 @@ func (r *GuardrailsOrchestratorReconciler) configureKubeRBACProxy(ctx context.Co
 		UpstreamPort:       8032,
 	}
 	if orchestrator.Spec.EnableGuardrailsGateway {
-		deploymentConfig.GatewayKubeRBACProxy = &KubeRBACProxyConfig{
+		deploymentConfig.GatewayKubeRBACProxy = &utils.KubeRBACProxyConfig{
 			Suffix:             "gateway",
 			Namespace:          orchestrator.Namespace,
 			Name:               orchestrator.Name,
@@ -64,7 +45,7 @@ func (r *GuardrailsOrchestratorReconciler) configureKubeRBACProxy(ctx context.Co
 	}
 
 	if orchestrator.Spec.EnableBuiltInDetectors {
-		deploymentConfig.BuiltInKubeRBACProxy = &KubeRBACProxyConfig{
+		deploymentConfig.BuiltInKubeRBACProxy = &utils.KubeRBACProxyConfig{
 			Suffix:             "built-in",
 			Namespace:          orchestrator.Namespace,
 			Name:               orchestrator.Name,
