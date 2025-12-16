@@ -1,9 +1,9 @@
 ---
-name: Gosec Security Scan
+name: Tier 1 - Gosec security scan
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, incubation, stable]
 
 jobs:
   gosec:

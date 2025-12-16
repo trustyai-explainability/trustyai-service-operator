@@ -1,5 +1,5 @@
 ---
-name: Security Scan
+name: Tier 1 - Security scan
 
 on:
   pull_request:

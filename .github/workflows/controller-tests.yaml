@@ -1,4 +1,4 @@
-name: Controller Tests
+name: Tier 1 - Controller tests
 
 on: [push, pull_request]
 
