@@ -1,4 +1,4 @@
-name: YAML lint
+name: Tier 1 - YAML lint
 
 on: [push, pull_request]
 
