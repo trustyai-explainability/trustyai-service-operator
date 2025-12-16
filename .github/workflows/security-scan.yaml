@@ -3,9 +3,9 @@ name: Security Scan
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, incubation, stable]
   push:
-    branches: [main]
+    branches: [main, incubation, stable]
 
 jobs:
   trivy-scan:
