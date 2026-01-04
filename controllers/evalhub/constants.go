@@ -44,9 +44,11 @@ var (
 	// Default security context
 	allowPrivilegeEscalation = false
 	runAsNonRoot             = true
+	runAsUser                = int64(1001)
 	defaultSecurityContext   = &corev1.SecurityContext{
 		AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 		RunAsNonRoot:             &runAsNonRoot,
+		RunAsUser:                &runAsUser,
 		Capabilities: &corev1.Capabilities{
 			Drop: []corev1.Capability{
 				"ALL",
@@ -59,8 +61,10 @@ var (
 
 	// Default pod security context
 	runAsNonRootUser          = true
+	fsGroup                   = int64(1001)
 	defaultPodSecurityContext = &corev1.PodSecurityContext{
 		RunAsNonRoot: &runAsNonRootUser,
+		FSGroup:      &fsGroup,
 		SeccompProfile: &corev1.SeccompProfile{
 			Type: corev1.SeccompProfileTypeRuntimeDefault,
 		},
