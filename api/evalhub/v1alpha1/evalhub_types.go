@@ -38,7 +38,7 @@ type EvalHubStatus struct {
 	// +kubebuilder:validation:Enum=Pending;Ready;Error
 	Phase string `json:"phase,omitempty"`
 
-	// Number of ready replicas
+	// Number of desired replicas
 	Replicas int32 `json:"replicas,omitempty"`
 
 	// Number of ready replicas

@@ -214,7 +214,7 @@ spec:
                 format: int32
                 type: integer
               replicas:
-                description: Number of ready replicas
+                description: Number of desired replicas
                 format: int32
                 type: integer
               url:
