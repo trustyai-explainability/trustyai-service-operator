@@ -109,8 +109,8 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		assert.Equal(t, "test-value", envVarMap["TEST_VAR"])
 
 		// Check resource requirements
-		assert.Equal(t, resource.MustParse("100m"), container.Resources.Requests[corev1.ResourceCPU])
-		assert.Equal(t, resource.MustParse("256Mi"), container.Resources.Requests[corev1.ResourceMemory])
+		assert.Equal(t, resource.MustParse("500m"), container.Resources.Requests[corev1.ResourceCPU])
+		assert.Equal(t, resource.MustParse("512Mi"), container.Resources.Requests[corev1.ResourceMemory])
 
 		// Check health probes
 		require.NotNil(t, container.LivenessProbe)

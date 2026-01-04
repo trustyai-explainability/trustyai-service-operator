@@ -168,10 +168,10 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(container.Resources.Limits).NotTo(BeNil())
 
 			// Check CPU and memory are set (exact values from constants.go)
-			Expect(container.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("100m")))
-			Expect(container.Resources.Requests[corev1.ResourceMemory]).To(Equal(resource.MustParse("256Mi")))
-			Expect(container.Resources.Limits[corev1.ResourceCPU]).To(Equal(resource.MustParse("500m")))
-			Expect(container.Resources.Limits[corev1.ResourceMemory]).To(Equal(resource.MustParse("512Mi")))
+			Expect(container.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("500m")))
+			Expect(container.Resources.Requests[corev1.ResourceMemory]).To(Equal(resource.MustParse("512Mi")))
+			Expect(container.Resources.Limits[corev1.ResourceCPU]).To(Equal(resource.MustParse("2000m")))
+			Expect(container.Resources.Limits[corev1.ResourceMemory]).To(Equal(resource.MustParse("2Gi")))
 		})
 
 		It("should configure health probes", func() {
