@@ -14,7 +14,7 @@ const (
 
 func (r *GuardrailsOrchestratorReconciler) reconcileGatewayRoute(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) error {
 	gatewayTermination := utils.Edge
-	if requiresOAuth(orchestrator) {
+	if utils.RequiresAuth(orchestrator) {
 		gatewayTermination = utils.Reencrypt
 	}
 	routeConfig := utils.RouteConfig{
@@ -33,6 +33,21 @@ func (r *GuardrailsOrchestratorReconciler) reconcileOrchestratorRoute(ctx contex
 		ServiceName: orchestrator.Name + "-service",
 		PortName:    "https",
 		Termination: utils.StringPointer(utils.Reencrypt),
+	}
+	err := utils.ReconcileRoute(ctx, r.Client, orchestrator, routeConfig, routeTemplatePath, templateParser.ParseResource)
+	return err
+}
+
+func (r *GuardrailsOrchestratorReconciler) reconcileBuiltInDetectorRoute(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) error {
+	termination := utils.Edge
+	if utils.RequiresAuth(orchestrator) {
+		termination = utils.Reencrypt
+	}
+	routeConfig := utils.RouteConfig{
+		Name:        utils.StringPointer(orchestrator.Name + "-built-in"),
+		ServiceName: orchestrator.Name + "-service",
+		PortName:    "built-in-detector",
+		Termination: utils.StringPointer(termination),
 	}
 	err := utils.ReconcileRoute(ctx, r.Client, orchestrator, routeConfig, routeTemplatePath, templateParser.ParseResource)
 	return err

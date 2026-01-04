@@ -19,6 +19,7 @@ spec:
       port: {{if .UseAuthProxy}}8490{{else}}8090{{end}}
       targetPort: {{if .UseAuthProxy}}8490{{else}}8090{{end}}
     {{end -}}
+    {{if not .Owner.Spec.DisableOrchestrator }}
     - name: https
       protocol: TCP
       port: {{if .UseAuthProxy}}8432{{else}}8032{{end}}
@@ -33,11 +34,18 @@ spec:
       protocol: TCP
       port: 8034
       targetPort: 8034
+    {{end}}
     {{if .Owner.Spec.EnableBuiltInDetectors}}
-    - name: detector-metrics
+    {{if .UseAuthProxy}}
+    - name: built-in-detector-metrics
       protocol: TCP
       port: 8080
       targetPort: 8080
+    {{end}}
+    - name: built-in-detector
+      protocol: TCP
+      port: {{if .UseAuthProxy}}8480{{else}}8080{{end}}
+      targetPort: {{if .UseAuthProxy}}8480{{else}}8080{{end}}
     {{end}}
   internalTrafficPolicy: Cluster
   type: ClusterIP

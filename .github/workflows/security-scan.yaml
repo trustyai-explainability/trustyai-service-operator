@@ -1,11 +1,11 @@
 ---
-name: Security Scan
+name: Tier 1 - Security scan
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, incubation, stable]
   push:
-    branches: [main]
+    branches: [main, incubation, stable]
 
 jobs:
   trivy-scan:

@@ -14,12 +14,23 @@ type ServiceAccountConfig struct {
 
 const serviceAccountResourceKind = "ServiceAccount"
 
-func ReconcileServiceAccount(ctx context.Context, c client.Client, owner metav1.Object, name string, serviceAccountTemplatePath string, parser ResourceParserFunc[*corev1.ServiceAccount]) error {
-	genericConfig := GetGenericConfig(
-		StringPointer(name),
-		StringPointer(owner.GetNamespace()),
-		ServiceAccountConfig{Owner: owner, Name: name},
-	)
-	_, _, err := ReconcileGeneric[*corev1.ServiceAccount](ctx, c, owner, serviceAccountResourceKind, genericConfig, serviceAccountTemplatePath, parser)
+// getServiceAccountName creates a service account name from the orchestrator name
+func GetServiceAccountName(owner metav1.Object) string {
+	return owner.GetName() + "-serviceaccount"
+}
+
+func ReconcileServiceAccount(ctx context.Context, c client.Client, owner metav1.Object) error {
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      GetServiceAccountName(owner),
+			Namespace: owner.GetNamespace(),
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "trustyai-service-operator",
+				"app":                          owner.GetName(),
+				"component":                    owner.GetNamespace(),
+			},
+		},
+	}
+	_, _, err := ReconcileGenericManuallyDefined[*corev1.ServiceAccount](ctx, c, serviceAccountResourceKind, owner, sa)
 	return err
 }

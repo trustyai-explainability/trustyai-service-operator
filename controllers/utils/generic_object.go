@@ -67,7 +67,7 @@ Returns:
 - a boolean flag indicating whether the returned object was created during the Reconcile call,
 - any error
 */
-func ReconcileGenericManuallyDefined[T client.Object](ctx context.Context, c client.Client, resourceKind string, preDefinedObject T) (T, bool, error) {
+func ReconcileGenericManuallyDefined[T client.Object](ctx context.Context, c client.Client, resourceKind string, owner metav1.Object, preDefinedObject T) (T, bool, error) {
 	// Allocate a new pointer to the struct that T points to, and cast to T
 	// e.g., replaces existingRoute := &routev1.Route{}
 	var zero T
@@ -82,11 +82,14 @@ func ReconcileGenericManuallyDefined[T client.Object](ctx context.Context, c cli
 	// attempt to retrieve a matching object from the cluster
 	err := c.Get(ctx, types.NamespacedName{Name: preDefinedObject.GetName(), Namespace: preDefinedObject.GetNamespace()}, existingObj)
 	if err != nil && errors.IsNotFound(err) {
+		if err := controllerutil.SetControllerReference(owner, preDefinedObject, c.Scheme()); err != nil {
+			LogErrorControllerReference(ctx, err, resourceKind, preDefinedObject.GetName(), preDefinedObject.GetNamespace())
+			return zero, false, err
+		}
 		LogInfoCreating(ctx, resourceKind, preDefinedObject.GetName(), preDefinedObject.GetNamespace())
 
 		// deploy the resource onto the cluster
-		err = c.Create(ctx, preDefinedObject)
-		if err != nil {
+		if err = c.Create(ctx, preDefinedObject); err != nil {
 			LogErrorCreating(ctx, err, resourceKind, preDefinedObject.GetName(), preDefinedObject.GetNamespace())
 			return zero, false, err
 		}

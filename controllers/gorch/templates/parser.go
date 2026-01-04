@@ -8,9 +8,9 @@ import (
 )
 
 //go:embed *.tmpl.yaml kube-rbac-proxy/*.tmpl.yaml
-var templateFS embed.FS
+var TemplateFS embed.FS
 
 // ParseResource parses templates and return a provided Kubernetes resource.
 func ParseResource[T client.Object](templatePath string, data interface{}, outType reflect.Type) (T, error) {
-	return utils.ParseResourceFromFS[T](templatePath, data, outType, templateFS)
+	return utils.ParseResourceFromFS[T](templatePath, data, outType, TemplateFS)
 }

@@ -1,9 +1,11 @@
-name: Smoke test
+name: Tier 2 - Smoke test
 
 on:
   pull_request:
     branches:
       - main
+      - incubation
+      - stable
 
 jobs:
   deploy:
