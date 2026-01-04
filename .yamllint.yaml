@@ -3,7 +3,7 @@ extends: default
 rules:
   line-length:
     max: 80
-    level: warning
+    level: disable
   hyphens:
     max-spaces-after: 1
     level: warning
