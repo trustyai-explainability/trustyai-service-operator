@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -22,6 +23,7 @@ func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.
 	return (&EvalHubReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
+		restMapper:    mgr.GetRESTMapper(),
 		Namespace:     ns,
 		EventRecorder: recorder,
 	}).SetupWithManager(mgr)
@@ -31,6 +33,7 @@ func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.
 type EvalHubReconciler struct {
 	client.Client
 	Scheme        *runtime.Scheme
+	restMapper    meta.RESTMapper
 	Namespace     string
 	EventRecorder record.EventRecorder
 }

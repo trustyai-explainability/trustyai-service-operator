@@ -103,7 +103,7 @@ func (r *EvalHubReconciler) isRouteSupported() bool {
 	return err == nil
 }
 
-// RESTMapper returns the REST mapper from the client
+// RESTMapper returns the REST mapper for API discovery
 func (r *EvalHubReconciler) RESTMapper() meta.RESTMapper {
-	return r.Client.RESTMapper()
+	return r.restMapper
 }
