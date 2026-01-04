@@ -295,19 +295,29 @@ var _ = Describe("EvalHub ConfigMap", func() {
 		})
 	})
 
-	Context("When handling configmap errors", func() {
-		It("should handle missing EvalHub instance", func() {
-			By("Creating configmap for non-existent EvalHub")
-			nonExistentEvalHub := &evalhubv1alpha1.EvalHub{
+	Context("When handling edge cases and errors", func() {
+		It("should create configmap even when EvalHub instance is not persisted", func() {
+			By("Creating configmap for non-persisted EvalHub")
+			nonPersistedEvalHub := &evalhubv1alpha1.EvalHub{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "non-existent",
+					Name:      "non-persisted",
 					Namespace: testNamespace,
 				},
 			}
 
 			By("Attempting to reconcile configmap")
-			err := reconciler.reconcileConfigMap(ctx, nonExistentEvalHub)
-			Expect(err).To(HaveOccurred())
+			err := reconciler.reconcileConfigMap(ctx, nonPersistedEvalHub)
+			Expect(err).NotTo(HaveOccurred(), "reconcileConfigMap should succeed with non-persisted EvalHub as it only needs metadata")
+
+			By("Verifying configmap was created")
+			configMap := &corev1.ConfigMap{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "non-persisted-config",
+				Namespace: testNamespace,
+			}, configMap)
+			Expect(err).NotTo(HaveOccurred(), "configmap should be created successfully")
+			Expect(configMap.OwnerReferences).To(HaveLen(1))
+			Expect(configMap.OwnerReferences[0].Name).To(Equal("non-persisted"))
 		})
 
 		It("should handle configmap creation in non-existent namespace", func() {
