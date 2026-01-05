@@ -496,6 +496,7 @@ var _ = BeforeSuite(func() {
 			filepath.Join("..", "..", "config", "prometheus"),
 			filepath.Join("..", "..", "tests", "crds")},
 		ErrorIfCRDPathMissing: true,
+		ControlPlaneStopTimeout: time.Minute * 2,
 	}
 
 	var err error
