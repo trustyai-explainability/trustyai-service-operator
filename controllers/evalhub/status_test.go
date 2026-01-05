@@ -2,6 +2,7 @@ package evalhub
 
 import (
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -16,18 +17,22 @@ import (
 
 var _ = Describe("EvalHub Status Updates", func() {
 	const (
-		testNamespace = "evalhub-status-test"
-		evalHubName   = "status-evalhub"
+		testNamespacePrefix = "evalhub-status-test"
+		evalHubName         = "status-evalhub"
 	)
 
 	var (
-		namespace  *corev1.Namespace
-		evalHub    *evalhubv1alpha1.EvalHub
-		deployment *appsv1.Deployment
-		reconciler *EvalHubReconciler
+		testNamespace string
+		namespace     *corev1.Namespace
+		evalHub       *evalhubv1alpha1.EvalHub
+		deployment    *appsv1.Deployment
+		reconciler    *EvalHubReconciler
 	)
 
 	BeforeEach(func() {
+		// Create unique namespace name to avoid conflicts
+		testNamespace = fmt.Sprintf("%s-%d", testNamespacePrefix, time.Now().UnixNano())
+
 		// Create test namespace
 		namespace = createNamespace(testNamespace)
 		Expect(k8sClient.Create(ctx, namespace)).Should(Succeed())
@@ -82,16 +87,19 @@ var _ = Describe("EvalHub Status Updates", func() {
 	})
 
 	AfterEach(func() {
-		// Clean up resources
+		// Clean up resources in namespace first
 		if deployment != nil {
 			k8sClient.Delete(ctx, deployment)
 		}
-		if evalHub != nil {
-			k8sClient.Delete(ctx, evalHub)
-		}
-		if namespace != nil {
-			k8sClient.Delete(ctx, namespace)
-		}
+		cleanupResourcesInNamespace(testNamespace, evalHub, nil)
+
+		// Then delete namespace
+		deleteNamespace(namespace)
+
+		// Reset variables
+		deployment = nil
+		evalHub = nil
+		namespace = nil
 	})
 
 	Context("When updating EvalHub status", func() {

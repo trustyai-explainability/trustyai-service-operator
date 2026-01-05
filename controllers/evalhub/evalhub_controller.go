@@ -69,6 +69,11 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	log.Info("Reconciling EvalHub", "name", instance.Name, "namespace", instance.Namespace)
 
+	// Handle deletion first to avoid blocking removal with status init.
+	if instance.DeletionTimestamp != nil {
+		return r.handleDeletion(ctx, instance)
+	}
+
 	// Set initial status if not set
 	if instance.Status.Phase == "" {
 		instance.Status.Phase = "Pending"
@@ -79,11 +84,6 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return RequeueWithError(err)
 		}
 		return RequeueWithDelay(time.Second * 5)
-	}
-
-	// Handle deletion
-	if instance.DeletionTimestamp != nil {
-		return r.handleDeletion(ctx, instance)
 	}
 
 	// Add finalizer if not present

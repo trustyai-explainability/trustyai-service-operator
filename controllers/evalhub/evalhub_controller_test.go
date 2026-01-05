@@ -1,6 +1,7 @@
 package evalhub
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -9,24 +10,30 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 )
 
 var _ = Describe("EvalHub Controller", func() {
 	const (
-		testNamespace = "evalhub-test"
-		evalHubName   = "test-evalhub"
-		configMapName = "trustyai-service-operator-config"
+		testNamespacePrefix = "evalhub-test"
+		evalHubName         = "test-evalhub"
+		configMapName       = "trustyai-service-operator-config"
 	)
 
 	var (
-		namespace  *corev1.Namespace
-		configMap  *corev1.ConfigMap
-		evalHub    *evalhubv1alpha1.EvalHub
-		reconciler *EvalHubReconciler
+		testNamespace string
+		namespace     *corev1.Namespace
+		configMap     *corev1.ConfigMap
+		evalHub       *evalhubv1alpha1.EvalHub
+		reconciler    *EvalHubReconciler
 	)
 
 	BeforeEach(func() {
+		// Create unique namespace name to avoid conflicts
+		testNamespace = fmt.Sprintf("%s-%d", testNamespacePrefix, time.Now().UnixNano())
+
 		// Create test namespace
 		namespace = createNamespace(testNamespace)
 		Expect(k8sClient.Create(ctx, namespace)).Should(Succeed())
@@ -44,16 +51,16 @@ var _ = Describe("EvalHub Controller", func() {
 	})
 
 	AfterEach(func() {
-		// Clean up resources
-		if evalHub != nil {
-			k8sClient.Delete(ctx, evalHub)
-		}
-		if configMap != nil {
-			k8sClient.Delete(ctx, configMap)
-		}
-		if namespace != nil {
-			k8sClient.Delete(ctx, namespace)
-		}
+		// Clean up resources in namespace first
+		cleanupResourcesInNamespace(testNamespace, evalHub, configMap)
+
+		// Then delete namespace
+		deleteNamespace(namespace)
+
+		// Reset variables
+		evalHub = nil
+		configMap = nil
+		namespace = nil
 	})
 
 	Context("When reconciling an EvalHub", func() {
@@ -128,37 +135,43 @@ var _ = Describe("EvalHub Controller", func() {
 
 	Context("When reconciling with errors", func() {
 		It("should requeue on errors", func() {
-			By("Creating EvalHub in non-existent namespace")
-			badEvalHub := createEvalHubInstance("bad-evalhub", "non-existent-namespace")
-			Expect(k8sClient.Create(ctx, badEvalHub)).Should(Succeed())
+			By("Performing initial reconciliations to set status and finalizer")
+			performReconcile(reconciler, evalHubName, testNamespace)
+			performReconcile(reconciler, evalHubName, testNamespace)
 
 			By("Performing reconciliation")
-			badReconciler, _ := setupReconciler("non-existent-namespace")
-			result, err := performReconcile(badReconciler, "bad-evalhub", "non-existent-namespace")
+			badReconciler := &EvalHubReconciler{
+				Client:        k8sClient,
+				Scheme:        runtime.NewScheme(),
+				Namespace:     testNamespace,
+				EventRecorder: record.NewFakeRecorder(100),
+			}
+			result, err := performReconcile(badReconciler, evalHubName, testNamespace)
 			Expect(err).To(HaveOccurred())
 			Expect(result.Requeue).To(BeFalse())
-
-			By("Cleaning up")
-			k8sClient.Delete(ctx, badEvalHub)
 		})
 	})
 })
 
 var _ = Describe("EvalHub Lifecycle Integration", func() {
 	const (
-		testNamespace = "evalhub-lifecycle-test"
-		evalHubName   = "lifecycle-evalhub"
-		configMapName = "trustyai-service-operator-config"
+		testNamespacePrefix = "evalhub-lifecycle-test"
+		evalHubName         = "lifecycle-evalhub"
+		configMapName       = "trustyai-service-operator-config"
 	)
 
 	var (
-		namespace  *corev1.Namespace
-		configMap  *corev1.ConfigMap
-		evalHub    *evalhubv1alpha1.EvalHub
-		reconciler *EvalHubReconciler
+		testNamespace string
+		namespace     *corev1.Namespace
+		configMap     *corev1.ConfigMap
+		evalHub       *evalhubv1alpha1.EvalHub
+		reconciler    *EvalHubReconciler
 	)
 
 	BeforeEach(func() {
+		// Create unique namespace name to avoid conflicts
+		testNamespace = fmt.Sprintf("%s-%d", testNamespacePrefix, time.Now().UnixNano())
+
 		// Create test namespace
 		namespace = createNamespace(testNamespace)
 		Expect(k8sClient.Create(ctx, namespace)).Should(Succeed())
@@ -176,16 +189,16 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 	})
 
 	AfterEach(func() {
-		// Clean up resources
-		if evalHub != nil {
-			k8sClient.Delete(ctx, evalHub)
-		}
-		if configMap != nil {
-			k8sClient.Delete(ctx, configMap)
-		}
-		if namespace != nil {
-			k8sClient.Delete(ctx, namespace)
-		}
+		// Clean up resources in namespace first
+		cleanupResourcesInNamespace(testNamespace, evalHub, configMap)
+
+		// Then delete namespace
+		deleteNamespace(namespace)
+
+		// Reset variables
+		evalHub = nil
+		configMap = nil
+		namespace = nil
 	})
 
 	It("should create all required resources through complete reconciliation", func() {

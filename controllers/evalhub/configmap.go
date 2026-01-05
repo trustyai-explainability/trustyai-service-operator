@@ -56,8 +56,10 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 	if errors.IsNotFound(getErr) {
 		// Create new ConfigMap
 		configMap.Data = configData
-		if err := controllerutil.SetControllerReference(instance, configMap, r.Scheme); err != nil {
-			return err
+		if instance.UID != "" {
+			if err := controllerutil.SetControllerReference(instance, configMap, r.Scheme); err != nil {
+				return err
+			}
 		}
 		log.Info("Creating ConfigMap", "name", configMap.Name)
 		return r.Create(ctx, configMap)

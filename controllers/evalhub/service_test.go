@@ -1,6 +1,9 @@
 package evalhub
 
 import (
+	"fmt"
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
@@ -12,17 +15,21 @@ import (
 
 var _ = Describe("EvalHub Service", func() {
 	const (
-		testNamespace = "evalhub-service-test"
-		evalHubName   = "service-evalhub"
+		testNamespacePrefix = "evalhub-service-test"
+		evalHubName         = "service-evalhub"
 	)
 
 	var (
-		namespace  *corev1.Namespace
-		evalHub    *evalhubv1alpha1.EvalHub
-		reconciler *EvalHubReconciler
+		testNamespace string
+		namespace     *corev1.Namespace
+		evalHub       *evalhubv1alpha1.EvalHub
+		reconciler    *EvalHubReconciler
 	)
 
 	BeforeEach(func() {
+		// Create unique namespace name to avoid conflicts
+		testNamespace = fmt.Sprintf("%s-%d", testNamespacePrefix, time.Now().UnixNano())
+
 		// Create test namespace
 		namespace = createNamespace(testNamespace)
 		Expect(k8sClient.Create(ctx, namespace)).Should(Succeed())
@@ -36,13 +43,15 @@ var _ = Describe("EvalHub Service", func() {
 	})
 
 	AfterEach(func() {
-		// Clean up resources
-		if evalHub != nil {
-			k8sClient.Delete(ctx, evalHub)
-		}
-		if namespace != nil {
-			k8sClient.Delete(ctx, namespace)
-		}
+		// Clean up resources in namespace first
+		cleanupResourcesInNamespace(testNamespace, evalHub, nil)
+
+		// Then delete namespace
+		deleteNamespace(namespace)
+
+		// Reset variables
+		evalHub = nil
+		namespace = nil
 	})
 
 	Context("When reconciling service", func() {
@@ -131,7 +140,12 @@ var _ = Describe("EvalHub Service", func() {
 			}, service)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Store initial resource version
+			By("Manually modifying service selector")
+			service.Spec.Selector["component"] = "wrong"
+			err = k8sClient.Update(ctx, service)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Store resource version after manual change
 			initialResourceVersion := service.ResourceVersion
 
 			By("Reconciling service again")
@@ -147,6 +161,7 @@ var _ = Describe("EvalHub Service", func() {
 
 			// Resource version should change when service is updated
 			Expect(service.ResourceVersion).NotTo(Equal(initialResourceVersion))
+			Expect(service.Spec.Selector["component"]).To(Equal("api"))
 		})
 
 		It("should preserve service annotations and labels", func() {

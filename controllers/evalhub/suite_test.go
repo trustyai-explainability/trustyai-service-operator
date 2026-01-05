@@ -11,6 +11,7 @@ import (
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -202,4 +203,29 @@ func performReconcile(reconciler *EvalHubReconciler, name, namespace string) (ct
 			Namespace: namespace,
 		},
 	})
+}
+
+// deleteNamespace deletes a namespace without waiting (faster cleanup)
+func deleteNamespace(namespace *corev1.Namespace) {
+	if namespace == nil {
+		return
+	}
+
+	// Delete the namespace - don't wait for completion
+	// Unique namespace names prevent conflicts
+	err := k8sClient.Delete(ctx, namespace)
+	if err != nil && !errors.IsNotFound(err) {
+		// Log error but don't fail the test cleanup
+		logf.Log.Error(err, "Failed to delete namespace", "namespace", namespace.Name)
+	}
+}
+
+// cleanupResourcesInNamespace deletes all test resources in a namespace
+func cleanupResourcesInNamespace(namespace string, evalHub *evalhubv1alpha1.EvalHub, configMap *corev1.ConfigMap) {
+	if evalHub != nil {
+		k8sClient.Delete(ctx, evalHub)
+	}
+	if configMap != nil {
+		k8sClient.Delete(ctx, configMap)
+	}
 }

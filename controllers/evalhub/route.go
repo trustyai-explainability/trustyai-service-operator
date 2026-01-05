@@ -92,6 +92,10 @@ func (r *EvalHubReconciler) buildRouteSpec(instance *evalhubv1alpha1.EvalHub) ro
 
 // isRouteSupported checks if Route resources are supported in the cluster
 func (r *EvalHubReconciler) isRouteSupported() bool {
+	if r.RESTMapper() == nil {
+		return false
+	}
+
 	// Check if the Route resource is available
 	gvk := schema.GroupVersionKind{
 		Group:   "route.openshift.io",

@@ -1,6 +1,9 @@
 package evalhub
 
 import (
+	"fmt"
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
@@ -14,19 +17,23 @@ import (
 
 var _ = Describe("EvalHub Deployment", func() {
 	const (
-		testNamespace = "evalhub-deployment-test"
-		evalHubName   = "deployment-evalhub"
-		configMapName = "trustyai-service-operator-config"
+		testNamespacePrefix = "evalhub-deployment-test"
+		evalHubName         = "deployment-evalhub"
+		configMapName       = "trustyai-service-operator-config"
 	)
 
 	var (
-		namespace  *corev1.Namespace
-		configMap  *corev1.ConfigMap
-		evalHub    *evalhubv1alpha1.EvalHub
-		reconciler *EvalHubReconciler
+		testNamespace string
+		namespace     *corev1.Namespace
+		configMap     *corev1.ConfigMap
+		evalHub       *evalhubv1alpha1.EvalHub
+		reconciler    *EvalHubReconciler
 	)
 
 	BeforeEach(func() {
+		// Create unique namespace name to avoid conflicts
+		testNamespace = fmt.Sprintf("%s-%d", testNamespacePrefix, time.Now().UnixNano())
+
 		// Create test namespace
 		namespace = createNamespace(testNamespace)
 		Expect(k8sClient.Create(ctx, namespace)).Should(Succeed())
@@ -40,16 +47,16 @@ var _ = Describe("EvalHub Deployment", func() {
 	})
 
 	AfterEach(func() {
-		// Clean up resources
-		if evalHub != nil {
-			k8sClient.Delete(ctx, evalHub)
-		}
-		if configMap != nil {
-			k8sClient.Delete(ctx, configMap)
-		}
-		if namespace != nil {
-			k8sClient.Delete(ctx, namespace)
-		}
+		// Clean up resources in namespace first
+		cleanupResourcesInNamespace(testNamespace, evalHub, configMap)
+
+		// Then delete namespace
+		deleteNamespace(namespace)
+
+		// Reset variables
+		evalHub = nil
+		configMap = nil
+		namespace = nil
 	})
 
 	Context("When reconciling deployment", func() {
@@ -168,10 +175,15 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(container.Resources.Limits).NotTo(BeNil())
 
 			// Check CPU and memory are set (exact values from constants.go)
-			Expect(container.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("500m")))
-			Expect(container.Resources.Requests[corev1.ResourceMemory]).To(Equal(resource.MustParse("512Mi")))
-			Expect(container.Resources.Limits[corev1.ResourceCPU]).To(Equal(resource.MustParse("2000m")))
-			Expect(container.Resources.Limits[corev1.ResourceMemory]).To(Equal(resource.MustParse("2Gi")))
+			cpuRequest := container.Resources.Requests[corev1.ResourceCPU]
+			memRequest := container.Resources.Requests[corev1.ResourceMemory]
+			cpuLimit := container.Resources.Limits[corev1.ResourceCPU]
+			memLimit := container.Resources.Limits[corev1.ResourceMemory]
+
+			Expect((&cpuRequest).Cmp(resource.MustParse("500m"))).To(Equal(0))
+			Expect((&memRequest).Cmp(resource.MustParse("512Mi"))).To(Equal(0))
+			Expect((&cpuLimit).Cmp(resource.MustParse("2000m"))).To(Equal(0))
+			Expect((&memLimit).Cmp(resource.MustParse("2Gi"))).To(Equal(0))
 		})
 
 		It("should configure health probes", func() {

@@ -1,6 +1,9 @@
 package evalhub
 
 import (
+	"fmt"
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
@@ -12,17 +15,21 @@ import (
 
 var _ = Describe("EvalHub ConfigMap", func() {
 	const (
-		testNamespace = "evalhub-configmap-test"
-		evalHubName   = "configmap-evalhub"
+		testNamespacePrefix = "evalhub-configmap-test"
+		evalHubName         = "configmap-evalhub"
 	)
 
 	var (
-		namespace  *corev1.Namespace
-		evalHub    *evalhubv1alpha1.EvalHub
-		reconciler *EvalHubReconciler
+		testNamespace string
+		namespace     *corev1.Namespace
+		evalHub       *evalhubv1alpha1.EvalHub
+		reconciler    *EvalHubReconciler
 	)
 
 	BeforeEach(func() {
+		// Create unique namespace name to avoid conflicts
+		testNamespace = fmt.Sprintf("%s-%d", testNamespacePrefix, time.Now().UnixNano())
+
 		// Create test namespace
 		namespace = createNamespace(testNamespace)
 		Expect(k8sClient.Create(ctx, namespace)).Should(Succeed())
@@ -36,13 +43,15 @@ var _ = Describe("EvalHub ConfigMap", func() {
 	})
 
 	AfterEach(func() {
-		// Clean up resources
-		if evalHub != nil {
-			k8sClient.Delete(ctx, evalHub)
-		}
-		if namespace != nil {
-			k8sClient.Delete(ctx, namespace)
-		}
+		// Clean up resources in namespace first
+		cleanupResourcesInNamespace(testNamespace, evalHub, nil)
+
+		// Then delete namespace
+		deleteNamespace(namespace)
+
+		// Reset variables
+		evalHub = nil
+		namespace = nil
 	})
 
 	Context("When reconciling configmap", func() {
@@ -276,7 +285,12 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Store initial resource version
+			By("Manually modifying configmap data")
+			configMap.Data["config.yaml"] = "bad: data"
+			err = k8sClient.Update(ctx, configMap)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Store resource version after manual change
 			initialResourceVersion := configMap.ResourceVersion
 
 			By("Reconciling configmap again")
@@ -292,6 +306,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 
 			// Resource version should change when configmap is updated
 			Expect(configMap.ResourceVersion).NotTo(Equal(initialResourceVersion))
+			Expect(configMap.Data["config.yaml"]).NotTo(Equal("bad: data"))
 		})
 	})
 
@@ -316,8 +331,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 				Namespace: testNamespace,
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred(), "configmap should be created successfully")
-			Expect(configMap.OwnerReferences).To(HaveLen(1))
-			Expect(configMap.OwnerReferences[0].Name).To(Equal("non-persisted"))
+			Expect(configMap.OwnerReferences).To(BeEmpty())
 		})
 
 		It("should handle configmap creation in non-existent namespace", func() {
