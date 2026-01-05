@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
-func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) error {
+func ControllerSetUp(mgr manager.Manager, ns string, recorder record.EventRecorder) error {
 	return (&EvalHubReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
