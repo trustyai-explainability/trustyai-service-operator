@@ -8,9 +8,11 @@ import (
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -193,8 +195,11 @@ func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhu
 	log := log.FromContext(ctx)
 	log.Info("Handling EvalHub deletion", "name", instance.Name)
 
-	// Perform cleanup tasks here if needed
-	// For now, we rely on Kubernetes garbage collection for owned resources
+	// Clean up cluster-scoped resources that won't be garbage collected
+	if err := r.cleanupClusterRoleBinding(ctx, instance); err != nil {
+		log.Error(err, "Failed to cleanup ClusterRoleBinding")
+		return RequeueWithError(err)
+	}
 
 	// Remove finalizer
 	controllerutil.RemoveFinalizer(instance, evalhubv1alpha1.FinalizerName)
@@ -204,6 +209,30 @@ func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhu
 	}
 
 	return DoNotRequeue()
+}
+
+// cleanupClusterRoleBinding deletes the EvalHub proxy ClusterRoleBinding upon instance deletion
+func (r *EvalHubReconciler) cleanupClusterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+	log := log.FromContext(ctx)
+
+	// Use the same naming pattern as createClusterRoleBinding
+	crbName := instance.Name + "-" + instance.Namespace + "-proxy-rolebinding"
+
+	crb := &rbacv1.ClusterRoleBinding{}
+	log.Info("Deleting EvalHub proxy ClusterRoleBinding", "name", crbName)
+
+	err := r.Get(ctx, types.NamespacedName{Name: crbName}, crb)
+	if err == nil {
+		// ClusterRoleBinding exists, delete it
+		return r.Delete(ctx, crb)
+	} else if errors.IsNotFound(err) {
+		// ClusterRoleBinding doesn't exist, nothing to do
+		log.Info("EvalHub proxy ClusterRoleBinding not found, may have been already deleted", "name", crbName)
+		return nil
+	} else {
+		// Error getting ClusterRoleBinding
+		return err
+	}
 }
 
 // updateStatus updates the EvalHub status based on the deployment status
