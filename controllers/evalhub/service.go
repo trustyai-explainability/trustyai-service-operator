@@ -70,9 +70,9 @@ func (r *EvalHubReconciler) buildServiceSpec(instance *evalhubv1alpha1.EvalHub) 
 		Type:     corev1.ServiceTypeClusterIP,
 		Ports: []corev1.ServicePort{
 			{
-				Name:       "http",
-				Port:       servicePort,
-				TargetPort: intstr.FromString("http"),
+				Name:       "https",
+				Port:       kubeRBACProxyPort,
+				TargetPort: intstr.FromString("https"),
 				Protocol:   corev1.ProtocolTCP,
 			},
 		},

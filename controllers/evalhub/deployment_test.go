@@ -38,8 +38,17 @@ var _ = Describe("EvalHub Deployment", func() {
 		namespace = createNamespace(testNamespace)
 		Expect(k8sClient.Create(ctx, namespace)).Should(Succeed())
 
-		// Create config map for image configuration
-		configMap = createConfigMap(configMapName, testNamespace)
+		// Create config map for image configuration including kube-rbac-proxy image
+		configMap = &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      configMapName,
+				Namespace: testNamespace,
+			},
+			Data: map[string]string{
+				"evalHubImage":       "quay.io/ruimvieira/eval-hub:test",
+				"kubeRBACProxyImage": "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
+			},
+		}
 		Expect(k8sClient.Create(ctx, configMap)).Should(Succeed())
 
 		// Setup reconciler
@@ -95,7 +104,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(labels["component"]).To(Equal("api"))
 		})
 
-		It("should configure container correctly", func() {
+		It("should configure evalhub container correctly", func() {
 			By("Reconciling deployment")
 			err := reconciler.reconcileDeployment(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
@@ -103,19 +112,26 @@ var _ = Describe("EvalHub Deployment", func() {
 			By("Getting deployment")
 			deployment := waitForDeployment(evalHubName, testNamespace)
 
-			By("Checking container configuration")
-			Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(1))
-			container := deployment.Spec.Template.Spec.Containers[0]
+			By("Finding evalhub container")
+			Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(2))
+			var evalHubContainer *corev1.Container
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				if container.Name == "evalhub" {
+					evalHubContainer = &container
+					break
+				}
+			}
+			Expect(evalHubContainer).NotTo(BeNil(), "evalhub container should be present")
 
-			Expect(container.Name).To(Equal("evalhub"))
-			Expect(container.Image).To(Equal("quay.io/ruimvieira/eval-hub:test")) // From test configmap
-			Expect(container.ImagePullPolicy).To(Equal(corev1.PullAlways))
+			By("Checking evalhub container configuration")
+			Expect(evalHubContainer.Image).To(Equal("quay.io/ruimvieira/eval-hub:test")) // From test configmap
+			Expect(evalHubContainer.ImagePullPolicy).To(Equal(corev1.PullAlways))
 
 			// Check ports
-			Expect(container.Ports).To(HaveLen(1))
-			Expect(container.Ports[0].Name).To(Equal("http"))
-			Expect(container.Ports[0].ContainerPort).To(Equal(int32(8000)))
-			Expect(container.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
+			Expect(evalHubContainer.Ports).To(HaveLen(1))
+			Expect(evalHubContainer.Ports[0].Name).To(Equal("http"))
+			Expect(evalHubContainer.Ports[0].ContainerPort).To(Equal(int32(8000)))
+			Expect(evalHubContainer.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
 		})
 
 		It("should set default environment variables", func() {
@@ -125,11 +141,20 @@ var _ = Describe("EvalHub Deployment", func() {
 
 			By("Getting deployment")
 			deployment := waitForDeployment(evalHubName, testNamespace)
-			container := deployment.Spec.Template.Spec.Containers[0]
+
+			By("Finding evalhub container")
+			var evalHubContainer *corev1.Container
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				if container.Name == "evalhub" {
+					evalHubContainer = &container
+					break
+				}
+			}
+			Expect(evalHubContainer).NotTo(BeNil())
 
 			By("Checking default environment variables")
 			envVars := make(map[string]string)
-			for _, env := range container.Env {
+			for _, env := range evalHubContainer.Env {
 				envVars[env.Name] = env.Value
 			}
 
@@ -148,11 +173,20 @@ var _ = Describe("EvalHub Deployment", func() {
 
 			By("Getting deployment")
 			deployment := waitForDeployment(evalHubName, testNamespace)
-			container := deployment.Spec.Template.Spec.Containers[0]
+
+			By("Finding evalhub container")
+			var evalHubContainer *corev1.Container
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				if container.Name == "evalhub" {
+					evalHubContainer = &container
+					break
+				}
+			}
+			Expect(evalHubContainer).NotTo(BeNil())
 
 			By("Checking custom environment variables")
 			var hasTestEnv bool
-			for _, env := range container.Env {
+			for _, env := range evalHubContainer.Env {
 				if env.Name == "TEST_ENV" && env.Value == "test-value" {
 					hasTestEnv = true
 					break
@@ -168,17 +202,26 @@ var _ = Describe("EvalHub Deployment", func() {
 
 			By("Getting deployment")
 			deployment := waitForDeployment(evalHubName, testNamespace)
-			container := deployment.Spec.Template.Spec.Containers[0]
+
+			By("Finding evalhub container")
+			var evalHubContainer *corev1.Container
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				if container.Name == "evalhub" {
+					evalHubContainer = &container
+					break
+				}
+			}
+			Expect(evalHubContainer).NotTo(BeNil())
 
 			By("Checking resource requirements")
-			Expect(container.Resources.Requests).NotTo(BeNil())
-			Expect(container.Resources.Limits).NotTo(BeNil())
+			Expect(evalHubContainer.Resources.Requests).NotTo(BeNil())
+			Expect(evalHubContainer.Resources.Limits).NotTo(BeNil())
 
 			// Check CPU and memory are set (exact values from constants.go)
-			cpuRequest := container.Resources.Requests[corev1.ResourceCPU]
-			memRequest := container.Resources.Requests[corev1.ResourceMemory]
-			cpuLimit := container.Resources.Limits[corev1.ResourceCPU]
-			memLimit := container.Resources.Limits[corev1.ResourceMemory]
+			cpuRequest := evalHubContainer.Resources.Requests[corev1.ResourceCPU]
+			memRequest := evalHubContainer.Resources.Requests[corev1.ResourceMemory]
+			cpuLimit := evalHubContainer.Resources.Limits[corev1.ResourceCPU]
+			memLimit := evalHubContainer.Resources.Limits[corev1.ResourceMemory]
 
 			Expect((&cpuRequest).Cmp(resource.MustParse("500m"))).To(Equal(0))
 			Expect((&memRequest).Cmp(resource.MustParse("512Mi"))).To(Equal(0))
@@ -193,21 +236,30 @@ var _ = Describe("EvalHub Deployment", func() {
 
 			By("Getting deployment")
 			deployment := waitForDeployment(evalHubName, testNamespace)
-			container := deployment.Spec.Template.Spec.Containers[0]
+
+			By("Finding evalhub container")
+			var evalHubContainer *corev1.Container
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				if container.Name == "evalhub" {
+					evalHubContainer = &container
+					break
+				}
+			}
+			Expect(evalHubContainer).NotTo(BeNil())
 
 			By("Checking liveness probe")
-			Expect(container.LivenessProbe).NotTo(BeNil())
-			Expect(container.LivenessProbe.HTTPGet.Path).To(Equal("/api/v1/health"))
-			Expect(container.LivenessProbe.HTTPGet.Port).To(Equal(intstr.FromString("http")))
-			Expect(container.LivenessProbe.InitialDelaySeconds).To(Equal(int32(30)))
-			Expect(container.LivenessProbe.PeriodSeconds).To(Equal(int32(10)))
+			Expect(evalHubContainer.LivenessProbe).NotTo(BeNil())
+			Expect(evalHubContainer.LivenessProbe.HTTPGet.Path).To(Equal("/api/v1/health"))
+			Expect(evalHubContainer.LivenessProbe.HTTPGet.Port).To(Equal(intstr.FromString("http")))
+			Expect(evalHubContainer.LivenessProbe.InitialDelaySeconds).To(Equal(int32(30)))
+			Expect(evalHubContainer.LivenessProbe.PeriodSeconds).To(Equal(int32(10)))
 
 			By("Checking readiness probe")
-			Expect(container.ReadinessProbe).NotTo(BeNil())
-			Expect(container.ReadinessProbe.HTTPGet.Path).To(Equal("/api/v1/health"))
-			Expect(container.ReadinessProbe.HTTPGet.Port).To(Equal(intstr.FromString("http")))
-			Expect(container.ReadinessProbe.InitialDelaySeconds).To(Equal(int32(10)))
-			Expect(container.ReadinessProbe.PeriodSeconds).To(Equal(int32(5)))
+			Expect(evalHubContainer.ReadinessProbe).NotTo(BeNil())
+			Expect(evalHubContainer.ReadinessProbe.HTTPGet.Path).To(Equal("/api/v1/health"))
+			Expect(evalHubContainer.ReadinessProbe.HTTPGet.Port).To(Equal(intstr.FromString("http")))
+			Expect(evalHubContainer.ReadinessProbe.InitialDelaySeconds).To(Equal(int32(10)))
+			Expect(evalHubContainer.ReadinessProbe.PeriodSeconds).To(Equal(int32(5)))
 		})
 
 		It("should configure security contexts", func() {
@@ -259,19 +311,15 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(*deployment.Spec.Replicas).To(Equal(int32(3)))
 		})
 
-		It("should use fallback image when config map is missing", func() {
+		It("should fail when config map is missing", func() {
 			By("Deleting config map")
 			err := k8sClient.Delete(ctx, configMap)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Reconciling deployment without config map")
 			err = reconciler.reconcileDeployment(ctx, evalHub)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Verifying fallback image is used")
-			deployment := waitForDeployment(evalHubName, testNamespace)
-			container := deployment.Spec.Template.Spec.Containers[0]
-			Expect(container.Image).To(Equal(defaultEvalHubImage))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("kube-rbac-proxy configuration error"))
 		})
 
 		It("should configure rolling update strategy", func() {
@@ -303,6 +351,225 @@ var _ = Describe("EvalHub Deployment", func() {
 			By("Attempting to reconcile deployment")
 			err := reconciler.reconcileDeployment(ctx, nonExistentEvalHub)
 			Expect(err).To(HaveOccurred())
+		})
+
+		It("should fail when kube-rbac-proxy image is missing from ConfigMap", func() {
+			By("Deleting the existing ConfigMap")
+			err := k8sClient.Delete(ctx, configMap)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Creating ConfigMap without kube-rbac-proxy image")
+			badConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      configMapName,
+					Namespace: testNamespace,
+				},
+				Data: map[string]string{
+					"evalHubImage": "quay.io/ruimvieira/eval-hub:test",
+					// Missing kubeRBACProxyImage key
+				},
+			}
+			Expect(k8sClient.Create(ctx, badConfigMap)).Should(Succeed())
+
+			evalHub := createEvalHubInstance(evalHubName, testNamespace)
+			Expect(k8sClient.Create(ctx, evalHub)).Should(Succeed())
+
+			By("Attempting to reconcile deployment")
+			err = reconciler.reconcileDeployment(ctx, evalHub)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("kube-rbac-proxy configuration error"))
+
+			// Cleanup
+			k8sClient.Delete(ctx, evalHub)
+			k8sClient.Delete(ctx, badConfigMap)
+		})
+	})
+
+	Context("When configuring kube-rbac-proxy", func() {
+		BeforeEach(func() {
+			evalHub = createEvalHubInstance(evalHubName, testNamespace)
+			Expect(k8sClient.Create(ctx, evalHub)).Should(Succeed())
+		})
+
+		It("should include kube-rbac-proxy sidecar container", func() {
+			By("Reconciling deployment")
+			err := reconciler.reconcileDeployment(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Getting deployment")
+			deployment := waitForDeployment(evalHubName, testNamespace)
+
+			By("Checking deployment has both containers")
+			Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(2))
+
+			By("Finding kube-rbac-proxy container")
+			var proxyContainer *corev1.Container
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				if container.Name == "kube-rbac-proxy" {
+					proxyContainer = &container
+					break
+				}
+			}
+			Expect(proxyContainer).NotTo(BeNil(), "kube-rbac-proxy container should be present")
+
+			By("Checking kube-rbac-proxy container configuration")
+			Expect(proxyContainer.Image).To(Equal("gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1"))
+			Expect(proxyContainer.Args).To(ContainElements(
+				"--secure-listen-address=0.0.0.0:8443",
+				"--upstream=http://127.0.0.1:8000",
+				"--tls-cert-file=/etc/tls/private/tls.crt",
+				"--tls-private-key-file=/etc/tls/private/tls.key",
+				"--config-file=/etc/kube-rbac-proxy/config.yaml",
+				"--logtostderr=true",
+				"--v=0",
+			))
+
+			By("Checking kube-rbac-proxy ports")
+			Expect(proxyContainer.Ports).To(HaveLen(1))
+			Expect(proxyContainer.Ports[0].Name).To(Equal("https"))
+			Expect(proxyContainer.Ports[0].ContainerPort).To(Equal(int32(8443)))
+			Expect(proxyContainer.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
+		})
+
+		It("should configure kube-rbac-proxy resource requirements", func() {
+			By("Reconciling deployment")
+			err := reconciler.reconcileDeployment(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Getting deployment")
+			deployment := waitForDeployment(evalHubName, testNamespace)
+
+			By("Finding kube-rbac-proxy container")
+			var proxyContainer *corev1.Container
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				if container.Name == "kube-rbac-proxy" {
+					proxyContainer = &container
+					break
+				}
+			}
+			Expect(proxyContainer).NotTo(BeNil())
+
+			By("Checking resource requirements")
+			Expect(proxyContainer.Resources.Limits).To(HaveKeyWithValue(
+				corev1.ResourceCPU, resource.MustParse("200m"),
+			))
+			Expect(proxyContainer.Resources.Limits).To(HaveKeyWithValue(
+				corev1.ResourceMemory, resource.MustParse("100Mi"),
+			))
+			Expect(proxyContainer.Resources.Requests).To(HaveKeyWithValue(
+				corev1.ResourceCPU, resource.MustParse("100m"),
+			))
+			Expect(proxyContainer.Resources.Requests).To(HaveKeyWithValue(
+				corev1.ResourceMemory, resource.MustParse("50Mi"),
+			))
+		})
+
+		It("should configure kube-rbac-proxy security context", func() {
+			By("Reconciling deployment")
+			err := reconciler.reconcileDeployment(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Getting deployment")
+			deployment := waitForDeployment(evalHubName, testNamespace)
+
+			By("Finding kube-rbac-proxy container")
+			var proxyContainer *corev1.Container
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				if container.Name == "kube-rbac-proxy" {
+					proxyContainer = &container
+					break
+				}
+			}
+			Expect(proxyContainer).NotTo(BeNil())
+
+			By("Checking security context")
+			Expect(proxyContainer.SecurityContext).NotTo(BeNil())
+			Expect(*proxyContainer.SecurityContext.AllowPrivilegeEscalation).To(BeFalse())
+			Expect(*proxyContainer.SecurityContext.RunAsNonRoot).To(BeTrue())
+			Expect(proxyContainer.SecurityContext.Capabilities.Drop).To(ContainElement(corev1.Capability("ALL")))
+			Expect(proxyContainer.SecurityContext.SeccompProfile.Type).To(Equal(corev1.SeccompProfileTypeRuntimeDefault))
+		})
+
+		It("should configure kube-rbac-proxy volume mounts", func() {
+			By("Reconciling deployment")
+			err := reconciler.reconcileDeployment(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Getting deployment")
+			deployment := waitForDeployment(evalHubName, testNamespace)
+
+			By("Finding kube-rbac-proxy container")
+			var proxyContainer *corev1.Container
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				if container.Name == "kube-rbac-proxy" {
+					proxyContainer = &container
+					break
+				}
+			}
+			Expect(proxyContainer).NotTo(BeNil())
+
+			By("Checking volume mounts")
+			Expect(proxyContainer.VolumeMounts).To(HaveLen(2))
+
+			var configMount, tlsMount *corev1.VolumeMount
+			for _, mount := range proxyContainer.VolumeMounts {
+				if mount.Name == "kube-rbac-proxy-config" {
+					configMount = &mount
+				} else if mount.Name == evalHubName+"-tls" {
+					tlsMount = &mount
+				}
+			}
+
+			Expect(configMount).NotTo(BeNil())
+			Expect(configMount.MountPath).To(Equal("/etc/kube-rbac-proxy"))
+			Expect(configMount.ReadOnly).To(BeTrue())
+
+			Expect(tlsMount).NotTo(BeNil())
+			Expect(tlsMount.MountPath).To(Equal("/etc/tls/private"))
+			Expect(tlsMount.ReadOnly).To(BeTrue())
+		})
+
+		It("should configure deployment volumes for proxy", func() {
+			By("Reconciling deployment")
+			err := reconciler.reconcileDeployment(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Getting deployment")
+			deployment := waitForDeployment(evalHubName, testNamespace)
+
+			By("Checking deployment volumes")
+			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(2))
+
+			var configVolume, tlsVolume *corev1.Volume
+			for _, volume := range deployment.Spec.Template.Spec.Volumes {
+				if volume.Name == "kube-rbac-proxy-config" {
+					configVolume = &volume
+				} else if volume.Name == evalHubName+"-tls" {
+					tlsVolume = &volume
+				}
+			}
+
+			By("Checking proxy config volume")
+			Expect(configVolume).NotTo(BeNil())
+			Expect(configVolume.VolumeSource.ConfigMap).NotTo(BeNil())
+			Expect(configVolume.VolumeSource.ConfigMap.Name).To(Equal(evalHubName + "-proxy-config"))
+
+			By("Checking TLS volume")
+			Expect(tlsVolume).NotTo(BeNil())
+			Expect(tlsVolume.VolumeSource.Secret).NotTo(BeNil())
+			Expect(tlsVolume.VolumeSource.Secret.SecretName).To(Equal(evalHubName + "-tls"))
+		})
+
+		It("should configure service account for proxy", func() {
+			By("Reconciling deployment")
+			err := reconciler.reconcileDeployment(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Getting deployment")
+			deployment := waitForDeployment(evalHubName, testNamespace)
+
+			By("Checking service account name")
+			Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(evalHubName + "-proxy"))
 		})
 	})
 })

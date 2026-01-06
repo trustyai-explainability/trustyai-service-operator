@@ -152,7 +152,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			Expect(updatedEvalHub.Status.Replicas).To(Equal(int32(1)))
 			Expect(updatedEvalHub.Status.ReadyReplicas).To(Equal(int32(1)))
 
-			expectedURL := fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", evalHubName, testNamespace, 8000)
+			expectedURL := fmt.Sprintf("https://%s.%s.svc.cluster.local:%d", evalHubName, testNamespace, 8443)
 			Expect(updatedEvalHub.Status.URL).To(Equal(expectedURL))
 		})
 
@@ -272,7 +272,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			}, updatedEvalHub)
 			Expect(err).NotTo(HaveOccurred())
 
-			expectedURL := fmt.Sprintf("http://%s.%s.svc.cluster.local:8000", evalHubName, testNamespace)
+			expectedURL := fmt.Sprintf("https://%s.%s.svc.cluster.local:8443", evalHubName, testNamespace)
 			Expect(updatedEvalHub.Status.URL).To(Equal(expectedURL))
 		})
 	})

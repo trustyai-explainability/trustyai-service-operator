@@ -45,6 +45,8 @@ type EvalHubReconciler struct {
 //+kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=list;watch;get;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
 
@@ -96,10 +98,27 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return RequeueWithDelay(time.Second * 5)
 	}
 
+	// Create ServiceAccount for kube-rbac-proxy
+	err = r.createServiceAccount(ctx, instance)
+	if err != nil {
+		log.Error(err, "Failed to create ServiceAccount")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to create ServiceAccount: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
 	// Reconcile ConfigMap
 	if err := r.reconcileConfigMap(ctx, instance); err != nil {
 		log.Error(err, "Failed to reconcile ConfigMap")
 		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile ConfigMap: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
+	// Reconcile Proxy ConfigMap
+	if err := r.reconcileProxyConfigMap(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile Proxy ConfigMap")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Proxy ConfigMap: %v", err), corev1.ConditionFalse)
 		r.Status().Update(ctx, instance)
 		return RequeueWithError(err)
 	}
@@ -220,9 +239,9 @@ func (r *EvalHubReconciler) updateStatus(ctx context.Context, instance *evalhubv
 		instance.Status.Ready = corev1.ConditionTrue
 		instance.SetStatus("Ready", "DeploymentReady", "All replicas are ready", corev1.ConditionTrue)
 
-		// Set URL based on service
-		instance.Status.URL = fmt.Sprintf("http://%s.%s.svc.cluster.local:%d",
-			instance.Name, instance.Namespace, servicePort)
+		// Set URL based on service (kube-rbac-proxy)
+		instance.Status.URL = fmt.Sprintf("https://%s.%s.svc.cluster.local:%d",
+			instance.Name, instance.Namespace, kubeRBACProxyPort)
 	} else {
 		instance.Status.Phase = "Pending"
 		instance.Status.Ready = corev1.ConditionFalse

@@ -21,8 +21,12 @@ const (
 	servicePort = 8000
 
 	// Configuration constants
-	configMapName            = "trustyai-service-operator-config"
-	configMapEvalHubImageKey = "evalHubImage"
+	configMapName                  = "trustyai-service-operator-config"
+	configMapEvalHubImageKey       = "evalHubImage"
+	configMapKubeRBACProxyImageKey = "kubeRBACProxyImage"
+
+	// kube-rbac-proxy configuration
+	kubeRBACProxyPort = 8443
 
 	// Route configuration
 	routeName = "evalhub"

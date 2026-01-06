@@ -3,11 +3,13 @@ package evalhub
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -165,4 +167,150 @@ func (r *EvalHubReconciler) generateProvidersYAML(providers []ProviderConfig) (s
 	}
 
 	return string(yamlData), nil
+}
+
+// getImageFromConfigMap gets a required image value from the operator's ConfigMap
+// Returns error if ConfigMap is not found, key is missing, or value is empty
+// This ensures explicit configuration and prevents deployment with unconfigured images
+func (r *EvalHubReconciler) getImageFromConfigMap(ctx context.Context, key string) (string, error) {
+	log := log.FromContext(ctx)
+
+	if r.Namespace == "" {
+		return "", fmt.Errorf("operator namespace not set, cannot retrieve image configuration")
+	}
+
+	// Define the key for the ConfigMap
+	configMapKey := types.NamespacedName{
+		Namespace: r.Namespace,
+		Name:      configMapName,
+	}
+
+	// Create an empty ConfigMap object
+	var cm corev1.ConfigMap
+
+	// Try to get the ConfigMap
+	err := r.Client.Get(ctx, configMapKey, &cm)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// ConfigMap not found - FAIL deployment with clear error
+			return "", fmt.Errorf("required configmap '%s' not found in namespace '%s' - operator configuration missing",
+				configMapName, r.Namespace)
+		}
+		// Other error occurred when trying to fetch the ConfigMap
+		return "", fmt.Errorf("error reading configmap '%s' in namespace '%s': %w",
+			configMapName, r.Namespace, err)
+	}
+
+	log.V(1).Info("Found ConfigMap", "configmap", configMapKey)
+
+	// ConfigMap is found, extract the image
+	image, ok := cm.Data[key]
+	if !ok {
+		// Key not present in the ConfigMap - FAIL deployment
+		availableKeys := make([]string, 0, len(cm.Data))
+		for k := range cm.Data {
+			availableKeys = append(availableKeys, k)
+		}
+		return "", fmt.Errorf("configmap '%s' does not contain required key '%s' (available keys: %v)",
+			configMapKey, key, availableKeys)
+	}
+
+	if strings.TrimSpace(image) == "" {
+		// Key present but empty - FAIL deployment
+		return "", fmt.Errorf("configmap '%s' contains empty value for key '%s' - image must be explicitly configured",
+			configMapKey, key)
+	}
+
+	log.Info("Successfully retrieved image from ConfigMap",
+		"configmap", configMapKey,
+		"key", key,
+		"image", image)
+
+	return image, nil
+}
+
+// validateImageConfiguration validates that the image string is properly formatted
+func (r *EvalHubReconciler) validateImageConfiguration(ctx context.Context, image, imageType string) error {
+	log := log.FromContext(ctx)
+
+	// Basic validation - ensure image has a registry/repo and tag
+	if !strings.Contains(image, ":") {
+		log.V(1).Info("Image missing explicit tag, may use 'latest' implicitly", "image", image, "type", imageType)
+	}
+
+	// Check for potentially problematic configurations
+	if strings.HasSuffix(image, ":latest") {
+		log.Info("Warning: using 'latest' tag for container image", "image", image, "type", imageType)
+	}
+
+	return nil
+}
+
+// reconcileProxyConfigMap creates or updates the ConfigMap for kube-rbac-proxy configuration
+func (r *EvalHubReconciler) reconcileProxyConfigMap(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+	log := log.FromContext(ctx)
+	log.Info("Reconciling Proxy ConfigMap", "name", instance.Name)
+
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name + "-proxy-config",
+			Namespace: instance.Namespace,
+		},
+	}
+
+	// Check if ConfigMap already exists
+	getErr := r.Get(ctx, client.ObjectKeyFromObject(configMap), configMap)
+	if getErr != nil && !errors.IsNotFound(getErr) {
+		return getErr
+	}
+
+	// Generate proxy configuration data
+	proxyConfigData := r.generateProxyConfigData(instance)
+
+	if errors.IsNotFound(getErr) {
+		// Create new ConfigMap
+		configMap.Data = proxyConfigData
+		if instance.UID != "" {
+			if err := controllerutil.SetControllerReference(instance, configMap, r.Scheme); err != nil {
+				return err
+			}
+		}
+		log.Info("Creating Proxy ConfigMap", "name", configMap.Name)
+		return r.Create(ctx, configMap)
+	} else {
+		// Update existing ConfigMap
+		configMap.Data = proxyConfigData
+		log.Info("Updating Proxy ConfigMap", "name", configMap.Name)
+		return r.Update(ctx, configMap)
+	}
+}
+
+// generateProxyConfigData generates the kube-rbac-proxy configuration data
+func (r *EvalHubReconciler) generateProxyConfigData(instance *evalhubv1alpha1.EvalHub) map[string]string {
+	// kube-rbac-proxy configuration for EvalHub
+	proxyConfig := `authorization:
+  resourceAttributes:
+    namespace: ` + instance.Namespace + `
+    apiVersion: evalhub.trustyai.opendatahub.io/v1alpha1
+    resource: evalhubs
+    name: ` + instance.Name + `
+    subresource: proxy
+upstreams:
+- upstream: http://127.0.0.1:8000/
+  path: /
+  rewriteTarget: /
+  allowedPaths:
+  - /api/v1/health
+  - /api/v1/providers
+  - /api/v1/benchmarks
+  - /api/v1/evaluations
+  - /api/v1/evaluations/*/status
+  - /api/v1/evaluations/*/results
+  - /openapi.json
+  - /docs
+  - /redoc`
+
+	return map[string]string{
+		"config.yaml": proxyConfig,
+	}
 }

@@ -52,7 +52,8 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 			Namespace: testNamespace,
 		},
 		Data: map[string]string{
-			configMapEvalHubImageKey: "quay.io/test/eval-hub:latest",
+			configMapEvalHubImageKey:       "quay.io/test/eval-hub:latest",
+			configMapKubeRBACProxyImageKey: "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
 		},
 	}
 
@@ -87,8 +88,17 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		assert.Equal(t, replicas, *deployment.Spec.Replicas)
 
 		// Check container configuration
-		require.Len(t, deployment.Spec.Template.Spec.Containers, 1)
-		container := deployment.Spec.Template.Spec.Containers[0]
+		require.Len(t, deployment.Spec.Template.Spec.Containers, 2)
+
+		// Find the evalhub container
+		var container *corev1.Container
+		for i, c := range deployment.Spec.Template.Spec.Containers {
+			if c.Name == containerName {
+				container = &deployment.Spec.Template.Spec.Containers[i]
+				break
+			}
+		}
+		require.NotNil(t, container, "evalhub container should be present")
 
 		assert.Equal(t, containerName, container.Name)
 		assert.Equal(t, "quay.io/test/eval-hub:latest", container.Image)
@@ -118,7 +128,7 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		assert.Equal(t, intstr.FromString("http"), container.LivenessProbe.HTTPGet.Port)
 	})
 
-	t.Run("should use fallback image when configmap missing", func(t *testing.T) {
+	t.Run("should fail when configmap missing", func(t *testing.T) {
 		// Create client without configmap
 		fakeClientNoConfig := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -133,18 +143,8 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		}
 
 		err := reconcilerNoConfig.reconcileDeployment(ctx, evalHub)
-		require.NoError(t, err)
-
-		// Verify deployment uses fallback image
-		deployment := &appsv1.Deployment{}
-		err = fakeClientNoConfig.Get(ctx, types.NamespacedName{
-			Name:      evalHubName,
-			Namespace: testNamespace,
-		}, deployment)
-		require.NoError(t, err)
-
-		container := deployment.Spec.Template.Spec.Containers[0]
-		assert.Equal(t, defaultEvalHubImage, container.Image)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "kube-rbac-proxy configuration error")
 	})
 }
 
@@ -196,9 +196,9 @@ func TestEvalHubReconciler_reconcileService(t *testing.T) {
 		// Check ports
 		require.Len(t, service.Spec.Ports, 1)
 		port := service.Spec.Ports[0]
-		assert.Equal(t, "http", port.Name)
-		assert.Equal(t, int32(8000), port.Port)
-		assert.Equal(t, intstr.FromString("http"), port.TargetPort)
+		assert.Equal(t, "https", port.Name)
+		assert.Equal(t, int32(8443), port.Port)
+		assert.Equal(t, intstr.FromString("https"), port.TargetPort)
 		assert.Equal(t, corev1.ProtocolTCP, port.Protocol)
 
 		// Check selector
@@ -342,7 +342,7 @@ func TestEvalHubReconciler_updateStatus(t *testing.T) {
 		assert.Equal(t, int32(2), updatedEvalHub.Status.Replicas)
 		assert.Equal(t, int32(2), updatedEvalHub.Status.ReadyReplicas)
 
-		expectedURL := "http://test-evalhub.test-namespace.svc.cluster.local:8000"
+		expectedURL := "https://test-evalhub.test-namespace.svc.cluster.local:8443"
 		assert.Equal(t, expectedURL, updatedEvalHub.Status.URL)
 
 		// Check conditions

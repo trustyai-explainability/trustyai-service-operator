@@ -224,9 +224,17 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		By("Checking that Deployment is created")
 		deployment := waitForDeployment(evalHubName, testNamespace)
 		Expect(deployment.Spec.Replicas).To(Equal(evalHub.Spec.Replicas))
-		Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(1))
+		Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(2))
 
-		container := deployment.Spec.Template.Spec.Containers[0]
+		// Find the evalhub container
+		var container *corev1.Container
+		for i, c := range deployment.Spec.Template.Spec.Containers {
+			if c.Name == "evalhub" {
+				container = &deployment.Spec.Template.Spec.Containers[i]
+				break
+			}
+		}
+		Expect(container).NotTo(BeNil(), "evalhub container should be present")
 		Expect(container.Name).To(Equal("evalhub"))
 		Expect(container.Image).To(Equal("quay.io/ruimvieira/eval-hub:test"))
 		Expect(container.Ports[0].ContainerPort).To(Equal(int32(8000)))
@@ -243,7 +251,7 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 
 		By("Checking that Service is created")
 		service := waitForService(evalHubName, testNamespace)
-		Expect(service.Spec.Ports[0].Port).To(Equal(int32(8000)))
+		Expect(service.Spec.Ports[0].Port).To(Equal(int32(8443)))
 		Expect(service.Spec.Selector["app"]).To(Equal("eval-hub"))
 		Expect(service.Spec.Selector["instance"]).To(Equal(evalHubName))
 	})

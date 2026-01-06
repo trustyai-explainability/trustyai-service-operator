@@ -42,14 +42,15 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		},
 	}
 
-	// Create config map with image
+	// Create config map with images
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      configMapName,
 			Namespace: testNamespace,
 		},
 		Data: map[string]string{
-			configMapEvalHubImageKey: "quay.io/test/eval-hub:v1.2.3",
+			configMapEvalHubImageKey:       "quay.io/test/eval-hub:v1.2.3",
+			configMapKubeRBACProxyImageKey: "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
 		},
 	}
 
@@ -84,9 +85,17 @@ func TestBuildDeploymentSpec(t *testing.T) {
 
 		// Check pod template
 		podSpec := deploymentSpec.Template.Spec
-		require.Len(t, podSpec.Containers, 1)
+		require.Len(t, podSpec.Containers, 2)
 
-		container := podSpec.Containers[0]
+		// Find the evalhub container
+		var container *corev1.Container
+		for i, c := range podSpec.Containers {
+			if c.Name == containerName {
+				container = &podSpec.Containers[i]
+				break
+			}
+		}
+		require.NotNil(t, container, "evalhub container should be present")
 
 		// Check container basic properties
 		assert.Equal(t, containerName, container.Name)
@@ -154,7 +163,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		assert.Equal(t, "25%", deploymentSpec.Strategy.RollingUpdate.MaxSurge.StrVal)
 	})
 
-	t.Run("should use fallback image when configmap missing", func(t *testing.T) {
+	t.Run("should fail when configmap missing", func(t *testing.T) {
 		// Create client without configmap
 		fakeClientNoConfig := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -168,10 +177,10 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		}
 
 		deploymentSpec, err := reconcilerNoConfig.buildDeploymentSpec(ctx, evalHub)
-		require.NoError(t, err)
-
-		container := deploymentSpec.Template.Spec.Containers[0]
-		assert.Equal(t, defaultEvalHubImage, container.Image)
+		require.Error(t, err)
+		// Should return empty deployment spec (zero value) on error
+		assert.Equal(t, appsv1.DeploymentSpec{}, deploymentSpec)
+		assert.Contains(t, err.Error(), "kube-rbac-proxy configuration error")
 	})
 
 	t.Run("should handle default replicas when not specified", func(t *testing.T) {
@@ -223,9 +232,9 @@ func TestBuildServiceSpec(t *testing.T) {
 		// Check ports
 		require.Len(t, serviceSpec.Ports, 1)
 		port := serviceSpec.Ports[0]
-		assert.Equal(t, "http", port.Name)
-		assert.Equal(t, int32(8000), port.Port)
-		assert.Equal(t, intstr.FromString("http"), port.TargetPort)
+		assert.Equal(t, "https", port.Name)
+		assert.Equal(t, int32(8443), port.Port)
+		assert.Equal(t, intstr.FromString("https"), port.TargetPort)
 		assert.Equal(t, corev1.ProtocolTCP, port.Protocol)
 	})
 }
@@ -244,7 +253,8 @@ func TestGetEvalHubImage(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Data: map[string]string{
-				configMapEvalHubImageKey: "quay.io/test/eval-hub:custom",
+				configMapEvalHubImageKey:       "quay.io/test/eval-hub:custom",
+				configMapKubeRBACProxyImageKey: "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
 			},
 		}
 
@@ -285,7 +295,8 @@ func TestGetEvalHubImage(t *testing.T) {
 				Namespace: "trustyai-service-operator-system",
 			},
 			Data: map[string]string{
-				configMapEvalHubImageKey: "quay.io/test/eval-hub:default-ns",
+				configMapEvalHubImageKey:       "quay.io/test/eval-hub:default-ns",
+				configMapKubeRBACProxyImageKey: "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
 			},
 		}
 

@@ -83,7 +83,7 @@ var _ = Describe("EvalHub Service", func() {
 			Expect(service.Labels["component"]).To(Equal("api"))
 		})
 
-		It("should configure service ports correctly", func() {
+		It("should configure service ports correctly for kube-rbac-proxy", func() {
 			By("Reconciling service")
 			err := reconciler.reconcileService(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
@@ -95,9 +95,9 @@ var _ = Describe("EvalHub Service", func() {
 			Expect(service.Spec.Ports).To(HaveLen(1))
 
 			port := service.Spec.Ports[0]
-			Expect(port.Name).To(Equal("http"))
-			Expect(port.Port).To(Equal(int32(8000)))
-			Expect(port.TargetPort).To(Equal(intstr.FromString("http")))
+			Expect(port.Name).To(Equal("https"))
+			Expect(port.Port).To(Equal(int32(8443)))
+			Expect(port.TargetPort).To(Equal(intstr.FromString("https")))
 			Expect(port.Protocol).To(Equal(corev1.ProtocolTCP))
 		})
 
@@ -229,7 +229,7 @@ var _ = Describe("EvalHub Service", func() {
 				Namespace: testNamespace,
 			}, service)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(service.Spec.Ports[0].Port).To(Equal(int32(8000)))
+			Expect(service.Spec.Ports[0].Port).To(Equal(int32(8443)))
 		})
 	})
 
@@ -289,8 +289,8 @@ var _ = Describe("EvalHub Service", func() {
 			service := waitForService(evalHubName, testNamespace)
 
 			By("Verifying service port matches expected container port")
-			Expect(service.Spec.Ports[0].Port).To(Equal(int32(8000)))
-			Expect(service.Spec.Ports[0].TargetPort.StrVal).To(Equal("http"))
+			Expect(service.Spec.Ports[0].Port).To(Equal(int32(8443)))
+			Expect(service.Spec.Ports[0].TargetPort.StrVal).To(Equal("https"))
 		})
 	})
 })
