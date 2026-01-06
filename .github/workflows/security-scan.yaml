@@ -26,7 +26,7 @@ jobs:
           go-version-file: "go.mod"
 
       - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.33.1
         with:
           scan-type: "fs"
           scan-ref: "."
@@ -34,15 +34,19 @@ jobs:
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH,MEDIUM,LOW"
           exit-code: "0"
+          version: "v0.68.2"
+          cache: "false"
 
       - name: Check for critical and high vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.33.1
         with:
           scan-type: "fs"
           scan-ref: "."
           format: "table"
           severity: "CRITICAL,HIGH"
           exit-code: "1"
+          version: "v0.68.2"
+          cache: "false"
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
