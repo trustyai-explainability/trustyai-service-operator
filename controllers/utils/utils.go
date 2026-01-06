@@ -39,6 +39,16 @@ func RemoveString(list []string, s string) []string {
 	return newList
 }
 
+// allTrue checks if all values in a bool array are true, returns false otherwise
+func AllTrue(array []bool) bool {
+	for _, b := range array {
+		if !b {
+			return false
+		}
+	}
+	return true
+}
+
 // GetNamespace returns the namespace of a pod
 func GetNamespace() (string, error) {
 	ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
