@@ -72,8 +72,8 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		evalHubImage = defaultEvalHubImage
 	}
 
-	// Build environment variables based on k8s examples
-	env := []corev1.EnvVar{
+	// Build default environment variables
+	defaultEnvVars := []corev1.EnvVar{
 		{
 			Name:  "API_HOST",
 			Value: "0.0.0.0",
@@ -100,8 +100,8 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		},
 	}
 
-	// Add custom environment variables from the CR
-	env = append(env, instance.Spec.Env...)
+	// Merge environment variables with CR values taking precedence
+	env := mergeEnvVars(defaultEnvVars, instance.Spec.Env)
 
 	// Container definition based on k8s examples
 	container := corev1.Container{
@@ -283,4 +283,38 @@ func (r *EvalHubReconciler) getEvalHubImage(ctx context.Context) (string, error)
 	}
 
 	return utils.GetImageFromConfigMapWithFallback(ctx, r.Client, configMapEvalHubImageKey, configMapName, namespace, defaultEvalHubImage)
+}
+
+// mergeEnvVars merges default environment variables with CR-specified ones,
+// with CR values taking precedence over defaults when names conflict
+func mergeEnvVars(defaults, overrides []corev1.EnvVar) []corev1.EnvVar {
+	// Build map of environment variables starting with defaults
+	envMap := make(map[string]corev1.EnvVar)
+	for _, env := range defaults {
+		envMap[env.Name] = env
+	}
+
+	// Overlay CR-specified values (they win over defaults)
+	for _, env := range overrides {
+		envMap[env.Name] = env
+	}
+
+	// Reconstruct slice preserving order: CR values first, then remaining defaults
+	var result []corev1.EnvVar
+
+	// Add CR values in their original order
+	crNames := make(map[string]bool)
+	for _, env := range overrides {
+		result = append(result, envMap[env.Name])
+		crNames[env.Name] = true
+	}
+
+	// Add remaining defaults that weren't overridden
+	for _, env := range defaults {
+		if !crNames[env.Name] {
+			result = append(result, envMap[env.Name])
+		}
+	}
+
+	return result
 }
