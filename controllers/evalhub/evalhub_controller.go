@@ -142,8 +142,8 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// Reconcile Route (if on OpenShift and enabled)
 	if err := r.reconcileRoute(ctx, instance); err != nil {
 		log.Error(err, "Failed to reconcile Route")
-		instance.SetStatus("Ready", "Warning", fmt.Sprintf("Failed to reconcile Route: %v", err), corev1.ConditionTrue)
-		r.Status().Update(ctx, instance)
+		// Log warning but don't update status - Route is optional (OpenShift only)
+		// The Ready status will be determined by updateStatus based on deployment readiness
 		// Route errors are not fatal, continue
 	}
 
