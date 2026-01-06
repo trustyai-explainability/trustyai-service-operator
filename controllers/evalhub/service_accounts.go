@@ -68,8 +68,7 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 func (r *EvalHubReconciler) createClusterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
 	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.Name + "-" + instance.Namespace + "-proxy-rolebinding",
-			Namespace: instance.Namespace,
+			Name: instance.Name + "-" + instance.Namespace + "-proxy-rolebinding",
 		},
 		Subjects: []rbacv1.Subject{
 			{
