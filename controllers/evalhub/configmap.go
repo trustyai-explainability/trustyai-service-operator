@@ -287,30 +287,45 @@ func (r *EvalHubReconciler) reconcileProxyConfigMap(ctx context.Context, instanc
 
 // generateProxyConfigData generates the kube-rbac-proxy configuration data
 func (r *EvalHubReconciler) generateProxyConfigData(instance *evalhubv1alpha1.EvalHub) map[string]string {
-	// kube-rbac-proxy configuration for EvalHub
-	proxyConfig := `authorization:
-  resourceAttributes:
-    namespace: ` + instance.Namespace + `
-    apiVersion: evalhub.trustyai.opendatahub.io/v1alpha1
-    resource: evalhubs
-    name: ` + instance.Name + `
-    subresource: proxy
-upstreams:
-- upstream: http://127.0.0.1:8000/
-  path: /
-  rewriteTarget: /
-  allowedPaths:
-  - /api/v1/health
-  - /api/v1/providers
-  - /api/v1/benchmarks
-  - /api/v1/evaluations
-  - /api/v1/evaluations/*/status
-  - /api/v1/evaluations/*/results
-  - /openapi.json
-  - /docs
-  - /redoc`
+	// kube-rbac-proxy configuration for EvalHub using proper YAML marshaling
+	proxyConfig := map[string]interface{}{
+		"authorization": map[string]interface{}{
+			"resourceAttributes": map[string]interface{}{
+				"namespace":   instance.Namespace,
+				"apiVersion":  "evalhub.trustyai.opendatahub.io/v1alpha1",
+				"resource":    "evalhubs",
+				"name":        instance.Name,
+				"subresource": "proxy",
+			},
+		},
+		"upstreams": []map[string]interface{}{
+			{
+				"upstream":      "http://127.0.0.1:8000/",
+				"path":          "/",
+				"rewriteTarget": "/",
+				"allowedPaths": []string{
+					"/api/v1/health",
+					"/api/v1/providers",
+					"/api/v1/benchmarks",
+					"/api/v1/evaluations",
+					"/api/v1/evaluations/*/status",
+					"/api/v1/evaluations/*/results",
+					"/openapi.json",
+					"/docs",
+					"/redoc",
+				},
+			},
+		},
+	}
+
+	yamlData, err := yaml.Marshal(proxyConfig)
+	if err != nil {
+		// This should never happen with our static config, but handle gracefully
+		log.Log.Error(err, "Failed to marshal proxy configuration to YAML")
+		return map[string]string{"config.yaml": "# Error: Failed to generate configuration"}
+	}
 
 	return map[string]string{
-		"config.yaml": proxyConfig,
+		"config.yaml": string(yamlData),
 	}
 }
