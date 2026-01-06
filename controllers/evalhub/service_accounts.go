@@ -2,7 +2,6 @@ package evalhub
 
 import (
 	"context"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
@@ -66,9 +65,12 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 
 // createClusterRoleBinding creates a binding between the service account and evalhub proxy cluster role
 func (r *EvalHubReconciler) createClusterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
+	log := log.FromContext(ctx)
+
+	clusterRoleBindingName := instance.Name + "-" + instance.Namespace + "-proxy-rolebinding"
 	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: instance.Name + "-" + instance.Namespace + "-proxy-rolebinding",
+			Name: clusterRoleBindingName,
 		},
 		Subjects: []rbacv1.Subject{
 			{
@@ -84,8 +86,47 @@ func (r *EvalHubReconciler) createClusterRoleBinding(ctx context.Context, instan
 		},
 	}
 
-	if err := utils.ReconcileClusterRoleBinding(ctx, r.Client, instance, clusterRoleBinding); err != nil {
+	// Check if ClusterRoleBinding already exists
+	found := &rbacv1.ClusterRoleBinding{}
+	err := r.Get(ctx, types.NamespacedName{Name: clusterRoleBindingName}, found)
+	if err != nil && errors.IsNotFound(err) {
+		// ClusterRoleBinding doesn't exist, create it
+		// Note: We don't set owner references because ClusterRoleBindings cannot have namespace-scoped owners
+		log.Info("Creating ClusterRoleBinding", "name", clusterRoleBindingName)
+		return r.Create(ctx, clusterRoleBinding)
+	} else if err != nil {
+		// Error getting ClusterRoleBinding
 		return err
 	}
+
+	// ClusterRoleBinding already exists, check if it needs updating
+	if !equalClusterRoleBindingSpec(found, clusterRoleBinding) {
+		found.Subjects = clusterRoleBinding.Subjects
+		found.RoleRef = clusterRoleBinding.RoleRef
+		log.Info("Updating ClusterRoleBinding", "name", clusterRoleBindingName)
+		return r.Update(ctx, found)
+	}
+
 	return nil
+}
+
+// equalClusterRoleBindingSpec compares two ClusterRoleBinding specs
+func equalClusterRoleBindingSpec(existing, desired *rbacv1.ClusterRoleBinding) bool {
+	// Compare subjects
+	if len(existing.Subjects) != len(desired.Subjects) {
+		return false
+	}
+	for i, subject := range existing.Subjects {
+		if i >= len(desired.Subjects) ||
+			subject.Kind != desired.Subjects[i].Kind ||
+			subject.Name != desired.Subjects[i].Name ||
+			subject.Namespace != desired.Subjects[i].Namespace {
+			return false
+		}
+	}
+
+	// Compare role reference
+	return existing.RoleRef.Kind == desired.RoleRef.Kind &&
+		existing.RoleRef.Name == desired.RoleRef.Name &&
+		existing.RoleRef.APIGroup == desired.RoleRef.APIGroup
 }
