@@ -2,6 +2,7 @@ package gorch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
@@ -43,7 +44,15 @@ type StatusUpdate struct {
 	conditionStatus corev1.ConditionStatus
 }
 
-func createUpdate(component string, isReady bool) StatusUpdate {
+func createUpdate(component string, isReady bool, err error) StatusUpdate {
+	if err != nil {
+		return StatusUpdate{
+			component:       component,
+			reason:          component + "ReadinessCheckFailed",
+			message:         fmt.Sprintf("%s readiness check failed: %v", component, err),
+			conditionStatus: corev1.ConditionFalse,
+		}
+	}
 	if isReady {
 		return StatusUpdate{
 			component:       component,
@@ -64,34 +73,38 @@ func createUpdate(component string, isReady bool) StatusUpdate {
 func (r *GuardrailsOrchestratorReconciler) reconcileStatuses(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (ctrl.Result, error) {
 	var statusUpdates []StatusUpdate
 	var requiredRoutesReadiness []bool
+	var routeCheckErrors []error
 
 	// Check overall deployment status
-	deploymentReady, _ = utils.CheckDeploymentReady(ctx, r.Client, orchestrator.Name, orchestrator.Namespace)
-	statusUpdates = append(statusUpdates, createUpdate("Deployment", deploymentReady))
+	deploymentReady, deploymentError := utils.CheckDeploymentReady(ctx, r.Client, orchestrator.Name, orchestrator.Namespace)
+	statusUpdates = append(statusUpdates, createUpdate("Deployment", deploymentReady, deploymentError))
 
 	// Orchestrator needed?
 	if !orchestrator.Spec.DisableOrchestrator {
-		generatorReady, _ = r.checkGeneratorPresent(ctx, orchestrator.Namespace)
-		statusUpdates = append(statusUpdates, createUpdate("InferenceService", generatorReady))
-		httpRouteReady, _ := utils.CheckRouteReady(ctx, r.Client, orchestrator.Name, orchestrator.Namespace)
-		healthRouteReady, _ := utils.CheckRouteReady(ctx, r.Client, orchestrator.Name+"-health", orchestrator.Namespace)
+		generatorReady, generatorError := r.checkGeneratorPresent(ctx, orchestrator.Namespace)
+		statusUpdates = append(statusUpdates, createUpdate("InferenceService", generatorReady, generatorError))
+		httpRouteReady, httpRouteError := utils.CheckRouteReady(ctx, r.Client, orchestrator.Name, orchestrator.Namespace)
+		healthRouteReady, healthRouteError := utils.CheckRouteReady(ctx, r.Client, orchestrator.Name+"-health", orchestrator.Namespace)
 		requiredRoutesReadiness = append(requiredRoutesReadiness, httpRouteReady, healthRouteReady)
+		routeCheckErrors = append(routeCheckErrors, httpRouteError, healthRouteError)
 	}
 
 	// Gateway needed?
 	if orchestrator.Spec.EnableGuardrailsGateway {
-		gatewayRouteReady, _ := utils.CheckRouteReady(ctx, r.Client, orchestrator.Name+"-gateway", orchestrator.Namespace)
+		gatewayRouteReady, gatewayRouteError := utils.CheckRouteReady(ctx, r.Client, orchestrator.Name+"-gateway", orchestrator.Namespace)
 		requiredRoutesReadiness = append(requiredRoutesReadiness, gatewayRouteReady)
+		routeCheckErrors = append(routeCheckErrors, gatewayRouteError)
 	}
 
 	// Detectors needed?
 	if orchestrator.Spec.EnableBuiltInDetectors {
-		detectorRouteReady, _ := utils.CheckRouteReady(ctx, r.Client, orchestrator.Name+"-built-in", orchestrator.Namespace)
+		detectorRouteReady, detectorRouteError := utils.CheckRouteReady(ctx, r.Client, orchestrator.Name+"-built-in", orchestrator.Namespace)
 		requiredRoutesReadiness = append(requiredRoutesReadiness, detectorRouteReady)
+		routeCheckErrors = append(routeCheckErrors, detectorRouteError)
 	}
 
 	// Check route readiness
-	statusUpdates = append(statusUpdates, createUpdate("Route", utils.AllTrue(requiredRoutesReadiness)))
+	statusUpdates = append(statusUpdates, createUpdate("Route", utils.AllTrue(requiredRoutesReadiness), errors.Join(routeCheckErrors...)))
 
 	// Apply the new statues
 	_, updateErr := r.updateStatus(ctx, orchestrator, func(saved *gorchv1alpha1.GuardrailsOrchestrator) {
