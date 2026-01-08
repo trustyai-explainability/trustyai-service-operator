@@ -42,7 +42,9 @@ type GuardrailsOrchestratorSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 	// Number of replicas
-	Replicas int32 `json:"replicas"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default=1
+	Replicas int32 `json:"replicas,omitempty"`
 	// Name of configmap containing generator, detector, and chunker arguments
 	// +optional
 	OrchestratorConfig *string `json:"orchestratorConfig,omitempty"`

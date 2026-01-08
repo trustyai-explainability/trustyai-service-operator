@@ -19,6 +19,9 @@ package gorch
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"time"
+
 	"github.com/go-logr/logr"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -28,8 +31,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"strconv"
-	"time"
 
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -111,6 +112,23 @@ func (r *GuardrailsOrchestratorReconciler) handleReconciliationErrorWithTrace(ct
 		utils.SetFailedCondition(&saved.Status.Conditions, reason, message)
 		saved.Status.Phase = utils.PhaseError
 	})
+}
+
+// appendTLSSecretsToMounts appends TLS secrets from the orchestrator spec to the tlsMounts slice
+func appendTLSSecretsToMounts(orchestrator *gorchv1alpha1.GuardrailsOrchestrator, tlsMounts []gorchv1alpha1.DetectedService) []gorchv1alpha1.DetectedService {
+	if orchestrator.Spec.TLSSecrets != nil && len(*orchestrator.Spec.TLSSecrets) > 0 {
+		for _, tlsSecret := range *orchestrator.Spec.TLSSecrets {
+			tlsMounts = append(tlsMounts, gorchv1alpha1.DetectedService{
+				Name:      "",
+				Type:      "",
+				Scheme:    "",
+				Hostname:  "",
+				Port:      "",
+				TLSSecret: tlsSecret,
+			})
+		}
+	}
+	return tlsMounts
 }
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -281,18 +299,7 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 			return ctrl.Result{}, err
 		}
 
-		if orchestrator.Spec.TLSSecrets != nil && len(*orchestrator.Spec.TLSSecrets) > 0 {
-			for _, tlsSecret := range *orchestrator.Spec.TLSSecrets {
-				tlsMounts = append(tlsMounts, gorchv1alpha1.DetectedService{
-					Name:      "",
-					Type:      "",
-					Scheme:    "",
-					Hostname:  "",
-					Port:      "",
-					TLSSecret: tlsSecret,
-				})
-			}
-		}
+		tlsMounts = appendTLSSecretsToMounts(orchestrator, tlsMounts)
 
 		// add TLS mounts to deployment
 		err = r.addTLSMounts(ctx, orchestrator, deployment, tlsMounts)
@@ -323,6 +330,43 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	} else if err != nil {
 		r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Failed to get Deployment")
 		return ctrl.Result{}, err
+	} else {
+		// Deployment exists, check if it needs to be updated
+		newDeployment, err := r.createDeployment(ctx, orchestrator)
+		if err != nil {
+			r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Failed to create updated Deployment spec")
+			return ctrl.Result{}, err
+		}
+
+		tlsMounts = appendTLSSecretsToMounts(orchestrator, tlsMounts)
+
+		// add TLS mounts to the new deployment spec
+		err = r.addTLSMounts(ctx, orchestrator, newDeployment, tlsMounts)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				log.Info("Could not find required TLS serving secrets, will try again.")
+				return ctrl.Result{}, nil
+			}
+			r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Failed to add TLS Mounts")
+			return ctrl.Result{}, err
+		}
+
+		// Preserve existing annotations and add configmap hashes
+		annotations := existingDeployment.Spec.Template.Annotations
+		if annotations == nil {
+			annotations = map[string]string{}
+		}
+		r.setConfigMapHashAnnotations(ctx, orchestrator, annotations)
+		newDeployment.Spec.Template.Annotations = annotations
+
+		// Patch the deployment if there are changes
+		if patchDeployment(existingDeployment, newDeployment) {
+			log.Info("Updating Deployment", "Deployment.Namespace", existingDeployment.Namespace, "Deployment.Name", existingDeployment.Name)
+			if updateErr := r.Update(ctx, existingDeployment); updateErr != nil {
+				r.handleReconciliationError(ctx, log, orchestrator, updateErr, utils.ReconcileFailed, "Failed to update Deployment")
+				return ctrl.Result{}, updateErr
+			}
+		}
 	}
 
 	// monitor the orchestrator or gateway config for changes
