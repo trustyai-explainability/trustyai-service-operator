@@ -147,7 +147,7 @@ var _ = Describe("EvalHub Proxy RBAC", func() {
 
 			By("Checking role reference")
 			Expect(clusterRoleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
-			Expect(clusterRoleBinding.RoleRef.Name).To(Equal("trustyai-service-operator-evalhub-proxy-role"))
+			Expect(clusterRoleBinding.RoleRef.Name).To(Equal("evalhub-proxy-role"))
 			Expect(clusterRoleBinding.RoleRef.APIGroup).To(Equal("rbac.authorization.k8s.io"))
 		})
 

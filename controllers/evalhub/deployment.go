@@ -52,6 +52,9 @@ func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *e
 	} else {
 		// Update existing Deployment
 		deployment.Spec = desiredSpec
+		if err := controllerutil.SetControllerReference(instance, deployment, r.Scheme); err != nil {
+			return err
+		}
 		log.Info("Updating Deployment", "name", deployment.Name)
 		return r.Update(ctx, deployment)
 	}

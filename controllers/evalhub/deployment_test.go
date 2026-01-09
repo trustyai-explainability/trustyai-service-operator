@@ -538,16 +538,23 @@ var _ = Describe("EvalHub Deployment", func() {
 			deployment := waitForDeployment(evalHubName, testNamespace)
 
 			By("Checking deployment volumes")
-			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(2))
+			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(3))
 
-			var configVolume, tlsVolume *corev1.Volume
+			var evalHubConfigVolume, configVolume, tlsVolume *corev1.Volume
 			for _, volume := range deployment.Spec.Template.Spec.Volumes {
-				if volume.Name == "kube-rbac-proxy-config" {
+				if volume.Name == "evalhub-config" {
+					evalHubConfigVolume = &volume
+				} else if volume.Name == "kube-rbac-proxy-config" {
 					configVolume = &volume
 				} else if volume.Name == evalHubName+"-tls" {
 					tlsVolume = &volume
 				}
 			}
+
+			By("Checking evalhub config volume")
+			Expect(evalHubConfigVolume).NotTo(BeNil())
+			Expect(evalHubConfigVolume.VolumeSource.ConfigMap).NotTo(BeNil())
+			Expect(evalHubConfigVolume.VolumeSource.ConfigMap.Name).To(Equal(evalHubName + "-config"))
 
 			By("Checking proxy config volume")
 			Expect(configVolume).NotTo(BeNil())
