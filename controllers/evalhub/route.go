@@ -78,7 +78,7 @@ func (r *EvalHubReconciler) buildRouteSpec(instance *evalhubv1alpha1.EvalHub) ro
 			Weight: &[]int32{100}[0],
 		},
 		Port: &routev1.RoutePort{
-			TargetPort: intstr.FromString("http"),
+			TargetPort: intstr.FromString("https"),
 		},
 		// Default TLS configuration for EvalHub
 		TLS: &routev1.TLSConfig{
