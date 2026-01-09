@@ -100,7 +100,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		// Check container basic properties
 		assert.Equal(t, containerName, container.Name)
 		assert.Equal(t, "quay.io/test/eval-hub:v1.2.3", container.Image)
-		assert.Equal(t, corev1.PullAlways, container.ImagePullPolicy)
+		assert.Equal(t, corev1.PullIfNotPresent, container.ImagePullPolicy)
 
 		// Check ports
 		require.Len(t, container.Ports, 1)

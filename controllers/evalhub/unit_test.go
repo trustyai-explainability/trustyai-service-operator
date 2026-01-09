@@ -102,7 +102,7 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 
 		assert.Equal(t, containerName, container.Name)
 		assert.Equal(t, "quay.io/test/eval-hub:latest", container.Image)
-		assert.Equal(t, corev1.PullAlways, container.ImagePullPolicy)
+		assert.Equal(t, corev1.PullIfNotPresent, container.ImagePullPolicy)
 
 		// Check ports
 		require.Len(t, container.Ports, 1)

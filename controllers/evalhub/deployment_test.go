@@ -125,7 +125,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 			By("Checking evalhub container configuration")
 			Expect(evalHubContainer.Image).To(Equal("quay.io/ruimvieira/eval-hub:test")) // From test configmap
-			Expect(evalHubContainer.ImagePullPolicy).To(Equal(corev1.PullAlways))
+			Expect(evalHubContainer.ImagePullPolicy).To(Equal(corev1.PullIfNotPresent))
 
 			// Check ports
 			Expect(evalHubContainer.Ports).To(HaveLen(1))
