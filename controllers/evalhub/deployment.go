@@ -98,6 +98,14 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			Name:  "MAX_RETRY_ATTEMPTS",
 			Value: "3",
 		},
+		{
+			Name:  "CONFIG_PATH",
+			Value: "/etc/evalhub/config.yaml",
+		},
+		{
+			Name:  "PROVIDERS_CONFIG_PATH",
+			Value: "/etc/evalhub/providers.yaml",
+		},
 	}
 
 	// Merge environment variables with CR values taking precedence
@@ -118,6 +126,13 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		Env:             env,
 		Resources:       defaultResourceRequirements,
 		SecurityContext: defaultSecurityContext,
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      "evalhub-config",
+				MountPath: "/etc/evalhub",
+				ReadOnly:  true,
+			},
+		},
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
@@ -227,6 +242,16 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			SecurityContext:    defaultPodSecurityContext,
 			RestartPolicy:      corev1.RestartPolicyAlways,
 			Volumes: []corev1.Volume{
+				{
+					Name: "evalhub-config",
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: instance.Name + "-config",
+							},
+						},
+					},
+				},
 				{
 					Name: "kube-rbac-proxy-config",
 					VolumeSource: corev1.VolumeSource{
