@@ -81,7 +81,7 @@ func (r *EvalHubReconciler) createClusterRoleBinding(ctx context.Context, instan
 		},
 		RoleRef: rbacv1.RoleRef{
 			Kind:     "ClusterRole",
-			Name:     "trustyai-service-operator-evalhub-proxy-role",
+			Name:     "evalhub-proxy-role",
 			APIGroup: rbacv1.GroupName,
 		},
 	}
