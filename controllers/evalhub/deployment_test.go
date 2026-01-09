@@ -277,8 +277,15 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(*podSecurityContext.FSGroup).To(Equal(int64(1001)))
 
 			By("Checking container security context")
-			container := deployment.Spec.Template.Spec.Containers[0]
-			containerSecurityContext := container.SecurityContext
+			var evalHubContainer *corev1.Container
+			for i, container := range deployment.Spec.Template.Spec.Containers {
+				if container.Name == "evalhub" {
+					evalHubContainer = &deployment.Spec.Template.Spec.Containers[i]
+					break
+				}
+			}
+			Expect(evalHubContainer).NotTo(BeNil())
+			containerSecurityContext := evalHubContainer.SecurityContext
 			Expect(containerSecurityContext).NotTo(BeNil())
 			Expect(*containerSecurityContext.AllowPrivilegeEscalation).To(BeFalse())
 			Expect(*containerSecurityContext.RunAsNonRoot).To(BeTrue())
