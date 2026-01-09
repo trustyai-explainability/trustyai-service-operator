@@ -100,11 +100,28 @@ func (r *EvalHubReconciler) createClusterRoleBinding(ctx context.Context, instan
 	}
 
 	// ClusterRoleBinding already exists, check if it needs updating
-	if !equalClusterRoleBindingSpec(found, clusterRoleBinding) {
-		found.Subjects = clusterRoleBinding.Subjects
-		found.RoleRef = clusterRoleBinding.RoleRef
-		log.Info("Updating ClusterRoleBinding", "name", clusterRoleBindingName)
-		return r.Update(ctx, found)
+	subjectsEqual := equalSubjects(found, clusterRoleBinding)
+	roleRefEqual := equalRoleRef(found, clusterRoleBinding)
+
+	if !subjectsEqual || !roleRefEqual {
+		if roleRefEqual && !subjectsEqual {
+			// Only subjects differ, we can update them
+			found.Subjects = clusterRoleBinding.Subjects
+			log.Info("Updating ClusterRoleBinding subjects", "name", clusterRoleBindingName)
+			return r.Update(ctx, found)
+		} else if !roleRefEqual {
+			// RoleRef differs, we need to delete and recreate as RoleRef is immutable
+			log.Info("RoleRef differs, deleting and recreating ClusterRoleBinding", "name", clusterRoleBindingName)
+
+			// Delete existing ClusterRoleBinding
+			if err := r.Delete(ctx, found); err != nil {
+				return err
+			}
+
+			// Create new ClusterRoleBinding with desired spec
+			log.Info("Creating new ClusterRoleBinding", "name", clusterRoleBindingName)
+			return r.Create(ctx, clusterRoleBinding)
+		}
 	}
 
 	return nil
@@ -126,6 +143,29 @@ func equalClusterRoleBindingSpec(existing, desired *rbacv1.ClusterRoleBinding) b
 	}
 
 	// Compare role reference
+	return existing.RoleRef.Kind == desired.RoleRef.Kind &&
+		existing.RoleRef.Name == desired.RoleRef.Name &&
+		existing.RoleRef.APIGroup == desired.RoleRef.APIGroup
+}
+
+// equalSubjects compares subjects between two ClusterRoleBindings
+func equalSubjects(existing, desired *rbacv1.ClusterRoleBinding) bool {
+	if len(existing.Subjects) != len(desired.Subjects) {
+		return false
+	}
+	for i, subject := range existing.Subjects {
+		if i >= len(desired.Subjects) ||
+			subject.Kind != desired.Subjects[i].Kind ||
+			subject.Name != desired.Subjects[i].Name ||
+			subject.Namespace != desired.Subjects[i].Namespace {
+			return false
+		}
+	}
+	return true
+}
+
+// equalRoleRef compares role reference between two ClusterRoleBindings
+func equalRoleRef(existing, desired *rbacv1.ClusterRoleBinding) bool {
 	return existing.RoleRef.Kind == desired.RoleRef.Kind &&
 		existing.RoleRef.Name == desired.RoleRef.Name &&
 		existing.RoleRef.APIGroup == desired.RoleRef.APIGroup
