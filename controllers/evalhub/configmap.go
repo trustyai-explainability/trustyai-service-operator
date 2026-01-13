@@ -292,7 +292,7 @@ func (r *EvalHubReconciler) generateProxyConfigData(instance *evalhubv1alpha1.Ev
 		"authorization": map[string]interface{}{
 			"resourceAttributes": map[string]interface{}{
 				"namespace":   instance.Namespace,
-				"apiVersion":  "evalhub.trustyai.opendatahub.io/v1alpha1",
+				"apiVersion":  "trustyai.opendatahub.io/v1alpha1",
 				"resource":    "evalhubs",
 				"name":        instance.Name,
 				"subresource": "proxy",
@@ -308,6 +308,8 @@ func (r *EvalHubReconciler) generateProxyConfigData(instance *evalhubv1alpha1.Ev
 					"/api/v1/providers",
 					"/api/v1/benchmarks",
 					"/api/v1/evaluations",
+					"/api/v1/evaluations/jobs",
+					"/api/v1/evaluations/jobs/*",
 					"/api/v1/evaluations/*/status",
 					"/api/v1/evaluations/*/results",
 					"/openapi.json",

@@ -301,7 +301,7 @@ var _ = Describe("EvalHub Proxy RBAC", func() {
 			resourceAttrs, ok := authorization["resourceAttributes"].(map[string]interface{})
 			Expect(ok).To(BeTrue())
 			Expect(resourceAttrs["namespace"]).To(Equal(testNamespace))
-			Expect(resourceAttrs["apiVersion"]).To(Equal("evalhub.trustyai.opendatahub.io/v1alpha1"))
+			Expect(resourceAttrs["apiVersion"]).To(Equal("trustyai.opendatahub.io/v1alpha1"))
 			Expect(resourceAttrs["resource"]).To(Equal("evalhubs"))
 			Expect(resourceAttrs["name"]).To(Equal(evalHubName))
 			Expect(resourceAttrs["subresource"]).To(Equal("proxy"))
@@ -322,7 +322,8 @@ var _ = Describe("EvalHub Proxy RBAC", func() {
 			Expect(ok).To(BeTrue())
 			Expect(allowedPaths).To(ContainElements(
 				"/api/v1/health", "/api/v1/providers", "/api/v1/benchmarks",
-				"/api/v1/evaluations", "/api/v1/evaluations/*/status", "/api/v1/evaluations/*/results",
+				"/api/v1/evaluations", "/api/v1/evaluations/jobs", "/api/v1/evaluations/jobs/*",
+				"/api/v1/evaluations/*/status", "/api/v1/evaluations/*/results",
 				"/openapi.json", "/docs", "/redoc",
 			))
 		})

@@ -23,7 +23,7 @@ const (
 	// Configuration constants
 	configMapName                  = "trustyai-service-operator-config"
 	configMapEvalHubImageKey       = "evalHubImage"
-	configMapKubeRBACProxyImageKey = "kubeRBACProxyImage"
+	configMapKubeRBACProxyImageKey = "kube-rbac-proxy"
 
 	// kube-rbac-proxy configuration
 	kubeRBACProxyPort = 8443
@@ -48,11 +48,10 @@ var (
 	// Default security context
 	allowPrivilegeEscalation = false
 	runAsNonRoot             = true
-	runAsUser                = int64(1001)
 	defaultSecurityContext   = &corev1.SecurityContext{
 		AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 		RunAsNonRoot:             &runAsNonRoot,
-		RunAsUser:                &runAsUser,
+		// RunAsUser omitted to let OpenShift assign from allowed range
 		Capabilities: &corev1.Capabilities{
 			Drop: []corev1.Capability{
 				"ALL",
@@ -65,10 +64,9 @@ var (
 
 	// Default pod security context
 	runAsNonRootUser          = true
-	fsGroup                   = int64(1001)
 	defaultPodSecurityContext = &corev1.PodSecurityContext{
 		RunAsNonRoot: &runAsNonRootUser,
-		FSGroup:      &fsGroup,
+		// FSGroup omitted to let OpenShift assign from allowed range
 		SeccompProfile: &corev1.SeccompProfile{
 			Type: corev1.SeccompProfileTypeRuntimeDefault,
 		},

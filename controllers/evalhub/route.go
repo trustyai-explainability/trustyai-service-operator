@@ -82,7 +82,7 @@ func (r *EvalHubReconciler) buildRouteSpec(instance *evalhubv1alpha1.EvalHub) ro
 		},
 		// Default TLS configuration for EvalHub
 		TLS: &routev1.TLSConfig{
-			Termination:                   routev1.TLSTerminationEdge,
+			Termination:                   routev1.TLSTerminationReencrypt,
 			InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
 		},
 	}

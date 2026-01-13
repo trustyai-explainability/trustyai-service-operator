@@ -42,6 +42,9 @@ func (r *EvalHubReconciler) reconcileService(ctx context.Context, instance *eval
 			"instance":  instance.Name,
 			"component": "api",
 		}
+		service.Annotations = map[string]string{
+			"service.beta.openshift.io/serving-cert-secret-name": instance.Name + "-tls",
+		}
 		if err := controllerutil.SetControllerReference(instance, service, r.Scheme); err != nil {
 			return err
 		}
@@ -52,6 +55,13 @@ func (r *EvalHubReconciler) reconcileService(ctx context.Context, instance *eval
 		service.Spec.Ports = desiredSpec.Ports
 		service.Spec.Selector = desiredSpec.Selector
 		service.Spec.Type = desiredSpec.Type
+
+		// Ensure OpenShift serving certificate annotation is present
+		if service.Annotations == nil {
+			service.Annotations = make(map[string]string)
+		}
+		service.Annotations["service.beta.openshift.io/serving-cert-secret-name"] = instance.Name + "-tls"
+
 		log.Info("Updating Service", "name", service.Name)
 		return r.Update(ctx, service)
 	}

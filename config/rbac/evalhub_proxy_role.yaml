@@ -23,7 +23,7 @@ rules:
     verbs:
       - create
   - apiGroups:
-      - evalhub.trustyai.opendatahub.io
+      - trustyai.opendatahub.io
     resources:
       - evalhubs
     verbs:
@@ -31,7 +31,7 @@ rules:
       - list
       - watch
   - apiGroups:
-      - evalhub.trustyai.opendatahub.io
+      - trustyai.opendatahub.io
     resources:
       - evalhubs/proxy
     verbs:

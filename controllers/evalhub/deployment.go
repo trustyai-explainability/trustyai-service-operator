@@ -118,7 +118,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	container := corev1.Container{
 		Name:            containerName,
 		Image:           evalHubImage,
-		ImagePullPolicy: corev1.PullIfNotPresent,
+		ImagePullPolicy: corev1.PullAlways,
 		Ports: []corev1.ContainerPort{
 			{
 				Name:          "http",
