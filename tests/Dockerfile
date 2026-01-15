@@ -27,6 +27,7 @@ COPY Pipfile Pipfile.lock $HOME/peak/
 ## Grab CI script from single-source-of-truth, modify for operator usage
 RUN wget -O installandtest.sh "https://raw.githubusercontent.com/trustyai-explainability/trustyai-explainability/refs/heads/main/tests/installandtest.sh" && \
     sed -i 's/$REPO_NAME != "trustyai-explainability"/$REPO_NAME != "trustyai-service-operator"/g' installandtest.sh && \
+    sed -i 's/$REPO_NAME == "trustyai-explainability"/$REPO_NAME == "trustyai-service-operator"/g' installandtest.sh && \
     sed -i 's%trustyai-explainability/pulls/%trustyai-service-operator/pulls/%g' installandtest.sh && \
     sed -i 's%tarball/service%tarball/operator%g' installandtest.sh && \
     cp installandtest.sh $HOME/peak
