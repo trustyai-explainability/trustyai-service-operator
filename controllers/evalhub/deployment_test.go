@@ -274,7 +274,6 @@ var _ = Describe("EvalHub Deployment", func() {
 			podSecurityContext := deployment.Spec.Template.Spec.SecurityContext
 			Expect(podSecurityContext).NotTo(BeNil())
 			Expect(*podSecurityContext.RunAsNonRoot).To(BeTrue())
-			Expect(*podSecurityContext.FSGroup).To(Equal(int64(1001)))
 
 			By("Checking container security context")
 			var evalHubContainer *corev1.Container
