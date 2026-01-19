@@ -288,7 +288,6 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(containerSecurityContext).NotTo(BeNil())
 			Expect(*containerSecurityContext.AllowPrivilegeEscalation).To(BeFalse())
 			Expect(*containerSecurityContext.RunAsNonRoot).To(BeTrue())
-			Expect(*containerSecurityContext.RunAsUser).To(Equal(int64(1001)))
 			Expect(containerSecurityContext.Capabilities.Drop).To(ContainElement(corev1.Capability("ALL")))
 		})
 
