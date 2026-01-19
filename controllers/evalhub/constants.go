@@ -23,7 +23,7 @@ const (
 	// Configuration constants
 	configMapName                  = "trustyai-service-operator-config"
 	configMapEvalHubImageKey       = "evalHubImage"
-	configMapKubeRBACProxyImageKey = "kube-rbac-proxy"
+	configMapKubeRBACProxyImageKey = "kubeRBACProxyImage"
 
 	// kube-rbac-proxy configuration
 	kubeRBACProxyPort = 8443
