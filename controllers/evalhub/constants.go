@@ -10,7 +10,7 @@ const (
 	ServiceName = "EVALHUB"
 
 	// Default image configuration
-	defaultEvalHubImage = "quay.io/ruimvieira/eval-hub:latest"
+	defaultEvalHubImage = "quay.io/evalhub/evalhub:latest"
 
 	// Container configuration
 	containerName = "evalhub"
