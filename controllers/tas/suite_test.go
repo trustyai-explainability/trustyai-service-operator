@@ -495,7 +495,8 @@ var _ = BeforeSuite(func() {
 		CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases"),
 			filepath.Join("..", "..", "config", "prometheus"),
 			filepath.Join("..", "..", "tests", "crds")},
-		ErrorIfCRDPathMissing: true,
+		ErrorIfCRDPathMissing:   true,
+		ControlPlaneStopTimeout: time.Minute * 2,
 	}
 
 	var err error

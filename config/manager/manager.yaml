@@ -33,7 +33,7 @@ spec:
           args:
             - --leader-elect
             - --enable-services
-            - "TAS,LMES,GORCH,NEMO_GUARDRAILS"
+            - "TAS,LMES,GORCH,NEMO_GUARDRAILS,EVALHUB"
           image: $(trustyaiOperatorImage)
           name: manager
           securityContext:

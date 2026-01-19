@@ -209,6 +209,7 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - evalhubs
   - guardrailsorchestrators
   - lmevaljobs
   - nemoguardrails
@@ -224,6 +225,7 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - evalhubs/finalizers
   - guardrailsorchestrators/finalizers
   - lmevaljobs/finalizers
   - nemoguardrails/finalizers
@@ -233,6 +235,15 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
+  - evalhubs/proxy
+  verbs:
+  - create
+  - get
+  - update
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - evalhubs/status
   - guardrailsorchestrators/status
   - lmevaljobs/status
   - nemoguardrails/status
