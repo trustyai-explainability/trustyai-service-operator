@@ -47,4 +47,4 @@ Please see the [CONTRIBUTING.md](./CONTRIBUTING.md) file for more details on how
 
 ## License
 
-This project is licensed under the Apache License Version 2.0 - see the [LICENSE](./LICENSE) file for details.
+This project is licensed under the Apache License Version 2.0 - see the [LICENSE](./LICENSE) file for details
