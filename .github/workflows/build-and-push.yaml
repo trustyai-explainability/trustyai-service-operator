@@ -11,7 +11,7 @@ on:
       - "**.md"
       - "**.adoc"
       - "*.txt"
-  pull_request_target:
+  pull_request:
     paths-ignore:
       - "LICENSE"
       - "**/.gitignore"
@@ -47,12 +47,15 @@ jobs:
           mode: minimum
           count: 1
           labels: "ok-to-test, lgtm, approved"
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         if: env.BUILD_CONTEXT == 'ci'
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - uses: actions/checkout@v3
+          persist-credentials: false
+      - uses: actions/checkout@v4
         if: env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
+        with:
+          persist-credentials: false
       #
       - name: Set main-branch/default environment
         run: |
