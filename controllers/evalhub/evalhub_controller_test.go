@@ -237,7 +237,7 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		Expect(container).NotTo(BeNil(), "evalhub container should be present")
 		Expect(container.Name).To(Equal("evalhub"))
 		Expect(container.Image).To(Equal("quay.io/ruimvieira/eval-hub:test"))
-		Expect(container.Ports[0].ContainerPort).To(Equal(int32(8000)))
+		Expect(container.Ports[0].ContainerPort).To(Equal(int32(8080)))
 
 		// Check custom environment variables are included
 		var hasTestEnv bool
