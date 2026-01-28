@@ -14,16 +14,16 @@ const (
 
 	// Container configuration
 	containerName = "evalhub"
-	containerPort = 8000
+	containerPort = 8080
 
 	// Service configuration
 	serviceName = "evalhub"
-	servicePort = 8000
+	servicePort = 8080
 
 	// Configuration constants
 	configMapName                  = "trustyai-service-operator-config"
 	configMapEvalHubImageKey       = "evalHubImage"
-	configMapKubeRBACProxyImageKey = "kubeRBACProxyImage"
+	configMapKubeRBACProxyImageKey = "kube-rbac-proxy"
 
 	// kube-rbac-proxy configuration
 	kubeRBACProxyPort = 8443

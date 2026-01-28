@@ -45,8 +45,8 @@ var _ = Describe("EvalHub Deployment", func() {
 				Namespace: testNamespace,
 			},
 			Data: map[string]string{
-				"evalHubImage":       "quay.io/ruimvieira/eval-hub:test",
-				"kubeRBACProxyImage": "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
+				"evalHubImage":    "quay.io/ruimvieira/eval-hub:test",
+				"kube-rbac-proxy": "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
 			},
 		}
 		Expect(k8sClient.Create(ctx, configMap)).Should(Succeed())
@@ -371,7 +371,7 @@ var _ = Describe("EvalHub Deployment", func() {
 				},
 				Data: map[string]string{
 					"evalHubImage": "quay.io/ruimvieira/eval-hub:test",
-					// Missing kubeRBACProxyImage key
+					// Missing kube-rbac-proxy key
 				},
 			}
 			Expect(k8sClient.Create(ctx, badConfigMap)).Should(Succeed())
