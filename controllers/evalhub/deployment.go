@@ -83,7 +83,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		},
 		{
 			Name:  "API_PORT",
-			Value: "8000",
+			Value: "8080",
 		},
 		{
 			Name:  "LOG_LEVEL",
@@ -186,7 +186,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		Image: kubeRBACProxyImage,
 		Args: []string{
 			"--secure-listen-address=0.0.0.0:8443",
-			"--upstream=http://127.0.0.1:8000",
+			"--upstream=http://127.0.0.1:8080",
 			"--tls-cert-file=/etc/tls/private/tls.crt",
 			"--tls-private-key-file=/etc/tls/private/tls.key",
 			"--config-file=/etc/kube-rbac-proxy/config.yaml",

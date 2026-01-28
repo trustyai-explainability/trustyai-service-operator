@@ -106,7 +106,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		require.Len(t, container.Ports, 1)
 		port := container.Ports[0]
 		assert.Equal(t, "http", port.Name)
-		assert.Equal(t, int32(8000), port.ContainerPort)
+		assert.Equal(t, int32(8080), port.ContainerPort)
 		assert.Equal(t, corev1.ProtocolTCP, port.Protocol)
 
 		// Check environment variables
@@ -117,7 +117,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 
 		// Check default environment variables
 		assert.Equal(t, "0.0.0.0", envVarMap["API_HOST"])
-		assert.Equal(t, "8000", envVarMap["API_PORT"])
+		assert.Equal(t, "8080", envVarMap["API_PORT"])
 		assert.Equal(t, "INFO", envVarMap["LOG_LEVEL"])
 		assert.Equal(t, "10", envVarMap["MAX_CONCURRENT_EVALUATIONS"])
 		assert.Equal(t, "60", envVarMap["DEFAULT_TIMEOUT_MINUTES"])

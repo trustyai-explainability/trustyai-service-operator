@@ -107,7 +107,7 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		// Check ports
 		require.Len(t, container.Ports, 1)
 		assert.Equal(t, "http", container.Ports[0].Name)
-		assert.Equal(t, int32(8000), container.Ports[0].ContainerPort)
+		assert.Equal(t, int32(8080), container.Ports[0].ContainerPort)
 
 		// Check environment variables include both default and custom
 		envVarMap := make(map[string]string)
@@ -115,7 +115,7 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 			envVarMap[env.Name] = env.Value
 		}
 		assert.Equal(t, "0.0.0.0", envVarMap["API_HOST"])
-		assert.Equal(t, "8000", envVarMap["API_PORT"])
+		assert.Equal(t, "8080", envVarMap["API_PORT"])
 		assert.Equal(t, "test-value", envVarMap["TEST_VAR"])
 
 		// Check resource requirements

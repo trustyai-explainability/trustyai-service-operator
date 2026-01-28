@@ -45,8 +45,8 @@ var _ = Describe("EvalHub Deployment", func() {
 				Namespace: testNamespace,
 			},
 			Data: map[string]string{
-				"evalHubImage":       "quay.io/ruimvieira/eval-hub:test",
-				"kubeRBACProxyImage": "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
+				"evalHubImage":    "quay.io/ruimvieira/eval-hub:test",
+				"kube-rbac-proxy": "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
 			},
 		}
 		Expect(k8sClient.Create(ctx, configMap)).Should(Succeed())
@@ -130,7 +130,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			// Check ports
 			Expect(evalHubContainer.Ports).To(HaveLen(1))
 			Expect(evalHubContainer.Ports[0].Name).To(Equal("http"))
-			Expect(evalHubContainer.Ports[0].ContainerPort).To(Equal(int32(8000)))
+			Expect(evalHubContainer.Ports[0].ContainerPort).To(Equal(int32(8080)))
 			Expect(evalHubContainer.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
 		})
 
@@ -159,7 +159,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			}
 
 			Expect(envVars["API_HOST"]).To(Equal("0.0.0.0"))
-			Expect(envVars["API_PORT"]).To(Equal("8000"))
+			Expect(envVars["API_PORT"]).To(Equal("8080"))
 			Expect(envVars["LOG_LEVEL"]).To(Equal("INFO"))
 			Expect(envVars["MAX_CONCURRENT_EVALUATIONS"]).To(Equal("10"))
 			Expect(envVars["DEFAULT_TIMEOUT_MINUTES"]).To(Equal("60"))
@@ -371,7 +371,7 @@ var _ = Describe("EvalHub Deployment", func() {
 				},
 				Data: map[string]string{
 					"evalHubImage": "quay.io/ruimvieira/eval-hub:test",
-					// Missing kubeRBACProxyImage key
+					// Missing kube-rbac-proxy key
 				},
 			}
 			Expect(k8sClient.Create(ctx, badConfigMap)).Should(Succeed())
@@ -421,7 +421,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(proxyContainer.Image).To(Equal("gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1"))
 			Expect(proxyContainer.Args).To(ContainElements(
 				"--secure-listen-address=0.0.0.0:8443",
-				"--upstream=http://127.0.0.1:8000",
+				"--upstream=http://127.0.0.1:8080",
 				"--tls-cert-file=/etc/tls/private/tls.crt",
 				"--tls-private-key-file=/etc/tls/private/tls.key",
 				"--config-file=/etc/kube-rbac-proxy/config.yaml",

@@ -49,8 +49,8 @@ var _ = Describe("EvalHub Proxy RBAC", func() {
 				Namespace: operatorNamespace,
 			},
 			Data: map[string]string{
-				"kubeRBACProxyImage": "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
-				"evalHubImage":       "quay.io/ruimvieira/eval-hub:test",
+				"kube-rbac-proxy": "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
+				"evalHubImage":    "quay.io/ruimvieira/eval-hub:test",
 			},
 		}
 		Expect(k8sClient.Create(ctx, operatorCM)).Should(Succeed())
@@ -174,7 +174,7 @@ var _ = Describe("EvalHub Proxy RBAC", func() {
 	Context("ConfigMap Image Retrieval", func() {
 		It("should retrieve kube-rbac-proxy image from operator ConfigMap", func() {
 			By("Retrieving image from ConfigMap")
-			image, err := reconciler.getImageFromConfigMap(ctx, "kubeRBACProxyImage")
+			image, err := reconciler.getImageFromConfigMap(ctx, "kube-rbac-proxy")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(image).To(Equal("gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1"))
 		})
@@ -187,7 +187,7 @@ var _ = Describe("EvalHub Proxy RBAC", func() {
 			}
 
 			By("Attempting to retrieve image")
-			_, err := badReconciler.getImageFromConfigMap(ctx, "kubeRBACProxyImage")
+			_, err := badReconciler.getImageFromConfigMap(ctx, "kube-rbac-proxy")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("required configmap"))
 			Expect(err.Error()).To(ContainSubstring("not found"))
@@ -201,7 +201,7 @@ var _ = Describe("EvalHub Proxy RBAC", func() {
 			}
 
 			By("Attempting to retrieve image")
-			_, err := badReconciler.getImageFromConfigMap(ctx, "kubeRBACProxyImage")
+			_, err := badReconciler.getImageFromConfigMap(ctx, "kube-rbac-proxy")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("operator namespace not set"))
 		})
@@ -390,7 +390,7 @@ var _ = Describe("EvalHub Proxy RBAC", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Attempting to get image from non-existent ConfigMap")
-			_, err = reconciler.getImageFromConfigMap(ctx, "kubeRBACProxyImage")
+			_, err = reconciler.getImageFromConfigMap(ctx, "kube-rbac-proxy")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not found"))
 		})
