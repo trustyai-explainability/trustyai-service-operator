@@ -2,7 +2,7 @@ package tas
 
 import (
 	"context"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	"github.com/trustyai-explainability/trustyai-operator-common/pkg/utils"
 	"reflect"
 	"strconv"
 

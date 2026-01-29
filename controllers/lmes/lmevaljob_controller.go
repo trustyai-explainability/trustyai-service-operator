@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/metrics"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -356,7 +355,7 @@ func (r *LMEvalJobReconciler) updateStatus(ctx context.Context, log logr.Logger,
 		newStatus.Message != job.Status.Message ||
 		newStatus.Reason != job.Status.Reason ||
 		newStatus.Results != job.Status.Results ||
-		!utils.ProgressArrayTriggeredChange(newStatus.ProgressBars, job.Status.ProgressBars) {
+		!ProgressArrayTriggeredChange(newStatus.ProgressBars, job.Status.ProgressBars) {
 
 		job.Status.State = newStatus.State
 		job.Status.Message = newStatus.Message

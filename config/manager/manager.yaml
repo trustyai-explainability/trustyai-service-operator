@@ -34,6 +34,14 @@ spec:
             - --leader-elect
             - --enable-services
             - "TAS,LMES,GORCH,NEMO_GUARDRAILS,EVALHUB"
+          env:
+          - name: WATCH_NAMESPACES
+            value: ""
+            # Set to comma-separated list of namespaces to watch specific namespaces
+            # Leave empty to watch all namespaces (cluster-wide)
+            # Examples:
+            #   value: "trustyai-prod,trustyai-dev"
+            #   value: "my-namespace"
           image: $(trustyaiOperatorImage)
           name: manager
           securityContext:

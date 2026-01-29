@@ -1,7 +1,7 @@
 package v1alpha1
 
 import (
-	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
+	"github.com/trustyai-explainability/trustyai-operator-common/api/common"
 	v1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"sigs.k8s.io/controller-runtime/pkg/conversion"
 )

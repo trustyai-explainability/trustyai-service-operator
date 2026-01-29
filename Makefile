@@ -91,12 +91,88 @@ help: ## Display this help.
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+manifests: controller-gen fetch-nemo-crds ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+	@echo "Generating manifests for trustyai-service-operator..."
+	@echo "Finding imported controller module paths..."
+	@CONTROLLER_LIST="$(strip $(CONTROLLERS))"; \
+	if [ -z "$$CONTROLLER_LIST" ]; then \
+		echo "Warning: No external controllers configured. Generating manifests for local code only."; \
+		CONTROLLER_PATHS="./..."; \
+	else \
+		CONTROLLER_PATHS="./..."; \
+		MODULES=$$(echo "$$CONTROLLER_LIST" | awk '{for(i=1;i<=NF;i+=2){print $$i}}'); \
+		for MODULE in $$MODULES; do \
+			MODULE_PATH=$$(go list -m -f '{{.Dir}}' $$MODULE 2>/dev/null); \
+			if [ -z "$$MODULE_PATH" ]; then \
+				echo "Warning: Module $$MODULE not found. Run 'go mod download' first."; \
+			else \
+				echo "  Found $$MODULE at: $$MODULE_PATH"; \
+				CONTROLLER_PATHS="$$CONTROLLER_PATHS;$$MODULE_PATH/controllers/..."; \
+			fi; \
+		done; \
+	fi; \
+	echo "Running controller-gen on local code and imported controllers..."; \
+	echo "  Paths: $$CONTROLLER_PATHS"; \
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook \
+		paths="$$CONTROLLER_PATHS" \
+		output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+
+.PHONY: fetch-nemo-crds
+fetch-nemo-crds: ## Fetch CRDs and RBAC roles from nemo-guardrails-controller matching go.mod version.
+	@echo "Fetching CRDs and RBAC from nemo-guardrails-controller..."
+	@mkdir -p config/crd/bases config/rbac
+	@VERSION=$$(grep 'github.com/trustyai-explainability/nemo-guardrails-controller' go.mod | grep -v '^replace' | awk '{print $$2}' | head -1); \
+	if [ -z "$$VERSION" ]; then \
+		echo "Error: nemo-guardrails-controller not found in go.mod"; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	echo "Processing nemo-guardrails-controller ($$VERSION)..."; \
+	echo "  Repository: trustyai-explainability/nemo-guardrails-controller"; \
+	API_URL="https://api.github.com/repos/trustyai-explainability/nemo-guardrails-controller/contents/config/crd/bases?ref=$$VERSION"; \
+	echo "  Fetching CRD list via GitHub API..."; \
+	CRD_LIST=$$(curl -sSL "$$API_URL" 2>/dev/null); \
+	if echo "$$CRD_LIST" | grep -q '"message".*"Not Found"'; then \
+		echo "  ✗ Version $$VERSION not found in repository"; \
+		echo "  Ensure $$VERSION tag exists at https://github.com/trustyai-explainability/nemo-guardrails-controller"; \
+		exit 1; \
+	fi; \
+	if echo "$$CRD_LIST" | grep -q '"message"'; then \
+		echo "  ✗ Failed to fetch CRD list from GitHub API"; \
+		echo "  API Response: $$(echo "$$CRD_LIST" | grep '"message"' | head -1)"; \
+		exit 1; \
+	fi; \
+	echo "$$CRD_LIST" | grep '"download_url"' | sed 's/.*"download_url": "\([^"]*\)".*/\1/' | while read -r DOWNLOAD_URL; do \
+		if [ -z "$$DOWNLOAD_URL" ]; then continue; fi; \
+		CRD_FILE=$$(basename $$DOWNLOAD_URL); \
+		if echo "$$CRD_FILE" | grep -q '\.yaml$$'; then \
+			if curl -sSLf "$$DOWNLOAD_URL" -o "config/crd/bases/$$CRD_FILE" 2>/dev/null; then \
+				echo "  ✓ Fetched CRD: $$CRD_FILE"; \
+			else \
+				echo "  ✗ Failed to fetch CRD: $$CRD_FILE"; \
+			fi; \
+		fi; \
+	done; \
+	echo "  Fetching RBAC editor/viewer roles..."; \
+	RBAC_URL="https://api.github.com/repos/trustyai-explainability/nemo-guardrails-controller/contents/config/rbac?ref=$$VERSION"; \
+	RBAC_LIST=$$(curl -sSL "$$RBAC_URL" 2>/dev/null); \
+	echo "$$RBAC_LIST" | grep '"download_url"' | sed 's/.*"download_url": "\([^"]*\)".*/\1/' | while read -r DOWNLOAD_URL; do \
+		if [ -z "$$DOWNLOAD_URL" ]; then continue; fi; \
+		RBAC_FILE=$$(basename $$DOWNLOAD_URL); \
+		if echo "$$RBAC_FILE" | grep -qE '(editor|viewer)_role\.yaml$$'; then \
+			if curl -sSLf "$$DOWNLOAD_URL" -o "config/rbac/$$RBAC_FILE" 2>/dev/null; then \
+				echo "  ✓ Fetched RBAC: $$RBAC_FILE"; \
+			else \
+				echo "  ✗ Failed to fetch $$RBAC_FILE"; \
+			fi; \
+		fi; \
+	done
+	@echo ""
+	@echo "✓ NemoGuardrails fetch complete. CRDs in config/crd/bases, RBAC in config/rbac"
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -186,6 +262,16 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v3.8.7
 CONTROLLER_TOOLS_VERSION ?= v0.16.3
+
+##@ Controller Configuration
+
+# Hard-coded list of imported controllers for RBAC generation
+# Format: "module1 version1 module2 version2 ..."
+# Override by setting CONTROLLERS variable
+NEMO_CONTROLLER_MODULE := github.com/trustyai-explainability/nemo-guardrails-controller
+NEMO_CONTROLLER_VERSION := $(shell grep '$(NEMO_CONTROLLER_MODULE)' go.mod | grep -v '^replace' | awk '{print $$2}' | head -1)
+
+CONTROLLERS ?= $(NEMO_CONTROLLER_MODULE) $(NEMO_CONTROLLER_VERSION)
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 .PHONY: kustomize

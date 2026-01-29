@@ -2,7 +2,7 @@ package gorch
 
 import (
 	"context"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	"github.com/trustyai-explainability/trustyai-operator-common/pkg/utils"
 
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/gorch/templates"

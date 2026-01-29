@@ -21,7 +21,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
+	"github.com/trustyai-explainability/trustyai-operator-common/api/common"
 	"k8s.io/api/core/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )

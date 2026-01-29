@@ -2,7 +2,7 @@ package templates
 
 import (
 	"embed"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	"github.com/trustyai-explainability/trustyai-operator-common/pkg/utils"
 	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )

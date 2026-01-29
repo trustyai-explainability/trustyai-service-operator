@@ -7,7 +7,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	"github.com/trustyai-explainability/trustyai-operator-common/pkg/utils"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"

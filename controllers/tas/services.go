@@ -3,7 +3,7 @@ package tas
 import (
 	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	"github.com/trustyai-explainability/trustyai-operator-common/pkg/utils"
 )
 
 const (

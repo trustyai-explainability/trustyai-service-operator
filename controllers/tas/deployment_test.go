@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	"github.com/trustyai-explainability/trustyai-operator-common/pkg/utils"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

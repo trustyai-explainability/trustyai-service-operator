@@ -41,6 +41,36 @@ oc apply -f release/trustyai_bundle.yaml -n $OPERATOR_NAMESPACE
 ## Usage
 For usage information, please see the [OpenDataHub documentation of TrustyAI](https://opendatahub.io/docs/monitoring-data-science-models/#configuring-trustyai_monitor).
 
+### Configuration
+
+#### Service Controller Selection
+
+The operator supports selective enablement of service controllers via the `--enable-services` flag:
+
+```bash
+--enable-services "TAS,LMES,GORCH,NEMO_GUARDRAILS,EVALHUB"
+```
+
+Available services:
+- `TAS` - TrustyAI Service
+- `LMES` - LM Evaluation Service
+- `NEMO_GUARDRAILS` - NeMo Guardrails
+- `GORCH` - FMS Guardrails Orchestrator
+- `EVALHUB` - EvalHub
+
+#### Namespace Watching
+
+The operator supports namespace-scoped watching via the `WATCH_NAMESPACES` environment variable:
+
+```yaml
+env:
+- name: WATCH_NAMESPACES
+  value: "namespace1,namespace2"  # Comma-separated list of namespaces to watch
+  # Leave empty to watch all namespaces (cluster-wide)
+```
+
+**Important**: When deploying alongside the TrustyAI Guardrails Operator, configure namespace watching or disable specific services to avoid CR ownership conflicts. See [Multi-Operator Deployment Guide](docs/multi-operator-deployment.md).
+
 ## Contributing
 
 Please see the [CONTRIBUTING.md](./CONTRIBUTING.md) file for more details on how to contribute to this project.
