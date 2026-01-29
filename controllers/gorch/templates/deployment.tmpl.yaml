@@ -208,18 +208,18 @@ spec:
             allowPrivilegeEscalation: false
             seccompProfile:
               type: RuntimeDefault
-            readinessProbe:
-              httpGet:
-                path: /health
-                port: 8033
-                scheme: HTTP
-              initialDelaySeconds: 10
-              timeoutSeconds: 10
-              periodSeconds: 20
-              successThreshold: 1
-              failureThreshold: 3
-            terminationMessagePath: /dev/termination-log
-            command:
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8034
+              scheme: HTTP
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 20
+            successThreshold: 1
+            failureThreshold: 3
+          terminationMessagePath: /dev/termination-log
+          command:
               - /app/bin/fms-guardrails-orchestr8
         {{- if .OrchestratorKubeRBACProxy }}
         - {{- template "kubeRBACProxy" .OrchestratorKubeRBACProxy }}
