@@ -47,7 +47,6 @@ func createGuardrailsOrchestrator(ctx context.Context, orchestratorConfigMap str
 				Namespace: typedNamespacedName.Namespace,
 			},
 			Spec: gorchv1alpha1.GuardrailsOrchestratorSpec{
-				Replicas:           1,
 				OrchestratorConfig: &orchestratorConfigMap,
 			},
 		}
@@ -98,6 +97,25 @@ func createGuardrailsOrchestratorOtelExporter(ctx context.Context, orchestratorC
 				Replicas:           1,
 				OrchestratorConfig: &orchestratorConfigMap,
 				OTelExporter:       otelExporter,
+			},
+		}
+		err = k8sClient.Create(ctx, gorch)
+	}
+	return err
+}
+
+func createGuardrailsOrchestratorWithReplicas(ctx context.Context, orchestratorConfigMap string, replicas int32) error {
+	typedNamespacedName := types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}
+	err := k8sClient.Get(ctx, typedNamespacedName, &gorchv1alpha1.GuardrailsOrchestrator{})
+	if err != nil && errors.IsNotFound(err) {
+		gorch := &gorchv1alpha1.GuardrailsOrchestrator{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      typedNamespacedName.Name,
+				Namespace: typedNamespacedName.Namespace,
+			},
+			Spec: gorchv1alpha1.GuardrailsOrchestratorSpec{
+				Replicas:           replicas,
+				OrchestratorConfig: &orchestratorConfigMap,
 			},
 		}
 		err = k8sClient.Create(ctx, gorch)
@@ -414,6 +432,157 @@ func testCreateDeleteGuardrailsOrchestratorOtelExporter(namespaceName string) {
 
 		By("Deleting the TrustyAI configmap")
 		err = k8sClient.Delete(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: constants.ConfigMap, Namespace: namespaceName}})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Reconciling the custom resource that was deleted")
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typedNamespacedName})
+		Expect(err).ToNot(HaveOccurred())
+	})
+}
+
+func testCreateGuardrailsOrchestratorWithCustomReplicas(namespaceName string) {
+	It("Should successfully create a deployment with custom replica count", func() {
+		By("Creating a custom resource for the GuardrailsOrchestrator with 3 replicas")
+		ctx := context.Background()
+		typedNamespacedName := types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}
+
+		orchConfig := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orchestratorName + "-config",
+				Namespace: namespaceName,
+			},
+		}
+		err := k8sClient.Create(ctx, orchConfig)
+		if err != nil && !errors.IsAlreadyExists(err) {
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		err = createGuardrailsOrchestratorWithReplicas(ctx, orchestratorName+"-config", 3)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Checking if the custom resource was successfully created")
+		err = k8sClient.Get(ctx, typedNamespacedName, &gorchv1alpha1.GuardrailsOrchestrator{})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Reconciling the custom resource that was created")
+		reconciler := &GuardrailsOrchestratorReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: namespaceName,
+		}
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typedNamespacedName})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Checking if the deployment was created with 3 replicas")
+		Eventually(func() error {
+			deployment := &appsv1.Deployment{}
+			if err = k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}, deployment); err != nil {
+				return err
+			}
+			Expect(*deployment.Spec.Replicas).Should(Equal(int32(3)))
+			Expect(deployment.Namespace).Should(Equal(namespaceName))
+			Expect(deployment.Name).Should(Equal(orchestratorName))
+			return nil
+		}, time.Second*10, time.Millisecond*10).Should(Succeed())
+
+		By("Deleting the custom resource for the GuardrailsOrchestrator")
+		err = deleteGuardrailsOrchestrator(ctx, orchestratorName, namespaceName)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Deleting the orchestrator configmap")
+		err = k8sClient.Delete(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: orchestratorName + "-config", Namespace: namespaceName}})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Reconciling the custom resource that was deleted")
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typedNamespacedName})
+		Expect(err).ToNot(HaveOccurred())
+	})
+}
+
+func testCreateGuardrailsOrchestratorWithScaledUpReplicas(namespaceName string) {
+	It("Should successfully scale up the deployment from 1 to 3 replicas", func() {
+		By("Creating a custom resource for the GuardrailsOrchestrator with 1 replica")
+		ctx := context.Background()
+		typedNamespacedName := types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}
+
+		orchConfig := &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orchestratorName + "-config",
+				Namespace: namespaceName,
+			},
+		}
+		err := k8sClient.Create(ctx, orchConfig)
+		if err != nil && !errors.IsAlreadyExists(err) {
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		err = createGuardrailsOrchestratorWithReplicas(ctx, orchestratorName+"-config", 1)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Checking if the custom resource was successfully created")
+		err = k8sClient.Get(ctx, typedNamespacedName, &gorchv1alpha1.GuardrailsOrchestrator{})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Reconciling the custom resource that was created")
+		reconciler := &GuardrailsOrchestratorReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: namespaceName,
+		}
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typedNamespacedName})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Checking if the deployment was created with 1 replica")
+		Eventually(func() error {
+			deployment := &appsv1.Deployment{}
+			if err = k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}, deployment); err != nil {
+				return err
+			}
+			Expect(*deployment.Spec.Replicas).Should(Equal(int32(1)))
+			return nil
+		}, time.Second*10, time.Millisecond*10).Should(Succeed())
+
+		By("Updating the GuardrailsOrchestrator to 3 replicas")
+		orchestrator := &gorchv1alpha1.GuardrailsOrchestrator{}
+		err = k8sClient.Get(ctx, typedNamespacedName, orchestrator)
+		Expect(err).ToNot(HaveOccurred())
+
+		orchestrator.Spec.Replicas = 3
+		err = k8sClient.Update(ctx, orchestrator)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Reconciling the updated custom resource")
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typedNamespacedName})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Checking if the deployment was scaled up to 3 replicas")
+		Eventually(func() error {
+			deployment := &appsv1.Deployment{}
+			if err = k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName, Namespace: namespaceName}, deployment); err != nil {
+				return err
+			}
+			Expect(*deployment.Spec.Replicas).Should(Equal(int32(3)))
+			Expect(deployment.Namespace).Should(Equal(namespaceName))
+			Expect(deployment.Name).Should(Equal(orchestratorName))
+			return nil
+		}, time.Second*10, time.Millisecond*10).Should(Succeed())
+
+		By("Deleting the custom resource for the GuardrailsOrchestrator")
+		err = deleteGuardrailsOrchestrator(ctx, orchestratorName, namespaceName)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Deleting the orchestrator configmap")
+		err = k8sClient.Delete(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: orchestratorName + "-config", Namespace: namespaceName}})
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Reconciling the custom resource that was deleted")
@@ -813,6 +982,8 @@ var _ = Describe("GuardrailsOrchestrator Controller", func() {
 		testCreateDeleteGuardrailsOrchestrator(namespaceName)
 		testCreateDeleteGuardrailsOrchestratorSidecar(namespaceName)
 		testCreateDeleteGuardrailsOrchestratorOtelExporter(namespaceName)
+		testCreateGuardrailsOrchestratorWithCustomReplicas(namespaceName)
+		testCreateGuardrailsOrchestratorWithScaledUpReplicas(namespaceName)
 		testCreateTwoGuardrailsOrchestratorsInSameNamespace(namespaceName)
 		testCreateTwoGuardrailsOrchestratorsInDifferentNamespaces(namespaceName, secondNamespaceName)
 	})

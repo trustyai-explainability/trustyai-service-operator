@@ -67,7 +67,7 @@ metadata:
     app.kubernetes.io/name: {{.Orchestrator.Name}}
     app.kubernetes.io/part-of: trustyai
 spec:
-  replicas: 1
+  replicas: {{.Orchestrator.Spec.Replicas}}
   selector:
     matchLabels:
       app: {{.Orchestrator.Name}}
