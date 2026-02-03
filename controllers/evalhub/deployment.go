@@ -109,6 +109,10 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			Name:  "PROVIDERS_CONFIG_PATH",
 			Value: "/etc/evalhub/providers.yaml",
 		},
+		{
+			Name:  "SERVICE_URL",
+			Value: fmt.Sprintf("http://%s.%s.svc.cluster.local:8080", instance.Name, instance.Namespace),
+		},
 	}
 
 	// Merge environment variables with CR values taking precedence
