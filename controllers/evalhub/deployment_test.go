@@ -164,6 +164,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(envVars["MAX_CONCURRENT_EVALUATIONS"]).To(Equal("10"))
 			Expect(envVars["DEFAULT_TIMEOUT_MINUTES"]).To(Equal("60"))
 			Expect(envVars["MAX_RETRY_ATTEMPTS"]).To(Equal("3"))
+			Expect(envVars["SERVICE_URL"]).To(Equal(fmt.Sprintf("http://%s.%s.svc.cluster.local:8080", evalHubName, testNamespace)))
 		})
 
 		It("should include custom environment variables", func() {
