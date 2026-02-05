@@ -269,6 +269,11 @@ func (r *EvalHubReconciler) createJobsProxyRoleBinding(ctx context.Context, inst
 		},
 	}
 
+	// Set instance as the owner and controller
+	if err := ctrl.SetControllerReference(instance, roleBinding, r.Scheme); err != nil {
+		return err
+	}
+
 	// Check if this RoleBinding already exists
 	found := &rbacv1.RoleBinding{}
 	err := r.Get(ctx, types.NamespacedName{Name: roleBinding.Name, Namespace: roleBinding.Namespace}, found)
