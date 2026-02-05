@@ -329,6 +329,11 @@ var _ = Describe("EvalHub Proxy RBAC", func() {
 				"/api/v1/evaluations/*/status", "/api/v1/evaluations/*/results",
 				"/openapi.json", "/docs", "/redoc",
 			))
+
+			// Ensure we don't accidentally broaden the proxy surface area.
+			// Guard against overly broad wildcard patterns that would weaken RBAC.
+			Expect(allowedPaths).NotTo(ContainElement("/*"))
+			Expect(allowedPaths).NotTo(ContainElement("/api/*"))
 		})
 
 		It("should update existing proxy configmap", func() {
