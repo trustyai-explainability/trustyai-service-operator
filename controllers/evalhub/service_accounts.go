@@ -75,6 +75,13 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
+	// Create RoleBinding for jobs ServiceAccount to the pre-created ClusterRole
+	// This allows jobs to create ConfigMaps and Jobs in this namespace
+	err = r.createJobsResourceManagementRoleBinding(ctx, instance, jobsServiceAccountName)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

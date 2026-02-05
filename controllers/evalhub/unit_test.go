@@ -676,6 +676,126 @@ func TestEvalHubReconciler_createJobsProxyRoleBinding(t *testing.T) {
 	})
 }
 
+// TestEvalHubReconciler_createJobsResourceManagementRoleBinding verifies that the jobs
+// resource management RoleBinding is created with the correct RoleRef, Subjects, and owner reference.
+func TestEvalHubReconciler_createJobsResourceManagementRoleBinding(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, rbacv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1alpha1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+			UID:       "test-uid-123",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should create jobs resource management RoleBinding with correct properties", func(t *testing.T) {
+		jobsSAName := evalHubName + "-jobs"
+		err := reconciler.createJobsResourceManagementRoleBinding(ctx, evalHub, jobsSAName)
+		require.NoError(t, err)
+
+		// Verify RoleBinding was created
+		rbName := evalHubName + "-resource-manager-jobs"
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		// Check RoleRef
+		assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
+		assert.Equal(t, "trustyai-service-operator-evalhub-resource-manager", rb.RoleRef.Name)
+		assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
+
+		// Check Subjects
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
+		assert.Equal(t, jobsSAName, rb.Subjects[0].Name)
+		assert.Equal(t, testNamespace, rb.Subjects[0].Namespace)
+
+		// Check owner reference
+		require.Len(t, rb.OwnerReferences, 1)
+		assert.Equal(t, evalHubName, rb.OwnerReferences[0].Name)
+		assert.Equal(t, "EvalHub", rb.OwnerReferences[0].Kind)
+	})
+
+	t.Run("should update subjects when they differ", func(t *testing.T) {
+		// Get existing RoleBinding
+		rbName := evalHubName + "-resource-manager-jobs"
+		rb := &rbacv1.RoleBinding{}
+		err := fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		// Modify subjects
+		rb.Subjects = []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "different-sa",
+				Namespace: testNamespace,
+			},
+		}
+		err = fakeClient.Update(ctx, rb)
+		require.NoError(t, err)
+
+		// Reconcile again
+		jobsSAName := evalHubName + "-jobs"
+		err = reconciler.createJobsResourceManagementRoleBinding(ctx, evalHub, jobsSAName)
+		require.NoError(t, err)
+
+		// Verify subjects were updated
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, jobsSAName, rb.Subjects[0].Name)
+	})
+
+	t.Run("should be idempotent on repeated calls", func(t *testing.T) {
+		jobsSAName := evalHubName + "-jobs"
+
+		// Call again
+		err := reconciler.createJobsResourceManagementRoleBinding(ctx, evalHub, jobsSAName)
+		require.NoError(t, err)
+
+		// Verify RoleBinding still exists with correct properties
+		rbName := evalHubName + "-resource-manager-jobs"
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		assert.Equal(t, "trustyai-service-operator-evalhub-resource-manager", rb.RoleRef.Name)
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, jobsSAName, rb.Subjects[0].Name)
+	})
+}
+
 // TestEvalHubReconciler_cleanupClusterRoleBinding verifies that cleanup removes
 // the proxy ClusterRoleBinding, jobs RoleBinding, and legacy ClusterRoleBinding.
 func TestEvalHubReconciler_cleanupClusterRoleBinding(t *testing.T) {
