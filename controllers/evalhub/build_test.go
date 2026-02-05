@@ -124,6 +124,12 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		assert.Equal(t, "60", envVarMap["DEFAULT_TIMEOUT_MINUTES"])
 		assert.Equal(t, "3", envVarMap["MAX_RETRY_ATTEMPTS"])
 
+		// Check SERVICE_URL default (must match buildDeploymentSpec logic)
+		assert.Equal(t, "https://test-evalhub.test-namespace.svc.cluster.local:8443", envVarMap["SERVICE_URL"])
+
+		// Check EVALHUB_INSTANCE_NAME default (must match instance name wiring)
+		assert.Equal(t, evalHubName, envVarMap["EVALHUB_INSTANCE_NAME"])
+
 		// Check custom environment variables
 		assert.Equal(t, "custom-value", envVarMap["CUSTOM_VAR"])
 		assert.Equal(t, "another-value", envVarMap["ANOTHER_VAR"])
