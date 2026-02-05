@@ -130,7 +130,7 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		// Check health probes (exec-based because API listens on 127.0.0.1 only)
 		require.NotNil(t, container.LivenessProbe)
 		require.NotNil(t, container.LivenessProbe.Exec)
-		assert.Equal(t, []string{"curl", "-sf", "http://127.0.0.1:8080/api/v1/health"}, container.LivenessProbe.Exec.Command)
+		assert.Equal(t, []string{"/usr/bin/curl", "--fail", "--silent", "--max-time", "3", "http://127.0.0.1:8080/api/v1/health"}, container.LivenessProbe.Exec.Command)
 	})
 
 	t.Run("should fail when configmap missing", func(t *testing.T) {

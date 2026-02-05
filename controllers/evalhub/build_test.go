@@ -149,13 +149,13 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		// Check health probes (exec-based because API listens on 127.0.0.1 only)
 		require.NotNil(t, container.LivenessProbe)
 		require.NotNil(t, container.LivenessProbe.Exec)
-		assert.Equal(t, []string{"curl", "-sf", "http://127.0.0.1:8080/api/v1/health"}, container.LivenessProbe.Exec.Command)
+		assert.Equal(t, []string{"/usr/bin/curl", "--fail", "--silent", "--max-time", "3", "http://127.0.0.1:8080/api/v1/health"}, container.LivenessProbe.Exec.Command)
 		assert.Equal(t, int32(30), container.LivenessProbe.InitialDelaySeconds)
 		assert.Equal(t, int32(10), container.LivenessProbe.PeriodSeconds)
 
 		require.NotNil(t, container.ReadinessProbe)
 		require.NotNil(t, container.ReadinessProbe.Exec)
-		assert.Equal(t, []string{"curl", "-sf", "http://127.0.0.1:8080/api/v1/health"}, container.ReadinessProbe.Exec.Command)
+		assert.Equal(t, []string{"/usr/bin/curl", "--fail", "--silent", "--max-time", "2", "http://127.0.0.1:8080/api/v1/health"}, container.ReadinessProbe.Exec.Command)
 		assert.Equal(t, int32(10), container.ReadinessProbe.InitialDelaySeconds)
 		assert.Equal(t, int32(5), container.ReadinessProbe.PeriodSeconds)
 

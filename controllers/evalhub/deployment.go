@@ -152,7 +152,11 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			ProbeHandler: corev1.ProbeHandler{
 				Exec: &corev1.ExecAction{
 					Command: []string{
-						"curl", "-sf", "http://127.0.0.1:8080/api/v1/health",
+						"/usr/bin/curl",
+						"--fail",
+						"--silent",
+						"--max-time", "3",
+						"http://127.0.0.1:8080/api/v1/health",
 					},
 				},
 			},
@@ -165,7 +169,11 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			ProbeHandler: corev1.ProbeHandler{
 				Exec: &corev1.ExecAction{
 					Command: []string{
-						"curl", "-sf", "http://127.0.0.1:8080/api/v1/health",
+						"/usr/bin/curl",
+						"--fail",
+						"--silent",
+						"--max-time", "2",
+						"http://127.0.0.1:8080/api/v1/health",
 					},
 				},
 			},

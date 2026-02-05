@@ -255,7 +255,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(evalHubContainer.LivenessProbe).NotTo(BeNil())
 			Expect(evalHubContainer.LivenessProbe.Exec).NotTo(BeNil())
 			Expect(evalHubContainer.LivenessProbe.Exec.Command).To(Equal([]string{
-				"curl", "-sf", "http://127.0.0.1:8080/api/v1/health",
+				"/usr/bin/curl", "--fail", "--silent", "--max-time", "3", "http://127.0.0.1:8080/api/v1/health",
 			}))
 			Expect(evalHubContainer.LivenessProbe.InitialDelaySeconds).To(Equal(int32(30)))
 			Expect(evalHubContainer.LivenessProbe.PeriodSeconds).To(Equal(int32(10)))
@@ -264,7 +264,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(evalHubContainer.ReadinessProbe).NotTo(BeNil())
 			Expect(evalHubContainer.ReadinessProbe.Exec).NotTo(BeNil())
 			Expect(evalHubContainer.ReadinessProbe.Exec.Command).To(Equal([]string{
-				"curl", "-sf", "http://127.0.0.1:8080/api/v1/health",
+				"/usr/bin/curl", "--fail", "--silent", "--max-time", "2", "http://127.0.0.1:8080/api/v1/health",
 			}))
 			Expect(evalHubContainer.ReadinessProbe.InitialDelaySeconds).To(Equal(int32(10)))
 			Expect(evalHubContainer.ReadinessProbe.PeriodSeconds).To(Equal(int32(5)))
