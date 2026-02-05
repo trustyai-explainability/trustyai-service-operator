@@ -119,6 +119,10 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		assert.Equal(t, "8080", envVarMap["API_PORT"])
 		assert.Equal(t, "test-value", envVarMap["TEST_VAR"])
 
+		// Check SERVICE_URL and EVALHUB_INSTANCE_NAME are propagated
+		assert.Equal(t, "https://test-evalhub.test-namespace.svc.cluster.local:8443", envVarMap["SERVICE_URL"])
+		assert.Equal(t, evalHubName, envVarMap["EVALHUB_INSTANCE_NAME"])
+
 		// Check resource requirements
 		assert.Equal(t, resource.MustParse("500m"), container.Resources.Requests[corev1.ResourceCPU])
 		assert.Equal(t, resource.MustParse("512Mi"), container.Resources.Requests[corev1.ResourceMemory])
