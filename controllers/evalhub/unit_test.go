@@ -10,6 +10,8 @@ import (
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -491,5 +493,448 @@ func TestEvalHubHelperMethods(t *testing.T) {
 		customReplicas := int32(3)
 		spec.Replicas = &customReplicas
 		assert.Equal(t, int32(3), spec.GetReplicas())
+	})
+}
+
+// TestEvalHubReconciler_createJobsServiceAccount verifies that the jobs ServiceAccount
+// is created with the correct name, labels, and owner reference.
+func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1alpha1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+			UID:       "test-uid-123",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should create jobs ServiceAccount with correct properties", func(t *testing.T) {
+		err := reconciler.createJobsServiceAccount(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Verify ServiceAccount was created
+		jobsSAName := evalHubName + "-jobs"
+		jobsSA := &corev1.ServiceAccount{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      jobsSAName,
+			Namespace: testNamespace,
+		}, jobsSA)
+		require.NoError(t, err)
+
+		// Check name and namespace
+		assert.Equal(t, jobsSAName, jobsSA.Name)
+		assert.Equal(t, testNamespace, jobsSA.Namespace)
+
+		// Check labels
+		assert.Equal(t, "eval-hub", jobsSA.Labels["app"])
+		assert.Equal(t, jobsSAName, jobsSA.Labels["app.kubernetes.io/name"])
+		assert.Equal(t, evalHubName, jobsSA.Labels["app.kubernetes.io/instance"])
+		assert.Equal(t, "jobs", jobsSA.Labels["app.kubernetes.io/component"])
+
+		// Check owner reference
+		require.Len(t, jobsSA.OwnerReferences, 1)
+		assert.Equal(t, evalHubName, jobsSA.OwnerReferences[0].Name)
+		assert.Equal(t, "EvalHub", jobsSA.OwnerReferences[0].Kind)
+		assert.True(t, *jobsSA.OwnerReferences[0].Controller)
+	})
+
+	t.Run("should be idempotent on repeated calls", func(t *testing.T) {
+		// Call again
+		err := reconciler.createJobsServiceAccount(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Verify still only one ServiceAccount exists
+		jobsSAName := evalHubName + "-jobs"
+		jobsSA := &corev1.ServiceAccount{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      jobsSAName,
+			Namespace: testNamespace,
+		}, jobsSA)
+		require.NoError(t, err)
+	})
+}
+
+// TestEvalHubReconciler_createJobsProxyRoleBinding verifies that the jobs proxy RoleBinding
+// is created with the correct RoleRef, Subjects, and owner reference.
+func TestEvalHubReconciler_createJobsProxyRoleBinding(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, rbacv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1alpha1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+			UID:       "test-uid-123",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should create jobs proxy RoleBinding with correct properties", func(t *testing.T) {
+		jobsSAName := evalHubName + "-jobs"
+		err := reconciler.createJobsProxyRoleBinding(ctx, evalHub, jobsSAName)
+		require.NoError(t, err)
+
+		// Verify RoleBinding was created
+		rbName := evalHubName + "-" + testNamespace + "-jobs-proxy-rolebinding"
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		// Check RoleRef
+		assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
+		assert.Equal(t, "trustyai-service-operator-evalhub-jobs-proxy-role", rb.RoleRef.Name)
+		assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
+
+		// Check Subjects
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
+		assert.Equal(t, jobsSAName, rb.Subjects[0].Name)
+		assert.Equal(t, testNamespace, rb.Subjects[0].Namespace)
+
+		// Check owner reference
+		require.Len(t, rb.OwnerReferences, 1)
+		assert.Equal(t, evalHubName, rb.OwnerReferences[0].Name)
+		assert.Equal(t, "EvalHub", rb.OwnerReferences[0].Kind)
+	})
+
+	t.Run("should update subjects when they differ", func(t *testing.T) {
+		// Get existing RoleBinding
+		rbName := evalHubName + "-" + testNamespace + "-jobs-proxy-rolebinding"
+		rb := &rbacv1.RoleBinding{}
+		err := fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		// Modify subjects
+		rb.Subjects = []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "different-sa",
+				Namespace: testNamespace,
+			},
+		}
+		err = fakeClient.Update(ctx, rb)
+		require.NoError(t, err)
+
+		// Reconcile again
+		jobsSAName := evalHubName + "-jobs"
+		err = reconciler.createJobsProxyRoleBinding(ctx, evalHub, jobsSAName)
+		require.NoError(t, err)
+
+		// Verify subjects were updated
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, jobsSAName, rb.Subjects[0].Name)
+	})
+}
+
+// TestEvalHubReconciler_cleanupClusterRoleBinding verifies that cleanup removes
+// the proxy ClusterRoleBinding, jobs RoleBinding, and legacy ClusterRoleBinding.
+func TestEvalHubReconciler_cleanupClusterRoleBinding(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, rbacv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1alpha1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		},
+	}
+
+	// Create test resources
+	proxyCRBName := evalHubName + "-" + testNamespace + "-proxy-rolebinding"
+	proxyCRB := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: proxyCRBName,
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: rbacv1.GroupName,
+			Kind:     "ClusterRole",
+			Name:     "trustyai-service-operator-evalhub-proxy-role",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      evalHubName + "-proxy",
+				Namespace: testNamespace,
+			},
+		},
+	}
+
+	jobsRBName := evalHubName + "-" + testNamespace + "-jobs-proxy-rolebinding"
+	jobsRB := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobsRBName,
+			Namespace: testNamespace,
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: rbacv1.GroupName,
+			Kind:     "ClusterRole",
+			Name:     "trustyai-service-operator-evalhub-jobs-proxy-role",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      evalHubName + "-jobs",
+				Namespace: testNamespace,
+			},
+		},
+	}
+
+	legacyJobsCRBName := testNamespace + "-" + evalHubName + "-jobs-proxy"
+	legacyJobsCRB := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: legacyJobsCRBName,
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: rbacv1.GroupName,
+			Kind:     "ClusterRole",
+			Name:     "trustyai-service-operator-evalhub-jobs-proxy-role",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      evalHubName + "-jobs",
+				Namespace: testNamespace,
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub, proxyCRB, jobsRB, legacyJobsCRB).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should delete proxy ClusterRoleBinding", func(t *testing.T) {
+		err := reconciler.cleanupClusterRoleBinding(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Verify proxy CRB was deleted
+		err = fakeClient.Get(ctx, types.NamespacedName{Name: proxyCRBName}, &rbacv1.ClusterRoleBinding{})
+		assert.True(t, errors.IsNotFound(err), "Proxy ClusterRoleBinding should be deleted")
+	})
+
+	t.Run("should delete jobs RoleBinding", func(t *testing.T) {
+		// Verify jobs RB was deleted
+		err := fakeClient.Get(ctx, types.NamespacedName{
+			Name:      jobsRBName,
+			Namespace: testNamespace,
+		}, &rbacv1.RoleBinding{})
+		assert.True(t, errors.IsNotFound(err), "Jobs RoleBinding should be deleted")
+	})
+
+	t.Run("should delete legacy jobs ClusterRoleBinding", func(t *testing.T) {
+		// Verify legacy CRB was deleted
+		err := fakeClient.Get(ctx, types.NamespacedName{Name: legacyJobsCRBName}, &rbacv1.ClusterRoleBinding{})
+		assert.True(t, errors.IsNotFound(err), "Legacy jobs ClusterRoleBinding should be deleted")
+	})
+
+	t.Run("should be idempotent when resources don't exist", func(t *testing.T) {
+		// Call cleanup again - should not error
+		err := reconciler.cleanupClusterRoleBinding(ctx, evalHub)
+		require.NoError(t, err)
+	})
+}
+
+// TestEvalHubReconciler_reconcileServiceCAConfigMap verifies that the service CA ConfigMap
+// is created when missing and updated with the inject-cabundle annotation when it exists.
+func TestEvalHubReconciler_reconcileServiceCAConfigMap(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1alpha1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+			UID:       "test-uid-123",
+		},
+	}
+
+	t.Run("should create ConfigMap when missing", func(t *testing.T) {
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileServiceCAConfigMap(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Verify ConfigMap was created
+		cmName := evalHubName + "-service-ca"
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      cmName,
+			Namespace: testNamespace,
+		}, cm)
+		require.NoError(t, err)
+
+		// Check name and namespace
+		assert.Equal(t, cmName, cm.Name)
+		assert.Equal(t, testNamespace, cm.Namespace)
+
+		// Check inject-cabundle annotation
+		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
+
+		// Check owner reference
+		require.Len(t, cm.OwnerReferences, 1)
+		assert.Equal(t, evalHubName, cm.OwnerReferences[0].Name)
+		assert.Equal(t, "EvalHub", cm.OwnerReferences[0].Kind)
+
+		// Check data is initialized (empty or nil - both are valid)
+		// The OpenShift service CA operator will inject service-ca.crt later
+		if cm.Data != nil {
+			assert.Empty(t, cm.Data)
+		}
+	})
+
+	t.Run("should update annotation when ConfigMap exists", func(t *testing.T) {
+		// Create ConfigMap with missing annotation
+		cmName := evalHubName + "-service-ca"
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      cmName,
+				Namespace: testNamespace,
+				Annotations: map[string]string{
+					"custom-annotation": "keep-me",
+				},
+			},
+			Data: map[string]string{
+				"existing-key": "existing-value",
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, existingCM).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileServiceCAConfigMap(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Verify ConfigMap was updated
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      cmName,
+			Namespace: testNamespace,
+		}, cm)
+		require.NoError(t, err)
+
+		// Check inject-cabundle annotation was added
+		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
+
+		// Check custom annotation was preserved
+		assert.Equal(t, "keep-me", cm.Annotations["custom-annotation"])
+
+		// Check data was preserved
+		assert.Equal(t, "existing-value", cm.Data["existing-key"])
+	})
+
+	t.Run("should reset annotation when it has wrong value", func(t *testing.T) {
+		// Create ConfigMap with wrong annotation value
+		cmName := evalHubName + "-service-ca"
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      cmName,
+				Namespace: testNamespace,
+				Annotations: map[string]string{
+					"service.beta.openshift.io/inject-cabundle": "false",
+				},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, existingCM).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileServiceCAConfigMap(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Verify annotation was corrected
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      cmName,
+			Namespace: testNamespace,
+		}, cm)
+		require.NoError(t, err)
+
+		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
 	})
 }
