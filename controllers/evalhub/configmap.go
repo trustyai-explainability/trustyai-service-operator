@@ -291,16 +291,16 @@ func (r *EvalHubReconciler) generateProxyConfigData(instance *evalhubv1alpha1.Ev
 	proxyConfig := map[string]interface{}{
 		"authorization": map[string]interface{}{
 			"resourceAttributes": map[string]interface{}{
-				"namespace":   instance.Namespace,
-				"apiVersion":  "trustyai.opendatahub.io/v1alpha1",
-				"resource":    "evalhubs",
-				"name":        instance.Name,
-				"subresource": "proxy",
+				"namespace":    instance.Namespace,
+				"apiGroup":     "trustyai.opendatahub.io",
+				"resource":     "evalhubs",
+				"resourceName": instance.Name,
+				"subresource":  "proxy",
 			},
 		},
 		"upstreams": []map[string]interface{}{
 			{
-				"upstream":      "http://127.0.0.1:8000/",
+				"upstream":      "http://127.0.0.1:8080/",
 				"path":          "/",
 				"rewriteTarget": "/",
 				"allowedPaths": []string{
@@ -308,8 +308,11 @@ func (r *EvalHubReconciler) generateProxyConfigData(instance *evalhubv1alpha1.Ev
 					"/api/v1/providers",
 					"/api/v1/benchmarks",
 					"/api/v1/evaluations",
+					"/api/v1/evaluations/",
 					"/api/v1/evaluations/jobs",
+					"/api/v1/evaluations/jobs/",
 					"/api/v1/evaluations/jobs/*",
+					"/api/v1/evaluations/jobs/*/events",
 					"/api/v1/evaluations/*/status",
 					"/api/v1/evaluations/*/results",
 					"/openapi.json",
@@ -329,5 +332,50 @@ func (r *EvalHubReconciler) generateProxyConfigData(instance *evalhubv1alpha1.Ev
 
 	return map[string]string{
 		"config.yaml": string(yamlData),
+	}
+}
+
+// reconcileServiceCAConfigMap creates or updates the ConfigMap for service CA certificate injection
+// This ConfigMap is used by jobs to mount the service CA certificate for TLS verification
+func (r *EvalHubReconciler) reconcileServiceCAConfigMap(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+	log := log.FromContext(ctx)
+	log.Info("Reconciling Service CA ConfigMap", "name", instance.Name)
+
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name + "-service-ca",
+			Namespace: instance.Namespace,
+			Annotations: map[string]string{
+				// This annotation triggers OpenShift service CA operator to inject the CA certificate
+				"service.beta.openshift.io/inject-cabundle": "true",
+			},
+		},
+	}
+
+	// Check if ConfigMap already exists
+	getErr := r.Get(ctx, client.ObjectKeyFromObject(configMap), configMap)
+	if getErr != nil && !errors.IsNotFound(getErr) {
+		return getErr
+	}
+
+	if errors.IsNotFound(getErr) {
+		// Create new ConfigMap
+		// Note: We don't set any data - OpenShift service CA operator will inject service-ca.crt
+		configMap.Data = map[string]string{}
+		if instance.UID != "" {
+			if err := controllerutil.SetControllerReference(instance, configMap, r.Scheme); err != nil {
+				return err
+			}
+		}
+		log.Info("Creating Service CA ConfigMap", "name", configMap.Name)
+		return r.Create(ctx, configMap)
+	} else {
+		// Update existing ConfigMap to ensure annotation is present
+		if configMap.Annotations == nil {
+			configMap.Annotations = make(map[string]string)
+		}
+		configMap.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
+		log.Info("Updating Service CA ConfigMap", "name", configMap.Name)
+		return r.Update(ctx, configMap)
 	}
 }

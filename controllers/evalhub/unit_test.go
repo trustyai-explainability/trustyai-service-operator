@@ -102,7 +102,7 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 
 		assert.Equal(t, containerName, container.Name)
 		assert.Equal(t, "quay.io/test/eval-hub:latest", container.Image)
-		assert.Equal(t, corev1.PullIfNotPresent, container.ImagePullPolicy)
+		assert.Equal(t, corev1.PullAlways, container.ImagePullPolicy)
 
 		// Check ports
 		require.Len(t, container.Ports, 1)
@@ -114,7 +114,8 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		for _, env := range container.Env {
 			envVarMap[env.Name] = env.Value
 		}
-		assert.Equal(t, "0.0.0.0", envVarMap["API_HOST"])
+		// API_HOST is 127.0.0.1 to ensure only kube-rbac-proxy can reach the API (security hardening)
+		assert.Equal(t, "127.0.0.1", envVarMap["API_HOST"])
 		assert.Equal(t, "8080", envVarMap["API_PORT"])
 		assert.Equal(t, "test-value", envVarMap["TEST_VAR"])
 
@@ -122,10 +123,10 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		assert.Equal(t, resource.MustParse("500m"), container.Resources.Requests[corev1.ResourceCPU])
 		assert.Equal(t, resource.MustParse("512Mi"), container.Resources.Requests[corev1.ResourceMemory])
 
-		// Check health probes
+		// Check health probes (exec-based because API listens on 127.0.0.1 only)
 		require.NotNil(t, container.LivenessProbe)
-		assert.Equal(t, "/api/v1/health", container.LivenessProbe.HTTPGet.Path)
-		assert.Equal(t, intstr.FromString("http"), container.LivenessProbe.HTTPGet.Port)
+		require.NotNil(t, container.LivenessProbe.Exec)
+		assert.Equal(t, []string{"curl", "-sf", "http://127.0.0.1:8080/api/v1/health"}, container.LivenessProbe.Exec.Command)
 	})
 
 	t.Run("should fail when configmap missing", func(t *testing.T) {
