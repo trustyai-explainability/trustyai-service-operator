@@ -133,6 +133,11 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		require.NotNil(t, container.LivenessProbe)
 		require.NotNil(t, container.LivenessProbe.Exec)
 		assert.Equal(t, []string{"/usr/bin/curl", "--fail", "--silent", "--max-time", "3", "http://127.0.0.1:8080/api/v1/health"}, container.LivenessProbe.Exec.Command)
+
+		// Check readiness probe matches expected exec-based curl check
+		require.NotNil(t, container.ReadinessProbe)
+		require.NotNil(t, container.ReadinessProbe.Exec)
+		assert.Equal(t, []string{"/usr/bin/curl", "--fail", "--silent", "--max-time", "2", "http://127.0.0.1:8080/api/v1/health"}, container.ReadinessProbe.Exec.Command)
 	})
 
 	t.Run("should fail when configmap missing", func(t *testing.T) {
