@@ -166,6 +166,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(envVars["MAX_RETRY_ATTEMPTS"]).To(Equal("3"))
 			// SERVICE_URL uses https on port 8443 via kube-rbac-proxy
 			Expect(envVars["SERVICE_URL"]).To(Equal(fmt.Sprintf("https://%s.%s.svc.cluster.local:8443", evalHubName, testNamespace)))
+			Expect(envVars["EVALHUB_INSTANCE_NAME"]).To(Equal(evalHubName))
 		})
 
 		It("should include custom environment variables", func() {
