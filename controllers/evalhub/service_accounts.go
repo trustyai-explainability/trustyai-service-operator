@@ -68,7 +68,7 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 	}
 
 	// Create RoleBinding for jobs ServiceAccount to access evalhubs/proxy in this namespace
-	jobsServiceAccountName := instance.Name + "-jobs"
+	jobsServiceAccountName := generateJobsServiceAccountName(instance)
 	err = r.createJobsProxyRoleBinding(ctx, instance, jobsServiceAccountName)
 	if err != nil {
 		return err
