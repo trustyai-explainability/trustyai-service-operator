@@ -2,6 +2,7 @@ package evalhub
 
 import (
 	"context"
+	"sort"
 
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
@@ -306,19 +307,41 @@ func (r *EvalHubReconciler) createJobsProxyRoleBinding(ctx context.Context, inst
 	return nil
 }
 
-// equalRoleBindingSubjects compares subjects between two RoleBindings
+// equalRoleBindingSubjects compares subjects between two RoleBindings in an order-insensitive way.
 func equalRoleBindingSubjects(existing, desired []rbacv1.Subject) bool {
 	if len(existing) != len(desired) {
 		return false
 	}
-	for i, subject := range existing {
-		if i >= len(desired) ||
-			subject.Kind != desired[i].Kind ||
-			subject.Name != desired[i].Name ||
-			subject.Namespace != desired[i].Namespace {
+
+	// Make copies so we don't mutate the original slices
+	existingCopy := append([]rbacv1.Subject(nil), existing...)
+	desiredCopy := append([]rbacv1.Subject(nil), desired...)
+
+	less := func(a, b rbacv1.Subject) bool {
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		if a.Namespace != b.Namespace {
+			return a.Namespace < b.Namespace
+		}
+		return a.Name < b.Name
+	}
+
+	sort.Slice(existingCopy, func(i, j int) bool {
+		return less(existingCopy[i], existingCopy[j])
+	})
+	sort.Slice(desiredCopy, func(i, j int) bool {
+		return less(desiredCopy[i], desiredCopy[j])
+	})
+
+	for i := range existingCopy {
+		if existingCopy[i].Kind != desiredCopy[i].Kind ||
+			existingCopy[i].Name != desiredCopy[i].Name ||
+			existingCopy[i].Namespace != desiredCopy[i].Namespace {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -414,19 +437,41 @@ func equalClusterRoleBindingSpec(existing, desired *rbacv1.ClusterRoleBinding) b
 		existing.RoleRef.APIGroup == desired.RoleRef.APIGroup
 }
 
-// equalSubjects compares subjects between two ClusterRoleBindings
+// equalSubjects compares subjects between two ClusterRoleBindings in an order-insensitive way.
 func equalSubjects(existing, desired *rbacv1.ClusterRoleBinding) bool {
 	if len(existing.Subjects) != len(desired.Subjects) {
 		return false
 	}
-	for i, subject := range existing.Subjects {
-		if i >= len(desired.Subjects) ||
-			subject.Kind != desired.Subjects[i].Kind ||
-			subject.Name != desired.Subjects[i].Name ||
-			subject.Namespace != desired.Subjects[i].Namespace {
+
+	// Make copies so we don't mutate the original slices
+	existingCopy := append([]rbacv1.Subject(nil), existing.Subjects...)
+	desiredCopy := append([]rbacv1.Subject(nil), desired.Subjects...)
+
+	less := func(a, b rbacv1.Subject) bool {
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		if a.Namespace != b.Namespace {
+			return a.Namespace < b.Namespace
+		}
+		return a.Name < b.Name
+	}
+
+	sort.Slice(existingCopy, func(i, j int) bool {
+		return less(existingCopy[i], existingCopy[j])
+	})
+	sort.Slice(desiredCopy, func(i, j int) bool {
+		return less(desiredCopy[i], desiredCopy[j])
+	})
+
+	for i := range existingCopy {
+		if existingCopy[i].Kind != desiredCopy[i].Kind ||
+			existingCopy[i].Name != desiredCopy[i].Name ||
+			existingCopy[i].Namespace != desiredCopy[i].Namespace {
 			return false
 		}
 	}
+
 	return true
 }
 
