@@ -301,9 +301,9 @@ var _ = Describe("EvalHub Proxy RBAC", func() {
 			resourceAttrs, ok := authorization["resourceAttributes"].(map[string]interface{})
 			Expect(ok).To(BeTrue())
 			Expect(resourceAttrs["namespace"]).To(Equal(testNamespace))
-			Expect(resourceAttrs["apiVersion"]).To(Equal("trustyai.opendatahub.io/v1alpha1"))
+			Expect(resourceAttrs["apiGroup"]).To(Equal("trustyai.opendatahub.io"))
 			Expect(resourceAttrs["resource"]).To(Equal("evalhubs"))
-			Expect(resourceAttrs["name"]).To(Equal(evalHubName))
+			Expect(resourceAttrs["resourceName"]).To(Equal(evalHubName))
 			Expect(resourceAttrs["subresource"]).To(Equal("proxy"))
 
 			// Check upstreams configuration
@@ -313,7 +313,7 @@ var _ = Describe("EvalHub Proxy RBAC", func() {
 
 			upstream, ok := upstreams[0].(map[string]interface{})
 			Expect(ok).To(BeTrue())
-			Expect(upstream["upstream"]).To(Equal("http://127.0.0.1:8000/"))
+			Expect(upstream["upstream"]).To(Equal("http://127.0.0.1:8080/"))
 			Expect(upstream["path"]).To(Equal("/"))
 			Expect(upstream["rewriteTarget"]).To(Equal("/"))
 
@@ -322,10 +322,18 @@ var _ = Describe("EvalHub Proxy RBAC", func() {
 			Expect(ok).To(BeTrue())
 			Expect(allowedPaths).To(ContainElements(
 				"/api/v1/health", "/api/v1/providers", "/api/v1/benchmarks",
-				"/api/v1/evaluations", "/api/v1/evaluations/jobs", "/api/v1/evaluations/jobs/*",
+				"/api/v1/evaluations", "/api/v1/evaluations/",
+				"/api/v1/evaluations/jobs", "/api/v1/evaluations/jobs/",
+				"/api/v1/evaluations/jobs/*",
+				"/api/v1/evaluations/jobs/*/events",
 				"/api/v1/evaluations/*/status", "/api/v1/evaluations/*/results",
 				"/openapi.json", "/docs", "/redoc",
 			))
+
+			// Ensure we don't accidentally broaden the proxy surface area.
+			// Guard against overly broad wildcard patterns that would weaken RBAC.
+			Expect(allowedPaths).NotTo(ContainElement("/*"))
+			Expect(allowedPaths).NotTo(ContainElement("/api/*"))
 		})
 
 		It("should update existing proxy configmap", func() {
@@ -379,7 +387,7 @@ var _ = Describe("EvalHub Proxy RBAC", func() {
 			authorization := proxyConfig["authorization"].(map[string]interface{})
 			resourceAttrs := authorization["resourceAttributes"].(map[string]interface{})
 			Expect(resourceAttrs["namespace"]).To(Equal(evalHub.Namespace))
-			Expect(resourceAttrs["name"]).To(Equal(evalHub.Name))
+			Expect(resourceAttrs["resourceName"]).To(Equal(evalHub.Name))
 		})
 	})
 

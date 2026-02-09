@@ -100,7 +100,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		// Check container basic properties
 		assert.Equal(t, containerName, container.Name)
 		assert.Equal(t, "quay.io/test/eval-hub:v1.2.3", container.Image)
-		assert.Equal(t, corev1.PullIfNotPresent, container.ImagePullPolicy)
+		assert.Equal(t, corev1.PullAlways, container.ImagePullPolicy)
 
 		// Check ports
 		require.Len(t, container.Ports, 1)
@@ -116,12 +116,19 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		}
 
 		// Check default environment variables
-		assert.Equal(t, "0.0.0.0", envVarMap["API_HOST"])
+		// API_HOST is 127.0.0.1 to ensure only kube-rbac-proxy can reach the API (security hardening)
+		assert.Equal(t, "127.0.0.1", envVarMap["API_HOST"])
 		assert.Equal(t, "8080", envVarMap["API_PORT"])
 		assert.Equal(t, "INFO", envVarMap["LOG_LEVEL"])
 		assert.Equal(t, "10", envVarMap["MAX_CONCURRENT_EVALUATIONS"])
 		assert.Equal(t, "60", envVarMap["DEFAULT_TIMEOUT_MINUTES"])
 		assert.Equal(t, "3", envVarMap["MAX_RETRY_ATTEMPTS"])
+
+		// Check SERVICE_URL default (must match buildDeploymentSpec logic)
+		assert.Equal(t, "https://test-evalhub.test-namespace.svc.cluster.local:8443", envVarMap["SERVICE_URL"])
+
+		// Check EVALHUB_INSTANCE_NAME default (must match instance name wiring)
+		assert.Equal(t, evalHubName, envVarMap["EVALHUB_INSTANCE_NAME"])
 
 		// Check custom environment variables
 		assert.Equal(t, "custom-value", envVarMap["CUSTOM_VAR"])
@@ -139,16 +146,16 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		assert.True(t, *container.SecurityContext.RunAsNonRoot)
 		assert.Contains(t, container.SecurityContext.Capabilities.Drop, corev1.Capability("ALL"))
 
-		// Check health probes
+		// Check health probes (exec-based because API listens on 127.0.0.1 only)
 		require.NotNil(t, container.LivenessProbe)
-		assert.Equal(t, "/api/v1/health", container.LivenessProbe.HTTPGet.Path)
-		assert.Equal(t, intstr.FromString("http"), container.LivenessProbe.HTTPGet.Port)
+		require.NotNil(t, container.LivenessProbe.Exec)
+		assert.Equal(t, []string{"/usr/bin/curl", "--fail", "--silent", "--max-time", "3", "http://127.0.0.1:8080/api/v1/health"}, container.LivenessProbe.Exec.Command)
 		assert.Equal(t, int32(30), container.LivenessProbe.InitialDelaySeconds)
 		assert.Equal(t, int32(10), container.LivenessProbe.PeriodSeconds)
 
 		require.NotNil(t, container.ReadinessProbe)
-		assert.Equal(t, "/api/v1/health", container.ReadinessProbe.HTTPGet.Path)
-		assert.Equal(t, intstr.FromString("http"), container.ReadinessProbe.HTTPGet.Port)
+		require.NotNil(t, container.ReadinessProbe.Exec)
+		assert.Equal(t, []string{"/usr/bin/curl", "--fail", "--silent", "--max-time", "2", "http://127.0.0.1:8080/api/v1/health"}, container.ReadinessProbe.Exec.Command)
 		assert.Equal(t, int32(10), container.ReadinessProbe.InitialDelaySeconds)
 		assert.Equal(t, int32(5), container.ReadinessProbe.PeriodSeconds)
 

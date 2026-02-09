@@ -76,10 +76,12 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	}
 
 	// Build default environment variables
+	// API_HOST is set to 127.0.0.1 to ensure only the kube-rbac-proxy sidecar can reach the API.
+	// This prevents bypassing RBAC by accessing the pod IP directly on port 8080.
 	defaultEnvVars := []corev1.EnvVar{
 		{
 			Name:  "API_HOST",
-			Value: "0.0.0.0",
+			Value: "127.0.0.1",
 		},
 		{
 			Name:  "API_PORT",
@@ -109,6 +111,14 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			Name:  "PROVIDERS_CONFIG_PATH",
 			Value: "/etc/evalhub/providers.yaml",
 		},
+		{
+			Name:  "SERVICE_URL",
+			Value: fmt.Sprintf("https://%s.%s.svc.cluster.local:8443", instance.Name, instance.Namespace),
+		},
+		{
+			Name:  "EVALHUB_INSTANCE_NAME",
+			Value: instance.Name,
+		},
 	}
 
 	// Merge environment variables with CR values taking precedence
@@ -118,7 +128,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	container := corev1.Container{
 		Name:            containerName,
 		Image:           evalHubImage,
-		ImagePullPolicy: corev1.PullIfNotPresent,
+		ImagePullPolicy: corev1.PullAlways,
 		Ports: []corev1.ContainerPort{
 			{
 				Name:          "http",
@@ -136,11 +146,18 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 				ReadOnly:  true,
 			},
 		},
+		// Exec probes are used because the API listens on 127.0.0.1 only (for security).
+		// HTTPGet probes from kubelet wouldn't reach localhost, so we use curl from inside the container.
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path: "/api/v1/health",
-					Port: intstr.FromString("http"),
+				Exec: &corev1.ExecAction{
+					Command: []string{
+						"/usr/bin/curl",
+						"--fail",
+						"--silent",
+						"--max-time", "3",
+						"http://127.0.0.1:8080/api/v1/health",
+					},
 				},
 			},
 			InitialDelaySeconds: 30,
@@ -150,9 +167,14 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		},
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path: "/api/v1/health",
-					Port: intstr.FromString("http"),
+				Exec: &corev1.ExecAction{
+					Command: []string{
+						"/usr/bin/curl",
+						"--fail",
+						"--silent",
+						"--max-time", "2",
+						"http://127.0.0.1:8080/api/v1/health",
+					},
 				},
 			},
 			InitialDelaySeconds: 10,

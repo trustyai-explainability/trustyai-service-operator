@@ -28,8 +28,6 @@ rules:
       - evalhubs
     verbs:
       - get
-      - list
-      - watch
   - apiGroups:
       - trustyai.opendatahub.io
     resources:

@@ -52,6 +52,7 @@ type EvalHubReconciler struct {
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=list;watch;get;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -110,6 +111,15 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return RequeueWithError(err)
 	}
 
+	// Create ServiceAccount for jobs
+	err = r.createJobsServiceAccount(ctx, instance)
+	if err != nil {
+		log.Error(err, "Failed to create Jobs ServiceAccount")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to create Jobs ServiceAccount: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
 	// Reconcile ConfigMap
 	if err := r.reconcileConfigMap(ctx, instance); err != nil {
 		log.Error(err, "Failed to reconcile ConfigMap")
@@ -122,6 +132,14 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.reconcileProxyConfigMap(ctx, instance); err != nil {
 		log.Error(err, "Failed to reconcile Proxy ConfigMap")
 		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Proxy ConfigMap: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
+	// Reconcile Service CA ConfigMap (for jobs to mount service CA certificate)
+	if err := r.reconcileServiceCAConfigMap(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile Service CA ConfigMap")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Service CA ConfigMap: %v", err), corev1.ConditionFalse)
 		r.Status().Update(ctx, instance)
 		return RequeueWithError(err)
 	}
@@ -214,13 +232,32 @@ func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhu
 
 // cleanupClusterRoleBinding deletes the EvalHub proxy ClusterRoleBinding upon instance deletion
 func (r *EvalHubReconciler) cleanupClusterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+	// Delete proxy ClusterRoleBinding
+	proxyCRBName := instance.Name + "-" + instance.Namespace + "-proxy-rolebinding"
+	if err := r.deleteClusterRoleBinding(ctx, proxyCRBName); err != nil {
+		return err
+	}
+
+	// Delete jobs RoleBinding
+	jobsRBName := instance.Name + "-" + instance.Namespace + "-jobs-proxy-rolebinding"
+	if err := r.deleteRoleBinding(ctx, instance.Namespace, jobsRBName); err != nil {
+		return err
+	}
+	// Cleanup legacy jobs ClusterRoleBinding name (pre-rename)
+	legacyJobsCRBName := instance.Namespace + "-" + instance.Name + "-jobs-proxy"
+	if err := r.deleteClusterRoleBinding(ctx, legacyJobsCRBName); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// deleteClusterRoleBinding deletes a specific ClusterRoleBinding by name
+func (r *EvalHubReconciler) deleteClusterRoleBinding(ctx context.Context, crbName string) error {
 	log := log.FromContext(ctx)
 
-	// Use the same naming pattern as createClusterRoleBinding
-	crbName := instance.Name + "-" + instance.Namespace + "-proxy-rolebinding"
-
 	crb := &rbacv1.ClusterRoleBinding{}
-	log.Info("Deleting EvalHub proxy ClusterRoleBinding", "name", crbName)
+	log.Info("Deleting ClusterRoleBinding", "name", crbName)
 
 	err := r.Get(ctx, types.NamespacedName{Name: crbName}, crb)
 	if err == nil {
@@ -228,12 +265,29 @@ func (r *EvalHubReconciler) cleanupClusterRoleBinding(ctx context.Context, insta
 		return r.Delete(ctx, crb)
 	} else if errors.IsNotFound(err) {
 		// ClusterRoleBinding doesn't exist, nothing to do
-		log.Info("EvalHub proxy ClusterRoleBinding not found, may have been already deleted", "name", crbName)
+		log.Info("ClusterRoleBinding not found, may have been already deleted", "name", crbName)
 		return nil
 	} else {
 		// Error getting ClusterRoleBinding
 		return err
 	}
+}
+
+// deleteRoleBinding deletes a specific RoleBinding by name and namespace
+func (r *EvalHubReconciler) deleteRoleBinding(ctx context.Context, namespace, rbName string) error {
+	log := log.FromContext(ctx)
+
+	rb := &rbacv1.RoleBinding{}
+	log.Info("Deleting RoleBinding", "name", rbName, "namespace", namespace)
+
+	err := r.Get(ctx, types.NamespacedName{Name: rbName, Namespace: namespace}, rb)
+	if err == nil {
+		return r.Delete(ctx, rb)
+	} else if errors.IsNotFound(err) {
+		log.Info("RoleBinding not found, may have been already deleted", "name", rbName, "namespace", namespace)
+		return nil
+	}
+	return err
 }
 
 // updateStatus updates the EvalHub status based on the deployment status

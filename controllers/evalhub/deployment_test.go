@@ -12,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 var _ = Describe("EvalHub Deployment", func() {
@@ -125,7 +124,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 			By("Checking evalhub container configuration")
 			Expect(evalHubContainer.Image).To(Equal("quay.io/ruimvieira/eval-hub:test")) // From test configmap
-			Expect(evalHubContainer.ImagePullPolicy).To(Equal(corev1.PullIfNotPresent))
+			Expect(evalHubContainer.ImagePullPolicy).To(Equal(corev1.PullAlways))
 
 			// Check ports
 			Expect(evalHubContainer.Ports).To(HaveLen(1))
@@ -158,12 +157,16 @@ var _ = Describe("EvalHub Deployment", func() {
 				envVars[env.Name] = env.Value
 			}
 
-			Expect(envVars["API_HOST"]).To(Equal("0.0.0.0"))
+			// API_HOST is 127.0.0.1 to ensure only kube-rbac-proxy can reach the API (security hardening)
+			Expect(envVars["API_HOST"]).To(Equal("127.0.0.1"))
 			Expect(envVars["API_PORT"]).To(Equal("8080"))
 			Expect(envVars["LOG_LEVEL"]).To(Equal("INFO"))
 			Expect(envVars["MAX_CONCURRENT_EVALUATIONS"]).To(Equal("10"))
 			Expect(envVars["DEFAULT_TIMEOUT_MINUTES"]).To(Equal("60"))
 			Expect(envVars["MAX_RETRY_ATTEMPTS"]).To(Equal("3"))
+			// SERVICE_URL uses https on port 8443 via kube-rbac-proxy
+			Expect(envVars["SERVICE_URL"]).To(Equal(fmt.Sprintf("https://%s.%s.svc.cluster.local:8443", evalHubName, testNamespace)))
+			Expect(envVars["EVALHUB_INSTANCE_NAME"]).To(Equal(evalHubName))
 		})
 
 		It("should include custom environment variables", func() {
@@ -247,17 +250,23 @@ var _ = Describe("EvalHub Deployment", func() {
 			}
 			Expect(evalHubContainer).NotTo(BeNil())
 
-			By("Checking liveness probe")
+			// Exec probes are used because the API listens on 127.0.0.1 only (security hardening).
+			// HTTPGet probes from kubelet wouldn't reach localhost, so we use curl from inside the container.
+			By("Checking liveness probe (exec-based)")
 			Expect(evalHubContainer.LivenessProbe).NotTo(BeNil())
-			Expect(evalHubContainer.LivenessProbe.HTTPGet.Path).To(Equal("/api/v1/health"))
-			Expect(evalHubContainer.LivenessProbe.HTTPGet.Port).To(Equal(intstr.FromString("http")))
+			Expect(evalHubContainer.LivenessProbe.Exec).NotTo(BeNil())
+			Expect(evalHubContainer.LivenessProbe.Exec.Command).To(Equal([]string{
+				"/usr/bin/curl", "--fail", "--silent", "--max-time", "3", "http://127.0.0.1:8080/api/v1/health",
+			}))
 			Expect(evalHubContainer.LivenessProbe.InitialDelaySeconds).To(Equal(int32(30)))
 			Expect(evalHubContainer.LivenessProbe.PeriodSeconds).To(Equal(int32(10)))
 
-			By("Checking readiness probe")
+			By("Checking readiness probe (exec-based)")
 			Expect(evalHubContainer.ReadinessProbe).NotTo(BeNil())
-			Expect(evalHubContainer.ReadinessProbe.HTTPGet.Path).To(Equal("/api/v1/health"))
-			Expect(evalHubContainer.ReadinessProbe.HTTPGet.Port).To(Equal(intstr.FromString("http")))
+			Expect(evalHubContainer.ReadinessProbe.Exec).NotTo(BeNil())
+			Expect(evalHubContainer.ReadinessProbe.Exec.Command).To(Equal([]string{
+				"/usr/bin/curl", "--fail", "--silent", "--max-time", "2", "http://127.0.0.1:8080/api/v1/health",
+			}))
 			Expect(evalHubContainer.ReadinessProbe.InitialDelaySeconds).To(Equal(int32(10)))
 			Expect(evalHubContainer.ReadinessProbe.PeriodSeconds).To(Equal(int32(5)))
 		})
