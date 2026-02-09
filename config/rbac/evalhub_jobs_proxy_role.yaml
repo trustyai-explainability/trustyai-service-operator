@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/created-by: trustyai-service-operator
     app.kubernetes.io/part-of: trustyai-service-operator
     app.kubernetes.io/managed-by: kustomize
-  name: trustyai-service-operator-evalhub-jobs-proxy-role
+  name: evalhub-jobs-proxy-role
 rules:
   - apiGroups:
       - trustyai.opendatahub.io
