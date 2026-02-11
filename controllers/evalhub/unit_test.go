@@ -1063,3 +1063,331 @@ func TestEvalHubReconciler_reconcileServiceCAConfigMap(t *testing.T) {
 		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
 	})
 }
+
+func TestGenerateConfigData_WithDatabase(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+
+	t.Run("should include database and secrets sections when DB configured", func(t *testing.T) {
+		evalHub := &evalhubv1alpha1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1alpha1.EvalHubSpec{
+				Database: &evalhubv1alpha1.DatabaseSpec{
+					Secret: "my-db-secret",
+				},
+			},
+		}
+
+		reconciler := &EvalHubReconciler{Scheme: scheme}
+		configData, err := reconciler.generateConfigData(evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		// Database section
+		require.NotNil(t, config.Database)
+		assert.Equal(t, dbDriver, config.Database.Driver)
+		assert.Equal(t, dbDefaultMaxOpen, config.Database.MaxOpenConns)
+		assert.Equal(t, dbDefaultMaxIdle, config.Database.MaxIdleConns)
+
+		// Secrets section
+		require.NotNil(t, config.Secrets)
+		assert.Equal(t, dbSecretMountPath, config.Secrets.Dir)
+		assert.Equal(t, "database.url", config.Secrets.Mappings[dbSecretKey])
+	})
+
+	t.Run("should use custom pool sizes when specified", func(t *testing.T) {
+		evalHub := &evalhubv1alpha1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1alpha1.EvalHubSpec{
+				Database: &evalhubv1alpha1.DatabaseSpec{
+					Secret:       "my-db-secret",
+					MaxOpenConns: 50,
+					MaxIdleConns: 10,
+				},
+			},
+		}
+
+		reconciler := &EvalHubReconciler{Scheme: scheme}
+		configData, err := reconciler.generateConfigData(evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		require.NotNil(t, config.Database)
+		assert.Equal(t, 50, config.Database.MaxOpenConns)
+		assert.Equal(t, 10, config.Database.MaxIdleConns)
+	})
+
+	t.Run("should omit database and secrets sections when DB not configured", func(t *testing.T) {
+		evalHub := &evalhubv1alpha1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+		}
+
+		reconciler := &EvalHubReconciler{Scheme: scheme}
+		configData, err := reconciler.generateConfigData(evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		assert.Nil(t, config.Database)
+		assert.Nil(t, config.Secrets)
+	})
+}
+
+func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+	dbSecretName := "evalhub-db-credentials"
+
+	evalHub := &evalhubv1alpha1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		},
+		Spec: evalhubv1alpha1.EvalHubSpec{
+			Database: &evalhubv1alpha1.DatabaseSpec{
+				Secret: dbSecretName,
+			},
+		},
+	}
+
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMapName,
+			Namespace: testNamespace,
+		},
+		Data: map[string]string{
+			configMapEvalHubImageKey:       "quay.io/test/eval-hub:latest",
+			configMapKubeRBACProxyImageKey: "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub, configMap).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		Namespace:     testNamespace,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should add DB secret volume and mount when database configured", func(t *testing.T) {
+		err := reconciler.reconcileDeployment(ctx, evalHub)
+		require.NoError(t, err)
+
+		deployment := &appsv1.Deployment{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		}, deployment)
+		require.NoError(t, err)
+
+		// Should have 4 volumes: evalhub-config, kube-rbac-proxy-config, tls, db-secret
+		assert.Len(t, deployment.Spec.Template.Spec.Volumes, 4)
+
+		// Find the DB secret volume
+		var dbVolume *corev1.Volume
+		for i, v := range deployment.Spec.Template.Spec.Volumes {
+			if v.Name == dbSecretVolumeName {
+				dbVolume = &deployment.Spec.Template.Spec.Volumes[i]
+				break
+			}
+		}
+		require.NotNil(t, dbVolume, "DB secret volume should be present")
+		require.NotNil(t, dbVolume.VolumeSource.Secret)
+		assert.Equal(t, dbSecretName, dbVolume.VolumeSource.Secret.SecretName)
+		require.Len(t, dbVolume.VolumeSource.Secret.Items, 1)
+		assert.Equal(t, dbSecretKey, dbVolume.VolumeSource.Secret.Items[0].Key)
+		assert.Equal(t, dbSecretKey, dbVolume.VolumeSource.Secret.Items[0].Path)
+
+		// Find evalhub container and check volume mount
+		var container *corev1.Container
+		for i, c := range deployment.Spec.Template.Spec.Containers {
+			if c.Name == containerName {
+				container = &deployment.Spec.Template.Spec.Containers[i]
+				break
+			}
+		}
+		require.NotNil(t, container)
+		assert.Len(t, container.VolumeMounts, 2) // evalhub-config + db-secret
+
+		var dbMount *corev1.VolumeMount
+		for i, m := range container.VolumeMounts {
+			if m.Name == dbSecretVolumeName {
+				dbMount = &container.VolumeMounts[i]
+				break
+			}
+		}
+		require.NotNil(t, dbMount, "DB secret volume mount should be present")
+		assert.Equal(t, dbSecretMountPath, dbMount.MountPath)
+		assert.True(t, dbMount.ReadOnly)
+	})
+}
+
+func TestEvalHubReconciler_validateDatabaseSecret(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+	dbSecretName := "evalhub-db-credentials"
+
+	evalHub := &evalhubv1alpha1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		},
+		Spec: evalhubv1alpha1.EvalHubSpec{
+			Database: &evalhubv1alpha1.DatabaseSpec{
+				Secret: dbSecretName,
+			},
+		},
+	}
+
+	t.Run("should succeed when secret exists with valid db-url key", func(t *testing.T) {
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      dbSecretName,
+				Namespace: testNamespace,
+			},
+			Data: map[string][]byte{
+				dbSecretKey: []byte("postgres://user:pass@host:5432/db"),
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, secret).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.validateDatabaseSecret(ctx, evalHub)
+		assert.NoError(t, err)
+	})
+
+	t.Run("should fail when secret does not exist", func(t *testing.T) {
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.validateDatabaseSecret(ctx, evalHub)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("should fail when secret is missing db-url key", func(t *testing.T) {
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      dbSecretName,
+				Namespace: testNamespace,
+			},
+			Data: map[string][]byte{
+				"other-key": []byte("some-value"),
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, secret).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.validateDatabaseSecret(ctx, evalHub)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "missing required key")
+	})
+
+	t.Run("should fail when db-url key has empty value", func(t *testing.T) {
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      dbSecretName,
+				Namespace: testNamespace,
+			},
+			Data: map[string][]byte{
+				dbSecretKey: []byte(""),
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, secret).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.validateDatabaseSecret(ctx, evalHub)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "empty value")
+	})
+}
+
+func TestEvalHubHelperMethods_IsDatabaseConfigured(t *testing.T) {
+	t.Run("should return false when Database is nil", func(t *testing.T) {
+		spec := &evalhubv1alpha1.EvalHubSpec{}
+		assert.False(t, spec.IsDatabaseConfigured())
+	})
+
+	t.Run("should return false when Database.Secret is empty", func(t *testing.T) {
+		spec := &evalhubv1alpha1.EvalHubSpec{
+			Database: &evalhubv1alpha1.DatabaseSpec{},
+		}
+		assert.False(t, spec.IsDatabaseConfigured())
+	})
+
+	t.Run("should return true when Database.Secret is set", func(t *testing.T) {
+		spec := &evalhubv1alpha1.EvalHubSpec{
+			Database: &evalhubv1alpha1.DatabaseSpec{
+				Secret: "my-secret",
+			},
+		}
+		assert.True(t, spec.IsDatabaseConfigured())
+	})
+}

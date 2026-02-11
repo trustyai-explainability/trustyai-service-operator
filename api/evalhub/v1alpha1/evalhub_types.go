@@ -20,6 +20,20 @@ type EvalHub struct {
 	Status EvalHubStatus `json:"status,omitempty"`
 }
 
+// DatabaseSpec defines database configuration for EvalHub
+type DatabaseSpec struct {
+	// Name of the K8s Secret containing a pre-composed db-url key
+	Secret string `json:"secret"`
+	// Maximum number of open database connections
+	// +kubebuilder:default:=25
+	// +optional
+	MaxOpenConns int `json:"maxOpenConns,omitempty"`
+	// Maximum number of idle database connections
+	// +kubebuilder:default:=5
+	// +optional
+	MaxIdleConns int `json:"maxIdleConns,omitempty"`
+}
+
 // EvalHubSpec defines the desired state of EvalHub
 type EvalHubSpec struct {
 	// Number of replicas for the eval-hub deployment
@@ -30,6 +44,12 @@ type EvalHubSpec struct {
 	// Environment variables for the eval-hub container
 	// +optional
 	Env []corev1.EnvVar `json:"env,omitempty"`
+
+	// Database configuration for persistent storage.
+	// When set, the operator configures PostgreSQL via the referenced secret.
+	// When omitted, the service uses its default (in-memory SQLite).
+	// +optional
+	Database *DatabaseSpec `json:"database,omitempty"`
 }
 
 // EvalHubStatus defines the observed state of EvalHub
@@ -108,4 +128,9 @@ func (e *EvalHubSpec) GetReplicas() int32 {
 		return 1
 	}
 	return *e.Replicas
+}
+
+// IsDatabaseConfigured returns true if the database spec is set with a secret name
+func (e *EvalHubSpec) IsDatabaseConfigured() bool {
+	return e.Database != nil && e.Database.Secret != ""
 }

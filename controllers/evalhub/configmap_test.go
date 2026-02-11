@@ -345,6 +345,66 @@ var _ = Describe("EvalHub ConfigMap", func() {
 		})
 	})
 
+	Context("When database is configured", func() {
+		It("should include database and secrets sections in config.yaml", func() {
+			By("Creating EvalHub with database config")
+			dbEvalHub := createEvalHubInstanceWithDB("db-configmap-evalhub", testNamespace, "evalhub-db-credentials")
+			Expect(k8sClient.Create(ctx, dbEvalHub)).Should(Succeed())
+			defer k8sClient.Delete(ctx, dbEvalHub)
+
+			By("Reconciling configmap")
+			err := reconciler.reconcileConfigMap(ctx, dbEvalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Getting configmap")
+			configMap := &corev1.ConfigMap{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "db-configmap-evalhub-config",
+				Namespace: testNamespace,
+			}, configMap)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Parsing config.yaml")
+			var config EvalHubConfig
+			err = yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), &config)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking database section")
+			Expect(config.Database).NotTo(BeNil())
+			Expect(config.Database.Driver).To(Equal("pgx"))
+			Expect(config.Database.MaxOpenConns).To(Equal(25))
+			Expect(config.Database.MaxIdleConns).To(Equal(5))
+
+			By("Checking secrets section")
+			Expect(config.Secrets).NotTo(BeNil())
+			Expect(config.Secrets.Dir).To(Equal("/etc/evalhub/secrets"))
+			Expect(config.Secrets.Mappings).To(HaveKeyWithValue("db-url", "database.url"))
+		})
+
+		It("should omit database and secrets sections when database is not configured", func() {
+			By("Reconciling configmap for standard EvalHub (no DB)")
+			err := reconciler.reconcileConfigMap(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Getting configmap")
+			configMap := &corev1.ConfigMap{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      evalHubName + "-config",
+				Namespace: testNamespace,
+			}, configMap)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Parsing config.yaml")
+			var config EvalHubConfig
+			err = yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), &config)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking database and secrets are absent")
+			Expect(config.Database).To(BeNil())
+			Expect(config.Secrets).To(BeNil())
+		})
+	})
+
 	Context("Configuration data generation", func() {
 		It("should generate valid configuration data", func() {
 			By("Generating configuration data")
