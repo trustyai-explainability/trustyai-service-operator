@@ -54,7 +54,7 @@ endif
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.26.0
+ENVTEST_K8S_VERSION = 1.29.0
 # ENVTEST_VERSION to be set accordingly to go.mod when can be bumped, for now, we use tool version as not sourced from GCS:
 ENVTEST_VERSION ?= release-0.19
 # ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | sed -E 's/v([0-9]+)\.([0-9]+).*/release-\1.\2/')
