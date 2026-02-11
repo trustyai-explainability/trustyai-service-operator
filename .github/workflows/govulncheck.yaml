@@ -1,0 +1,46 @@
+---
+name: Tier 1 - Govulncheck
+
+on:
+  pull_request:
+  push:
+    branches: [main, incubation, stable]
+
+jobs:
+  govulncheck:
+    name: Go Vulnerability Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+
+      - name: Run govulncheck
+        id: govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: "go.mod"
+          output-format: sarif
+          output-file: govulncheck-results.sarif
+
+      - name: Upload SARIF file to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: govulncheck-results.sarif
+          category: "govulncheck-scan"
+
+      - name: Upload govulncheck results as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: govulncheck-results
+          path: govulncheck-results.sarif
