@@ -151,7 +151,9 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			log.Error(err, "Database secret validation failed")
 			instance.SetStatus("Ready", "DBCredentialsError",
 				fmt.Sprintf("Database configuration error: %v", err), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			if statusErr := r.Status().Update(ctx, instance); statusErr != nil {
+				log.Error(statusErr, "Failed to update status after database secret validation failure")
+			}
 			return RequeueWithError(err)
 		}
 	}
