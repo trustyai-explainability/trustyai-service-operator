@@ -41,6 +41,51 @@ To ensure the contributed code adheres to the project goals, we have set up some
 3. [unit-tests](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/controller-tests.yaml): Ensure unit tests pass.
 4. e2e-tests: Ensure OpenShift CI job for e2e tests pass.
 
+### Security Policy Validation
+
+The project uses [Conftest](https://www.conftest.dev/) and OPA (Open Policy Agent) to validate Kubernetes manifests against security policies. These policies enforce container security, RBAC best practices, network isolation, and resource management.
+
+**Pre-commit Hooks (Recommended)**
+
+To automatically validate your changes before committing, set up pre-commit hooks:
+
+```bash
+# Install pre-commit (one-time)
+pip install pre-commit
+
+# Install the git hooks
+pre-commit install
+
+# Test it
+pre-commit run --all-files
+```
+
+**Note:** Requires `conftest` and `kustomize` to be available in your PATH.
+
+The pre-commit hooks will automatically validate:
+- `config/base` manifests
+- `config/overlays/odh` manifests
+- `config/overlays/rhoai` manifests
+
+**Manual Validation**
+
+You can also run policy validation manually:
+
+```bash
+# Validate base configuration
+kustomize build config/base | conftest test -p policy/ -
+
+# Validate ODH overlay
+kustomize build config/overlays/odh | conftest test -p policy/ -
+
+# Validate RHOAI overlay
+kustomize build config/overlays/rhoai | conftest test -p policy/ -
+```
+
+**Policy Files**
+
+Security policies are located in the `policy/` directory and written in Rego. See [policy/README.md](policy/README.md) for details on specific policies and customisation options.
+
 ### Code Style Guidelines
 
 1. Follow the Go community’s best practices, which can be found in the official [Effective Go](https://go.dev/doc/effective_go) guide.

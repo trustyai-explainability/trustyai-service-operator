@@ -1,0 +1,26 @@
+repos:
+  - repo: local
+    hooks:
+      - id: conftest-base
+        name: conftest (base)
+        entry: bash -c 'kustomize build config/base | conftest test -p policy/ -'
+        language: system
+        files: '^(config/base/.*\.ya?ml|policy/.*\.rego)$'
+        pass_filenames: false
+        require_serial: true
+
+      - id: conftest-odh
+        name: conftest (odh overlay)
+        entry: bash -c 'kustomize build config/overlays/odh | conftest test -p policy/ -'
+        language: system
+        files: '^(config/(base|overlays/odh)/.*\.ya?ml|policy/.*\.rego)$'
+        pass_filenames: false
+        require_serial: true
+
+      - id: conftest-rhoai
+        name: conftest (rhoai overlay)
+        entry: bash -c 'kustomize build config/overlays/rhoai | conftest test -p policy/ -'
+        language: system
+        files: '^(config/(base|overlays/rhoai)/.*\.ya?ml|policy/.*\.rego)$'
+        pass_filenames: false
+        require_serial: true
