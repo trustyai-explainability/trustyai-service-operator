@@ -22,15 +22,3 @@ deny contains msg if {
     input.spec.template.spec.hostIPC == true
     msg := sprintf("Deployment '%s' must not use hostIPC", [input.metadata.name])
 }
-
-# Warn about missing network policies (namespace-level check)
-warn contains msg if {
-    input.kind == "Namespace"
-    not has_network_policy
-    msg := sprintf("Namespace '%s' should have associated NetworkPolicy resources", [input.metadata.name])
-}
-
-# Helper to check if network policy exists (simplified check)
-has_network_policy if {
-    input.kind == "NetworkPolicy"
-}

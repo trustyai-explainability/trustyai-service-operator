@@ -17,7 +17,6 @@ This directory contains OPA (Open Policy Agent) Rego policies for validating Kub
 - **Deny** pods using `hostNetwork`
 - **Deny** pods using `hostPID`
 - **Deny** pods using `hostIPC`
-- **Warn** about namespaces without network policies
 
 ### rbac_security.rego
 - **Deny** wildcard (`*`) permissions in ClusterRoles and Roles
