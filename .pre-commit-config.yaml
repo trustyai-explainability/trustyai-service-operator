@@ -1,6 +1,13 @@
 repos:
   - repo: local
     hooks:
+      - id: hadolint
+        name: hadolint (Dockerfile linter)
+        entry: hadolint
+        language: system
+        files: '^.*Dockerfile.*$'
+        require_serial: true
+
       - id: conftest-base
         name: conftest (base)
         entry: bash -c 'kustomize build config/base | conftest test -p policy/ -'

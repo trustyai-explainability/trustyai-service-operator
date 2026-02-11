@@ -43,7 +43,10 @@ To ensure the contributed code adheres to the project goals, we have set up some
 
 ### Security Policy Validation
 
-The project uses [Conftest](https://www.conftest.dev/) and OPA (Open Policy Agent) to validate Kubernetes manifests against security policies. These policies enforce container security, RBAC best practices, network isolation, and resource management.
+The project uses security validation tools to ensure manifests and container images follow best practices:
+
+- **[Conftest](https://www.conftest.dev/)** with OPA (Open Policy Agent) validates Kubernetes manifests against security policies, enforcing container security, RBAC best practices, network isolation, and resource management.
+- **[Hadolint](https://github.com/hadolint/hadolint)** lints Dockerfiles for best practices and common issues.
 
 **Pre-commit Hooks (Recommended)**
 
@@ -60,18 +63,25 @@ pre-commit install
 pre-commit run --all-files
 ```
 
-**Note:** Requires `conftest` and `kustomize` to be available in your PATH.
+**Note:** Requires `conftest`, `kustomize`, and `hadolint` to be available in your PATH.
 
 The pre-commit hooks will automatically validate:
-- `config/base` manifests
-- `config/overlays/odh` manifests
-- `config/overlays/rhoai` manifests
+- Dockerfiles (via hadolint)
+- `config/base` manifests (via conftest)
+- `config/overlays/odh` manifests (via conftest)
+- `config/overlays/rhoai` manifests (via conftest)
 
 **Manual Validation**
 
-You can also run policy validation manually:
+You can also run validation manually:
 
 ```bash
+# Lint Dockerfiles
+hadolint Dockerfile
+hadolint Dockerfile.driver
+hadolint Dockerfile.lmes-job
+hadolint Dockerfile.orchestrator
+
 # Validate base configuration
 kustomize build config/base | conftest test -p policy/ -
 
