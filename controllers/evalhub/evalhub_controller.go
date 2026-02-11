@@ -357,7 +357,10 @@ func (r *EvalHubReconciler) updateStatus(ctx context.Context, instance *evalhubv
 func (r *EvalHubReconciler) validateDatabaseSecret(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
 	secret, err := utils.GetSecret(ctx, r.Client, instance.Spec.Database.Secret, instance.Namespace)
 	if err != nil {
-		return fmt.Errorf("database secret %q not found: %w", instance.Spec.Database.Secret, err)
+		if errors.IsNotFound(err) {
+			return fmt.Errorf("database secret %q not found: %w", instance.Spec.Database.Secret, err)
+		}
+		return fmt.Errorf("failed to get database secret %q: %w", instance.Spec.Database.Secret, err)
 	}
 	if _, ok := secret.Data[dbSecretKey]; !ok {
 		return fmt.Errorf("database secret %q missing required key %q", instance.Spec.Database.Secret, dbSecretKey)
