@@ -6,7 +6,6 @@ import (
 	"time"
 
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -143,19 +142,6 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Service CA ConfigMap: %v", err), corev1.ConditionFalse)
 		r.Status().Update(ctx, instance)
 		return RequeueWithError(err)
-	}
-
-	// Validate database secret if database is configured
-	if instance.Spec.IsDatabaseConfigured() {
-		if err := r.validateDatabaseSecret(ctx, instance); err != nil {
-			log.Error(err, "Database secret validation failed")
-			instance.SetStatus("Ready", "DBCredentialsError",
-				fmt.Sprintf("Database configuration error: %v", err), corev1.ConditionFalse)
-			if statusErr := r.Status().Update(ctx, instance); statusErr != nil {
-				log.Error(statusErr, "Failed to update status after database secret validation failure")
-			}
-			return RequeueWithError(err)
-		}
 	}
 
 	// Reconcile Deployment
@@ -351,22 +337,4 @@ func (r *EvalHubReconciler) updateStatus(ctx context.Context, instance *evalhubv
 
 	log.Info("Updating EvalHub status", "phase", instance.Status.Phase, "ready", instance.Status.Ready)
 	return r.Status().Update(ctx, instance)
-}
-
-// validateDatabaseSecret checks that the referenced database secret exists and contains the required key
-func (r *EvalHubReconciler) validateDatabaseSecret(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
-	secret, err := utils.GetSecret(ctx, r.Client, instance.Spec.Database.Secret, instance.Namespace)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return fmt.Errorf("database secret %q not found: %w", instance.Spec.Database.Secret, err)
-		}
-		return fmt.Errorf("failed to get database secret %q: %w", instance.Spec.Database.Secret, err)
-	}
-	if _, ok := secret.Data[dbSecretKey]; !ok {
-		return fmt.Errorf("database secret %q missing required key %q", instance.Spec.Database.Secret, dbSecretKey)
-	}
-	if len(secret.Data[dbSecretKey]) == 0 {
-		return fmt.Errorf("database secret %q has empty value for key %q", instance.Spec.Database.Secret, dbSecretKey)
-	}
-	return nil
 }
