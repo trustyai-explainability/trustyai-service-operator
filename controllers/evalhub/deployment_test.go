@@ -352,6 +352,99 @@ var _ = Describe("EvalHub Deployment", func() {
 		})
 	})
 
+	Context("When database is configured", func() {
+		It("should add DB secret volume and mount to deployment", func() {
+			By("Creating EvalHub with database config")
+			dbEvalHub := createEvalHubInstanceWithDB("db-"+evalHubName, testNamespace, "evalhub-db-credentials")
+			Expect(k8sClient.Create(ctx, dbEvalHub)).Should(Succeed())
+			defer k8sClient.Delete(ctx, dbEvalHub)
+
+			By("Reconciling deployment")
+			err := reconciler.reconcileDeployment(ctx, dbEvalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Getting deployment")
+			deployment := &appsv1.Deployment{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "db-" + evalHubName,
+				Namespace: testNamespace,
+			}, deployment)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking deployment has 4 volumes (3 base + DB secret)")
+			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(4))
+
+			By("Finding DB secret volume")
+			var dbVolume *corev1.Volume
+			for i, volume := range deployment.Spec.Template.Spec.Volumes {
+				if volume.Name == "evalhub-db-secret" {
+					dbVolume = &deployment.Spec.Template.Spec.Volumes[i]
+					break
+				}
+			}
+			Expect(dbVolume).NotTo(BeNil(), "DB secret volume should be present")
+			Expect(dbVolume.VolumeSource.Secret).NotTo(BeNil())
+			Expect(dbVolume.VolumeSource.Secret.SecretName).To(Equal("evalhub-db-credentials"))
+			Expect(dbVolume.VolumeSource.Secret.Items).To(HaveLen(1))
+			Expect(dbVolume.VolumeSource.Secret.Items[0].Key).To(Equal("db-url"))
+			Expect(dbVolume.VolumeSource.Secret.Items[0].Path).To(Equal("db-url"))
+
+			By("Finding evalhub container")
+			var evalHubContainer *corev1.Container
+			for i, container := range deployment.Spec.Template.Spec.Containers {
+				if container.Name == "evalhub" {
+					evalHubContainer = &deployment.Spec.Template.Spec.Containers[i]
+					break
+				}
+			}
+			Expect(evalHubContainer).NotTo(BeNil())
+
+			By("Checking evalhub container has 2 volume mounts (config + DB secret)")
+			Expect(evalHubContainer.VolumeMounts).To(HaveLen(2))
+
+			var dbMount *corev1.VolumeMount
+			for i, mount := range evalHubContainer.VolumeMounts {
+				if mount.Name == "evalhub-db-secret" {
+					dbMount = &evalHubContainer.VolumeMounts[i]
+					break
+				}
+			}
+			Expect(dbMount).NotTo(BeNil(), "DB secret volume mount should be present")
+			Expect(dbMount.MountPath).To(Equal("/etc/evalhub/secrets"))
+			Expect(dbMount.ReadOnly).To(BeTrue())
+		})
+
+		It("should not add DB secret volume when database is not configured", func() {
+			By("Creating standard EvalHub (no DB)")
+			evalHub = createEvalHubInstance(evalHubName, testNamespace)
+			Expect(k8sClient.Create(ctx, evalHub)).Should(Succeed())
+
+			By("Reconciling deployment")
+			err := reconciler.reconcileDeployment(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Getting deployment")
+			deployment := waitForDeployment(evalHubName, testNamespace)
+
+			By("Checking deployment has only 3 base volumes")
+			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(3))
+
+			By("Finding evalhub container")
+			var evalHubContainer *corev1.Container
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				if container.Name == "evalhub" {
+					evalHubContainer = &container
+					break
+				}
+			}
+			Expect(evalHubContainer).NotTo(BeNil())
+
+			By("Checking evalhub container has only 1 volume mount")
+			Expect(evalHubContainer.VolumeMounts).To(HaveLen(1))
+			Expect(evalHubContainer.VolumeMounts[0].Name).To(Equal("evalhub-config"))
+		})
+	})
+
 	Context("When handling deployment errors", func() {
 		It("should handle missing EvalHub instance", func() {
 			By("Creating deployment spec for non-existent EvalHub")

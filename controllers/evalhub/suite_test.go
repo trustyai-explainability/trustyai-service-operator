@@ -221,6 +221,15 @@ func deleteNamespace(namespace *corev1.Namespace) {
 	}
 }
 
+// createEvalHubInstanceWithDB creates an EvalHub instance with database configuration for testing
+func createEvalHubInstanceWithDB(name, namespace, secretName string) *evalhubv1alpha1.EvalHub {
+	instance := createEvalHubInstance(name, namespace)
+	instance.Spec.Database = &evalhubv1alpha1.DatabaseSpec{
+		Secret: secretName,
+	}
+	return instance
+}
+
 // cleanupResourcesInNamespace deletes all test resources in a namespace
 func cleanupResourcesInNamespace(namespace string, evalHub *evalhubv1alpha1.EvalHub, configMap *corev1.ConfigMap) {
 	if evalHub != nil {

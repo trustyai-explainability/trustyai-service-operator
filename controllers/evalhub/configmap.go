@@ -25,10 +25,25 @@ type ProviderConfig struct {
 	Config     map[string]string `yaml:"config,omitempty"`
 }
 
+// DatabaseConfig represents the database configuration in config.yaml
+type DatabaseConfig struct {
+	Driver       string `yaml:"driver"`
+	MaxOpenConns int    `yaml:"max_open_conns,omitempty"`
+	MaxIdleConns int    `yaml:"max_idle_conns,omitempty"`
+}
+
+// SecretsMapping represents the secrets mapping configuration in config.yaml
+type SecretsMapping struct {
+	Dir      string            `yaml:"dir"`
+	Mappings map[string]string `yaml:"mappings"`
+}
+
 // EvalHubConfig represents the eval-hub configuration structure
 type EvalHubConfig struct {
 	Providers   []ProviderConfig `yaml:"providers"`
 	Collections []string         `yaml:"collections,omitempty"`
+	Database    *DatabaseConfig  `yaml:"database,omitempty"`
+	Secrets     *SecretsMapping  `yaml:"secrets,omitempty"`
 }
 
 // reconcileConfigMap creates or updates the ConfigMap for EvalHub configuration
@@ -136,6 +151,26 @@ func (r *EvalHubReconciler) generateConfigData(instance *evalhubv1alpha1.EvalHub
 		"automotive_safety_v1",
 		"finance_compliance_v1",
 		"general_llm_eval_v1",
+	}
+
+	// Conditionally add database configuration
+	if instance.Spec.IsDatabaseConfigured() {
+		maxOpen, maxIdle := dbDefaultMaxOpen, dbDefaultMaxIdle
+		if instance.Spec.Database.MaxOpenConns > 0 {
+			maxOpen = instance.Spec.Database.MaxOpenConns
+		}
+		if instance.Spec.Database.MaxIdleConns > 0 {
+			maxIdle = instance.Spec.Database.MaxIdleConns
+		}
+		config.Database = &DatabaseConfig{
+			Driver:       dbDriver,
+			MaxOpenConns: maxOpen,
+			MaxIdleConns: maxIdle,
+		}
+		config.Secrets = &SecretsMapping{
+			Dir:      dbSecretMountPath,
+			Mappings: map[string]string{dbSecretKey: "database.url"},
+		}
 	}
 
 	// Convert to YAML

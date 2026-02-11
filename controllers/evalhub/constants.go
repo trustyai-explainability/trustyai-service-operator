@@ -30,6 +30,14 @@ const (
 
 	// Route configuration
 	routeName = "evalhub"
+
+	// Database configuration
+	dbSecretVolumeName = "evalhub-db-secret"
+	dbSecretMountPath  = "/etc/evalhub/secrets"
+	dbSecretKey        = "db-url"
+	dbDriver           = "pgx"
+	dbDefaultMaxOpen   = 25
+	dbDefaultMaxIdle   = 5
 )
 
 var (
