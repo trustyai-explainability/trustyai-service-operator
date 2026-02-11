@@ -3,7 +3,6 @@ name: Tier 1 - Govulncheck
 
 on:
   pull_request:
-    branches: [main, incubation, stable]
   push:
     branches: [main, incubation, stable]
 
