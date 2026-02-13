@@ -34,6 +34,16 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       #
+      - name: Set defaults for the Env variables
+        run: |
+          echo "OPERATOR_TAG=latest" >> $GITHUB_ENV
+          echo "LMES_DRIVER_TAG=latest" >> $GITHUB_ENV
+          echo "LMES_JOB_TAG=latest" >> $GITHUB_ENV
+          echo "ORCH_TAG=latest" >> $GITHUB_ENV
+          echo "OPERATOR_IMAGE_NAME=${{ vars.QUAY_RELEASE_REPO }}" >> $GITHUB_ENV
+          echo "LMES_DRIVER_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_DRIVER_REPO }}" >> $GITHUB_ENV
+          echo "LMES_JOB_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_JOB_REPO }}" >> $GITHUB_ENV
+          echo "ORCH_IMAGE_NAME=${{ vars.QUAY_RELEASE_GUARDRAILS_REPO }}" >> $GITHUB_ENV
       # Set environments depending on context
       - name: Set CI environment
         if: env.BUILD_CONTEXT == 'ci'
