@@ -10,8 +10,13 @@ on:
     types: [labeled, opened, synchronize, reopened]
 jobs:
   build-and-push-ci:
-    continue-on-error: true  # do not prevent the Merge if failing
-    if: github.repository == 'trustyai-explainability/trustyai-service-operator'
+    if: |
+      github.repository == 'trustyai-explainability/trustyai-service-operator' &&
+      (
+        contains(github.event.pull_request.labels.*.name, 'ok-to-test') ||
+        contains(github.event.pull_request.labels.*.name, 'lgtm') ||
+        contains(github.event.pull_request.labels.*.name, 'approved')
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
