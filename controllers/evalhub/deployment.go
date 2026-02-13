@@ -109,7 +109,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		},
 		{
 			Name:  "PROVIDERS_CONFIG_PATH",
-			Value: "/etc/evalhub/providers.yaml",
+			Value: "/etc/evalhub/providers/",
 		},
 		{
 			Name:  "SERVICE_URL",
@@ -129,6 +129,11 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		{
 			Name:      "evalhub-config",
 			MountPath: "/etc/evalhub",
+			ReadOnly:  true,
+		},
+		{
+			Name:      "evalhub-providers",
+			MountPath: "/etc/evalhub/providers",
 			ReadOnly:  true,
 		},
 	}
@@ -274,6 +279,16 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: instance.Name + "-config",
+					},
+				},
+			},
+		},
+		{
+			Name: "evalhub-providers",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: instance.Name + "-providers",
 					},
 				},
 			},

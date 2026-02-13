@@ -16,15 +16,6 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// ProviderConfig represents the provider configuration structure
-type ProviderConfig struct {
-	Name       string            `yaml:"name"`
-	Type       string            `yaml:"type"`
-	Enabled    bool              `yaml:"enabled"`
-	Benchmarks []string          `yaml:"benchmarks,omitempty"`
-	Config     map[string]string `yaml:"config,omitempty"`
-}
-
 // DatabaseConfig represents the database configuration in config.yaml
 type DatabaseConfig struct {
 	Driver       string `yaml:"driver"`
@@ -40,10 +31,10 @@ type SecretsMapping struct {
 
 // EvalHubConfig represents the eval-hub configuration structure
 type EvalHubConfig struct {
-	Providers   []ProviderConfig `yaml:"providers"`
-	Collections []string         `yaml:"collections,omitempty"`
-	Database    *DatabaseConfig  `yaml:"database,omitempty"`
-	Secrets     *SecretsMapping  `yaml:"secrets,omitempty"`
+	Providers   []ProviderResource `yaml:"providers"`
+	Collections []string           `yaml:"collections,omitempty"`
+	Database    *DatabaseConfig    `yaml:"database,omitempty"`
+	Secrets     *SecretsMapping    `yaml:"secrets,omitempty"`
 }
 
 // reconcileConfigMap creates or updates the ConfigMap for EvalHub configuration
@@ -88,69 +79,59 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 	}
 }
 
-// generateConfigData generates the configuration data for the ConfigMap
-func (r *EvalHubReconciler) generateConfigData(instance *evalhubv1alpha1.EvalHub) (map[string]string, error) {
+// buildEvalHubConfig builds the full EvalHubConfig for an instance.
+func (r *EvalHubReconciler) buildEvalHubConfig(instance *evalhubv1alpha1.EvalHub) EvalHubConfig {
 	config := EvalHubConfig{
-		Providers:   make([]ProviderConfig, 0),
-		Collections: []string{},
-	}
-
-	// Default providers configuration set by the controller
-	config.Providers = []ProviderConfig{
-		{
-			Name:    "lm-eval-harness",
-			Type:    "lm_evaluation_harness",
-			Enabled: true,
-			Benchmarks: []string{
-				"arc_challenge", "hellaswag", "mmlu", "truthfulqa",
+		Providers: []ProviderResource{
+			{
+				ID:   "lm-eval-harness",
+				Name: "lm-eval-harness",
+				Type: "lm_evaluation_harness",
+				Benchmarks: []BenchmarkResource{
+					{ID: "arc_challenge", Name: "arc_challenge"},
+					{ID: "hellaswag", Name: "hellaswag"},
+					{ID: "mmlu", Name: "mmlu"},
+					{ID: "truthfulqa", Name: "truthfulqa"},
+				},
 			},
-			Config: map[string]string{
-				"batch_size": "8",
-				"max_length": "2048",
+			{
+				ID:   "ragas-provider",
+				Name: "ragas-provider",
+				Type: "ragas",
+				Benchmarks: []BenchmarkResource{
+					{ID: "faithfulness", Name: "faithfulness"},
+					{ID: "answer_relevancy", Name: "answer_relevancy"},
+					{ID: "context_precision", Name: "context_precision"},
+					{ID: "context_recall", Name: "context_recall"},
+				},
 			},
-		},
-		{
-			Name:    "ragas-provider",
-			Type:    "ragas",
-			Enabled: true,
-			Benchmarks: []string{
-				"faithfulness", "answer_relevancy", "context_precision", "context_recall",
+			{
+				ID:   "garak-security",
+				Name: "garak-security",
+				Type: "garak",
+				Benchmarks: []BenchmarkResource{
+					{ID: "encoding", Name: "encoding"},
+					{ID: "injection", Name: "injection"},
+					{ID: "malware", Name: "malware"},
+					{ID: "prompt_injection", Name: "prompt_injection"},
+				},
 			},
-			Config: map[string]string{
-				"llm_model":        "gpt-3.5-turbo",
-				"embeddings_model": "text-embedding-ada-002",
-			},
-		},
-		{
-			Name:    "garak-security",
-			Type:    "garak",
-			Enabled: false,
-			Benchmarks: []string{
-				"encoding", "injection", "malware", "prompt_injection",
-			},
-			Config: map[string]string{
-				"probe_set": "basic",
-			},
-		},
-		{
-			Name:    "trustyai-custom",
-			Type:    "trustyai_custom",
-			Enabled: true,
-			Benchmarks: []string{
-				"bias_detection", "fairness_metrics",
-			},
-			Config: map[string]string{
-				"bias_threshold": "0.1",
+			{
+				ID:   "trustyai-custom",
+				Name: "trustyai-custom",
+				Type: "trustyai_custom",
+				Benchmarks: []BenchmarkResource{
+					{ID: "bias_detection", Name: "bias_detection"},
+					{ID: "fairness_metrics", Name: "fairness_metrics"},
+				},
 			},
 		},
-	}
-
-	// Default collections
-	config.Collections = []string{
-		"healthcare_safety_v1",
-		"automotive_safety_v1",
-		"finance_compliance_v1",
-		"general_llm_eval_v1",
+		Collections: []string{
+			"healthcare_safety_v1",
+			"automotive_safety_v1",
+			"finance_compliance_v1",
+			"general_llm_eval_v1",
+		},
 	}
 
 	// Conditionally add database configuration
@@ -173,35 +154,76 @@ func (r *EvalHubReconciler) generateConfigData(instance *evalhubv1alpha1.EvalHub
 		}
 	}
 
-	// Convert to YAML
+	return config
+}
+
+// generateConfigData generates the configuration data for the main ConfigMap.
+func (r *EvalHubReconciler) generateConfigData(instance *evalhubv1alpha1.EvalHub) (map[string]string, error) {
+	config := r.buildEvalHubConfig(instance)
+
 	configYAML, err := yaml.Marshal(config)
 	if err != nil {
 		return nil, err
 	}
 
-	// Generate providers.yaml content
-	providersYAML, err := r.generateProvidersYAML(config.Providers)
-	if err != nil {
-		return nil, err
-	}
-
 	return map[string]string{
-		"config.yaml":    string(configYAML),
-		"providers.yaml": providersYAML,
+		"config.yaml": string(configYAML),
 	}, nil
 }
 
-// generateProvidersYAML generates the providers.yaml configuration
-func (r *EvalHubReconciler) generateProvidersYAML(providers []ProviderConfig) (string, error) {
-	providersData := make(map[string]interface{})
-	providersData["providers"] = providers
+// generateProvidersData generates per-provider YAML entries for the providers ConfigMap.
+// Each provider becomes a separate key like "lm-eval-harness.yaml".
+func (r *EvalHubReconciler) generateProvidersData(providers []ProviderResource) (map[string]string, error) {
+	data := make(map[string]string, len(providers))
+	for _, provider := range providers {
+		providerYAML, err := yaml.Marshal(provider)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal provider %s: %w", provider.Name, err)
+		}
+		data[fmt.Sprintf("%s.yaml", provider.Name)] = string(providerYAML)
+	}
+	return data, nil
+}
 
-	yamlData, err := yaml.Marshal(providersData)
-	if err != nil {
-		return "", err
+// reconcileProvidersConfigMap creates or updates the providers ConfigMap.
+// Each provider gets its own key (e.g. "lm-eval-harness.yaml") so that when mounted
+// at /etc/evalhub/providers/ each becomes a separate file.
+func (r *EvalHubReconciler) reconcileProvidersConfigMap(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+	log := log.FromContext(ctx)
+	log.Info("Reconciling Providers ConfigMap", "name", instance.Name)
+
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name + "-providers",
+			Namespace: instance.Namespace,
+		},
 	}
 
-	return string(yamlData), nil
+	getErr := r.Get(ctx, client.ObjectKeyFromObject(configMap), configMap)
+	if getErr != nil && !errors.IsNotFound(getErr) {
+		return getErr
+	}
+
+	config := r.buildEvalHubConfig(instance)
+	providersData, err := r.generateProvidersData(config.Providers)
+	if err != nil {
+		return fmt.Errorf("failed to generate providers data: %w", err)
+	}
+
+	if errors.IsNotFound(getErr) {
+		configMap.Data = providersData
+		if instance.UID != "" {
+			if err := controllerutil.SetControllerReference(instance, configMap, r.Scheme); err != nil {
+				return err
+			}
+		}
+		log.Info("Creating Providers ConfigMap", "name", configMap.Name)
+		return r.Create(ctx, configMap)
+	}
+
+	configMap.Data = providersData
+	log.Info("Updating Providers ConfigMap", "name", configMap.Name)
+	return r.Update(ctx, configMap)
 }
 
 // getImageFromConfigMap gets a required image value from the operator's ConfigMap
