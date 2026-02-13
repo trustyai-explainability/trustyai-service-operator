@@ -1,4 +1,4 @@
-name: Build and Push
+name: Build Images on PR
 on:
   pull_request:
     paths-ignore:
