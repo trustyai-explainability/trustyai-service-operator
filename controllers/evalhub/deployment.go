@@ -119,6 +119,18 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			Name:  "EVALHUB_INSTANCE_NAME",
 			Value: instance.Name,
 		},
+		{
+			Name:  "MLFLOW_CA_CERT_PATH",
+			Value: serviceCAMountPath + "/" + serviceCACertFile,
+		},
+		{
+			Name:  "MLFLOW_WORKSPACE",
+			Value: instance.Namespace,
+		},
+		{
+			Name:  "MLFLOW_TOKEN_PATH",
+			Value: mlflowTokenMountPath + "/" + mlflowTokenFile,
+		},
 	}
 
 	// Merge environment variables with CR values taking precedence
@@ -131,6 +143,16 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			MountPath: "/etc/evalhub",
 			ReadOnly:  true,
 		},
+		{
+			Name:      serviceCAVolumeName,
+			MountPath: serviceCAMountPath,
+			ReadOnly:  true,
+		},
+		{
+			Name:      mlflowTokenVolumeName,
+			MountPath: mlflowTokenMountPath,
+			ReadOnly:  true,
+		},
 	}
 	if instance.Spec.IsDatabaseConfigured() {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
@@ -139,7 +161,6 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			ReadOnly:  true,
 		})
 	}
-
 	// Container definition based on k8s examples
 	container := corev1.Container{
 		Name:            containerName,
@@ -296,6 +317,31 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 				},
 			},
 		},
+		{
+			Name: serviceCAVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: instance.Name + "-service-ca",
+					},
+				},
+			},
+		},
+		{
+			Name: mlflowTokenVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Projected: &corev1.ProjectedVolumeSource{
+					Sources: []corev1.VolumeProjection{
+						{
+							ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+								Path:              mlflowTokenFile,
+								ExpirationSeconds: func() *int64 { e := int64(mlflowTokenExpiration); return &e }(),
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 	if instance.Spec.IsDatabaseConfigured() {
 		volumes = append(volumes, corev1.Volume{
@@ -311,7 +357,6 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			},
 		})
 	}
-
 	// Pod template with both containers and required volumes
 	podTemplate := corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{

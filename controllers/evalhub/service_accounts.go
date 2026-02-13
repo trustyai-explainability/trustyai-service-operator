@@ -82,6 +82,18 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
+	// Create MLFlow access RoleBindings for both ServiceAccounts.
+	// MLFlow's kubernetes-auth plugin validates tokens via SubjectAccessReview against
+	// the workspace namespace. The "edit" ClusterRole provides the necessary permissions.
+	err = r.createMLFlowAccessRoleBinding(ctx, instance, serviceAccountName, "proxy")
+	if err != nil {
+		return err
+	}
+	err = r.createMLFlowAccessRoleBinding(ctx, instance, jobsServiceAccountName, "jobs")
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -237,6 +249,80 @@ func (r *EvalHubReconciler) createJobsResourceManagementRoleBinding(ctx context.
 
 			// Create new RoleBinding with desired spec
 			log.Info("Creating new jobs resource management RoleBinding", "Name", roleBinding.Name)
+			return r.Create(ctx, roleBinding)
+		}
+	}
+
+	return nil
+}
+
+// MLFlow access uses the built-in "edit" ClusterRole which provides the permissions
+// that MLFlow's kubernetes-auth plugin checks via SubjectAccessReview.
+const mlflowAccessClusterRoleName = "edit"
+
+// createMLFlowAccessRoleBinding creates a RoleBinding for a ServiceAccount to the "edit"
+// ClusterRole in the instance namespace. This allows the ServiceAccount to pass MLFlow's
+// kubernetes-auth SubjectAccessReview checks in the workspace namespace.
+func (r *EvalHubReconciler) createMLFlowAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string, suffix string) error {
+	log := log.FromContext(ctx)
+
+	roleBindingName := instance.Name + "-mlflow-" + suffix
+	roleBinding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      roleBindingName,
+			Namespace: instance.Namespace,
+			Labels: map[string]string{
+				"app":                        "eval-hub",
+				"app.kubernetes.io/name":     roleBindingName,
+				"app.kubernetes.io/instance": instance.Name,
+				"app.kubernetes.io/part-of":  "eval-hub",
+				"app.kubernetes.io/version":  constants.Version,
+			},
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      serviceAccountName,
+				Namespace: instance.Namespace,
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			Kind:     "ClusterRole",
+			Name:     mlflowAccessClusterRoleName,
+			APIGroup: rbacv1.GroupName,
+		},
+	}
+
+	// Set instance as the owner and controller
+	if err := ctrl.SetControllerReference(instance, roleBinding, r.Scheme); err != nil {
+		return err
+	}
+
+	// Check if this RoleBinding already exists
+	found := &rbacv1.RoleBinding{}
+	err := r.Get(ctx, types.NamespacedName{Name: roleBinding.Name, Namespace: roleBinding.Namespace}, found)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Creating MLFlow access RoleBinding", "Namespace", roleBinding.Namespace, "Name", roleBinding.Name)
+		return r.Create(ctx, roleBinding)
+	} else if err != nil {
+		return err
+	}
+
+	// RoleBinding exists, check if it needs updating
+	subjectsEqual := equalRoleBindingSubjects(found.Subjects, roleBinding.Subjects)
+	roleRefEqual := equalRoleBindingRoleRef(found.RoleRef, roleBinding.RoleRef)
+
+	if !subjectsEqual || !roleRefEqual {
+		if roleRefEqual && !subjectsEqual {
+			found.Subjects = roleBinding.Subjects
+			log.Info("Updating MLFlow access RoleBinding subjects", "Name", roleBinding.Name)
+			return r.Update(ctx, found)
+		} else if !roleRefEqual {
+			log.Info("RoleRef differs, deleting and recreating MLFlow access RoleBinding", "Name", roleBinding.Name)
+			if err := r.Delete(ctx, found); err != nil {
+				return err
+			}
+			log.Info("Creating new MLFlow access RoleBinding", "Name", roleBinding.Name)
 			return r.Create(ctx, roleBinding)
 		}
 	}
