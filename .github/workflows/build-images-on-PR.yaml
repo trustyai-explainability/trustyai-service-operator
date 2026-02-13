@@ -39,7 +39,7 @@ jobs:
         if: env.BUILD_CONTEXT == 'ci'
         run: |
           echo "OPERATOR_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
-          echo "IMAGE_NAME=quay.io/trustyai/trustyai-service-operator-ci" >> $GITHUB_ENV
+          echo "OPERATOR_IMAGE_NAME=quay.io/trustyai/trustyai-service-operator-ci" >> $GITHUB_ENV
 
       - name: Set CI environment - LMES
         if: env.BUILD_CONTEXT == 'ci' && contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
