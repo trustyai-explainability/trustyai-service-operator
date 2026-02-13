@@ -178,9 +178,9 @@ func (r *EvalHubReconciler) generateProvidersData(providers []ProviderResource) 
 	for _, provider := range providers {
 		providerYAML, err := yaml.Marshal(provider)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal provider %s: %w", provider.Name, err)
+			return nil, fmt.Errorf("failed to marshal provider %s: %w", provider.ID, err)
 		}
-		data[fmt.Sprintf("%s.yaml", provider.Name)] = string(providerYAML)
+		data[fmt.Sprintf("%s.yaml", provider.ID)] = string(providerYAML)
 	}
 	return data, nil
 }
