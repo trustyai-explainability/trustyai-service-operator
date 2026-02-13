@@ -77,6 +77,9 @@ jobs:
         run: docker push ${{ env.OPERATOR_IMAGE_NAME }}:${{ env.OPERATOR_TAG }}
 
       # LMES Driver Builds
+      - name: Put expiry date on LMES driver CI-tagged image
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        run: echo 'LABEL quay.expires-after=7d' >> Dockerfile.driver
       - name: Build LMES driver image
         if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
         run: docker build -f Dockerfile.driver -t ${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }} .
@@ -85,6 +88,9 @@ jobs:
         run: docker push ${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }}
 
       # LMES Job Builds
+      - name: Put expiry date on LMES job CI-tagged image
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        run: echo 'LABEL quay.expires-after=7d' >> Dockerfile.lmes-job
       - name: Build LMES job image
         if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
         run: docker build -f Dockerfile.lmes-job -t ${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }} .
@@ -93,6 +99,9 @@ jobs:
         run: docker push ${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }}
 
       # Orchestrator Builds
+      - name: Put expiry date on Orchestrator CI-tagged image
+        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build')
+        run: echo 'LABEL quay.expires-after=7d' >> Dockerfile.orchestrator
       - name: Build Guardrails orchestrator image
         if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build')
         run: docker build -f Dockerfile.orchestrator -t ${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }} .
