@@ -68,7 +68,7 @@ jobs:
 
       # Run docker commands
       - name: Put expiry date on CI-tagged image
-        run: sed -i 's#summary="odh-trustyai-service-operator\"#summary="odh-trustyai-service-operator" \\ \n      quay.expires-after=7d#' Dockerfile
+        run: echo 'LABEL quay.expires-after=7d' >> Dockerfile
       - name: Log in to Quay
         run: docker login -u ${{ secrets.QUAY_ROBOT_USERNAME }} -p ${{ secrets.QUAY_ROBOT_SECRET }} quay.io
       - name: Build main image
