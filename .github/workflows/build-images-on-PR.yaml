@@ -12,6 +12,7 @@ jobs:
   build-and-push-ci:
     if: |
       github.repository == 'trustyai-explainability/trustyai-service-operator' &&
+      contains(github.event.pull_request.labels.*.name, 'needs-build') &&
       (
         contains(github.event.pull_request.labels.*.name, 'ok-to-test') ||
         contains(github.event.pull_request.labels.*.name, 'lgtm') ||
