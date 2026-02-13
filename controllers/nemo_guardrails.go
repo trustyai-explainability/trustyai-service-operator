@@ -17,9 +17,9 @@ limitations under the License.
 package controllers
 
 import (
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/nemo_guardrails"
+	nemosetup "github.com/trustyai-explainability/nemo-guardrails-controller/pkg/setup"
 )
 
 func init() {
-	registerService(nemo_guardrails.ServiceName, nemo_guardrails.ControllerSetUp)
+	registerService(nemosetup.ControllerName, nemosetup.SetupController)
 }

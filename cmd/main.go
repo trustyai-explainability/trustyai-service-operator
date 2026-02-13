@@ -19,13 +19,16 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
+	"strings"
+
 	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	routev1 "github.com/openshift/api/route/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
+	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/nemo-guardrails-controller/api/v1alpha1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -35,18 +38,18 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"github.com/trustyai-explainability/trustyai-operator-common/pkg/utils"
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
 	tasv1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	tasv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	//+kubebuilder:scaffold:imports
 )
@@ -99,7 +102,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	// Get watch namespaces from environment variable
+	watchNamespaces := os.Getenv("WATCH_NAMESPACES")
+
+	// Configure manager options
+	mgrOptions := ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                server.Options{BindAddress: metricsAddr},
 		HealthProbeBindAddress: probeAddr,
@@ -116,7 +123,28 @@ func main() {
 		// if you are doing or is intended to do any operation such as perform cleanups
 		// after the manager stops then its usage might be unsafe.
 		// LeaderElectionReleaseOnCancel: true,
-	})
+	}
+
+	// Configure namespace watching
+	if watchNamespaces != "" {
+		setupLog.Info("Configuring operator to watch specific namespaces", "namespaces", watchNamespaces)
+		// Parse comma-separated namespace list
+		namespaceList := strings.Split(watchNamespaces, ",")
+		defaultNamespaces := make(map[string]cache.Config)
+		for _, ns := range namespaceList {
+			ns = strings.TrimSpace(ns)
+			if ns != "" {
+				defaultNamespaces[ns] = cache.Config{}
+			}
+		}
+		if len(defaultNamespaces) > 0 {
+			mgrOptions.Cache.DefaultNamespaces = defaultNamespaces
+		}
+	} else {
+		setupLog.Info("Watching all namespaces (cluster-wide)")
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), mgrOptions)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)

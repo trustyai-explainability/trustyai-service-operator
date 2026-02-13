@@ -3,7 +3,7 @@ package gorch
 import (
 	"context"
 	"github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	"github.com/trustyai-explainability/trustyai-operator-common/pkg/utils"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 )

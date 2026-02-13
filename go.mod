@@ -10,6 +10,8 @@ require (
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.64.1
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.10.0
+	github.com/trustyai-explainability/nemo-guardrails-controller v0.1.2
+	github.com/trustyai-explainability/trustyai-operator-common v0.1.0
 	google.golang.org/grpc v1.64.1 // indirect
 	google.golang.org/protobuf v1.36.5 // indirect
 	k8s.io/api v0.29.2
@@ -106,7 +108,7 @@ require (
 	golang.org/x/net v0.37.0 // indirect
 	golang.org/x/oauth2 v0.18.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
-	golang.org/x/term v0.29.0 // indirect
+	golang.org/x/term v0.30.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.30.0 // indirect

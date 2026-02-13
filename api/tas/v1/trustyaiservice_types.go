@@ -1,7 +1,7 @@
 package v1
 
 import (
-	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
+	"github.com/trustyai-explainability/trustyai-operator-common/api/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
