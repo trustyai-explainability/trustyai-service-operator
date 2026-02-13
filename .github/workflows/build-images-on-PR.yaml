@@ -23,43 +23,24 @@ jobs:
       contents: read
       security-events: write
       pull-requests: write
-    steps: # Assign context variable for various action contexts (only 'CI', to guard against potential 'on:' additions later)
-      - name: Assigning CI context
-        if: github.head_ref != '' && github.head_ref != 'main' && !startsWith(github.ref, 'refs/tags/v')
-        run: echo "BUILD_CONTEXT=ci" >> $GITHUB_ENV
-
-      # Run checkouts
-      - uses: mheap/github-action-required-labels@v4
-        if: env.BUILD_CONTEXT == 'ci'
-        with:
-          mode: minimum
-          count: 1
-          labels: "ok-to-test, lgtm, approved"
+    steps:
       - uses: actions/checkout@v4
-        if: env.BUILD_CONTEXT == 'ci'
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}  # keep to make sure it's the intended sha commit, not the merge sha
           persist-credentials: false
-      #
       - name: Set defaults for the Env variables
-        run: |
-          echo "OPERATOR_TAG=latest" >> $GITHUB_ENV
-          echo "LMES_DRIVER_TAG=latest" >> $GITHUB_ENV
-          echo "LMES_JOB_TAG=latest" >> $GITHUB_ENV
-          echo "ORCH_TAG=latest" >> $GITHUB_ENV
-          echo "OPERATOR_IMAGE_NAME=${{ vars.QUAY_RELEASE_REPO }}" >> $GITHUB_ENV
-          echo "LMES_DRIVER_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_DRIVER_REPO }}" >> $GITHUB_ENV
-          echo "LMES_JOB_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_JOB_REPO }}" >> $GITHUB_ENV
-          echo "ORCH_IMAGE_NAME=${{ vars.QUAY_RELEASE_GUARDRAILS_REPO }}" >> $GITHUB_ENV
-      # Set environments depending on context
-      - name: Set CI environment
-        if: env.BUILD_CONTEXT == 'ci'
         run: |
           echo "OPERATOR_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
           echo "OPERATOR_IMAGE_NAME=quay.io/trustyai/trustyai-service-operator-ci" >> $GITHUB_ENV
+          echo "LMES_DRIVER_TAG=latest" >> $GITHUB_ENV
+          echo "LMES_JOB_TAG=latest" >> $GITHUB_ENV
+          echo "LMES_DRIVER_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_DRIVER_REPO }}" >> $GITHUB_ENV
+          echo "LMES_JOB_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_JOB_REPO }}" >> $GITHUB_ENV
+          echo "ORCH_TAG=latest" >> $GITHUB_ENV
+          echo "ORCH_IMAGE_NAME=${{ vars.QUAY_RELEASE_GUARDRAILS_REPO }}" >> $GITHUB_ENV
 
       - name: Set CI environment - LMES
-        if: env.BUILD_CONTEXT == 'ci' && contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
         run: |
           echo "LMES_DRIVER_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
           echo "LMES_JOB_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
@@ -67,17 +48,16 @@ jobs:
           echo "LMES_JOB_IMAGE_NAME=quay.io/trustyai/ta-lmes-job-ci" >> $GITHUB_ENV
 
       - name: Set CI environment - Orchestrator
-        if: env.BUILD_CONTEXT == 'ci' && contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build')
+        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build')
         run: |
-          echo "ORCH_IMAGE_NAME=quay.io/trustyai/ta-guardrails-orchestrator-ci" >> $GITHUB_ENV
           echo "ORCH_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          echo "ORCH_IMAGE_NAME=quay.io/trustyai/ta-guardrails-orchestrator-ci" >> $GITHUB_ENV
 
       # Print variables for debugging
       - name: Log reference variables
         env:
           HEAD_REF: ${{ github.head_ref }}  # this is user-controlled, so for safety pass it through Env
         run: |
-          echo "CONTEXT: ${{ env.BUILD_CONTEXT }}"
           echo "GITHUB.REF: ${{ github.ref }}"
           echo "GITHUB.HEAD_REF: $HEAD_REF"
           echo "SHA: ${{ github.event.pull_request.head.sha }}"
@@ -88,7 +68,6 @@ jobs:
 
       # Run docker commands
       - name: Put expiry date on CI-tagged image
-        if: env.BUILD_CONTEXT == 'ci'
         run: sed -i 's#summary="odh-trustyai-service-operator\"#summary="odh-trustyai-service-operator" \\ \n      quay.expires-after=7d#' Dockerfile
       - name: Log in to Quay
         run: docker login -u ${{ secrets.QUAY_ROBOT_USERNAME }} -p ${{ secrets.QUAY_ROBOT_SECRET }} quay.io
@@ -99,40 +78,38 @@ jobs:
 
       # LMES Driver Builds
       - name: Build LMES driver image
-        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build') ||  env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
         run: docker build -f Dockerfile.driver -t ${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }} .
       - name: Push LMES driver image to Quay
-        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build') ||  env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
         run: docker push ${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }}
 
       # LMES Job Builds
       - name: Build LMES job image
-        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build') ||  env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
         run: docker build -f Dockerfile.lmes-job -t ${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }} .
       - name: Push LMES job image to Quay
-        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build') ||  env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
         run: docker push ${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }}
 
       # Orchestrator Builds
       - name: Build Guardrails orchestrator image
-        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build') ||  env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
+        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build')
         run: docker build -f Dockerfile.orchestrator -t ${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }} .
       - name: Push Guardrails orchestrator image to Quay
-        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build') ||  env.BUILD_CONTEXT == 'main' ||  env.BUILD_CONTEXT == 'tag'
+        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build')
         run: docker push ${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }}
 
       # Leave comment
       - uses: peter-evans/find-comment@v3
         name: Find Comment
         id: fc
-        if: env.BUILD_CONTEXT == 'ci'
         with:
           issue-number: ${{ github.event.pull_request.number }}
           comment-author: "github-actions[bot]"
           body-includes: PR image build and manifest generation completed successfully
       - uses: peter-evans/create-or-update-comment@v4
         name: Generate/update success message comment
-        if: env.BUILD_CONTEXT == 'ci'
         with:
           comment-id: ${{ steps.fc.outputs.comment-id }}
           issue-number: ${{ github.event.pull_request.number }}
