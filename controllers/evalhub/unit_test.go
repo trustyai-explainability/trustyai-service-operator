@@ -2,6 +2,7 @@ package evalhub
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -252,6 +253,9 @@ func TestEvalHubReconciler_reconcileConfigMap(t *testing.T) {
 		err := reconciler.reconcileConfigMap(ctx, evalHub)
 		require.NoError(t, err)
 
+		err = reconciler.reconcileProvidersConfigMap(ctx, evalHub)
+		require.NoError(t, err)
+
 		// Verify configmap was created
 		configMap := &corev1.ConfigMap{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
@@ -266,7 +270,6 @@ func TestEvalHubReconciler_reconcileConfigMap(t *testing.T) {
 
 		// Check data keys exist
 		assert.Contains(t, configMap.Data, "config.yaml")
-		assert.Contains(t, configMap.Data, "providers.yaml")
 
 		// Parse and validate config.yaml
 		var config EvalHubConfig
@@ -288,11 +291,22 @@ func TestEvalHubReconciler_reconcileConfigMap(t *testing.T) {
 		assert.Contains(t, config.Collections, "healthcare_safety_v1")
 		assert.Contains(t, config.Collections, "automotive_safety_v1")
 
-		// Parse and validate providers.yaml
-		var providersData map[string]interface{}
-		err = yaml.Unmarshal([]byte(configMap.Data["providers.yaml"]), &providersData)
+		// Validate providers ConfigMap is created separately
+		providersConfigMap := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName + "-providers",
+			Namespace: testNamespace,
+		}, providersConfigMap)
 		require.NoError(t, err)
-		assert.Contains(t, providersData, "providers")
+
+		for _, name := range providerNames {
+			key := fmt.Sprintf("%s.yaml", name)
+			assert.Contains(t, providersConfigMap.Data, key)
+			var provider ProviderResource
+			err = yaml.Unmarshal([]byte(providersConfigMap.Data[key]), &provider)
+			require.NoError(t, err)
+			assert.Equal(t, name, provider.Name)
+		}
 	})
 }
 
@@ -426,9 +440,9 @@ func TestGenerateConfigData(t *testing.T) {
 		configData, err := reconciler.generateConfigData(evalHub)
 		require.NoError(t, err)
 
-		// Check keys exist
+		// Check keys exist - only config.yaml, providers are in separate ConfigMap
 		assert.Contains(t, configData, "config.yaml")
-		assert.Contains(t, configData, "providers.yaml")
+		assert.Len(t, configData, 1)
 
 		// Parse config.yaml
 		var config EvalHubConfig
@@ -439,7 +453,7 @@ func TestGenerateConfigData(t *testing.T) {
 		assert.Len(t, config.Providers, 4)
 
 		// Find lm-eval-harness provider
-		var lmEvalProvider *ProviderConfig
+		var lmEvalProvider *ProviderResource
 		for _, provider := range config.Providers {
 			if provider.Name == "lm-eval-harness" {
 				lmEvalProvider = &provider
@@ -448,9 +462,11 @@ func TestGenerateConfigData(t *testing.T) {
 		}
 		require.NotNil(t, lmEvalProvider)
 		assert.Equal(t, "lm_evaluation_harness", lmEvalProvider.Type)
-		assert.True(t, lmEvalProvider.Enabled)
-		assert.Contains(t, lmEvalProvider.Benchmarks, "arc_challenge")
-		assert.Equal(t, "8", lmEvalProvider.Config["batch_size"])
+		var benchmarkNames []string
+		for _, b := range lmEvalProvider.Benchmarks {
+			benchmarkNames = append(benchmarkNames, b.Name)
+		}
+		assert.Contains(t, benchmarkNames, "arc_challenge")
 
 		// Verify collections
 		assert.Contains(t, config.Collections, "healthcare_safety_v1")
@@ -1207,8 +1223,8 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 		}, deployment)
 		require.NoError(t, err)
 
-		// Should have 4 volumes: evalhub-config, kube-rbac-proxy-config, tls, db-secret
-		assert.Len(t, deployment.Spec.Template.Spec.Volumes, 4)
+		// Should have 5 volumes: evalhub-config, evalhub-providers, kube-rbac-proxy-config, tls, db-secret
+		assert.Len(t, deployment.Spec.Template.Spec.Volumes, 5)
 
 		// Find the DB secret volume
 		var dbVolume *corev1.Volume
@@ -1234,7 +1250,7 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 			}
 		}
 		require.NotNil(t, container)
-		assert.Len(t, container.VolumeMounts, 2) // evalhub-config + db-secret
+		assert.Len(t, container.VolumeMounts, 3) // evalhub-config + evalhub-providers + db-secret
 
 		var dbMount *corev1.VolumeMount
 		for i, m := range container.VolumeMounts {

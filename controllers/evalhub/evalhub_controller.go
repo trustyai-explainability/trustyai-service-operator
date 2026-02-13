@@ -128,6 +128,14 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return RequeueWithError(err)
 	}
 
+	// Reconcile Providers ConfigMap
+	if err := r.reconcileProvidersConfigMap(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile Providers ConfigMap")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Providers ConfigMap: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
 	// Reconcile Proxy ConfigMap
 	if err := r.reconcileProxyConfigMap(ctx, instance); err != nil {
 		log.Error(err, "Failed to reconcile Proxy ConfigMap")

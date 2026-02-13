@@ -219,7 +219,13 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		By("Checking that ConfigMap is created")
 		configMapCreated := waitForConfigMap(evalHubName+"-config", testNamespace)
 		Expect(configMapCreated.Data).To(HaveKey("config.yaml"))
-		Expect(configMapCreated.Data).To(HaveKey("providers.yaml"))
+
+		By("Checking that Providers ConfigMap is created")
+		providersConfigMap := waitForConfigMap(evalHubName+"-providers", testNamespace)
+		Expect(providersConfigMap.Data).To(HaveKey("lm-eval-harness.yaml"))
+		Expect(providersConfigMap.Data).To(HaveKey("ragas-provider.yaml"))
+		Expect(providersConfigMap.Data).To(HaveKey("garak-security.yaml"))
+		Expect(providersConfigMap.Data).To(HaveKey("trustyai-custom.yaml"))
 
 		By("Checking that Deployment is created")
 		deployment := waitForDeployment(evalHubName, testNamespace)
