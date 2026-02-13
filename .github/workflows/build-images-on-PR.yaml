@@ -68,10 +68,12 @@ jobs:
 
       # Print variables for debugging
       - name: Log reference variables
+        env:
+          HEAD_REF: ${{ github.head_ref }}  # this is user-controlled, so for safety pass it through Env
         run: |
           echo "CONTEXT: ${{ env.BUILD_CONTEXT }}"
           echo "GITHUB.REF: ${{ github.ref }}"
-          echo "GITHUB.HEAD_REF: ${{ github.head_ref }}"
+          echo "GITHUB.HEAD_REF: $HEAD_REF"
           echo "SHA: ${{ github.event.pull_request.head.sha }}"
           echo "MAIN IMAGE AT: ${{ env.OPERATOR_IMAGE_NAME }}:${{ env.OPERATOR_TAG }}"
           echo "LMES DRIVER IMAGE AT: ${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }}"
