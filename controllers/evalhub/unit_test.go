@@ -1207,8 +1207,8 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 		}, deployment)
 		require.NoError(t, err)
 
-		// Should have 4 volumes: evalhub-config, kube-rbac-proxy-config, tls, db-secret
-		assert.Len(t, deployment.Spec.Template.Spec.Volumes, 4)
+		// Should have 6 volumes: evalhub-config, kube-rbac-proxy-config, tls, service-ca, mlflow-token, db-secret
+		assert.Len(t, deployment.Spec.Template.Spec.Volumes, 6)
 
 		// Find the DB secret volume
 		var dbVolume *corev1.Volume
@@ -1234,7 +1234,7 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 			}
 		}
 		require.NotNil(t, container)
-		assert.Len(t, container.VolumeMounts, 2) // evalhub-config + db-secret
+		assert.Len(t, container.VolumeMounts, 4) // evalhub-config + service-ca + mlflow-token + db-secret
 
 		var dbMount *corev1.VolumeMount
 		for i, m := range container.VolumeMounts {
