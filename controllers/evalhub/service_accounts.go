@@ -75,22 +75,15 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
-	// Create RoleBinding for jobs ServiceAccount to the pre-created ClusterRole
-	// This allows jobs to create ConfigMaps and Jobs in this namespace
-	err = r.createJobsResourceManagementRoleBinding(ctx, instance, jobsServiceAccountName)
-	if err != nil {
-		return err
-	}
-
 	// Create MLFlow access RoleBindings for both ServiceAccounts.
 	// MLFlow's kubernetes-auth plugin validates tokens via SubjectAccessReview against
 	// the workspace namespace. The custom "evalhub-mlflow-access" ClusterRole provides
 	// the required mlflow.kubeflow.org permissions for both the proxy and jobs SAs.
-	err = r.createMLFlowAccessRoleBinding(ctx, instance, serviceAccountName, "proxy")
+	err = r.createMLFlowAccessRoleBinding(ctx, instance, serviceAccountName, "proxy", mlflowAccessClusterRoleName)
 	if err != nil {
 		return err
 	}
-	err = r.createMLFlowAccessRoleBinding(ctx, instance, jobsServiceAccountName, "jobs")
+	err = r.createMLFlowAccessRoleBinding(ctx, instance, jobsServiceAccountName, "jobs", mlflowJobsAccessClusterRoleName)
 	if err != nil {
 		return err
 	}
@@ -182,92 +175,22 @@ func (r *EvalHubReconciler) createResourceManagementRoleBinding(ctx context.Cont
 	return nil
 }
 
-// createJobsResourceManagementRoleBinding creates a RoleBinding for the jobs ServiceAccount
-// to the pre-created ClusterRole for resource management.
-func (r *EvalHubReconciler) createJobsResourceManagementRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
-	log := log.FromContext(ctx)
-
-	roleBindingName := instance.Name + "-resource-manager-jobs"
-	roleBinding := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      roleBindingName,
-			Namespace: instance.Namespace,
-			Labels: map[string]string{
-				"app":                        "eval-hub",
-				"app.kubernetes.io/name":     roleBindingName,
-				"app.kubernetes.io/instance": instance.Name,
-				"app.kubernetes.io/part-of":  "eval-hub",
-				"app.kubernetes.io/version":  constants.Version,
-			},
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      serviceAccountName,
-				Namespace: instance.Namespace,
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			Kind:     "ClusterRole",
-			Name:     resourceManagerClusterRoleName,
-			APIGroup: rbacv1.GroupName,
-		},
-	}
-
-	// Set instance as the owner and controller
-	if err := ctrl.SetControllerReference(instance, roleBinding, r.Scheme); err != nil {
-		return err
-	}
-
-	// Check if this RoleBinding already exists
-	found := &rbacv1.RoleBinding{}
-	err := r.Get(ctx, types.NamespacedName{Name: roleBinding.Name, Namespace: roleBinding.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating jobs resource management RoleBinding", "Namespace", roleBinding.Namespace, "Name", roleBinding.Name)
-		return r.Create(ctx, roleBinding)
-	} else if err != nil {
-		return err
-	}
-
-	// RoleBinding exists, check if it needs updating
-	subjectsEqual := equalRoleBindingSubjects(found.Subjects, roleBinding.Subjects)
-	roleRefEqual := equalRoleBindingRoleRef(found.RoleRef, roleBinding.RoleRef)
-
-	if !subjectsEqual || !roleRefEqual {
-		if roleRefEqual && !subjectsEqual {
-			// Only subjects differ, we can update them
-			found.Subjects = roleBinding.Subjects
-			log.Info("Updating jobs resource management RoleBinding subjects", "Name", roleBinding.Name)
-			return r.Update(ctx, found)
-		} else if !roleRefEqual {
-			// RoleRef differs, we need to delete and recreate as RoleRef is immutable
-			log.Info("RoleRef differs, deleting and recreating jobs resource management RoleBinding", "Name", roleBinding.Name)
-
-			// Delete existing RoleBinding
-			if err := r.Delete(ctx, found); err != nil {
-				return err
-			}
-
-			// Create new RoleBinding with desired spec
-			log.Info("Creating new jobs resource management RoleBinding", "Name", roleBinding.Name)
-			return r.Create(ctx, roleBinding)
-		}
-	}
-
-	return nil
-}
-
-// MLFlow access uses a custom ClusterRole scoped to the "mlflow.kubeflow.org" API group.
+// MLFlow access uses custom ClusterRoles scoped to the "mlflow.kubeflow.org" API group.
 // MLFlow's kubernetes-workspace-provider checks permissions via SelfSubjectAccessReview
-// against this group (not core Kubernetes resources). The ClusterRole is pre-created
-// at operator installation time (config/rbac/evalhub_mlflow_access_role.yaml).
+// against this group (not core Kubernetes resources). The ClusterRoles are pre-created
+// at operator installation time (config/rbac/evalhub_mlflow_access_role.yaml and
+// config/rbac/evalhub_mlflow_jobs_role.yaml).
 const mlflowAccessClusterRoleName = "trustyai-service-operator-evalhub-mlflow-access"
 
-// createMLFlowAccessRoleBinding creates a RoleBinding for a ServiceAccount to the
-// evalhub-mlflow-access ClusterRole in the instance namespace. This allows the
+// mlflowJobsAccessClusterRoleName is a restricted MLflow ClusterRole for job pods.
+// Jobs only need create, get, list — not update or delete.
+const mlflowJobsAccessClusterRoleName = "trustyai-service-operator-evalhub-mlflow-jobs-access"
+
+// createMLFlowAccessRoleBinding creates a RoleBinding for a ServiceAccount to
+// the specified MLflow ClusterRole in the instance namespace. This allows the
 // ServiceAccount to pass MLFlow's kubernetes-auth SubjectAccessReview checks
 // against the mlflow.kubeflow.org API group in the workspace namespace.
-func (r *EvalHubReconciler) createMLFlowAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string, suffix string) error {
+func (r *EvalHubReconciler) createMLFlowAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string, suffix string, clusterRoleName string) error {
 	log := log.FromContext(ctx)
 
 	roleBindingName := instance.Name + "-mlflow-" + suffix
@@ -292,7 +215,7 @@ func (r *EvalHubReconciler) createMLFlowAccessRoleBinding(ctx context.Context, i
 		},
 		RoleRef: rbacv1.RoleRef{
 			Kind:     "ClusterRole",
-			Name:     mlflowAccessClusterRoleName,
+			Name:     clusterRoleName,
 			APIGroup: rbacv1.GroupName,
 		},
 	}

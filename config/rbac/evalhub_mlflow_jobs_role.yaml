@@ -1,0 +1,17 @@
+---
+# ClusterRole for MLflow kubernetes-auth access (jobs only)
+# Jobs only need to create experiments and log metrics — they should not
+# update or delete existing experiments. The proxy SA retains full CRUD
+# via the broader evalhub-mlflow-access ClusterRole.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: evalhub-mlflow-jobs-access
+  labels:
+    app.kubernetes.io/name: trustyai-service-operator
+    app.kubernetes.io/component: evalhub
+rules:
+  - apiGroups: ["mlflow.kubeflow.org"]
+    resources:
+      - experiments
+    verbs: ["create", "get", "list"]
