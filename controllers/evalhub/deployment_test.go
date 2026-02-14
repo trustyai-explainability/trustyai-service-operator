@@ -399,8 +399,8 @@ var _ = Describe("EvalHub Deployment", func() {
 			}
 			Expect(evalHubContainer).NotTo(BeNil())
 
-			By("Checking evalhub container has 2 volume mounts (config + DB secret)")
-			Expect(evalHubContainer.VolumeMounts).To(HaveLen(2))
+			By("Checking evalhub container has 4 volume mounts (config + service-ca + mlflow-token + DB secret)")
+			Expect(evalHubContainer.VolumeMounts).To(HaveLen(4))
 
 			var dbMount *corev1.VolumeMount
 			for i, mount := range evalHubContainer.VolumeMounts {
@@ -439,8 +439,8 @@ var _ = Describe("EvalHub Deployment", func() {
 			}
 			Expect(evalHubContainer).NotTo(BeNil())
 
-			By("Checking evalhub container has only 1 volume mount")
-			Expect(evalHubContainer.VolumeMounts).To(HaveLen(1))
+			By("Checking evalhub container has 3 base volume mounts (config + service-ca + mlflow-token)")
+			Expect(evalHubContainer.VolumeMounts).To(HaveLen(3))
 			Expect(evalHubContainer.VolumeMounts[0].Name).To(Equal("evalhub-config"))
 		})
 	})
