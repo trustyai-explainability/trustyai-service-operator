@@ -256,13 +256,16 @@ func (r *EvalHubReconciler) createJobsResourceManagementRoleBinding(ctx context.
 	return nil
 }
 
-// MLFlow access uses the built-in "edit" ClusterRole which provides the permissions
-// that MLFlow's kubernetes-auth plugin checks via SubjectAccessReview.
-const mlflowAccessClusterRoleName = "edit"
+// MLFlow access uses a custom ClusterRole scoped to the "mlflow.kubeflow.org" API group.
+// MLFlow's kubernetes-workspace-provider checks permissions via SelfSubjectAccessReview
+// against this group (not core Kubernetes resources). The ClusterRole is pre-created
+// at operator installation time (config/rbac/evalhub_mlflow_access_role.yaml).
+const mlflowAccessClusterRoleName = "evalhub-mlflow-access"
 
-// createMLFlowAccessRoleBinding creates a RoleBinding for a ServiceAccount to the "edit"
-// ClusterRole in the instance namespace. This allows the ServiceAccount to pass MLFlow's
-// kubernetes-auth SubjectAccessReview checks in the workspace namespace.
+// createMLFlowAccessRoleBinding creates a RoleBinding for a ServiceAccount to the
+// evalhub-mlflow-access ClusterRole in the instance namespace. This allows the
+// ServiceAccount to pass MLFlow's kubernetes-auth SubjectAccessReview checks
+// against the mlflow.kubeflow.org API group in the workspace namespace.
 func (r *EvalHubReconciler) createMLFlowAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string, suffix string) error {
 	log := log.FromContext(ctx)
 

@@ -12,6 +12,8 @@ resources:
   - evalhub_jobs_proxy_role.yaml
   - evalhub_resource_manager_role.yaml
   - evalhub_resource_manager_binding.yaml
+  - evalhub_mlflow_access_role.yaml
+  - evalhub_mlflow_access_binding.yaml
   - nemoguardrail_editor_role.yaml
   - nemoguardrail_viewer_role.yaml
   - trustyaiservice_editor_role.yaml
