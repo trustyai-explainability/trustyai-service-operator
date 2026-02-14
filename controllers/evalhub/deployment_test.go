@@ -371,8 +371,8 @@ var _ = Describe("EvalHub Deployment", func() {
 			}, deployment)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Checking deployment has 4 volumes (3 base + DB secret)")
-			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(4))
+			By("Checking deployment has 6 volumes (5 base + DB secret)")
+			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(6))
 
 			By("Finding DB secret volume")
 			var dbVolume *corev1.Volume
@@ -426,8 +426,8 @@ var _ = Describe("EvalHub Deployment", func() {
 			By("Getting deployment")
 			deployment := waitForDeployment(evalHubName, testNamespace)
 
-			By("Checking deployment has only 3 base volumes")
-			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(3))
+			By("Checking deployment has only 5 base volumes")
+			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(5))
 
 			By("Finding evalhub container")
 			var evalHubContainer *corev1.Container
@@ -645,7 +645,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			deployment := waitForDeployment(evalHubName, testNamespace)
 
 			By("Checking deployment volumes")
-			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(3))
+			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(5))
 
 			var evalHubConfigVolume, configVolume, tlsVolume *corev1.Volume
 			for _, volume := range deployment.Spec.Template.Spec.Volumes {

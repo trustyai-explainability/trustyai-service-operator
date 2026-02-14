@@ -261,7 +261,7 @@ func (r *EvalHubReconciler) createJobsResourceManagementRoleBinding(ctx context.
 // MLFlow's kubernetes-workspace-provider checks permissions via SelfSubjectAccessReview
 // against this group (not core Kubernetes resources). The ClusterRole is pre-created
 // at operator installation time (config/rbac/evalhub_mlflow_access_role.yaml).
-const mlflowAccessClusterRoleName = "evalhub-mlflow-access"
+const mlflowAccessClusterRoleName = "trustyai-service-operator-evalhub-mlflow-access"
 
 // createMLFlowAccessRoleBinding creates a RoleBinding for a ServiceAccount to the
 // evalhub-mlflow-access ClusterRole in the instance namespace. This allows the
