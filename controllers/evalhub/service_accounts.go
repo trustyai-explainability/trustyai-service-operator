@@ -84,7 +84,8 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 
 	// Create MLFlow access RoleBindings for both ServiceAccounts.
 	// MLFlow's kubernetes-auth plugin validates tokens via SubjectAccessReview against
-	// the workspace namespace. The "edit" ClusterRole provides the necessary permissions.
+	// the workspace namespace. The custom "evalhub-mlflow-access" ClusterRole provides
+	// the required mlflow.kubeflow.org permissions for both the proxy and jobs SAs.
 	err = r.createMLFlowAccessRoleBinding(ctx, instance, serviceAccountName, "proxy")
 	if err != nil {
 		return err
