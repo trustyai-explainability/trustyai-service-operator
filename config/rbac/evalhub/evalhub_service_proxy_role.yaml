@@ -1,0 +1,14 @@
+---
+# ClusterRole for EvalHub service proxy access (job callbacks)
+# Split from the monolithic evalhub-resource-manager for least-privilege.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: evalhub-service-proxy
+  labels:
+    app.kubernetes.io/name: trustyai-service-operator
+    app.kubernetes.io/component: evalhub
+rules:
+  - apiGroups: [""]
+    resources: ["services/proxy"]
+    verbs: ["get", "create", "update"]

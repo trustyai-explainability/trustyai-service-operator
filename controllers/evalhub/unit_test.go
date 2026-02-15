@@ -607,7 +607,7 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 		EventRecorder: record.NewFakeRecorder(10),
 	}
 
-	t.Run("should create jobs API access RoleBinding with correct properties", func(t *testing.T) {
+	t.Run("should create jobs API access RoleBinding referencing per-instance Role", func(t *testing.T) {
 		jobsSAName := evalHubName + "-jobs"
 		err := reconciler.createJobsAPIAccessRoleBinding(ctx, evalHub, jobsSAName)
 		require.NoError(t, err)
@@ -621,9 +621,9 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 		}, rb)
 		require.NoError(t, err)
 
-		// Check RoleRef — should reference the namespace-scoped jobs API ClusterRole
-		assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
-		assert.Equal(t, jobsAPIAccessClusterRoleName, rb.RoleRef.Name)
+		// Check RoleRef — should reference the per-instance Role (not ClusterRole)
+		assert.Equal(t, "Role", rb.RoleRef.Kind)
+		assert.Equal(t, generateJobsAPIAccessRoleName(evalHub), rb.RoleRef.Name)
 		assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
 
 		// Check Subjects
@@ -673,6 +673,136 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 
 		require.Len(t, rb.Subjects, 1)
 		assert.Equal(t, jobsSAName, rb.Subjects[0].Name)
+	})
+}
+
+// TestEvalHubReconciler_createAPIAccessRole verifies that the per-instance API access Role
+// is created with resourceNames scoped to the instance, with correct owner ref and idempotency.
+func TestEvalHubReconciler_createAPIAccessRole(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, rbacv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1alpha1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+			UID:       "test-uid-123",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should create API access Role with resourceNames", func(t *testing.T) {
+		err := reconciler.createAPIAccessRole(ctx, evalHub)
+		require.NoError(t, err)
+
+		roleName := generateAPIAccessRoleName(evalHub)
+		role := &rbacv1.Role{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      roleName,
+			Namespace: testNamespace,
+		}, role)
+		require.NoError(t, err)
+
+		// Check name
+		assert.Equal(t, evalHubName+"-api-access", role.Name)
+
+		// Check rules have resourceNames scoped to this instance
+		require.Len(t, role.Rules, 2)
+
+		// First rule: evalhubs get
+		assert.Equal(t, []string{"trustyai.opendatahub.io"}, role.Rules[0].APIGroups)
+		assert.Equal(t, []string{"evalhubs"}, role.Rules[0].Resources)
+		assert.Equal(t, []string{evalHubName}, role.Rules[0].ResourceNames)
+		assert.Equal(t, []string{"get"}, role.Rules[0].Verbs)
+
+		// Second rule: evalhubs/proxy get,create,update
+		assert.Equal(t, []string{"trustyai.opendatahub.io"}, role.Rules[1].APIGroups)
+		assert.Equal(t, []string{"evalhubs/proxy"}, role.Rules[1].Resources)
+		assert.Equal(t, []string{evalHubName}, role.Rules[1].ResourceNames)
+		assert.Equal(t, []string{"get", "create", "update"}, role.Rules[1].Verbs)
+
+		// Check owner reference
+		require.Len(t, role.OwnerReferences, 1)
+		assert.Equal(t, evalHubName, role.OwnerReferences[0].Name)
+		assert.Equal(t, "EvalHub", role.OwnerReferences[0].Kind)
+		assert.True(t, *role.OwnerReferences[0].Controller)
+	})
+
+	t.Run("should be idempotent on repeated calls", func(t *testing.T) {
+		err := reconciler.createAPIAccessRole(ctx, evalHub)
+		require.NoError(t, err)
+
+		roleName := generateAPIAccessRoleName(evalHub)
+		role := &rbacv1.Role{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      roleName,
+			Namespace: testNamespace,
+		}, role)
+		require.NoError(t, err)
+		assert.Equal(t, []string{evalHubName}, role.Rules[0].ResourceNames)
+	})
+}
+
+// TestEvalHubReconciler_createAPIAccessRoleBinding_RefersToRole verifies that the
+// API access RoleBinding references a Role (not ClusterRole).
+func TestEvalHubReconciler_createAPIAccessRoleBinding_RefersToRole(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, rbacv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1alpha1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+			UID:       "test-uid-123",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should reference Role not ClusterRole", func(t *testing.T) {
+		apiSAName := evalHubName + "-api"
+		err := reconciler.createAPIAccessRoleBinding(ctx, evalHub, apiSAName)
+		require.NoError(t, err)
+
+		rbName := evalHubName + "-api-rolebinding"
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		assert.Equal(t, "Role", rb.RoleRef.Kind, "RoleBinding should reference Role, not ClusterRole")
+		assert.Equal(t, generateAPIAccessRoleName(evalHub), rb.RoleRef.Name)
 	})
 }
 
