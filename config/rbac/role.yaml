@@ -238,13 +238,6 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
-  - evalhubs/proxy
-  verbs:
-  - get
-  - create
-- apiGroups:
-  - trustyai.opendatahub.io
-  resources:
   - evalhubs/finalizers
   - guardrailsorchestrators/finalizers
   - lmevaljobs/finalizers
@@ -252,6 +245,13 @@ rules:
   - trustyaiservices/finalizers
   verbs:
   - update
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - evalhubs/proxy
+  verbs:
+  - create
+  - get
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
