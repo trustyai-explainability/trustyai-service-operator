@@ -2,7 +2,11 @@ package evalhub
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"regexp"
 	"sort"
+	"strings"
 
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
@@ -15,6 +19,84 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
+
+var dns1123LabelRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+
+// normalizeDNS1123LabelValue converts s into a DNS-1123 compatible string that is <= 63 chars.
+// It preserves a human-readable prefix and appends a short stable hash to avoid collisions.
+//
+// This is intentionally stricter than the Kubernetes label value regex to ensure cross-tool
+// compatibility (e.g. components that validate against DNS-1123).
+func normalizeDNS1123LabelValue(s string) string {
+	const maxLen = 63
+	const hashLen = 10 // 40 bits of hash in hex; low collision risk for our use.
+
+	raw := strings.ToLower(strings.TrimSpace(s))
+	if raw == "" {
+		return "x"
+	}
+
+	// Replace any invalid character with '-' and collapse runs of '-'.
+	var b strings.Builder
+	b.Grow(len(raw))
+	lastDash := false
+	for _, r := range raw {
+		isAllowed := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-'
+		if !isAllowed {
+			if !lastDash {
+				b.WriteByte('-')
+				lastDash = true
+			}
+			continue
+		}
+		if r == '-' {
+			if lastDash {
+				continue
+			}
+			lastDash = true
+			b.WriteByte('-')
+			continue
+		}
+		lastDash = false
+		b.WriteRune(r)
+	}
+	clean := strings.Trim(b.String(), "-")
+	if clean == "" {
+		clean = "x"
+	}
+
+	// If already valid and within limit, return as-is.
+	if len(clean) <= maxLen && dns1123LabelRe.MatchString(clean) {
+		return clean
+	}
+
+	sum := sha256.Sum256([]byte(s))
+	h := hex.EncodeToString(sum[:])[:hashLen]
+
+	// Keep as much prefix as possible while reserving "-<hash>".
+	prefixMax := maxLen - 1 - hashLen
+	prefix := clean
+	if len(prefix) > prefixMax {
+		prefix = prefix[:prefixMax]
+		prefix = strings.Trim(prefix, "-")
+		if prefix == "" {
+			prefix = "x"
+		}
+	}
+
+	out := prefix + "-" + h
+	// Defensive: ensure output is valid.
+	out = strings.Trim(out, "-")
+	if len(out) > maxLen {
+		out = out[:maxLen]
+		out = strings.Trim(out, "-")
+	}
+	if out == "" || !dns1123LabelRe.MatchString(out) {
+		// Last resort: just the hash with a leading alpha prefix.
+		out = "x-" + h
+	}
+	return out
+}
 
 func generateServiceAccountName(instance *evalhubv1alpha1.EvalHub) string {
 	return instance.Name + "-api"
@@ -44,7 +126,7 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 			Namespace: instance.Namespace,
 			Labels: map[string]string{
 				"app":                        "eval-hub",
-				"app.kubernetes.io/name":     serviceAccountName,
+				"app.kubernetes.io/name":     normalizeDNS1123LabelValue(serviceAccountName),
 				"app.kubernetes.io/instance": instance.Name,
 				"app.kubernetes.io/part-of":  "eval-hub",
 				"app.kubernetes.io/version":  constants.Version,
@@ -340,7 +422,7 @@ func (r *EvalHubReconciler) createAuthReviewerClusterRoleBinding(ctx context.Con
 			Name: clusterRoleBindingName,
 			Labels: map[string]string{
 				"app":                        "eval-hub",
-				"app.kubernetes.io/name":     clusterRoleBindingName,
+				"app.kubernetes.io/name":     normalizeDNS1123LabelValue(clusterRoleBindingName),
 				"app.kubernetes.io/instance": instance.Name,
 				"app.kubernetes.io/part-of":  "eval-hub",
 				"app.kubernetes.io/version":  constants.Version,
@@ -635,7 +717,7 @@ func (r *EvalHubReconciler) createJobsServiceAccount(ctx context.Context, instan
 			Namespace: instance.Namespace,
 			Labels: map[string]string{
 				"app":                         "eval-hub",
-				"app.kubernetes.io/name":      serviceAccountName,
+				"app.kubernetes.io/name":      normalizeDNS1123LabelValue(serviceAccountName),
 				"app.kubernetes.io/instance":  instance.Name,
 				"app.kubernetes.io/part-of":   "eval-hub",
 				"app.kubernetes.io/component": "jobs",
