@@ -3,13 +3,19 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/name: clusterrole
-    app.kubernetes.io/instance: evalhub-jobs-proxy-role
-    app.kubernetes.io/component: evalhub-jobs
+    app.kubernetes.io/instance: evalhub-api-role
+    app.kubernetes.io/component: evalhub-api
     app.kubernetes.io/created-by: trustyai-service-operator
     app.kubernetes.io/part-of: trustyai-service-operator
     app.kubernetes.io/managed-by: kustomize
-  name: evalhub-jobs-proxy-role
+  name: evalhub-api-role
 rules:
+  - apiGroups:
+      - trustyai.opendatahub.io
+    resources:
+      - evalhubs
+    verbs:
+      - get
   - apiGroups:
       - trustyai.opendatahub.io
     resources:

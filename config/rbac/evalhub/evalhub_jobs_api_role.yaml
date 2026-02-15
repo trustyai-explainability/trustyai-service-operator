@@ -1,0 +1,20 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: evalhub-jobs-api-role
+    app.kubernetes.io/component: evalhub-jobs
+    app.kubernetes.io/created-by: trustyai-service-operator
+    app.kubernetes.io/part-of: trustyai-service-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: evalhub-jobs-api-role
+rules:
+  - apiGroups:
+      - trustyai.opendatahub.io
+    resources:
+      - evalhubs/proxy
+    verbs:
+      - get
+      - create
+      - update

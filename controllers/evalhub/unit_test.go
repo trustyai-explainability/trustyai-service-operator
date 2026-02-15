@@ -577,9 +577,9 @@ func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
 	})
 }
 
-// TestEvalHubReconciler_createJobsProxyRoleBinding verifies that the jobs proxy RoleBinding
+// TestEvalHubReconciler_createJobsAPIAccessRoleBinding verifies that the jobs API access RoleBinding
 // is created with the correct RoleRef, Subjects, and owner reference.
-func TestEvalHubReconciler_createJobsProxyRoleBinding(t *testing.T) {
+func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, rbacv1.AddToScheme(scheme))
 	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
@@ -607,13 +607,13 @@ func TestEvalHubReconciler_createJobsProxyRoleBinding(t *testing.T) {
 		EventRecorder: record.NewFakeRecorder(10),
 	}
 
-	t.Run("should create jobs proxy RoleBinding with correct properties", func(t *testing.T) {
+	t.Run("should create jobs API access RoleBinding with correct properties", func(t *testing.T) {
 		jobsSAName := evalHubName + "-jobs"
-		err := reconciler.createJobsProxyRoleBinding(ctx, evalHub, jobsSAName)
+		err := reconciler.createJobsAPIAccessRoleBinding(ctx, evalHub, jobsSAName)
 		require.NoError(t, err)
 
 		// Verify RoleBinding was created
-		rbName := evalHubName + "-" + testNamespace + "-jobs-proxy-rolebinding"
+		rbName := evalHubName + "-jobs-api-rolebinding"
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -621,9 +621,9 @@ func TestEvalHubReconciler_createJobsProxyRoleBinding(t *testing.T) {
 		}, rb)
 		require.NoError(t, err)
 
-		// Check RoleRef
+		// Check RoleRef — should reference the namespace-scoped jobs API ClusterRole
 		assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
-		assert.Equal(t, "trustyai-service-operator-evalhub-jobs-proxy-role", rb.RoleRef.Name)
+		assert.Equal(t, jobsAPIAccessClusterRoleName, rb.RoleRef.Name)
 		assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
 
 		// Check Subjects
@@ -640,7 +640,7 @@ func TestEvalHubReconciler_createJobsProxyRoleBinding(t *testing.T) {
 
 	t.Run("should update subjects when they differ", func(t *testing.T) {
 		// Get existing RoleBinding
-		rbName := evalHubName + "-" + testNamespace + "-jobs-proxy-rolebinding"
+		rbName := evalHubName + "-jobs-api-rolebinding"
 		rb := &rbacv1.RoleBinding{}
 		err := fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -661,7 +661,7 @@ func TestEvalHubReconciler_createJobsProxyRoleBinding(t *testing.T) {
 
 		// Reconcile again
 		jobsSAName := evalHubName + "-jobs"
-		err = reconciler.createJobsProxyRoleBinding(ctx, evalHub, jobsSAName)
+		err = reconciler.createJobsAPIAccessRoleBinding(ctx, evalHub, jobsSAName)
 		require.NoError(t, err)
 
 		// Verify subjects were updated
@@ -737,13 +737,13 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 		assert.Equal(t, "EvalHub", rb.OwnerReferences[0].Kind)
 	})
 
-	t.Run("should create proxy MLflow RoleBinding with full ClusterRole", func(t *testing.T) {
-		proxySAName := evalHubName + "-proxy"
-		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, proxySAName, "proxy", mlflowAccessClusterRoleName)
+	t.Run("should create API MLflow RoleBinding with full ClusterRole", func(t *testing.T) {
+		apiSAName := evalHubName + "-api"
+		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, apiSAName, "api", mlflowAccessClusterRoleName)
 		require.NoError(t, err)
 
 		// Verify RoleBinding was created
-		rbName := evalHubName + "-mlflow-proxy"
+		rbName := evalHubName + "-mlflow-api"
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -759,7 +759,7 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 		// Check Subjects
 		require.Len(t, rb.Subjects, 1)
 		assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
-		assert.Equal(t, proxySAName, rb.Subjects[0].Name)
+		assert.Equal(t, apiSAName, rb.Subjects[0].Name)
 	})
 
 	t.Run("should be idempotent on repeated calls", func(t *testing.T) {
@@ -783,7 +783,7 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 }
 
 // TestEvalHubReconciler_cleanupClusterRoleBinding verifies that cleanup removes
-// the proxy ClusterRoleBinding, jobs RoleBinding, and legacy ClusterRoleBinding.
+// the auth-reviewer ClusterRoleBinding (the only cluster-scoped resource not owner-ref'd).
 func TestEvalHubReconciler_cleanupClusterRoleBinding(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, rbacv1.AddToScheme(scheme))
@@ -800,60 +800,20 @@ func TestEvalHubReconciler_cleanupClusterRoleBinding(t *testing.T) {
 		},
 	}
 
-	// Create test resources
-	proxyCRBName := evalHubName + "-" + testNamespace + "-proxy-rolebinding"
-	proxyCRB := &rbacv1.ClusterRoleBinding{
+	authCRBName := evalHubName + "-" + testNamespace + "-auth-reviewer"
+	authCRB := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: proxyCRBName,
+			Name: authCRBName,
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: rbacv1.GroupName,
 			Kind:     "ClusterRole",
-			Name:     "trustyai-service-operator-evalhub-proxy-role",
+			Name:     authReviewerClusterRoleName,
 		},
 		Subjects: []rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
-				Name:      evalHubName + "-proxy",
-				Namespace: testNamespace,
-			},
-		},
-	}
-
-	jobsRBName := evalHubName + "-" + testNamespace + "-jobs-proxy-rolebinding"
-	jobsRB := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      jobsRBName,
-			Namespace: testNamespace,
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: rbacv1.GroupName,
-			Kind:     "ClusterRole",
-			Name:     "trustyai-service-operator-evalhub-jobs-proxy-role",
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      evalHubName + "-jobs",
-				Namespace: testNamespace,
-			},
-		},
-	}
-
-	legacyJobsCRBName := testNamespace + "-" + evalHubName + "-jobs-proxy"
-	legacyJobsCRB := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: legacyJobsCRBName,
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: rbacv1.GroupName,
-			Kind:     "ClusterRole",
-			Name:     "trustyai-service-operator-evalhub-jobs-proxy-role",
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      evalHubName + "-jobs",
+				Name:      evalHubName + "-api",
 				Namespace: testNamespace,
 			},
 		},
@@ -861,7 +821,7 @@ func TestEvalHubReconciler_cleanupClusterRoleBinding(t *testing.T) {
 
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(evalHub, proxyCRB, jobsRB, legacyJobsCRB).
+		WithObjects(evalHub, authCRB).
 		Build()
 
 	reconciler := &EvalHubReconciler{
@@ -870,32 +830,15 @@ func TestEvalHubReconciler_cleanupClusterRoleBinding(t *testing.T) {
 		EventRecorder: record.NewFakeRecorder(10),
 	}
 
-	t.Run("should delete proxy ClusterRoleBinding", func(t *testing.T) {
+	t.Run("should delete auth reviewer ClusterRoleBinding", func(t *testing.T) {
 		err := reconciler.cleanupClusterRoleBinding(ctx, evalHub)
 		require.NoError(t, err)
 
-		// Verify proxy CRB was deleted
-		err = fakeClient.Get(ctx, types.NamespacedName{Name: proxyCRBName}, &rbacv1.ClusterRoleBinding{})
-		assert.True(t, errors.IsNotFound(err), "Proxy ClusterRoleBinding should be deleted")
-	})
-
-	t.Run("should delete jobs RoleBinding", func(t *testing.T) {
-		// Verify jobs RB was deleted
-		err := fakeClient.Get(ctx, types.NamespacedName{
-			Name:      jobsRBName,
-			Namespace: testNamespace,
-		}, &rbacv1.RoleBinding{})
-		assert.True(t, errors.IsNotFound(err), "Jobs RoleBinding should be deleted")
-	})
-
-	t.Run("should delete legacy jobs ClusterRoleBinding", func(t *testing.T) {
-		// Verify legacy CRB was deleted
-		err := fakeClient.Get(ctx, types.NamespacedName{Name: legacyJobsCRBName}, &rbacv1.ClusterRoleBinding{})
-		assert.True(t, errors.IsNotFound(err), "Legacy jobs ClusterRoleBinding should be deleted")
+		err = fakeClient.Get(ctx, types.NamespacedName{Name: authCRBName}, &rbacv1.ClusterRoleBinding{})
+		assert.True(t, errors.IsNotFound(err), "Auth reviewer ClusterRoleBinding should be deleted")
 	})
 
 	t.Run("should be idempotent when resources don't exist", func(t *testing.T) {
-		// Call cleanup again - should not error
 		err := reconciler.cleanupClusterRoleBinding(ctx, evalHub)
 		require.NoError(t, err)
 	})

@@ -674,7 +674,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(tlsVolume.VolumeSource.Secret.SecretName).To(Equal(evalHubName + "-tls"))
 		})
 
-		It("should configure service account for proxy", func() {
+		It("should configure service account for API", func() {
 			By("Reconciling deployment")
 			err := reconciler.reconcileDeployment(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
@@ -682,8 +682,8 @@ var _ = Describe("EvalHub Deployment", func() {
 			By("Getting deployment")
 			deployment := waitForDeployment(evalHubName, testNamespace)
 
-			By("Checking service account name")
-			Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(evalHubName + "-proxy"))
+			By("Checking service account name uses -api suffix")
+			Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(evalHubName + "-api"))
 		})
 	})
 })

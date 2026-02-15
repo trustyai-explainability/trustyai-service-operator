@@ -230,22 +230,12 @@ func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhu
 	return DoNotRequeue()
 }
 
-// cleanupClusterRoleBinding deletes the EvalHub proxy ClusterRoleBinding upon instance deletion
+// cleanupClusterRoleBinding deletes EvalHub cluster-scoped RBAC resources upon instance deletion.
+// Namespace-scoped resources (RoleBindings, ServiceAccounts) are garbage-collected via owner references.
 func (r *EvalHubReconciler) cleanupClusterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
-	// Delete proxy ClusterRoleBinding
-	proxyCRBName := instance.Name + "-" + instance.Namespace + "-proxy-rolebinding"
-	if err := r.deleteClusterRoleBinding(ctx, proxyCRBName); err != nil {
-		return err
-	}
-
-	// Delete jobs RoleBinding
-	jobsRBName := instance.Name + "-" + instance.Namespace + "-jobs-proxy-rolebinding"
-	if err := r.deleteRoleBinding(ctx, instance.Namespace, jobsRBName); err != nil {
-		return err
-	}
-	// Cleanup legacy jobs ClusterRoleBinding name (pre-rename)
-	legacyJobsCRBName := instance.Namespace + "-" + instance.Name + "-jobs-proxy"
-	if err := r.deleteClusterRoleBinding(ctx, legacyJobsCRBName); err != nil {
+	// Delete auth reviewer ClusterRoleBinding (cannot be owner-ref'd to a namespaced resource)
+	authCRBName := instance.Name + "-" + instance.Namespace + "-auth-reviewer"
+	if err := r.deleteClusterRoleBinding(ctx, authCRBName); err != nil {
 		return err
 	}
 
@@ -271,23 +261,6 @@ func (r *EvalHubReconciler) deleteClusterRoleBinding(ctx context.Context, crbNam
 		// Error getting ClusterRoleBinding
 		return err
 	}
-}
-
-// deleteRoleBinding deletes a specific RoleBinding by name and namespace
-func (r *EvalHubReconciler) deleteRoleBinding(ctx context.Context, namespace, rbName string) error {
-	log := log.FromContext(ctx)
-
-	rb := &rbacv1.RoleBinding{}
-	log.Info("Deleting RoleBinding", "name", rbName, "namespace", namespace)
-
-	err := r.Get(ctx, types.NamespacedName{Name: rbName, Namespace: namespace}, rb)
-	if err == nil {
-		return r.Delete(ctx, rb)
-	} else if errors.IsNotFound(err) {
-		log.Info("RoleBinding not found, may have been already deleted", "name", rbName, "namespace", namespace)
-		return nil
-	}
-	return err
 }
 
 // updateStatus updates the EvalHub status based on the deployment status

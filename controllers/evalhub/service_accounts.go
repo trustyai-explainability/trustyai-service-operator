@@ -17,7 +17,7 @@ import (
 )
 
 func generateServiceAccountName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-proxy"
+	return instance.Name + "-api"
 }
 
 // createServiceAccount creates a service account for this instance's kube-rbac-proxy
@@ -56,7 +56,14 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
-	err = r.createClusterRoleBinding(ctx, instance, serviceAccountName)
+	// Create ClusterRoleBinding for kube-rbac-proxy auth (tokenreviews/subjectaccessreviews only)
+	err = r.createAuthReviewerClusterRoleBinding(ctx, instance, serviceAccountName)
+	if err != nil {
+		return err
+	}
+
+	// Create namespace-scoped RoleBinding for EvalHub API access (evalhubs/proxy)
+	err = r.createAPIAccessRoleBinding(ctx, instance, serviceAccountName)
 	if err != nil {
 		return err
 	}
@@ -70,7 +77,7 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 
 	// Create RoleBinding for jobs ServiceAccount to access evalhubs/proxy in this namespace
 	jobsServiceAccountName := generateJobsServiceAccountName(instance)
-	err = r.createJobsProxyRoleBinding(ctx, instance, jobsServiceAccountName)
+	err = r.createJobsAPIAccessRoleBinding(ctx, instance, jobsServiceAccountName)
 	if err != nil {
 		return err
 	}
@@ -78,8 +85,8 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 	// Create MLFlow access RoleBindings for both ServiceAccounts.
 	// MLFlow's kubernetes-auth plugin validates tokens via SubjectAccessReview against
 	// the workspace namespace. The custom "evalhub-mlflow-access" ClusterRole provides
-	// the required mlflow.kubeflow.org permissions for both the proxy and jobs SAs.
-	err = r.createMLFlowAccessRoleBinding(ctx, instance, serviceAccountName, "proxy", mlflowAccessClusterRoleName)
+	// the required mlflow.kubeflow.org permissions for both the api and jobs SAs.
+	err = r.createMLFlowAccessRoleBinding(ctx, instance, serviceAccountName, "api", mlflowAccessClusterRoleName)
 	if err != nil {
 		return err
 	}
@@ -98,7 +105,19 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 // - services/proxy (for job callbacks)
 const resourceManagerClusterRoleName = "trustyai-service-operator-evalhub-resource-manager"
 
-// createResourceManagementRoleBinding creates a RoleBinding for the proxy ServiceAccount
+// authReviewerClusterRoleName is the ClusterRole for kube-rbac-proxy auth checks only.
+// It contains only tokenreviews/create and subjectaccessreviews/create permissions.
+const authReviewerClusterRoleName = "trustyai-service-operator-evalhub-auth-reviewer-role"
+
+// apiAccessClusterRoleName is the ClusterRole for EvalHub API access (evalhubs/proxy).
+// Bound via namespace-scoped RoleBinding to restrict access to the instance's namespace.
+const apiAccessClusterRoleName = "trustyai-service-operator-evalhub-api-role"
+
+// jobsAPIAccessClusterRoleName is the ClusterRole for jobs ServiceAccount API access.
+// Bound via namespace-scoped RoleBinding to restrict access to the instance's namespace.
+const jobsAPIAccessClusterRoleName = "trustyai-service-operator-evalhub-jobs-api-role"
+
+// createResourceManagementRoleBinding creates a RoleBinding for the API ServiceAccount
 // to the pre-created ClusterRole for resource management.
 // Using a pre-created ClusterRole avoids the need for the operator to have broad
 // permissions that would be required to dynamically create Roles with these permissions.
@@ -257,19 +276,19 @@ func (r *EvalHubReconciler) createMLFlowAccessRoleBinding(ctx context.Context, i
 	return nil
 }
 
-// createJobsProxyRoleBinding creates a RoleBinding for jobs ServiceAccount to access evalhubs/proxy
-// in the EvalHub namespace, preventing cross-namespace access.
-func (r *EvalHubReconciler) createJobsProxyRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
+// createAuthReviewerClusterRoleBinding creates a ClusterRoleBinding for kube-rbac-proxy
+// auth checks (tokenreviews and subjectaccessreviews only). This is the only
+// cluster-scoped binding needed for the EvalHub API ServiceAccount.
+func (r *EvalHubReconciler) createAuthReviewerClusterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
 	log := log.FromContext(ctx)
 
-	roleBindingName := instance.Name + "-" + instance.Namespace + "-jobs-proxy-rolebinding"
-	roleBinding := &rbacv1.RoleBinding{
+	clusterRoleBindingName := instance.Name + "-" + instance.Namespace + "-auth-reviewer"
+	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      roleBindingName,
-			Namespace: instance.Namespace,
+			Name: clusterRoleBindingName,
 			Labels: map[string]string{
 				"app":                        "eval-hub",
-				"app.kubernetes.io/name":     instance.Name + "-jobs-proxy",
+				"app.kubernetes.io/name":     clusterRoleBindingName,
 				"app.kubernetes.io/instance": instance.Name,
 				"app.kubernetes.io/part-of":  "eval-hub",
 				"app.kubernetes.io/version":  constants.Version,
@@ -284,7 +303,73 @@ func (r *EvalHubReconciler) createJobsProxyRoleBinding(ctx context.Context, inst
 		},
 		RoleRef: rbacv1.RoleRef{
 			Kind:     "ClusterRole",
-			Name:     "trustyai-service-operator-evalhub-jobs-proxy-role",
+			Name:     authReviewerClusterRoleName,
+			APIGroup: rbacv1.GroupName,
+		},
+	}
+
+	// Check if ClusterRoleBinding already exists
+	found := &rbacv1.ClusterRoleBinding{}
+	err := r.Get(ctx, types.NamespacedName{Name: clusterRoleBindingName}, found)
+	if err != nil && errors.IsNotFound(err) {
+		// Note: We don't set owner references because ClusterRoleBindings cannot have namespace-scoped owners
+		log.Info("Creating auth reviewer ClusterRoleBinding", "name", clusterRoleBindingName)
+		return r.Create(ctx, clusterRoleBinding)
+	} else if err != nil {
+		return err
+	}
+
+	// ClusterRoleBinding already exists, check if it needs updating
+	subjectsEqual := equalSubjects(found, clusterRoleBinding)
+	roleRefEqual := equalRoleRef(found, clusterRoleBinding)
+
+	if !subjectsEqual || !roleRefEqual {
+		if roleRefEqual && !subjectsEqual {
+			found.Subjects = clusterRoleBinding.Subjects
+			log.Info("Updating auth reviewer ClusterRoleBinding subjects", "name", clusterRoleBindingName)
+			return r.Update(ctx, found)
+		} else if !roleRefEqual {
+			log.Info("RoleRef differs, deleting and recreating auth reviewer ClusterRoleBinding", "name", clusterRoleBindingName)
+			if err := r.Delete(ctx, found); err != nil {
+				return err
+			}
+			log.Info("Creating new auth reviewer ClusterRoleBinding", "name", clusterRoleBindingName)
+			return r.Create(ctx, clusterRoleBinding)
+		}
+	}
+
+	return nil
+}
+
+// createAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the API
+// ServiceAccount to access evalhubs/proxy within the instance's namespace only.
+// This replaces the previous ClusterRoleBinding approach to enforce namespace boundaries.
+func (r *EvalHubReconciler) createAPIAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
+	log := log.FromContext(ctx)
+
+	roleBindingName := instance.Name + "-api-rolebinding"
+	roleBinding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      roleBindingName,
+			Namespace: instance.Namespace,
+			Labels: map[string]string{
+				"app":                        "eval-hub",
+				"app.kubernetes.io/name":     roleBindingName,
+				"app.kubernetes.io/instance": instance.Name,
+				"app.kubernetes.io/part-of":  "eval-hub",
+				"app.kubernetes.io/version":  constants.Version,
+			},
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      serviceAccountName,
+				Namespace: instance.Namespace,
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			Kind:     "ClusterRole",
+			Name:     apiAccessClusterRoleName,
 			APIGroup: rbacv1.GroupName,
 		},
 	}
@@ -298,7 +383,7 @@ func (r *EvalHubReconciler) createJobsProxyRoleBinding(ctx context.Context, inst
 	found := &rbacv1.RoleBinding{}
 	err := r.Get(ctx, types.NamespacedName{Name: roleBinding.Name, Namespace: roleBinding.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating jobs proxy RoleBinding", "Name", roleBinding.Name)
+		log.Info("Creating API access RoleBinding", "Namespace", roleBinding.Namespace, "Name", roleBinding.Name)
 		return r.Create(ctx, roleBinding)
 	} else if err != nil {
 		return err
@@ -310,21 +395,84 @@ func (r *EvalHubReconciler) createJobsProxyRoleBinding(ctx context.Context, inst
 
 	if !subjectsEqual || !roleRefEqual {
 		if roleRefEqual && !subjectsEqual {
-			// Only subjects differ, we can update them
 			found.Subjects = roleBinding.Subjects
-			log.Info("Updating jobs proxy RoleBinding subjects", "Name", roleBinding.Name)
+			log.Info("Updating API access RoleBinding subjects", "Name", roleBinding.Name)
 			return r.Update(ctx, found)
 		} else if !roleRefEqual {
-			// RoleRef differs, we need to delete and recreate as RoleRef is immutable
-			log.Info("RoleRef differs, deleting and recreating jobs proxy RoleBinding", "Name", roleBinding.Name)
-
-			// Delete existing RoleBinding
+			log.Info("RoleRef differs, deleting and recreating API access RoleBinding", "Name", roleBinding.Name)
 			if err := r.Delete(ctx, found); err != nil {
 				return err
 			}
+			log.Info("Creating new API access RoleBinding", "Name", roleBinding.Name)
+			return r.Create(ctx, roleBinding)
+		}
+	}
 
-			// Create new RoleBinding with desired spec
-			log.Info("Creating new jobs proxy RoleBinding", "Name", roleBinding.Name)
+	return nil
+}
+
+// createJobsAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the jobs
+// ServiceAccount to access evalhubs/proxy within the instance's namespace only.
+func (r *EvalHubReconciler) createJobsAPIAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
+	log := log.FromContext(ctx)
+
+	roleBindingName := instance.Name + "-jobs-api-rolebinding"
+	roleBinding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      roleBindingName,
+			Namespace: instance.Namespace,
+			Labels: map[string]string{
+				"app":                        "eval-hub",
+				"app.kubernetes.io/name":     instance.Name + "-jobs-api",
+				"app.kubernetes.io/instance": instance.Name,
+				"app.kubernetes.io/part-of":  "eval-hub",
+				"app.kubernetes.io/version":  constants.Version,
+			},
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      serviceAccountName,
+				Namespace: instance.Namespace,
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			Kind:     "ClusterRole",
+			Name:     jobsAPIAccessClusterRoleName,
+			APIGroup: rbacv1.GroupName,
+		},
+	}
+
+	// Set instance as the owner and controller
+	if err := ctrl.SetControllerReference(instance, roleBinding, r.Scheme); err != nil {
+		return err
+	}
+
+	// Check if this RoleBinding already exists
+	found := &rbacv1.RoleBinding{}
+	err := r.Get(ctx, types.NamespacedName{Name: roleBinding.Name, Namespace: roleBinding.Namespace}, found)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Creating jobs API access RoleBinding", "Name", roleBinding.Name)
+		return r.Create(ctx, roleBinding)
+	} else if err != nil {
+		return err
+	}
+
+	// RoleBinding exists, check if it needs updating
+	subjectsEqual := equalRoleBindingSubjects(found.Subjects, roleBinding.Subjects)
+	roleRefEqual := equalRoleBindingRoleRef(found.RoleRef, roleBinding.RoleRef)
+
+	if !subjectsEqual || !roleRefEqual {
+		if roleRefEqual && !subjectsEqual {
+			found.Subjects = roleBinding.Subjects
+			log.Info("Updating jobs API access RoleBinding subjects", "Name", roleBinding.Name)
+			return r.Update(ctx, found)
+		} else if !roleRefEqual {
+			log.Info("RoleRef differs, deleting and recreating jobs API access RoleBinding", "Name", roleBinding.Name)
+			if err := r.Delete(ctx, found); err != nil {
+				return err
+			}
+			log.Info("Creating new jobs API access RoleBinding", "Name", roleBinding.Name)
 			return r.Create(ctx, roleBinding)
 		}
 	}
@@ -375,91 +523,6 @@ func equalRoleBindingRoleRef(existing, desired rbacv1.RoleRef) bool {
 	return existing.Kind == desired.Kind &&
 		existing.Name == desired.Name &&
 		existing.APIGroup == desired.APIGroup
-}
-
-// createClusterRoleBinding creates a binding between the service account and evalhub proxy cluster role
-func (r *EvalHubReconciler) createClusterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
-	log := log.FromContext(ctx)
-
-	clusterRoleBindingName := instance.Name + "-" + instance.Namespace + "-proxy-rolebinding"
-	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: clusterRoleBindingName,
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      serviceAccountName,
-				Namespace: instance.Namespace,
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			Kind:     "ClusterRole",
-			Name:     "trustyai-service-operator-evalhub-proxy-role",
-			APIGroup: rbacv1.GroupName,
-		},
-	}
-
-	// Check if ClusterRoleBinding already exists
-	found := &rbacv1.ClusterRoleBinding{}
-	err := r.Get(ctx, types.NamespacedName{Name: clusterRoleBindingName}, found)
-	if err != nil && errors.IsNotFound(err) {
-		// ClusterRoleBinding doesn't exist, create it
-		// Note: We don't set owner references because ClusterRoleBindings cannot have namespace-scoped owners
-		log.Info("Creating ClusterRoleBinding", "name", clusterRoleBindingName)
-		return r.Create(ctx, clusterRoleBinding)
-	} else if err != nil {
-		// Error getting ClusterRoleBinding
-		return err
-	}
-
-	// ClusterRoleBinding already exists, check if it needs updating
-	subjectsEqual := equalSubjects(found, clusterRoleBinding)
-	roleRefEqual := equalRoleRef(found, clusterRoleBinding)
-
-	if !subjectsEqual || !roleRefEqual {
-		if roleRefEqual && !subjectsEqual {
-			// Only subjects differ, we can update them
-			found.Subjects = clusterRoleBinding.Subjects
-			log.Info("Updating ClusterRoleBinding subjects", "name", clusterRoleBindingName)
-			return r.Update(ctx, found)
-		} else if !roleRefEqual {
-			// RoleRef differs, we need to delete and recreate as RoleRef is immutable
-			log.Info("RoleRef differs, deleting and recreating ClusterRoleBinding", "name", clusterRoleBindingName)
-
-			// Delete existing ClusterRoleBinding
-			if err := r.Delete(ctx, found); err != nil {
-				return err
-			}
-
-			// Create new ClusterRoleBinding with desired spec
-			log.Info("Creating new ClusterRoleBinding", "name", clusterRoleBindingName)
-			return r.Create(ctx, clusterRoleBinding)
-		}
-	}
-
-	return nil
-}
-
-// equalClusterRoleBindingSpec compares two ClusterRoleBinding specs
-func equalClusterRoleBindingSpec(existing, desired *rbacv1.ClusterRoleBinding) bool {
-	// Compare subjects
-	if len(existing.Subjects) != len(desired.Subjects) {
-		return false
-	}
-	for i, subject := range existing.Subjects {
-		if i >= len(desired.Subjects) ||
-			subject.Kind != desired.Subjects[i].Kind ||
-			subject.Name != desired.Subjects[i].Name ||
-			subject.Namespace != desired.Subjects[i].Namespace {
-			return false
-		}
-	}
-
-	// Compare role reference
-	return existing.RoleRef.Kind == desired.RoleRef.Kind &&
-		existing.RoleRef.Name == desired.RoleRef.Name &&
-		existing.RoleRef.APIGroup == desired.RoleRef.APIGroup
 }
 
 // equalSubjects compares subjects between two ClusterRoleBindings in an order-insensitive way.
