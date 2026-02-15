@@ -371,8 +371,8 @@ var _ = Describe("EvalHub Deployment", func() {
 			}, deployment)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Checking deployment has 4 volumes (3 base + DB secret)")
-			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(4))
+			By("Checking deployment has 6 volumes (5 base + DB secret)")
+			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(6))
 
 			By("Finding DB secret volume")
 			var dbVolume *corev1.Volume
@@ -399,8 +399,8 @@ var _ = Describe("EvalHub Deployment", func() {
 			}
 			Expect(evalHubContainer).NotTo(BeNil())
 
-			By("Checking evalhub container has 2 volume mounts (config + DB secret)")
-			Expect(evalHubContainer.VolumeMounts).To(HaveLen(2))
+			By("Checking evalhub container has 4 volume mounts (config + service-ca + mlflow-token + DB secret)")
+			Expect(evalHubContainer.VolumeMounts).To(HaveLen(4))
 
 			var dbMount *corev1.VolumeMount
 			for i, mount := range evalHubContainer.VolumeMounts {
@@ -426,8 +426,8 @@ var _ = Describe("EvalHub Deployment", func() {
 			By("Getting deployment")
 			deployment := waitForDeployment(evalHubName, testNamespace)
 
-			By("Checking deployment has only 3 base volumes")
-			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(3))
+			By("Checking deployment has only 5 base volumes")
+			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(5))
 
 			By("Finding evalhub container")
 			var evalHubContainer *corev1.Container
@@ -439,8 +439,8 @@ var _ = Describe("EvalHub Deployment", func() {
 			}
 			Expect(evalHubContainer).NotTo(BeNil())
 
-			By("Checking evalhub container has only 1 volume mount")
-			Expect(evalHubContainer.VolumeMounts).To(HaveLen(1))
+			By("Checking evalhub container has 3 base volume mounts (config + service-ca + mlflow-token)")
+			Expect(evalHubContainer.VolumeMounts).To(HaveLen(3))
 			Expect(evalHubContainer.VolumeMounts[0].Name).To(Equal("evalhub-config"))
 		})
 	})
@@ -645,7 +645,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			deployment := waitForDeployment(evalHubName, testNamespace)
 
 			By("Checking deployment volumes")
-			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(3))
+			Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(5))
 
 			var evalHubConfigVolume, configVolume, tlsVolume *corev1.Volume
 			for _, volume := range deployment.Spec.Template.Spec.Volumes {
@@ -674,7 +674,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(tlsVolume.VolumeSource.Secret.SecretName).To(Equal(evalHubName + "-tls"))
 		})
 
-		It("should configure service account for proxy", func() {
+		It("should configure service account for API", func() {
 			By("Reconciling deployment")
 			err := reconciler.reconcileDeployment(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
@@ -682,8 +682,8 @@ var _ = Describe("EvalHub Deployment", func() {
 			By("Getting deployment")
 			deployment := waitForDeployment(evalHubName, testNamespace)
 
-			By("Checking service account name")
-			Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(evalHubName + "-proxy"))
+			By("Checking service account name uses -api suffix")
+			Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(evalHubName + "-api"))
 		})
 	})
 })

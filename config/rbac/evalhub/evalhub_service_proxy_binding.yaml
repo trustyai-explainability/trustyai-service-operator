@@ -4,11 +4,11 @@ metadata:
   labels:
     app.kubernetes.io/component: evalhub
     app.kubernetes.io/name: trustyai-service-operator
-  name: evalhub-resource-manager-binding
+  name: evalhub-service-proxy-binding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: evalhub-resource-manager
+  name: evalhub-service-proxy
 subjects:
 - kind: ServiceAccount
   name: controller-manager

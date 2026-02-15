@@ -8,10 +8,15 @@ resources:
   - auth_proxy_role.yaml
   - auth_proxy_role_binding.yaml
   - auth_proxy_client_clusterrole.yaml
-  - evalhub_proxy_role.yaml
-  - evalhub_jobs_proxy_role.yaml
-  - evalhub_resource_manager_role.yaml
-  - evalhub_resource_manager_binding.yaml
+  - evalhub/evalhub_auth_reviewer_role.yaml
+  - evalhub/evalhub_jobs_writer_role.yaml
+  - evalhub/evalhub_jobs_writer_binding.yaml
+  - evalhub/evalhub_job_config_role.yaml
+  - evalhub/evalhub_job_config_binding.yaml
+  - evalhub/evalhub_mlflow_access_role.yaml
+  - evalhub/evalhub_mlflow_access_binding.yaml
+  - evalhub/evalhub_mlflow_jobs_role.yaml
+  - evalhub/evalhub_mlflow_jobs_binding.yaml
   - nemoguardrail_editor_role.yaml
   - nemoguardrail_viewer_role.yaml
   - trustyaiservice_editor_role.yaml

@@ -3,18 +3,22 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/name: clusterrole
-    app.kubernetes.io/instance: evalhub-jobs-proxy-role
-    app.kubernetes.io/component: evalhub-jobs
+    app.kubernetes.io/instance: evalhub-auth-reviewer-role
+    app.kubernetes.io/component: kube-rbac-proxy
     app.kubernetes.io/created-by: trustyai-service-operator
     app.kubernetes.io/part-of: trustyai-service-operator
     app.kubernetes.io/managed-by: kustomize
-  name: evalhub-jobs-proxy-role
+  name: evalhub-auth-reviewer-role
 rules:
   - apiGroups:
-      - trustyai.opendatahub.io
+      - authentication.k8s.io
     resources:
-      - evalhubs/proxy
+      - tokenreviews
     verbs:
-      - get
       - create
-      - update
+  - apiGroups:
+      - authorization.k8s.io
+    resources:
+      - subjectaccessreviews
+    verbs:
+      - create
