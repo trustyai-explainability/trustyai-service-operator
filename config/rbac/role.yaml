@@ -248,14 +248,6 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
-  - evalhubs/proxy
-  verbs:
-  - create
-  - get
-  - update
-- apiGroups:
-  - trustyai.opendatahub.io
-  resources:
   - evalhubs/status
   - guardrailsorchestrators/status
   - lmevaljobs/status

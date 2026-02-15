@@ -130,7 +130,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 
 			By("Verifying auth reviewer ClusterRoleBinding exists")
 			clusterRoleBinding := &rbacv1.ClusterRoleBinding{}
-			bindingName := fmt.Sprintf("%s-%s-auth-reviewer", evalHub.Name, evalHub.Namespace)
+			bindingName := fmt.Sprintf("%s-%s-auth-reviewer-crb", evalHub.Name, evalHub.Namespace)
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name: bindingName,
 			}, clusterRoleBinding)
@@ -178,7 +178,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 
 			By("Verifying API access RoleBinding exists in namespace")
 			roleBinding := &rbacv1.RoleBinding{}
-			rbName := evalHubName + "-api-rolebinding"
+			rbName := evalHubName + "-api-access-rb"
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      rbName,
 				Namespace: testNamespace,
@@ -205,7 +205,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 
 			By("Verifying jobs API access RoleBinding exists in namespace")
 			roleBinding := &rbacv1.RoleBinding{}
-			rbName := evalHubName + "-jobs-api-rolebinding"
+			rbName := evalHubName + "-jobs-api-access-rb"
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      rbName,
 				Namespace: testNamespace,
@@ -254,7 +254,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			By("Verifying jobs-writer RoleBinding exists")
 			jwRB := &rbacv1.RoleBinding{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-jobs-writer",
+				Name:      evalHubName + "-jobs-writer-rb",
 				Namespace: testNamespace,
 			}, jwRB)
 			Expect(err).NotTo(HaveOccurred())
@@ -266,7 +266,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			By("Verifying job-config RoleBinding exists")
 			jcRB := &rbacv1.RoleBinding{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-job-config",
+				Name:      evalHubName + "-job-config-rb",
 				Namespace: testNamespace,
 			}, jcRB)
 			Expect(err).NotTo(HaveOccurred())
@@ -285,7 +285,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			By("Checking jobs-writer binding has only API SA")
 			jwRB := &rbacv1.RoleBinding{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-jobs-writer",
+				Name:      evalHubName + "-jobs-writer-rb",
 				Namespace: testNamespace,
 			}, jwRB)
 			Expect(err).NotTo(HaveOccurred())
@@ -581,7 +581,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			By("Verifying API access is via namespace-scoped RoleBinding referencing per-instance Role")
 			apiRB := &rbacv1.RoleBinding{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-api-rolebinding",
+				Name:      evalHubName + "-api-access-rb",
 				Namespace: testNamespace,
 			}, apiRB)
 			Expect(err).NotTo(HaveOccurred())

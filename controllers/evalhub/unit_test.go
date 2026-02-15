@@ -613,7 +613,7 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify RoleBinding was created
-		rbName := evalHubName + "-jobs-api-rolebinding"
+		rbName := evalHubName + "-jobs-api-access-rb"
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -640,7 +640,7 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 
 	t.Run("should update subjects when they differ", func(t *testing.T) {
 		// Get existing RoleBinding
-		rbName := evalHubName + "-jobs-api-rolebinding"
+		rbName := evalHubName + "-jobs-api-access-rb"
 		rb := &rbacv1.RoleBinding{}
 		err := fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -719,7 +719,7 @@ func TestEvalHubReconciler_createAPIAccessRole(t *testing.T) {
 		require.NoError(t, err)
 
 		// Check name
-		assert.Equal(t, evalHubName+"-api-access", role.Name)
+		assert.Equal(t, evalHubName+"-api-access-role", role.Name)
 
 		// Check rules have resourceNames scoped to this instance
 		require.Len(t, role.Rules, 2)
@@ -730,11 +730,11 @@ func TestEvalHubReconciler_createAPIAccessRole(t *testing.T) {
 		assert.Equal(t, []string{evalHubName}, role.Rules[0].ResourceNames)
 		assert.Equal(t, []string{"get"}, role.Rules[0].Verbs)
 
-		// Second rule: evalhubs/proxy get,create,update
+		// Second rule: evalhubs/proxy get,create
 		assert.Equal(t, []string{"trustyai.opendatahub.io"}, role.Rules[1].APIGroups)
 		assert.Equal(t, []string{"evalhubs/proxy"}, role.Rules[1].Resources)
 		assert.Equal(t, []string{evalHubName}, role.Rules[1].ResourceNames)
-		assert.Equal(t, []string{"get", "create", "update"}, role.Rules[1].Verbs)
+		assert.Equal(t, []string{"get", "create"}, role.Rules[1].Verbs)
 
 		// Check owner reference
 		require.Len(t, role.OwnerReferences, 1)
@@ -793,7 +793,7 @@ func TestEvalHubReconciler_createAPIAccessRoleBinding_RefersToRole(t *testing.T)
 		err := reconciler.createAPIAccessRoleBinding(ctx, evalHub, apiSAName)
 		require.NoError(t, err)
 
-		rbName := evalHubName + "-api-rolebinding"
+		rbName := evalHubName + "-api-access-rb"
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -842,7 +842,7 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 		require.NoError(t, err)
 
 		// Verify RoleBinding was created
-		rbName := evalHubName + "-mlflow-jobs"
+		rbName := evalHubName + "-mlflow-jobs-rb"
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -873,7 +873,7 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 		require.NoError(t, err)
 
 		// Verify RoleBinding was created
-		rbName := evalHubName + "-mlflow-api"
+		rbName := evalHubName + "-mlflow-api-rb"
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -898,7 +898,7 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 		require.NoError(t, err)
 
 		// Verify RoleBinding still exists with correct properties
-		rbName := evalHubName + "-mlflow-jobs"
+		rbName := evalHubName + "-mlflow-jobs-rb"
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -930,7 +930,7 @@ func TestEvalHubReconciler_cleanupClusterRoleBinding(t *testing.T) {
 		},
 	}
 
-	authCRBName := evalHubName + "-" + testNamespace + "-auth-reviewer"
+	authCRBName := evalHubName + "-" + testNamespace + "-auth-reviewer-crb"
 	authCRB := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: authCRBName,

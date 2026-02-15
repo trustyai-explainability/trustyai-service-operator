@@ -22,12 +22,16 @@ func generateServiceAccountName(instance *evalhubv1alpha1.EvalHub) string {
 
 // generateAPIAccessRoleName returns the name for the per-instance API access Role.
 func generateAPIAccessRoleName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-api-access"
+	return instance.Name + "-api-access-role"
 }
 
 // generateJobsAPIAccessRoleName returns the name for the per-instance jobs API access Role.
 func generateJobsAPIAccessRoleName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-jobs-api-access"
+	return instance.Name + "-jobs-api-access-role"
+}
+
+func generateAuthReviewerClusterRoleBindingName(instance *evalhubv1alpha1.EvalHub) string {
+	return instance.Name + "-" + instance.Namespace + "-auth-reviewer-crb"
 }
 
 // createServiceAccount creates a service account for this instance's kube-rbac-proxy
@@ -175,7 +179,7 @@ func (r *EvalHubReconciler) createAPIAccessRole(ctx context.Context, instance *e
 				APIGroups:     []string{"trustyai.opendatahub.io"},
 				Resources:     []string{"evalhubs/proxy"},
 				ResourceNames: []string{instance.Name},
-				Verbs:         []string{"get", "create", "update"},
+				Verbs:         []string{"get", "create"},
 			},
 		},
 	}
@@ -226,7 +230,7 @@ func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instanc
 				APIGroups:     []string{"trustyai.opendatahub.io"},
 				Resources:     []string{"evalhubs/proxy"},
 				ResourceNames: []string{instance.Name},
-				Verbs:         []string{"get", "create", "update"},
+				Verbs:         []string{"get", "create"},
 			},
 		},
 	}
@@ -260,7 +264,7 @@ func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instanc
 func (r *EvalHubReconciler) createMLFlowAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string, suffix string, clusterRoleName string) error {
 	log := log.FromContext(ctx)
 
-	roleBindingName := instance.Name + "-mlflow-" + suffix
+	roleBindingName := instance.Name + "-mlflow-" + suffix + "-rb"
 	roleBinding := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      roleBindingName,
@@ -330,7 +334,7 @@ func (r *EvalHubReconciler) createMLFlowAccessRoleBinding(ctx context.Context, i
 func (r *EvalHubReconciler) createAuthReviewerClusterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
 	log := log.FromContext(ctx)
 
-	clusterRoleBindingName := instance.Name + "-" + instance.Namespace + "-auth-reviewer"
+	clusterRoleBindingName := generateAuthReviewerClusterRoleBindingName(instance)
 	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: clusterRoleBindingName,
@@ -392,7 +396,7 @@ func (r *EvalHubReconciler) createAuthReviewerClusterRoleBinding(ctx context.Con
 // createAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the API
 // ServiceAccount to the per-instance Role for evalhubs/proxy access.
 func (r *EvalHubReconciler) createAPIAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
-	roleBindingName := instance.Name + "-api-rolebinding"
+	roleBindingName := instance.Name + "-api-access-rb"
 	roleName := generateAPIAccessRoleName(instance)
 
 	return r.createGenericRoleBinding(ctx, instance, roleBindingName, serviceAccountName, rbacv1.RoleRef{
@@ -405,7 +409,7 @@ func (r *EvalHubReconciler) createAPIAccessRoleBinding(ctx context.Context, inst
 // createJobsAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the jobs
 // ServiceAccount to the per-instance Role for evalhubs/proxy access.
 func (r *EvalHubReconciler) createJobsAPIAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
-	roleBindingName := instance.Name + "-jobs-api-rolebinding"
+	roleBindingName := instance.Name + "-jobs-api-access-rb"
 	roleName := generateJobsAPIAccessRoleName(instance)
 
 	return r.createGenericRoleBinding(ctx, instance, roleBindingName, serviceAccountName, rbacv1.RoleRef{
@@ -418,7 +422,7 @@ func (r *EvalHubReconciler) createJobsAPIAccessRoleBinding(ctx context.Context, 
 // createJobsWriterRoleBinding creates a RoleBinding for the API SA to the
 // jobs-writer ClusterRole (batch/jobs create,get,list,watch).
 func (r *EvalHubReconciler) createJobsWriterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
-	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-jobs-writer", serviceAccountName, rbacv1.RoleRef{
+	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-jobs-writer-rb", serviceAccountName, rbacv1.RoleRef{
 		Kind:     "ClusterRole",
 		Name:     jobsWriterClusterRoleName,
 		APIGroup: rbacv1.GroupName,
@@ -428,7 +432,7 @@ func (r *EvalHubReconciler) createJobsWriterRoleBinding(ctx context.Context, ins
 // createJobConfigRoleBinding creates a RoleBinding for the API SA to the
 // job-config ClusterRole (configmaps create,get,list).
 func (r *EvalHubReconciler) createJobConfigRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
-	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-job-config", serviceAccountName, rbacv1.RoleRef{
+	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-job-config-rb", serviceAccountName, rbacv1.RoleRef{
 		Kind:     "ClusterRole",
 		Name:     jobConfigClusterRoleName,
 		APIGroup: rbacv1.GroupName,

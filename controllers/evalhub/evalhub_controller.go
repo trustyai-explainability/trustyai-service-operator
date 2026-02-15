@@ -43,7 +43,6 @@ type EvalHubReconciler struct {
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs/finalizers,verbs=update
-//+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs/proxy,verbs=get;create;update
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=list;watch;get;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
@@ -235,7 +234,7 @@ func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhu
 // Namespace-scoped resources (RoleBindings, ServiceAccounts) are garbage-collected via owner references.
 func (r *EvalHubReconciler) cleanupClusterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
 	// Delete auth reviewer ClusterRoleBinding (cannot be owner-ref'd to a namespaced resource)
-	authCRBName := instance.Name + "-" + instance.Namespace + "-auth-reviewer"
+	authCRBName := generateAuthReviewerClusterRoleBindingName(instance)
 	if err := r.deleteClusterRoleBinding(ctx, authCRBName); err != nil {
 		return err
 	}
