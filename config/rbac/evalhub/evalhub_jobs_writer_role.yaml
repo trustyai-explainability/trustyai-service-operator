@@ -11,4 +11,4 @@ metadata:
 rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
-    verbs: ["create", "get", "list", "watch"]
+    verbs: ["create", "delete"]

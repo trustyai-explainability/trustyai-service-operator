@@ -246,7 +246,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 	})
 
 	Context("Split Resource Manager", func() {
-		It("should create three separate RoleBindings for resource management", func() {
+		It("should create two separate RoleBindings for resource management", func() {
 			By("Creating service account (which creates all RoleBindings)")
 			err := reconciler.createServiceAccount(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
@@ -275,17 +275,6 @@ var _ = Describe("EvalHub API RBAC", func() {
 			Expect(jcRB.Subjects).To(HaveLen(1))
 			Expect(jcRB.Subjects[0].Name).To(Equal(evalHubName + "-api"))
 
-			By("Verifying service-proxy RoleBinding exists")
-			spRB := &rbacv1.RoleBinding{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-service-proxy",
-				Namespace: testNamespace,
-			}, spRB)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(spRB.RoleRef.Kind).To(Equal("ClusterRole"))
-			Expect(spRB.RoleRef.Name).To(Equal(serviceProxyClusterRoleName))
-			Expect(spRB.Subjects).To(HaveLen(1))
-			Expect(spRB.Subjects[0].Name).To(Equal(evalHubName + "-api"))
 		})
 
 		It("should not bind jobs SA to resource-manager roles", func() {
@@ -439,6 +428,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			Expect(resourceAttrs["namespace"]).To(Equal(testNamespace))
 			Expect(resourceAttrs["apiGroup"]).To(Equal("trustyai.opendatahub.io"))
 			Expect(resourceAttrs["resource"]).To(Equal("evalhubs"))
+			Expect(resourceAttrs["name"]).To(Equal(evalHubName))
 			Expect(resourceAttrs["resourceName"]).To(Equal(evalHubName))
 			Expect(resourceAttrs["subresource"]).To(Equal("proxy"))
 
@@ -523,6 +513,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			authorization := proxyConfig["authorization"].(map[string]interface{})
 			resourceAttrs := authorization["resourceAttributes"].(map[string]interface{})
 			Expect(resourceAttrs["namespace"]).To(Equal(evalHub.Namespace))
+			Expect(resourceAttrs["name"]).To(Equal(evalHub.Name))
 			Expect(resourceAttrs["resourceName"]).To(Equal(evalHub.Name))
 		})
 	})

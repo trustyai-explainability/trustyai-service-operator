@@ -100,11 +100,6 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
-	err = r.createServiceProxyRoleBinding(ctx, instance, serviceAccountName)
-	if err != nil {
-		return err
-	}
-
 	// Create RoleBinding for jobs ServiceAccount to access evalhubs/proxy in this namespace
 	jobsServiceAccountName := generateJobsServiceAccountName(instance)
 	err = r.createJobsAPIAccessRoleBinding(ctx, instance, jobsServiceAccountName)
@@ -135,9 +130,8 @@ const authReviewerClusterRoleName = "trustyai-service-operator-evalhub-auth-revi
 // Split resource-manager ClusterRole names.
 // These replace the monolithic evalhub-resource-manager with function-specific roles.
 const (
-	jobsWriterClusterRoleName   = "trustyai-service-operator-evalhub-jobs-writer"
-	jobConfigClusterRoleName    = "trustyai-service-operator-evalhub-job-config"
-	serviceProxyClusterRoleName = "trustyai-service-operator-evalhub-service-proxy"
+	jobsWriterClusterRoleName = "trustyai-service-operator-evalhub-jobs-writer"
+	jobConfigClusterRoleName  = "trustyai-service-operator-evalhub-job-config"
 )
 
 // MLFlow access uses custom ClusterRoles scoped to the "mlflow.kubeflow.org" API group.
@@ -437,16 +431,6 @@ func (r *EvalHubReconciler) createJobConfigRoleBinding(ctx context.Context, inst
 	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-job-config", serviceAccountName, rbacv1.RoleRef{
 		Kind:     "ClusterRole",
 		Name:     jobConfigClusterRoleName,
-		APIGroup: rbacv1.GroupName,
-	})
-}
-
-// createServiceProxyRoleBinding creates a RoleBinding for the API SA to the
-// service-proxy ClusterRole (services/proxy get,create,update).
-func (r *EvalHubReconciler) createServiceProxyRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
-	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-service-proxy", serviceAccountName, rbacv1.RoleRef{
-		Kind:     "ClusterRole",
-		Name:     serviceProxyClusterRoleName,
 		APIGroup: rbacv1.GroupName,
 	})
 }

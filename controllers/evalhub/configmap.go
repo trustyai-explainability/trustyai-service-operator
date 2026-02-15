@@ -326,9 +326,12 @@ func (r *EvalHubReconciler) generateProxyConfigData(instance *evalhubv1alpha1.Ev
 	proxyConfig := map[string]interface{}{
 		"authorization": map[string]interface{}{
 			"resourceAttributes": map[string]interface{}{
-				"namespace":    instance.Namespace,
-				"apiGroup":     "trustyai.opendatahub.io",
-				"resource":     "evalhubs",
+				"namespace": instance.Namespace,
+				"apiGroup":  "trustyai.opendatahub.io",
+				"resource":  "evalhubs",
+				// kube-rbac-proxy expects the Kubernetes ResourceAttributes key "name".
+				// Keep "resourceName" for compatibility with older config consumers.
+				"name":         instance.Name,
 				"resourceName": instance.Name,
 				"subresource":  "proxy",
 			},
