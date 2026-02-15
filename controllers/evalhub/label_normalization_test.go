@@ -71,5 +71,5 @@ func TestAuthReviewerCRB_AppNameLabelIsNormalizedWhenBindingNameTooLong(t *testi
 	lbl := crb.Labels["app.kubernetes.io/name"]
 	require.LessOrEqual(t, len(lbl), 63)
 	require.Regexp(t, dns1123LabelRe, lbl)
-	require.Equal(t, normalizeDNS1123LabelValue(crbName), lbl)
+	require.Equal(t, generateAuthReviewerClusterRoleBindingAppNameLabelValue(evalHub), lbl)
 }

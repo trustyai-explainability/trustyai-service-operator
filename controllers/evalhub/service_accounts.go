@@ -116,6 +116,12 @@ func generateAuthReviewerClusterRoleBindingName(instance *evalhubv1alpha1.EvalHu
 	return instance.Name + "-" + instance.Namespace + "-auth-reviewer-crb"
 }
 
+// generateAuthReviewerClusterRoleBindingAppNameLabelValue returns a deterministic, DNS-1123 compatible
+// label value (<=63 chars) derived from the full auth reviewer ClusterRoleBinding name.
+func generateAuthReviewerClusterRoleBindingAppNameLabelValue(instance *evalhubv1alpha1.EvalHub) string {
+	return normalizeDNS1123LabelValue(generateAuthReviewerClusterRoleBindingName(instance))
+}
+
 // createServiceAccount creates a service account for this instance's kube-rbac-proxy
 func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
 	serviceAccountName := generateServiceAccountName(instance)
@@ -422,7 +428,7 @@ func (r *EvalHubReconciler) createAuthReviewerClusterRoleBinding(ctx context.Con
 			Name: clusterRoleBindingName,
 			Labels: map[string]string{
 				"app":                        "eval-hub",
-				"app.kubernetes.io/name":     normalizeDNS1123LabelValue(clusterRoleBindingName),
+				"app.kubernetes.io/name":     generateAuthReviewerClusterRoleBindingAppNameLabelValue(instance),
 				"app.kubernetes.io/instance": instance.Name,
 				"app.kubernetes.io/part-of":  "eval-hub",
 				"app.kubernetes.io/version":  constants.Version,
