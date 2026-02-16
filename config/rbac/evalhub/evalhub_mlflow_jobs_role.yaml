@@ -1,7 +1,8 @@
 ---
 # ClusterRole for MLflow kubernetes-auth access (jobs only)
-# Jobs only need to create experiments and log metrics — they should not
-# update or delete existing experiments. The proxy SA retains full CRUD
+# Jobs need "update" because MLflow's kubernetes-workspace-provider maps
+# CreateRun, LogMetric and LogBatch to the "update" verb on experiments.
+# Jobs should not delete experiments. The proxy SA retains full CRUD
 # via the broader evalhub-mlflow-access ClusterRole.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -14,4 +15,4 @@ rules:
   - apiGroups: ["mlflow.kubeflow.org"]
     resources:
       - experiments
-    verbs: ["create", "get", "list"]
+    verbs: ["create", "get", "list", "update"]
