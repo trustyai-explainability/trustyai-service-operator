@@ -508,7 +508,7 @@ func (r *EvalHubReconciler) createJobsAPIAccessRoleBinding(ctx context.Context, 
 }
 
 // createJobsWriterRoleBinding creates a RoleBinding for the API SA to the
-// jobs-writer ClusterRole (batch/jobs create,get,list,watch).
+// jobs-writer ClusterRole (batch/jobs create,delete).
 func (r *EvalHubReconciler) createJobsWriterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
 	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-jobs-writer-rb", serviceAccountName, rbacv1.RoleRef{
 		Kind:     "ClusterRole",
