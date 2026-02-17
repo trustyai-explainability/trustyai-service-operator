@@ -266,33 +266,11 @@ func TestEvalHubReconciler_reconcileConfigMap(t *testing.T) {
 
 		// Check data keys exist
 		assert.Contains(t, configMap.Data, "config.yaml")
-		assert.Contains(t, configMap.Data, "providers.yaml")
 
 		// Parse and validate config.yaml
 		var config EvalHubConfig
 		err = yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), &config)
 		require.NoError(t, err)
-
-		// Check providers
-		assert.Len(t, config.Providers, 4)
-		providerNames := make([]string, len(config.Providers))
-		for i, provider := range config.Providers {
-			providerNames[i] = provider.Name
-		}
-		assert.Contains(t, providerNames, "lm-eval-harness")
-		assert.Contains(t, providerNames, "ragas-provider")
-		assert.Contains(t, providerNames, "garak-security")
-		assert.Contains(t, providerNames, "trustyai-custom")
-
-		// Check collections
-		assert.Contains(t, config.Collections, "healthcare_safety_v1")
-		assert.Contains(t, config.Collections, "automotive_safety_v1")
-
-		// Parse and validate providers.yaml
-		var providersData map[string]interface{}
-		err = yaml.Unmarshal([]byte(configMap.Data["providers.yaml"]), &providersData)
-		require.NoError(t, err)
-		assert.Contains(t, providersData, "providers")
 	})
 }
 
@@ -428,35 +406,11 @@ func TestGenerateConfigData(t *testing.T) {
 
 		// Check keys exist
 		assert.Contains(t, configData, "config.yaml")
-		assert.Contains(t, configData, "providers.yaml")
 
 		// Parse config.yaml
 		var config EvalHubConfig
 		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
 		require.NoError(t, err)
-
-		// Verify default providers
-		assert.Len(t, config.Providers, 4)
-
-		// Find lm-eval-harness provider
-		var lmEvalProvider *ProviderConfig
-		for _, provider := range config.Providers {
-			if provider.Name == "lm-eval-harness" {
-				lmEvalProvider = &provider
-				break
-			}
-		}
-		require.NotNil(t, lmEvalProvider)
-		assert.Equal(t, "lm_evaluation_harness", lmEvalProvider.Type)
-		assert.True(t, lmEvalProvider.Enabled)
-		assert.Contains(t, lmEvalProvider.Benchmarks, "arc_challenge")
-		assert.Equal(t, "8", lmEvalProvider.Config["batch_size"])
-
-		// Verify collections
-		assert.Contains(t, config.Collections, "healthcare_safety_v1")
-		assert.Contains(t, config.Collections, "automotive_safety_v1")
-		assert.Contains(t, config.Collections, "finance_compliance_v1")
-		assert.Contains(t, config.Collections, "general_llm_eval_v1")
 	})
 }
 

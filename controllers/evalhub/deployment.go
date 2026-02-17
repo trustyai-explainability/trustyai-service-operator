@@ -107,10 +107,11 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			Name:  "CONFIG_PATH",
 			Value: "/etc/evalhub/config.yaml",
 		},
-		{
-			Name:  "PROVIDERS_CONFIG_PATH",
-			Value: "/etc/evalhub/providers.yaml",
-		},
+		// TODO: reconsider when the Operator reads OOTB providers from ConfigMaps
+		// {
+		// 	Name:  "PROVIDERS_CONFIG_PATH",
+		// 	Value: "/etc/evalhub/providers.yaml",
+		// },
 		{
 			Name:  "SERVICE_URL",
 			Value: fmt.Sprintf("https://%s.%s.svc.cluster.local:8443", instance.Name, instance.Namespace),

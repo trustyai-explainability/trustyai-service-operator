@@ -219,7 +219,6 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		By("Checking that ConfigMap is created")
 		configMapCreated := waitForConfigMap(evalHubName+"-config", testNamespace)
 		Expect(configMapCreated.Data).To(HaveKey("config.yaml"))
-		Expect(configMapCreated.Data).To(HaveKey("providers.yaml"))
 
 		By("Checking that Deployment is created")
 		deployment := waitForDeployment(evalHubName, testNamespace)
