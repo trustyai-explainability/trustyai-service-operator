@@ -115,6 +115,11 @@ func (in *EvalHubSpec) DeepCopyInto(out *EvalHubSpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.Providers != nil {
+		in, out := &in.Providers, &out.Providers
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.Database != nil {
 		in, out := &in.Database, &out.Database
 		*out = new(DatabaseSpec)

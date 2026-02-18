@@ -42,6 +42,11 @@ var _ = Describe("EvalHub Controller", func() {
 		configMap = createConfigMap(configMapName, testNamespace)
 		Expect(k8sClient.Create(ctx, configMap)).Should(Succeed())
 
+		// Create source provider ConfigMaps (needed because the CRD default populates providers)
+		for _, cm := range createDefaultProviderConfigMaps(testNamespace) {
+			Expect(k8sClient.Create(ctx, cm)).Should(Succeed())
+		}
+
 		// Create EvalHub instance
 		evalHub = createEvalHubInstance(evalHubName, testNamespace)
 		Expect(k8sClient.Create(ctx, evalHub)).Should(Succeed())
@@ -179,6 +184,11 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		// Create config map for image configuration
 		configMap = createConfigMap(configMapName, testNamespace)
 		Expect(k8sClient.Create(ctx, configMap)).Should(Succeed())
+
+		// Create source provider ConfigMaps (needed because the CRD default populates providers)
+		for _, cm := range createDefaultProviderConfigMaps(testNamespace) {
+			Expect(k8sClient.Create(ctx, cm)).Should(Succeed())
+		}
 
 		// Create EvalHub instance
 		evalHub = createEvalHubInstance(evalHubName, testNamespace)

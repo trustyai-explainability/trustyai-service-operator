@@ -1,0 +1,130 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: evalhub-provider-guidellm
+  labels:
+    eval-hub.github.io/provider-type: system
+    eval-hub.github.io/provider-name: guidellm
+data:
+  guidellm.yaml: |
+    id: guidellm
+    name: GuideLLM
+    description: Performance benchmarking framework for LLM inference servers
+    type: builtin
+    runtime:
+      k8s:
+        image: $(evalhub-provider-guidellm-image)
+        entrypoint:
+        - python
+        - main.py
+        cpu_request: 100m
+        memory_request: 128Mi
+        cpu_limit: 1000m
+        memory_limit: 2Gi
+      local: null
+    benchmarks:
+    - id: sweep
+      name: Sweep Profile
+      description: Automatically finds optimal request rate by sweeping from low to high
+        concurrency
+      category: performance
+      metrics:
+      - requests_per_second
+      - prompt_tokens_per_second
+      - output_tokens_per_second
+      - mean_ttft_ms
+      - mean_itl_ms
+      tags:
+      - performance
+      - throughput
+      - latency
+      - guidellm
+      - auto
+    - id: throughput
+      name: Throughput Profile
+      description: Measures maximum throughput by gradually increasing request rate until
+        saturation
+      category: performance
+      metrics:
+      - requests_per_second
+      - prompt_tokens_per_second
+      - output_tokens_per_second
+      - mean_ttft_ms
+      - mean_itl_ms
+      tags:
+      - performance
+      - throughput
+      - guidellm
+      - saturation
+    - id: concurrent
+      name: Concurrent Profile
+      description: Tests performance with fixed number of concurrent requests
+      category: performance
+      metrics:
+      - requests_per_second
+      - prompt_tokens_per_second
+      - output_tokens_per_second
+      - mean_ttft_ms
+      - mean_itl_ms
+      tags:
+      - performance
+      - concurrency
+      - guidellm
+    - id: constant
+      name: Constant Rate Profile
+      description: Maintains constant request rate throughout benchmark duration
+      category: performance
+      metrics:
+      - requests_per_second
+      - prompt_tokens_per_second
+      - output_tokens_per_second
+      - mean_ttft_ms
+      - mean_itl_ms
+      tags:
+      - performance
+      - constant_rate
+      - guidellm
+    - id: poisson
+      name: Poisson Profile
+      description: Sends requests following Poisson distribution for realistic production
+        simulation
+      category: performance
+      metrics:
+      - requests_per_second
+      - prompt_tokens_per_second
+      - output_tokens_per_second
+      - mean_ttft_ms
+      - mean_itl_ms
+      tags:
+      - performance
+      - poisson
+      - realistic
+      - guidellm
+    - id: quick_perf_test
+      name: Quick Performance Test
+      description: Fast performance evaluation with sweep profile and limited samples
+      category: performance
+      metrics:
+      - requests_per_second
+      - mean_ttft_ms
+      - mean_itl_ms
+      tags:
+      - performance
+      - quick
+      - guidellm
+      - suite
+    - id: comprehensive_perf_test
+      name: Comprehensive Performance Test
+      description: Thorough performance evaluation across all profiles
+      category: performance
+      metrics:
+      - requests_per_second
+      - prompt_tokens_per_second
+      - output_tokens_per_second
+      - mean_ttft_ms
+      - mean_itl_ms
+      tags:
+      - performance
+      - comprehensive
+      - guidellm
+      - suite

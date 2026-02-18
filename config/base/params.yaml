@@ -2,3 +2,5 @@
 varReference:
   - kind: Deployment
     path: spec/template/spec/containers[]/image
+  - kind: ConfigMap
+    path: data

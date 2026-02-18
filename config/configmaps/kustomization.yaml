@@ -1,4 +1,5 @@
 resources:
   - lmeval.yaml
+  - evalhub/
 
 namespace: system

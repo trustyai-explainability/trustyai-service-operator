@@ -75,7 +75,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should create deployment with correct specifications", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Verifying deployment exists")
@@ -105,7 +105,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should configure evalhub container correctly", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -135,7 +135,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should set default environment variables", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -171,7 +171,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should include custom environment variables", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -200,7 +200,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should configure resource requirements", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -234,7 +234,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should configure health probes", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -273,7 +273,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should configure security contexts", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -302,7 +302,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should update existing deployment", func() {
 			By("Creating initial deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Modifying EvalHub replicas")
@@ -312,7 +312,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Reconciling deployment again")
-			err = reconciler.reconcileDeployment(ctx, evalHub)
+			err = reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Verifying deployment is updated")
@@ -331,14 +331,14 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Reconciling deployment without config map")
-			err = reconciler.reconcileDeployment(ctx, evalHub)
+			err = reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("kube-rbac-proxy configuration error"))
 		})
 
 		It("should configure rolling update strategy", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -360,7 +360,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			defer k8sClient.Delete(ctx, dbEvalHub)
 
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, dbEvalHub)
+			err := reconciler.reconcileDeployment(ctx, dbEvalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -420,7 +420,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(k8sClient.Create(ctx, evalHub)).Should(Succeed())
 
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -456,7 +456,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			}
 
 			By("Attempting to reconcile deployment")
-			err := reconciler.reconcileDeployment(ctx, nonExistentEvalHub)
+			err := reconciler.reconcileDeployment(ctx, nonExistentEvalHub, nil)
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -482,7 +482,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(k8sClient.Create(ctx, evalHub)).Should(Succeed())
 
 			By("Attempting to reconcile deployment")
-			err = reconciler.reconcileDeployment(ctx, evalHub)
+			err = reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("kube-rbac-proxy configuration error"))
 
@@ -500,7 +500,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should include kube-rbac-proxy sidecar container", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -540,7 +540,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should configure kube-rbac-proxy resource requirements", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -573,7 +573,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should configure kube-rbac-proxy security context", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -599,7 +599,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should configure kube-rbac-proxy volume mounts", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -638,7 +638,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should configure deployment volumes for proxy", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -676,7 +676,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should configure service account for API", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")

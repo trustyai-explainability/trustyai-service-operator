@@ -68,7 +68,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 	}
 
 	t.Run("should build correct deployment spec", func(t *testing.T) {
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil)
 		require.NoError(t, err)
 
 		// Check replicas
@@ -183,7 +183,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 			EventRecorder: record.NewFakeRecorder(10),
 		}
 
-		deploymentSpec, err := reconcilerNoConfig.buildDeploymentSpec(ctx, evalHub)
+		deploymentSpec, err := reconcilerNoConfig.buildDeploymentSpec(ctx, evalHub, nil)
 		require.Error(t, err)
 		// Should return empty deployment spec (zero value) on error
 		assert.Equal(t, appsv1.DeploymentSpec{}, deploymentSpec)
@@ -201,7 +201,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 			},
 		}
 
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHubNoReplicas)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHubNoReplicas, nil)
 		require.NoError(t, err)
 
 		// Should use default replicas (1)

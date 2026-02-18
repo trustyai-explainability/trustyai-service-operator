@@ -281,6 +281,95 @@ func (r *EvalHubReconciler) generateProxyConfigData(instance *evalhubv1alpha1.Ev
 	}
 }
 
+// reconcileProviderConfigMaps copies provider ConfigMaps from the operator namespace to the
+// EvalHub CR's namespace. Only providers listed in instance.Spec.Providers are copied.
+// Each source ConfigMap is discovered by the labels:
+//   - eval-hub.github.io/provider-type=system
+//   - eval-hub.github.io/provider-name=<name>
+//
+// Returns the list of created ConfigMap names (for building projected volumes).
+func (r *EvalHubReconciler) reconcileProviderConfigMaps(ctx context.Context, instance *evalhubv1alpha1.EvalHub) ([]string, error) {
+	if len(instance.Spec.Providers) == 0 {
+		return nil, nil
+	}
+
+	log := log.FromContext(ctx)
+	log.Info("Reconciling Provider ConfigMaps", "instance", instance.Name, "providers", instance.Spec.Providers)
+
+	var cmNames []string
+	for _, providerName := range instance.Spec.Providers {
+		// Look up the source ConfigMap by both labels
+		var sourceList corev1.ConfigMapList
+		if err := r.List(ctx, &sourceList,
+			client.InNamespace(r.Namespace),
+			client.MatchingLabels{
+				providerLabel:     "system",
+				providerNameLabel: providerName,
+			}); err != nil {
+			return nil, fmt.Errorf("failed to list provider ConfigMaps for %q in namespace %s: %w", providerName, r.Namespace, err)
+		}
+		if len(sourceList.Items) == 0 {
+			return nil, fmt.Errorf("provider %q not found: no ConfigMap with label %s=%s in namespace %s",
+				providerName, providerNameLabel, providerName, r.Namespace)
+		}
+
+		src := &sourceList.Items[0]
+		targetName := instance.Name + "-provider-" + providerName
+
+		configMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      targetName,
+				Namespace: instance.Namespace,
+			},
+		}
+
+		// Check if ConfigMap already exists
+		getErr := r.Get(ctx, client.ObjectKeyFromObject(configMap), configMap)
+		if getErr != nil && !errors.IsNotFound(getErr) {
+			return nil, getErr
+		}
+
+		if errors.IsNotFound(getErr) {
+			configMap.Data = src.Data
+			if instance.UID != "" {
+				if err := controllerutil.SetControllerReference(instance, configMap, r.Scheme); err != nil {
+					return nil, err
+				}
+			}
+			log.Info("Creating Provider ConfigMap", "name", targetName, "provider", providerName)
+			if err := r.Create(ctx, configMap); err != nil {
+				return nil, err
+			}
+		} else {
+			configMap.Data = src.Data
+			log.Info("Updating Provider ConfigMap", "name", targetName, "provider", providerName)
+			if err := r.Update(ctx, configMap); err != nil {
+				return nil, err
+			}
+		}
+
+		cmNames = append(cmNames, targetName)
+	}
+
+	return cmNames, nil
+}
+
+// providerVolumeProjections builds VolumeProjection entries for mounting provider ConfigMaps
+// into a single projected volume.
+func providerVolumeProjections(cmNames []string) []corev1.VolumeProjection {
+	var projections []corev1.VolumeProjection
+	for _, name := range cmNames {
+		projections = append(projections, corev1.VolumeProjection{
+			ConfigMap: &corev1.ConfigMapProjection{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: name,
+				},
+			},
+		})
+	}
+	return projections
+}
+
 // reconcileServiceCAConfigMap creates or updates the ConfigMap for service CA certificate injection
 // This ConfigMap is used by jobs to mount the service CA certificate for TLS verification
 func (r *EvalHubReconciler) reconcileServiceCAConfigMap(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {

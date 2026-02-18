@@ -6,6 +6,7 @@ resources:
   - ../rbac
   - ../manager
   - ../prometheus
+  - ../configmaps
 
 commonLabels:
   app.kubernetes.io/part-of: trustyai
@@ -56,3 +57,31 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.evalHubImage
+  - name: evalhub-provider-garak-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-garak-image
+  - name: evalhub-provider-guidellm-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-guidellm-image
+  - name: evalhub-provider-lighteval-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-lighteval-image
+  - name: evalhub-provider-lm-evaluation-harness-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-lm-evaluation-harness-image

@@ -45,6 +45,12 @@ type EvalHubSpec struct {
 	// +optional
 	Env []corev1.EnvVar `json:"env,omitempty"`
 
+	// Providers is the list of OOTB provider names to mount into the deployment.
+	// Each name must match a provider-name label on a ConfigMap in the operator namespace.
+	// +kubebuilder:default:={"garak","guidellm","lighteval","lm-evaluation-harness"}
+	// +optional
+	Providers []string `json:"providers,omitempty"`
+
 	// Database configuration for persistent storage.
 	// When set, the operator configures PostgreSQL via the referenced secret.
 	// When omitted, the service uses its default (in-memory SQLite).

@@ -49,6 +49,12 @@ const (
 	mlflowTokenMountPath  = "/var/run/secrets/mlflow"
 	mlflowTokenFile       = "token"
 	mlflowTokenExpiration = 3600 // seconds
+
+	// Provider ConfigMap configuration
+	providerLabel       = "eval-hub.github.io/provider-type"
+	providerNameLabel   = "eval-hub.github.io/provider-name"
+	providersVolumeName = "evalhub-providers"
+	providersMountPath  = "/etc/evalhub/config/providers"
 )
 
 var (

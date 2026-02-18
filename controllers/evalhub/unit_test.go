@@ -73,7 +73,7 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 	}
 
 	t.Run("should create deployment with correct spec", func(t *testing.T) {
-		err := reconciler.reconcileDeployment(ctx, evalHub)
+		err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 		require.NoError(t, err)
 
 		// Verify deployment was created
@@ -154,7 +154,7 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 			EventRecorder: record.NewFakeRecorder(10),
 		}
 
-		err := reconcilerNoConfig.reconcileDeployment(ctx, evalHub)
+		err := reconcilerNoConfig.reconcileDeployment(ctx, evalHub, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "kube-rbac-proxy configuration error")
 	})
@@ -1210,7 +1210,7 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 	}
 
 	t.Run("should add DB secret volume and mount when database configured", func(t *testing.T) {
-		err := reconciler.reconcileDeployment(ctx, evalHub)
+		err := reconciler.reconcileDeployment(ctx, evalHub, nil)
 		require.NoError(t, err)
 
 		deployment := &appsv1.Deployment{}
@@ -1282,5 +1282,214 @@ func TestEvalHubHelperMethods_IsDatabaseConfigured(t *testing.T) {
 			},
 		}
 		assert.True(t, spec.IsDatabaseConfigured())
+	})
+}
+
+func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	operatorNamespace := "operator-ns"
+	instanceNamespace := "instance-ns"
+	evalHubName := "test-evalhub"
+
+	// Source provider ConfigMap in the operator namespace (simulates what kustomize deploys)
+	sourceProvider := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "trustyai-service-operator-evalhub-provider-testprovider",
+			Namespace: operatorNamespace,
+			Labels: map[string]string{
+				providerLabel:     "system",
+				providerNameLabel: "testprovider",
+			},
+		},
+		Data: map[string]string{
+			"testprovider.yaml": "id: testprovider\nname: Test Provider\nruntime:\n  k8s:\n    image: quay.io/test/provider:latest\n",
+		},
+	}
+
+	t.Run("should copy provider ConfigMap to instance namespace", func(t *testing.T) {
+		evalHub := &evalhubv1alpha1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      evalHubName,
+				Namespace: instanceNamespace,
+			},
+			Spec: evalhubv1alpha1.EvalHubSpec{
+				Providers: []string{"testprovider"},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, sourceProvider).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			Namespace:     operatorNamespace,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		cmNames, err := reconciler.reconcileProviderConfigMaps(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Should return the target ConfigMap name
+		require.Len(t, cmNames, 1)
+		assert.Equal(t, evalHubName+"-provider-testprovider", cmNames[0])
+
+		// Verify the ConfigMap was created in the instance namespace with correct data
+		copiedCM := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName + "-provider-testprovider",
+			Namespace: instanceNamespace,
+		}, copiedCM)
+		require.NoError(t, err)
+		assert.Equal(t, sourceProvider.Data["testprovider.yaml"], copiedCM.Data["testprovider.yaml"])
+	})
+
+	t.Run("should return nil when no providers specified", func(t *testing.T) {
+		evalHub := &evalhubv1alpha1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      evalHubName,
+				Namespace: instanceNamespace,
+			},
+			Spec: evalhubv1alpha1.EvalHubSpec{},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			Namespace:     operatorNamespace,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		cmNames, err := reconciler.reconcileProviderConfigMaps(ctx, evalHub)
+		require.NoError(t, err)
+		assert.Nil(t, cmNames)
+	})
+
+	t.Run("should error when provider not found", func(t *testing.T) {
+		evalHub := &evalhubv1alpha1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      evalHubName,
+				Namespace: instanceNamespace,
+			},
+			Spec: evalhubv1alpha1.EvalHubSpec{
+				Providers: []string{"nonexistent"},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			Namespace:     operatorNamespace,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		cmNames, err := reconciler.reconcileProviderConfigMaps(ctx, evalHub)
+		require.Error(t, err)
+		assert.Nil(t, cmNames)
+		assert.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("should mount providers as projected volume in deployment", func(t *testing.T) {
+		evalHub := &evalhubv1alpha1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      evalHubName,
+				Namespace: instanceNamespace,
+			},
+			Spec: evalhubv1alpha1.EvalHubSpec{
+				Providers: []string{"testprovider"},
+			},
+		}
+
+		operatorConfigMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      configMapName,
+				Namespace: operatorNamespace,
+			},
+			Data: map[string]string{
+				configMapEvalHubImageKey:       "quay.io/test/eval-hub:latest",
+				configMapKubeRBACProxyImageKey: "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, sourceProvider, operatorConfigMap).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			Namespace:     operatorNamespace,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		// First reconcile provider ConfigMaps
+		cmNames, err := reconciler.reconcileProviderConfigMaps(ctx, evalHub)
+		require.NoError(t, err)
+		require.Len(t, cmNames, 1)
+
+		// Then reconcile deployment with the provider ConfigMap names
+		err = reconciler.reconcileDeployment(ctx, evalHub, cmNames)
+		require.NoError(t, err)
+
+		// Verify the deployment has the projected volume
+		deployment := &appsv1.Deployment{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName,
+			Namespace: instanceNamespace,
+		}, deployment)
+		require.NoError(t, err)
+
+		// Find the evalhub-providers projected volume
+		var providersVolume *corev1.Volume
+		for i, v := range deployment.Spec.Template.Spec.Volumes {
+			if v.Name == providersVolumeName {
+				providersVolume = &deployment.Spec.Template.Spec.Volumes[i]
+				break
+			}
+		}
+		require.NotNil(t, providersVolume, "evalhub-providers volume should be present")
+		require.NotNil(t, providersVolume.VolumeSource.Projected)
+		require.Len(t, providersVolume.VolumeSource.Projected.Sources, 1)
+		assert.Equal(t, evalHubName+"-provider-testprovider",
+			providersVolume.VolumeSource.Projected.Sources[0].ConfigMap.Name)
+
+		// Find the providers volume mount on the evalhub container
+		var evalHubContainer *corev1.Container
+		for i, c := range deployment.Spec.Template.Spec.Containers {
+			if c.Name == containerName {
+				evalHubContainer = &deployment.Spec.Template.Spec.Containers[i]
+				break
+			}
+		}
+		require.NotNil(t, evalHubContainer)
+
+		var providersMount *corev1.VolumeMount
+		for i, m := range evalHubContainer.VolumeMounts {
+			if m.Name == providersVolumeName {
+				providersMount = &evalHubContainer.VolumeMounts[i]
+				break
+			}
+		}
+		require.NotNil(t, providersMount, "providers volume mount should be present")
+		assert.Equal(t, providersMountPath, providersMount.MountPath)
+		assert.True(t, providersMount.ReadOnly)
 	})
 }

@@ -180,6 +180,18 @@ spec:
                   - name
                   type: object
                 type: array
+              providers:
+                default:
+                - garak
+                - guidellm
+                - lighteval
+                - lm-evaluation-harness
+                description: |-
+                  Providers is the list of OOTB provider names to mount into the deployment.
+                  Each name must match a provider-name label on a ConfigMap in the operator namespace.
+                items:
+                  type: string
+                type: array
               replicas:
                 default: 1
                 description: Number of replicas for the eval-hub deployment

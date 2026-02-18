@@ -94,7 +94,8 @@ func createEvalHubInstance(name, namespace string) *evalhubv1alpha1.EvalHub {
 			Namespace: namespace,
 		},
 		Spec: evalhubv1alpha1.EvalHubSpec{
-			Replicas: &replicas,
+			Replicas:  &replicas,
+			Providers: []string{},
 			Env: []corev1.EnvVar{
 				{
 					Name:  "TEST_ENV",
@@ -126,6 +127,30 @@ func createConfigMap(name, namespace string) *corev1.ConfigMap {
 			"kube-rbac-proxy": "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
 		},
 	}
+}
+
+// createDefaultProviderConfigMaps creates source provider ConfigMaps in the given namespace
+// to satisfy the CRD default providers list during integration tests.
+func createDefaultProviderConfigMaps(namespace string) []*corev1.ConfigMap {
+	defaultProviders := []string{"garak", "guidellm", "lighteval", "lm-evaluation-harness"}
+	var cms []*corev1.ConfigMap
+	for _, id := range defaultProviders {
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "evalhub-provider-" + id,
+				Namespace: namespace,
+				Labels: map[string]string{
+					providerLabel:     "system",
+					providerNameLabel: id,
+				},
+			},
+			Data: map[string]string{
+				id + ".yaml": "id: " + id + "\nname: " + id + "\n",
+			},
+		}
+		cms = append(cms, cm)
+	}
+	return cms
 }
 
 // setupReconciler creates and returns a EvalHubReconciler for testing
