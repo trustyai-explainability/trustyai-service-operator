@@ -181,6 +181,12 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
+	// Create RoleBinding for API SA secrets-reader
+	err = r.createSecretsReaderRoleBinding(ctx, instance, serviceAccountName)
+	if err != nil {
+		return err
+	}
+
 	// Create RoleBindings for split resource-manager roles (API SA only)
 	err = r.createJobsWriterRoleBinding(ctx, instance, serviceAccountName)
 	if err != nil {
@@ -225,6 +231,9 @@ const (
 	jobsWriterClusterRoleName = "trustyai-service-operator-evalhub-jobs-writer"
 	jobConfigClusterRoleName  = "trustyai-service-operator-evalhub-job-config"
 )
+
+// secretsReaderClusterRoleName allows the API SA to validate referenced secrets.
+const secretsReaderClusterRoleName = "trustyai-service-operator-evalhub-secrets-reader"
 
 // MLFlow access uses custom ClusterRoles scoped to the "mlflow.kubeflow.org" API group.
 // MLFlow's kubernetes-workspace-provider checks permissions via SelfSubjectAccessReview
@@ -523,6 +532,16 @@ func (r *EvalHubReconciler) createJobConfigRoleBinding(ctx context.Context, inst
 	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-job-config-rb", serviceAccountName, rbacv1.RoleRef{
 		Kind:     "ClusterRole",
 		Name:     jobConfigClusterRoleName,
+		APIGroup: rbacv1.GroupName,
+	})
+}
+
+// createSecretsReaderRoleBinding creates a RoleBinding for the API SA to the
+// secrets-reader ClusterRole (secrets get).
+func (r *EvalHubReconciler) createSecretsReaderRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
+	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-secrets-reader-rb", serviceAccountName, rbacv1.RoleRef{
+		Kind:     "ClusterRole",
+		Name:     secretsReaderClusterRoleName,
 		APIGroup: rbacv1.GroupName,
 	})
 }

@@ -13,6 +13,7 @@ resources:
   - evalhub/evalhub_jobs_writer_binding.yaml
   - evalhub/evalhub_job_config_role.yaml
   - evalhub/evalhub_job_config_binding.yaml
+  - evalhub/evalhub_secrets_reader_role.yaml
   - evalhub/evalhub_mlflow_access_role.yaml
   - evalhub/evalhub_mlflow_access_binding.yaml
   - evalhub/evalhub_mlflow_jobs_role.yaml

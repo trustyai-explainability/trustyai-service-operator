@@ -806,6 +806,60 @@ func TestEvalHubReconciler_createAPIAccessRoleBinding_RefersToRole(t *testing.T)
 	})
 }
 
+// TestEvalHubReconciler_createSecretsReaderRoleBinding verifies that the API SA
+// is bound to the secrets-reader ClusterRole.
+func TestEvalHubReconciler_createSecretsReaderRoleBinding(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, rbacv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1alpha1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+			UID:       "test-uid-123",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should create RoleBinding to secrets-reader ClusterRole", func(t *testing.T) {
+		apiSAName := evalHubName + "-api"
+		err := reconciler.createSecretsReaderRoleBinding(ctx, evalHub, apiSAName)
+		require.NoError(t, err)
+
+		rbName := evalHubName + "-secrets-reader-rb"
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
+		assert.Equal(t, secretsReaderClusterRoleName, rb.RoleRef.Name)
+		assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
+
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
+		assert.Equal(t, apiSAName, rb.Subjects[0].Name)
+		assert.Equal(t, testNamespace, rb.Subjects[0].Namespace)
+	})
+}
+
 // TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole verifies that the jobs
 // MLflow RoleBinding uses the restricted jobs-specific ClusterRole.
 func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) {
