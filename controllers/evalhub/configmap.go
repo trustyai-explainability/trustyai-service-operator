@@ -16,23 +16,37 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// ServiceConfig represents the service section in config.yaml
+type ServiceConfig struct {
+	Port            int    `json:"port"`
+	ReadyFile       string `json:"ready_file"`
+	TerminationFile string `json:"termination_file"`
+}
+
 // DatabaseConfig represents the database configuration in config.yaml
 type DatabaseConfig struct {
-	Driver       string `yaml:"driver"`
-	MaxOpenConns int    `yaml:"max_open_conns,omitempty"`
-	MaxIdleConns int    `yaml:"max_idle_conns,omitempty"`
+	Driver       string `json:"driver"`
+	URL          string `json:"url,omitempty"`
+	MaxOpenConns int    `json:"max_open_conns,omitempty"`
+	MaxIdleConns int    `json:"max_idle_conns,omitempty"`
 }
 
 // SecretsMapping represents the secrets mapping configuration in config.yaml
 type SecretsMapping struct {
-	Dir      string            `yaml:"dir"`
-	Mappings map[string]string `yaml:"mappings"`
+	Dir      string            `json:"dir"`
+	Mappings map[string]string `json:"mappings"`
 }
+
+// EnvMappings maps environment variable names to config field paths
+type EnvMappings map[string]string
 
 // EvalHubConfig represents the eval-hub configuration structure
 type EvalHubConfig struct {
-	Database *DatabaseConfig `yaml:"database,omitempty"`
-	Secrets  *SecretsMapping `yaml:"secrets,omitempty"`
+	Service     ServiceConfig   `json:"service"`
+	Secrets     *SecretsMapping `json:"secrets,omitempty"`
+	EnvMappings EnvMappings     `json:"env_mappings"`
+	Database    *DatabaseConfig `json:"database"`
+	Prometheus  map[string]any  `json:"prometheus,omitempty"`
 }
 
 // reconcileConfigMap creates or updates the ConfigMap for EvalHub configuration
@@ -79,9 +93,31 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 
 // generateConfigData generates the configuration data for the ConfigMap
 func (r *EvalHubReconciler) generateConfigData(instance *evalhubv1alpha1.EvalHub) (map[string]string, error) {
-	config := EvalHubConfig{}
+	config := EvalHubConfig{
+		Service: ServiceConfig{
+			Port:            containerPort,
+			ReadyFile:       "/tmp/repo-ready",
+			TerminationFile: "/tmp/termination-log",
+		},
+		EnvMappings: EnvMappings{
+			"PORT":                        "service.port",
+			"DB_URL":                      "database.url",
+			"MLFLOW_TRACKING_URI":         "mlflow.tracking_uri",
+			"MLFLOW_CA_CERT_PATH":         "mlflow.ca_cert_path",
+			"MLFLOW_INSECURE_SKIP_VERIFY": "mlflow.insecure_skip_verify",
+			"MLFLOW_TOKEN_PATH":           "mlflow.token_path",
+			"MLFLOW_WORKSPACE":            "mlflow.workspace",
+		},
+		Database: &DatabaseConfig{
+			Driver: "sqlite",
+			URL:    "file::eval_hub:?mode=memory&cache=shared",
+		},
+		Prometheus: map[string]any{
+			"enabled": true,
+		},
+	}
 
-	// Conditionally add database configuration
+	// Override database configuration when explicitly configured
 	if instance.Spec.IsDatabaseConfigured() {
 		maxOpen, maxIdle := dbDefaultMaxOpen, dbDefaultMaxIdle
 		if instance.Spec.Database.MaxOpenConns > 0 {
@@ -284,8 +320,8 @@ func (r *EvalHubReconciler) generateProxyConfigData(instance *evalhubv1alpha1.Ev
 // reconcileProviderConfigMaps copies provider ConfigMaps from the operator namespace to the
 // EvalHub CR's namespace. Only providers listed in instance.Spec.Providers are copied.
 // Each source ConfigMap is discovered by the labels:
-//   - eval-hub.github.io/provider-type=system
-//   - eval-hub.github.io/provider-name=<name>
+//   - trustyai.opendatahub.io/evalhub-provider-type=system
+//   - trustyai.opendatahub.io/evalhub-provider-name=<name>
 //
 // Returns the list of created ConfigMap names (for building projected volumes).
 func (r *EvalHubReconciler) reconcileProviderConfigMaps(ctx context.Context, instance *evalhubv1alpha1.EvalHub) ([]string, error) {

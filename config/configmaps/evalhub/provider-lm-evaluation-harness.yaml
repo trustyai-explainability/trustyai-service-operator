@@ -3,8 +3,8 @@ kind: ConfigMap
 metadata:
   name: evalhub-provider-lm-evaluation-harness
   labels:
-    eval-hub.github.io/provider-type: system
-    eval-hub.github.io/provider-name: lm-evaluation-harness
+    trustyai.opendatahub.io/evalhub-provider-type: system
+    trustyai.opendatahub.io/evalhub-provider-name: lm-evaluation-harness
 data:
   lm_evaluation_harness.yaml: |
     id: lm_evaluation_harness

@@ -104,12 +104,8 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			Value: "3",
 		},
 		{
-			Name:  "CONFIG_PATH",
-			Value: "/etc/evalhub/config.yaml",
-		},
-		{
-			Name:  "PROVIDERS_CONFIG_PATH",
-			Value: providersMountPath,
+			Name:  "EVAL_HUB_CONFIG_DIR",
+			Value: configDirPath,
 		},
 		{
 			Name:  "SERVICE_URL",
@@ -140,7 +136,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      "evalhub-config",
-			MountPath: "/etc/evalhub",
+			MountPath: configDirPath,
 			ReadOnly:  true,
 		},
 		{

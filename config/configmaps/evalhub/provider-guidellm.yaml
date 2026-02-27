@@ -3,8 +3,8 @@ kind: ConfigMap
 metadata:
   name: evalhub-provider-guidellm
   labels:
-    eval-hub.github.io/provider-type: system
-    eval-hub.github.io/provider-name: guidellm
+    trustyai.opendatahub.io/evalhub-provider-type: system
+    trustyai.opendatahub.io/evalhub-provider-name: guidellm
 data:
   guidellm.yaml: |
     id: guidellm

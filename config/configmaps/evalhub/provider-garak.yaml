@@ -3,8 +3,8 @@ kind: ConfigMap
 metadata:
   name: evalhub-provider-garak
   labels:
-    eval-hub.github.io/provider-type: system
-    eval-hub.github.io/provider-name: garak
+    trustyai.opendatahub.io/evalhub-provider-type: system
+    trustyai.opendatahub.io/evalhub-provider-name: garak
 data:
   garak.yaml: |
     id: garak

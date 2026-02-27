@@ -22,8 +22,8 @@ REPO = "eval-hub/eval-hub"
 UPSTREAM_DIR = "config/providers"
 OUTPUT_DIR = Path("config/configmaps/evalhub")
 
-PROVIDER_TYPE_LABEL = "eval-hub.github.io/provider-type"
-PROVIDER_NAME_LABEL = "eval-hub.github.io/provider-name"
+PROVIDER_TYPE_LABEL = "trustyai.opendatahub.io/evalhub-provider-type"
+PROVIDER_NAME_LABEL = "trustyai.opendatahub.io/evalhub-provider-name"
 
 # Files to exclude from the upstream repository (by filename)
 EXCLUDE_FILES = {

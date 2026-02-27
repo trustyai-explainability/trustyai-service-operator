@@ -3,8 +3,8 @@ kind: ConfigMap
 metadata:
   name: evalhub-provider-lighteval
   labels:
-    eval-hub.github.io/provider-type: system
-    eval-hub.github.io/provider-name: lighteval
+    trustyai.opendatahub.io/evalhub-provider-type: system
+    trustyai.opendatahub.io/evalhub-provider-name: lighteval
 data:
   lighteval.yaml: |
     id: lighteval
