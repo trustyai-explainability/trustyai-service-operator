@@ -238,6 +238,75 @@ var _ = Describe("EvalHub ConfigMap", func() {
 		})
 	})
 
+	Context("When OTEL is configured", func() {
+		It("should include otel section in config.yaml", func() {
+			By("Creating EvalHub with OTEL config")
+			otelEvalHub := createEvalHubInstance("otel-configmap-evalhub", testNamespace)
+			otelEvalHub.Spec.Otel = &evalhubv1alpha1.OTELSpec{
+				ExporterType:     "otlp-grpc",
+				ExporterEndpoint: "otel-collector:4317",
+				ExporterInsecure: true,
+				SamplingRatio:    "0.5",
+				EnableTracing:    true,
+				EnableMetrics:    true,
+				EnableLogs:       false,
+			}
+			Expect(k8sClient.Create(ctx, otelEvalHub)).Should(Succeed())
+			defer k8sClient.Delete(ctx, otelEvalHub)
+
+			By("Reconciling configmap")
+			err := reconciler.reconcileConfigMap(ctx, otelEvalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Getting configmap")
+			configMap := &corev1.ConfigMap{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "otel-configmap-evalhub-config",
+				Namespace: testNamespace,
+			}, configMap)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Parsing config.yaml")
+			var config EvalHubConfig
+			err = yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), &config)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking otel section")
+			Expect(config.OTEL).NotTo(BeNil())
+			Expect(config.OTEL.Enabled).To(BeTrue())
+			Expect(config.OTEL.ExporterType).To(Equal("otlp-grpc"))
+			Expect(config.OTEL.ExporterEndpoint).To(Equal("otel-collector:4317"))
+			Expect(config.OTEL.ExporterInsecure).To(BeTrue())
+			Expect(config.OTEL.SamplingRatio).NotTo(BeNil())
+			Expect(*config.OTEL.SamplingRatio).To(Equal(0.5))
+			Expect(config.OTEL.EnableTracing).To(BeTrue())
+			Expect(config.OTEL.EnableMetrics).To(BeTrue())
+			Expect(config.OTEL.EnableLogs).To(BeFalse())
+		})
+
+		It("should omit otel section when not configured", func() {
+			By("Reconciling configmap for standard EvalHub (no OTEL)")
+			err := reconciler.reconcileConfigMap(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Getting configmap")
+			configMap := &corev1.ConfigMap{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      evalHubName + "-config",
+				Namespace: testNamespace,
+			}, configMap)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Parsing config.yaml")
+			var config EvalHubConfig
+			err = yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), &config)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking otel section is absent")
+			Expect(config.OTEL).To(BeNil())
+		})
+	})
+
 	Context("Configuration data generation", func() {
 		It("should generate valid configuration data", func() {
 			By("Generating configuration data")

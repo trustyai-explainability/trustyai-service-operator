@@ -34,6 +34,28 @@ type DatabaseSpec struct {
 	MaxIdleConns int `json:"maxIdleConns,omitempty"`
 }
 
+// OTELSpec defines OpenTelemetry configuration for EvalHub.
+// Its presence in the CR spec implies OTEL is enabled.
+type OTELSpec struct {
+	// +kubebuilder:default:="otlp-grpc"
+	// +kubebuilder:validation:Enum=otlp-grpc;otlp-http;stdout
+	ExporterType     string `json:"exporterType,omitempty"`
+	ExporterEndpoint string `json:"exporterEndpoint,omitempty"`
+	// +kubebuilder:default:=false
+	ExporterInsecure bool `json:"exporterInsecure,omitempty"`
+	// Trace sampling ratio as a string-encoded float between "0" and "1" (e.g. "0.5").
+	// Defaults to "1.0" (sample everything) when omitted.
+	// +kubebuilder:default:="1.0"
+	// +optional
+	SamplingRatio string `json:"samplingRatio,omitempty"`
+	// +kubebuilder:default:=true
+	EnableTracing bool `json:"enableTracing,omitempty"`
+	// +optional
+	EnableMetrics bool `json:"enableMetrics,omitempty"`
+	// +optional
+	EnableLogs bool `json:"enableLogs,omitempty"`
+}
+
 // EvalHubSpec defines the desired state of EvalHub
 type EvalHubSpec struct {
 	// Number of replicas for the eval-hub deployment
@@ -56,6 +78,12 @@ type EvalHubSpec struct {
 	// When omitted, the service uses its default (in-memory SQLite).
 	// +optional
 	Database *DatabaseSpec `json:"database,omitempty"`
+
+	// OpenTelemetry configuration for observability.
+	// When set, the operator includes OTEL settings in the generated config.
+	// When omitted, the service uses its defaults (OTEL disabled).
+	// +optional
+	Otel *OTELSpec `json:"otel,omitempty"`
 }
 
 // EvalHubStatus defines the observed state of EvalHub
@@ -139,4 +167,9 @@ func (e *EvalHubSpec) GetReplicas() int32 {
 // IsDatabaseConfigured returns true if the database spec is set with a secret name
 func (e *EvalHubSpec) IsDatabaseConfigured() bool {
 	return e.Database != nil && e.Database.Secret != ""
+}
+
+// IsOTELConfigured returns true if the OTEL spec is set
+func (e *EvalHubSpec) IsOTELConfigured() bool {
+	return e.Otel != nil
 }

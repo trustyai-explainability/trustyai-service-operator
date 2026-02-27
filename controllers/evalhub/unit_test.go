@@ -1164,6 +1164,107 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 	})
 }
 
+func TestGenerateConfigData_WithOTEL(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+
+	t.Run("should include otel section when configured", func(t *testing.T) {
+		evalHub := &evalhubv1alpha1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1alpha1.EvalHubSpec{
+				Otel: &evalhubv1alpha1.OTELSpec{
+					ExporterType:     "otlp-grpc",
+					ExporterEndpoint: "otel-collector:4317",
+					ExporterInsecure: true,
+					SamplingRatio:    "0.5",
+					EnableTracing:    true,
+					EnableMetrics:    true,
+					EnableLogs:       false,
+				},
+			},
+		}
+
+		reconciler := &EvalHubReconciler{Scheme: scheme}
+		configData, err := reconciler.generateConfigData(evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		require.NotNil(t, config.OTEL)
+		assert.True(t, config.OTEL.Enabled)
+		assert.Equal(t, "otlp-grpc", config.OTEL.ExporterType)
+		assert.Equal(t, "otel-collector:4317", config.OTEL.ExporterEndpoint)
+		assert.True(t, config.OTEL.ExporterInsecure)
+		require.NotNil(t, config.OTEL.SamplingRatio)
+		assert.Equal(t, 0.5, *config.OTEL.SamplingRatio)
+		assert.True(t, config.OTEL.EnableTracing)
+		assert.True(t, config.OTEL.EnableMetrics)
+		assert.False(t, config.OTEL.EnableLogs)
+	})
+
+	t.Run("should use custom values", func(t *testing.T) {
+		evalHub := &evalhubv1alpha1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1alpha1.EvalHubSpec{
+				Otel: &evalhubv1alpha1.OTELSpec{
+					ExporterType:     "otlp-http",
+					ExporterEndpoint: "https://tempo.example.com:4318",
+					ExporterInsecure: false,
+					SamplingRatio:    "0.1",
+					EnableTracing:    true,
+					EnableMetrics:    false,
+					EnableLogs:       true,
+				},
+			},
+		}
+
+		reconciler := &EvalHubReconciler{Scheme: scheme}
+		configData, err := reconciler.generateConfigData(evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		require.NotNil(t, config.OTEL)
+		assert.Equal(t, "otlp-http", config.OTEL.ExporterType)
+		assert.Equal(t, "https://tempo.example.com:4318", config.OTEL.ExporterEndpoint)
+		assert.False(t, config.OTEL.ExporterInsecure)
+		require.NotNil(t, config.OTEL.SamplingRatio)
+		assert.Equal(t, 0.1, *config.OTEL.SamplingRatio)
+		assert.True(t, config.OTEL.EnableTracing)
+		assert.False(t, config.OTEL.EnableMetrics)
+		assert.True(t, config.OTEL.EnableLogs)
+	})
+
+	t.Run("should omit otel section when not configured", func(t *testing.T) {
+		evalHub := &evalhubv1alpha1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+		}
+
+		reconciler := &EvalHubReconciler{Scheme: scheme}
+		configData, err := reconciler.generateConfigData(evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		assert.Nil(t, config.OTEL)
+	})
+}
+
 func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))

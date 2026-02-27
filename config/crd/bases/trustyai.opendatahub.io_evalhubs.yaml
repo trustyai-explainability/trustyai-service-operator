@@ -180,6 +180,38 @@ spec:
                   - name
                   type: object
                 type: array
+              otel:
+                description: |-
+                  OpenTelemetry configuration for observability.
+                  When set, the operator includes OTEL settings in the generated config.
+                  When omitted, the service uses its defaults (OTEL disabled).
+                properties:
+                  enableLogs:
+                    type: boolean
+                  enableMetrics:
+                    type: boolean
+                  enableTracing:
+                    default: true
+                    type: boolean
+                  exporterEndpoint:
+                    type: string
+                  exporterInsecure:
+                    default: false
+                    type: boolean
+                  exporterType:
+                    default: otlp-grpc
+                    enum:
+                    - otlp-grpc
+                    - otlp-http
+                    - stdout
+                    type: string
+                  samplingRatio:
+                    default: "1.0"
+                    description: |-
+                      Trace sampling ratio as a string-encoded float between "0" and "1" (e.g. "0.5").
+                      Defaults to "1.0" (sample everything) when omitted.
+                    type: string
+                type: object
               providers:
                 default:
                 - garak

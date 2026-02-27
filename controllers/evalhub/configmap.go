@@ -3,6 +3,7 @@ package evalhub
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
@@ -31,6 +32,18 @@ type DatabaseConfig struct {
 	MaxIdleConns int    `json:"max_idle_conns,omitempty"`
 }
 
+// OTELConfig represents the OpenTelemetry configuration in config.yaml
+type OTELConfig struct {
+	Enabled          bool     `json:"enabled"`
+	ExporterType     string   `json:"exporter_type,omitempty"`
+	ExporterEndpoint string   `json:"exporter_endpoint,omitempty"`
+	ExporterInsecure bool     `json:"exporter_insecure,omitempty"`
+	SamplingRatio    *float64 `json:"sampling_ratio,omitempty"`
+	EnableTracing    bool     `json:"enable_tracing,omitempty"`
+	EnableMetrics    bool     `json:"enable_metrics,omitempty"`
+	EnableLogs       bool     `json:"enable_logs,omitempty"`
+}
+
 // SecretsMapping represents the secrets mapping configuration in config.yaml
 type SecretsMapping struct {
 	Dir      string            `json:"dir"`
@@ -46,6 +59,7 @@ type EvalHubConfig struct {
 	Secrets     *SecretsMapping `json:"secrets,omitempty"`
 	EnvMappings EnvMappings     `json:"env_mappings"`
 	Database    *DatabaseConfig `json:"database"`
+	OTEL        *OTELConfig     `json:"otel,omitempty"`
 	Prometheus  map[string]any  `json:"prometheus,omitempty"`
 }
 
@@ -135,6 +149,27 @@ func (r *EvalHubReconciler) generateConfigData(instance *evalhubv1alpha1.EvalHub
 			Dir:      dbSecretMountPath,
 			Mappings: map[string]string{dbSecretKey: "database.url"},
 		}
+	}
+
+	// Override OTEL configuration when explicitly configured
+	if instance.Spec.IsOTELConfigured() {
+		otelCfg := &OTELConfig{
+			Enabled:          true,
+			ExporterType:     instance.Spec.Otel.ExporterType,
+			ExporterEndpoint: instance.Spec.Otel.ExporterEndpoint,
+			ExporterInsecure: instance.Spec.Otel.ExporterInsecure,
+			EnableTracing:    instance.Spec.Otel.EnableTracing,
+			EnableMetrics:    instance.Spec.Otel.EnableMetrics,
+			EnableLogs:       instance.Spec.Otel.EnableLogs,
+		}
+		if instance.Spec.Otel.SamplingRatio != "" {
+			ratio, err := strconv.ParseFloat(instance.Spec.Otel.SamplingRatio, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid samplingRatio %q: %w", instance.Spec.Otel.SamplingRatio, err)
+			}
+			otelCfg.SamplingRatio = &ratio
+		}
+		config.OTEL = otelCfg
 	}
 
 	// Convert to YAML
