@@ -1142,7 +1142,7 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 		assert.Equal(t, 10, config.Database.MaxIdleConns)
 	})
 
-	t.Run("should omit database and secrets sections when DB not configured", func(t *testing.T) {
+	t.Run("should default to sqlite when DB not explicitly configured", func(t *testing.T) {
 		evalHub := &evalhubv1alpha1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-evalhub",
@@ -1158,7 +1158,8 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
 		require.NoError(t, err)
 
-		assert.Nil(t, config.Database)
+		assert.NotNil(t, config.Database)
+		assert.Equal(t, "sqlite", config.Database.Driver)
 		assert.Nil(t, config.Secrets)
 	})
 }

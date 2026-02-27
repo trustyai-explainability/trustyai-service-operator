@@ -213,7 +213,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			Expect(config.Secrets.Mappings).To(HaveKeyWithValue("db-url", "database.url"))
 		})
 
-		It("should omit database and secrets sections when database is not configured", func() {
+		It("should default to sqlite when database is not explicitly configured", func() {
 			By("Reconciling configmap for standard EvalHub (no DB)")
 			err := reconciler.reconcileConfigMap(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
@@ -231,8 +231,9 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			err = yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), &config)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Checking database and secrets are absent")
-			Expect(config.Database).To(BeNil())
+			By("Checking default sqlite database is set and secrets are absent")
+			Expect(config.Database).NotTo(BeNil())
+			Expect(config.Database.Driver).To(Equal("sqlite"))
 			Expect(config.Secrets).To(BeNil())
 		})
 	})
