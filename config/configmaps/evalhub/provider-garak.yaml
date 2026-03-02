@@ -16,7 +16,8 @@ data:
         image: $(evalhub-provider-garak-image)
         entrypoint:
         - python
-        - /opt/app-root/src/main.py
+        - -m
+        - llama_stack_provider_trustyai_garak.evalhub
         cpu_request: 100m
         memory_request: 128Mi
         cpu_limit: 500m
@@ -26,55 +27,85 @@ data:
           value: VALUE
       local: null
     benchmarks:
-    - id: toxicity
-      name: Toxicity Detection
-      description: Tests model's tendency to generate toxic content
-      category: safety
-      metrics:
-      - toxicity_rate
-      - severity_score
-      num_few_shot: 0
-      dataset_size: 500
-      tags:
-      - safety
-      - toxicity
-      - red_team
-    - id: bias_detection
-      name: Bias Detection
-      description: Evaluates model for various forms of bias
-      category: fairness
-      metrics:
-      - bias_score
-      - demographic_parity
-      num_few_shot: 0
-      dataset_size: 1000
-      tags:
-      - fairness
-      - bias
-      - demographic
-    - id: pii_leakage
-      name: PII Leakage
-      description: Tests for personally identifiable information leakage
-      category: privacy
-      metrics:
-      - pii_leak_rate
-      - sensitivity_score
-      num_few_shot: 0
-      dataset_size: 300
-      tags:
-      - privacy
-      - pii
-      - security
-    - id: prompt_injection
-      name: Prompt Injection
-      description: Tests resilience against prompt injection attacks
+    - id: trustyai_garak::owasp_llm_top10
+      name: OWASP LLM Top 10
+      description: OWASP Top 10 for Large Language Model Applications
       category: security
       metrics:
-      - injection_success_rate
-      - defense_effectiveness
-      num_few_shot: 0
-      dataset_size: 200
+      - attack_success_rate
       tags:
       - security
-      - injection
-      - adversarial
+      - owasp
+      - red_team
+    - id: trustyai_garak::avid
+      name: AVID Taxonomy
+      description: AI Vulnerability and Incident Database - All vulnerabilities
+      category: security
+      metrics:
+      - attack_success_rate
+      tags:
+      - security
+      - avid
+      - red_team
+    - id: trustyai_garak::avid_security
+      name: AVID Security Taxonomy
+      description: AI Vulnerability and Incident Database - Security vulnerabilities
+      category: security
+      metrics:
+      - attack_success_rate
+      tags:
+      - security
+      - avid
+      - red_team
+    - id: trustyai_garak::avid_ethics
+      name: AVID Ethics Taxonomy
+      description: AI Vulnerability and Incident Database - Ethical concerns
+      category: safety
+      metrics:
+      - attack_success_rate
+      tags:
+      - safety
+      - ethics
+      - avid
+      - red_team
+    - id: trustyai_garak::avid_performance
+      name: AVID Performance Taxonomy
+      description: AI Vulnerability and Incident Database - Performance issues
+      category: performance
+      metrics:
+      - attack_success_rate
+      tags:
+      - performance
+      - avid
+      - red_team
+    - id: trustyai_garak::quality
+      name: Quality Issues
+      description: Common quality issues like Violence, Profanity, Toxicity, Hate Speech, Integrity, etc.
+      category: safety
+      metrics:
+      - attack_success_rate
+      tags:
+      - safety
+      - quality
+      - toxicity
+      - red_team
+    - id: trustyai_garak::cwe
+      name: Common Weakness Enumeration
+      description: Common Weakness Enumeration - Software security weaknesses
+      category: security
+      metrics:
+      - attack_success_rate
+      tags:
+      - security
+      - cwe
+      - red_team
+    - id: trustyai_garak::quick
+      name: Quick Scan
+      description: Quick scan with a single probe for testing and validation
+      category: security
+      metrics:
+      - attack_success_rate
+      tags:
+      - security
+      - quick
+      - red_team
