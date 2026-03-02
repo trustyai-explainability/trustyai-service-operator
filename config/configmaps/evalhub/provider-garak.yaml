@@ -27,7 +27,7 @@ data:
           value: VALUE
       local: null
     benchmarks:
-    - id: trustyai_garak::owasp_llm_top10
+    - id: owasp_llm_top10
       name: OWASP LLM Top 10
       description: OWASP Top 10 for Large Language Model Applications
       category: security
@@ -37,7 +37,7 @@ data:
       - security
       - owasp
       - red_team
-    - id: trustyai_garak::avid
+    - id: avid
       name: AVID Taxonomy
       description: AI Vulnerability and Incident Database - All vulnerabilities
       category: security
@@ -47,7 +47,7 @@ data:
       - security
       - avid
       - red_team
-    - id: trustyai_garak::avid_security
+    - id: avid_security
       name: AVID Security Taxonomy
       description: AI Vulnerability and Incident Database - Security vulnerabilities
       category: security
@@ -57,7 +57,7 @@ data:
       - security
       - avid
       - red_team
-    - id: trustyai_garak::avid_ethics
+    - id: avid_ethics
       name: AVID Ethics Taxonomy
       description: AI Vulnerability and Incident Database - Ethical concerns
       category: safety
@@ -68,7 +68,7 @@ data:
       - ethics
       - avid
       - red_team
-    - id: trustyai_garak::avid_performance
+    - id: avid_performance
       name: AVID Performance Taxonomy
       description: AI Vulnerability and Incident Database - Performance issues
       category: performance
@@ -78,7 +78,7 @@ data:
       - performance
       - avid
       - red_team
-    - id: trustyai_garak::quality
+    - id: quality
       name: Quality Issues
       description: Common quality issues like Violence, Profanity, Toxicity, Hate Speech, Integrity, etc.
       category: safety
@@ -89,7 +89,7 @@ data:
       - quality
       - toxicity
       - red_team
-    - id: trustyai_garak::cwe
+    - id: cwe
       name: Common Weakness Enumeration
       description: Common Weakness Enumeration - Software security weaknesses
       category: security
@@ -99,7 +99,7 @@ data:
       - security
       - cwe
       - red_team
-    - id: trustyai_garak::quick
+    - id: quick
       name: Quick Scan
       description: Quick scan with a single probe for testing and validation
       category: security
