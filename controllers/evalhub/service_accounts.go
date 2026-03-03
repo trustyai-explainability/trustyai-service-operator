@@ -840,13 +840,17 @@ func (r *EvalHubReconciler) reconcileTenantNamespace(ctx context.Context, instan
 		"app.kubernetes.io/part-of":  "eval-hub",
 	}
 
+	managedAnnotations := map[string]string{
+		tenantOwnerAnnotation: "eval-hub",
+	}
+
 	// 1. Create jobs SA in the tenant namespace
-	if err := r.ensureTenantServiceAccount(ctx, jobsSAName, namespace, managedLabels); err != nil {
+	if err := r.ensureTenantServiceAccount(ctx, jobsSAName, namespace, managedLabels, managedAnnotations); err != nil {
 		return err
 	}
 
 	// 2. RoleBinding: API SA → jobs-writer ClusterRole (create/delete jobs in tenant ns)
-	if err := r.ensureTenantRoleBinding(ctx, instance.Name+"-tenant-jobs-writer", namespace, managedLabels,
+	if err := r.ensureTenantRoleBinding(ctx, instance.Name+"-tenant-jobs-writer", namespace, managedLabels, managedAnnotations,
 		[]rbacv1.Subject{{
 			Kind:      "ServiceAccount",
 			Name:      apiSAName,
@@ -858,7 +862,7 @@ func (r *EvalHubReconciler) reconcileTenantNamespace(ctx context.Context, instan
 	}
 
 	// 3. RoleBinding: API SA → job-config ClusterRole (create/get/list configmaps in tenant ns)
-	if err := r.ensureTenantRoleBinding(ctx, instance.Name+"-tenant-job-config", namespace, managedLabels,
+	if err := r.ensureTenantRoleBinding(ctx, instance.Name+"-tenant-job-config", namespace, managedLabels, managedAnnotations,
 		[]rbacv1.Subject{{
 			Kind:      "ServiceAccount",
 			Name:      apiSAName,
@@ -870,7 +874,7 @@ func (r *EvalHubReconciler) reconcileTenantNamespace(ctx context.Context, instan
 	}
 
 	// 4. RoleBinding: API SA + Jobs SA (tenant) → mlflow-access ClusterRole
-	if err := r.ensureTenantRoleBinding(ctx, instance.Name+"-tenant-mlflow", namespace, managedLabels,
+	if err := r.ensureTenantRoleBinding(ctx, instance.Name+"-tenant-mlflow", namespace, managedLabels, managedAnnotations,
 		[]rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
@@ -893,7 +897,7 @@ func (r *EvalHubReconciler) reconcileTenantNamespace(ctx context.Context, instan
 
 // ensureTenantServiceAccount creates a ServiceAccount in the given namespace if it
 // does not exist. No owner reference is set (cross-namespace not allowed).
-func (r *EvalHubReconciler) ensureTenantServiceAccount(ctx context.Context, name, namespace string, labels map[string]string) error {
+func (r *EvalHubReconciler) ensureTenantServiceAccount(ctx context.Context, name, namespace string, labels map[string]string, annotations map[string]string) error {
 	sa := &corev1.ServiceAccount{}
 	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sa)
 	if err == nil {
@@ -906,9 +910,10 @@ func (r *EvalHubReconciler) ensureTenantServiceAccount(ctx context.Context, name
 	log.FromContext(ctx).Info("Creating tenant SA", "namespace", namespace, "name", name)
 	sa = &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			Labels:    labels,
+			Name:        name,
+			Namespace:   namespace,
+			Labels:      labels,
+			Annotations: annotations,
 		},
 	}
 	return r.Create(ctx, sa)
@@ -916,14 +921,15 @@ func (r *EvalHubReconciler) ensureTenantServiceAccount(ctx context.Context, name
 
 // ensureTenantRoleBinding creates or updates a RoleBinding in the given namespace.
 // No owner reference is set (cross-namespace not allowed).
-func (r *EvalHubReconciler) ensureTenantRoleBinding(ctx context.Context, name, namespace string, labels map[string]string, subjects []rbacv1.Subject, roleRef rbacv1.RoleRef) error {
+func (r *EvalHubReconciler) ensureTenantRoleBinding(ctx context.Context, name, namespace string, labels map[string]string, annotations map[string]string, subjects []rbacv1.Subject, roleRef rbacv1.RoleRef) error {
 	log := log.FromContext(ctx)
 
 	desired := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			Labels:    labels,
+			Name:        name,
+			Namespace:   namespace,
+			Labels:      labels,
+			Annotations: annotations,
 		},
 		Subjects: subjects,
 		RoleRef:  roleRef,

@@ -70,6 +70,7 @@ func TestReconcileTenantNamespace_CreatesResources(t *testing.T) {
 	}, sa)
 	require.NoError(t, err)
 	assert.Equal(t, evalHubName, sa.Labels[tenantLabel])
+	assert.Equal(t, "eval-hub", sa.Annotations[tenantOwnerAnnotation])
 
 	// Verify jobs-writer RoleBinding
 	rb := &rbacv1.RoleBinding{}
@@ -80,6 +81,7 @@ func TestReconcileTenantNamespace_CreatesResources(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, jobsWriterClusterRoleName, rb.RoleRef.Name)
 	assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
+	assert.Equal(t, "eval-hub", rb.Annotations[tenantOwnerAnnotation])
 	require.Len(t, rb.Subjects, 1)
 	assert.Equal(t, evalHubName+"-api", rb.Subjects[0].Name)
 	assert.Equal(t, controlPlaneNS, rb.Subjects[0].Namespace)
