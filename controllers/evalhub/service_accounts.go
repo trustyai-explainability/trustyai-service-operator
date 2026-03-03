@@ -109,11 +109,6 @@ func generateAPIAccessRoleName(instance *evalhubv1alpha1.EvalHub) string {
 	return instance.Name + "-api-access-role"
 }
 
-// generateJobsAPIAccessRoleName returns the name for the per-instance jobs API access Role.
-func generateJobsAPIAccessRoleName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-jobs-api-access-role"
-}
-
 func generateAuthReviewerClusterRoleBindingName(instance *evalhubv1alpha1.EvalHub) string {
 	return instance.Name + "-" + instance.Namespace + "-auth-reviewer-crb"
 }
@@ -172,11 +167,6 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
-	err = r.createJobsAPIAccessRole(ctx, instance)
-	if err != nil {
-		return err
-	}
-
 	// Create namespace-scoped RoleBinding for EvalHub API access (evalhubs/proxy)
 	err = r.createAPIAccessRoleBinding(ctx, instance, serviceAccountName)
 	if err != nil {
@@ -194,22 +184,11 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
-	// Create RoleBinding for jobs ServiceAccount to access evalhubs/proxy in this namespace
-	jobsServiceAccountName := generateJobsServiceAccountName(instance)
-	err = r.createJobsAPIAccessRoleBinding(ctx, instance, jobsServiceAccountName)
-	if err != nil {
-		return err
-	}
-
-	// Create MLFlow access RoleBindings for both ServiceAccounts.
+	// Create MLFlow access RoleBinding for the API ServiceAccount.
 	// MLFlow's kubernetes-auth plugin validates tokens via SubjectAccessReview against
 	// the workspace namespace. The custom "evalhub-mlflow-access" ClusterRole provides
-	// the required mlflow.kubeflow.org permissions for both the api and jobs SAs.
+	// the required mlflow.kubeflow.org permissions for the API SA.
 	err = r.createMLFlowAccessRoleBinding(ctx, instance, serviceAccountName, "api", mlflowAccessClusterRoleName)
-	if err != nil {
-		return err
-	}
-	err = r.createMLFlowAccessRoleBinding(ctx, instance, jobsServiceAccountName, "jobs", mlflowJobsAccessClusterRoleName)
 	if err != nil {
 		return err
 	}
@@ -234,10 +213,6 @@ const (
 // at operator installation time (config/rbac/evalhub_mlflow_access_role.yaml and
 // config/rbac/evalhub_mlflow_jobs_role.yaml).
 const mlflowAccessClusterRoleName = "trustyai-service-operator-evalhub-mlflow-access"
-
-// mlflowJobsAccessClusterRoleName is a restricted MLflow ClusterRole for job pods.
-// Jobs only need create, get, list -- not update or delete.
-const mlflowJobsAccessClusterRoleName = "trustyai-service-operator-evalhub-mlflow-jobs-access"
 
 // createAPIAccessRole creates a per-instance namespaced Role with resourceNames
 // scoped to this specific EvalHub instance. This ensures the SA can only access
@@ -291,56 +266,6 @@ func (r *EvalHubReconciler) createAPIAccessRole(ctx context.Context, instance *e
 	if !equalPolicyRules(found.Rules, role.Rules) {
 		found.Rules = role.Rules
 		log.Info("Updating API access Role rules", "Name", role.Name)
-		return r.Update(ctx, found)
-	}
-
-	return nil
-}
-
-// createJobsAPIAccessRole creates a per-instance namespaced Role for the jobs SA
-// with resourceNames scoped to this specific EvalHub instance.
-func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
-	log := log.FromContext(ctx)
-
-	roleName := generateJobsAPIAccessRoleName(instance)
-	role := &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      roleName,
-			Namespace: instance.Namespace,
-			Labels: map[string]string{
-				"app":                        "eval-hub",
-				"app.kubernetes.io/name":     roleName,
-				"app.kubernetes.io/instance": instance.Name,
-				"app.kubernetes.io/part-of":  "eval-hub",
-				"app.kubernetes.io/version":  constants.Version,
-			},
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups:     []string{"trustyai.opendatahub.io"},
-				Resources:     []string{"evalhubs/proxy"},
-				ResourceNames: []string{instance.Name},
-				Verbs:         []string{"get", "create"},
-			},
-		},
-	}
-
-	if err := ctrl.SetControllerReference(instance, role, r.Scheme); err != nil {
-		return err
-	}
-
-	found := &rbacv1.Role{}
-	err := r.Get(ctx, types.NamespacedName{Name: role.Name, Namespace: role.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating jobs API access Role", "Namespace", role.Namespace, "Name", role.Name)
-		return r.Create(ctx, role)
-	} else if err != nil {
-		return err
-	}
-
-	if !equalPolicyRules(found.Rules, role.Rules) {
-		found.Rules = role.Rules
-		log.Info("Updating jobs API access Role rules", "Name", role.Name)
 		return r.Update(ctx, found)
 	}
 
@@ -488,19 +413,6 @@ func (r *EvalHubReconciler) createAuthReviewerClusterRoleBinding(ctx context.Con
 func (r *EvalHubReconciler) createAPIAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
 	roleBindingName := instance.Name + "-api-access-rb"
 	roleName := generateAPIAccessRoleName(instance)
-
-	return r.createGenericRoleBinding(ctx, instance, roleBindingName, serviceAccountName, rbacv1.RoleRef{
-		Kind:     "Role",
-		Name:     roleName,
-		APIGroup: rbacv1.GroupName,
-	})
-}
-
-// createJobsAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the jobs
-// ServiceAccount to the per-instance Role for evalhubs/proxy access.
-func (r *EvalHubReconciler) createJobsAPIAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
-	roleBindingName := instance.Name + "-jobs-api-access-rb"
-	roleName := generateJobsAPIAccessRoleName(instance)
 
 	return r.createGenericRoleBinding(ctx, instance, roleBindingName, serviceAccountName, rbacv1.RoleRef{
 		Kind:     "Role",
@@ -713,46 +625,6 @@ func equalRoleRef(existing, desired *rbacv1.ClusterRoleBinding) bool {
 // generateJobsServiceAccountName generates the name for the jobs service account
 func generateJobsServiceAccountName(instance *evalhubv1alpha1.EvalHub) string {
 	return instance.Name + "-jobs"
-}
-
-// createJobsServiceAccount creates a service account for jobs created by this EvalHub instance
-func (r *EvalHubReconciler) createJobsServiceAccount(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
-	serviceAccountName := generateJobsServiceAccountName(instance)
-
-	sa := &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceAccountName,
-			Namespace: instance.Namespace,
-			Labels: map[string]string{
-				"app":                         "eval-hub",
-				"app.kubernetes.io/name":      normalizeDNS1123LabelValue(serviceAccountName),
-				"app.kubernetes.io/instance":  instance.Name,
-				"app.kubernetes.io/part-of":   "eval-hub",
-				"app.kubernetes.io/component": "jobs",
-				"app.kubernetes.io/version":   constants.Version,
-			},
-		},
-	}
-
-	// Set instance as the owner and controller
-	if err := ctrl.SetControllerReference(instance, sa, r.Scheme); err != nil {
-		return err
-	}
-
-	// Check if this ServiceAccount already exists
-	found := &corev1.ServiceAccount{}
-	err := r.Get(ctx, types.NamespacedName{Name: sa.Name, Namespace: sa.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		log.FromContext(ctx).Info("Creating a new Jobs ServiceAccount", "Namespace", sa.Namespace, "Name", sa.Name)
-		err = r.Create(ctx, sa)
-		if err != nil {
-			return err
-		}
-	} else if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // reconcileTenantNamespaces discovers namespaces with the tenant annotation and

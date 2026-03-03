@@ -115,15 +115,6 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return RequeueWithError(err)
 	}
 
-	// Create ServiceAccount for jobs
-	err = r.createJobsServiceAccount(ctx, instance)
-	if err != nil {
-		log.Error(err, "Failed to create Jobs ServiceAccount")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to create Jobs ServiceAccount: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-
 	// Reconcile tenant namespace RBAC (non-fatal)
 	if err := r.reconcileTenantNamespaces(ctx, instance); err != nil {
 		log.Error(err, "Failed to reconcile tenant namespaces")
