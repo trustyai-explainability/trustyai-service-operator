@@ -99,17 +99,17 @@ var _ = Describe("EvalHub API RBAC", func() {
 			err := reconciler.createServiceAccount(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Verifying service account exists with -api suffix")
+			By("Verifying service account exists with -api suffix in operator namespace")
 			serviceAccount := &corev1.ServiceAccount{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName + "-api",
-				Namespace: testNamespace,
+				Namespace: operatorNamespace,
 			}, serviceAccount)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking service account specifications")
 			Expect(serviceAccount.Name).To(Equal(evalHubName + "-api"))
-			Expect(serviceAccount.Namespace).To(Equal(testNamespace))
+			Expect(serviceAccount.Namespace).To(Equal(operatorNamespace))
 
 			By("Checking labels")
 			Expect(serviceAccount.Labels["app"]).To(Equal("eval-hub"))
@@ -130,7 +130,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 
 			By("Verifying auth reviewer ClusterRoleBinding exists")
 			clusterRoleBinding := &rbacv1.ClusterRoleBinding{}
-			bindingName := fmt.Sprintf("%s-%s-auth-reviewer-crb", evalHub.Name, evalHub.Namespace)
+			bindingName := fmt.Sprintf("%s-%s-auth-reviewer-crb", evalHub.Name, operatorNamespace)
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name: bindingName,
 			}, clusterRoleBinding)
@@ -143,7 +143,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			Expect(clusterRoleBinding.Subjects).To(HaveLen(1))
 			Expect(clusterRoleBinding.Subjects[0].Kind).To(Equal("ServiceAccount"))
 			Expect(clusterRoleBinding.Subjects[0].Name).To(Equal(evalHubName + "-api"))
-			Expect(clusterRoleBinding.Subjects[0].Namespace).To(Equal(testNamespace))
+			Expect(clusterRoleBinding.Subjects[0].Namespace).To(Equal(operatorNamespace))
 
 			By("Checking role reference points to auth-reviewer (not proxy-role)")
 			Expect(clusterRoleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
@@ -161,7 +161,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			roleName := generateAPIAccessRoleName(evalHub)
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      roleName,
-				Namespace: testNamespace,
+				Namespace: operatorNamespace,
 			}, role)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -181,12 +181,12 @@ var _ = Describe("EvalHub API RBAC", func() {
 			rbName := evalHubName + "-api-access-rb"
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      rbName,
-				Namespace: testNamespace,
+				Namespace: operatorNamespace,
 			}, roleBinding)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Checking RoleBinding is namespace-scoped")
-			Expect(roleBinding.Namespace).To(Equal(testNamespace))
+			By("Checking RoleBinding is in operator namespace")
+			Expect(roleBinding.Namespace).To(Equal(operatorNamespace))
 
 			By("Checking subjects use -api SA")
 			Expect(roleBinding.Subjects).To(HaveLen(1))
@@ -203,17 +203,17 @@ var _ = Describe("EvalHub API RBAC", func() {
 			err := reconciler.createServiceAccount(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Verifying jobs API access RoleBinding exists in namespace")
+			By("Verifying jobs API access RoleBinding exists in operator namespace")
 			roleBinding := &rbacv1.RoleBinding{}
 			rbName := evalHubName + "-jobs-api-access-rb"
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      rbName,
-				Namespace: testNamespace,
+				Namespace: operatorNamespace,
 			}, roleBinding)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Checking RoleBinding is namespace-scoped")
-			Expect(roleBinding.Namespace).To(Equal(testNamespace))
+			By("Checking RoleBinding is in operator namespace")
+			Expect(roleBinding.Namespace).To(Equal(operatorNamespace))
 
 			By("Checking subjects use -jobs SA")
 			Expect(roleBinding.Subjects).To(HaveLen(1))
@@ -238,7 +238,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			serviceAccount := &corev1.ServiceAccount{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName + "-api",
-				Namespace: testNamespace,
+				Namespace: operatorNamespace,
 			}, serviceAccount)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(serviceAccount.Name).To(Equal(evalHubName + "-api"))
@@ -251,11 +251,11 @@ var _ = Describe("EvalHub API RBAC", func() {
 			err := reconciler.createServiceAccount(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Verifying jobs-writer RoleBinding exists")
+			By("Verifying jobs-writer RoleBinding exists in operator namespace")
 			jwRB := &rbacv1.RoleBinding{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName + "-jobs-writer-rb",
-				Namespace: testNamespace,
+				Namespace: operatorNamespace,
 			}, jwRB)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(jwRB.RoleRef.Kind).To(Equal("ClusterRole"))
@@ -263,11 +263,11 @@ var _ = Describe("EvalHub API RBAC", func() {
 			Expect(jwRB.Subjects).To(HaveLen(1))
 			Expect(jwRB.Subjects[0].Name).To(Equal(evalHubName + "-api"))
 
-			By("Verifying job-config RoleBinding exists")
+			By("Verifying job-config RoleBinding exists in operator namespace")
 			jcRB := &rbacv1.RoleBinding{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName + "-job-config-rb",
-				Namespace: testNamespace,
+				Namespace: operatorNamespace,
 			}, jcRB)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(jcRB.RoleRef.Kind).To(Equal("ClusterRole"))
@@ -286,7 +286,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			jwRB := &rbacv1.RoleBinding{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName + "-jobs-writer-rb",
-				Namespace: testNamespace,
+				Namespace: operatorNamespace,
 			}, jwRB)
 			Expect(err).NotTo(HaveOccurred())
 			for _, subject := range jwRB.Subjects {
@@ -375,17 +375,17 @@ var _ = Describe("EvalHub API RBAC", func() {
 			err := reconciler.reconcileProxyConfigMap(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Verifying proxy configmap exists")
+			By("Verifying proxy configmap exists in operator namespace")
 			configMap := &corev1.ConfigMap{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName + "-proxy-config",
-				Namespace: testNamespace,
+				Namespace: operatorNamespace,
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking configmap specifications")
 			Expect(configMap.Name).To(Equal(evalHubName + "-proxy-config"))
-			Expect(configMap.Namespace).To(Equal(testNamespace))
+			Expect(configMap.Namespace).To(Equal(operatorNamespace))
 
 			By("Checking owner references")
 			Expect(configMap.OwnerReferences).To(HaveLen(1))
@@ -398,11 +398,11 @@ var _ = Describe("EvalHub API RBAC", func() {
 			err := reconciler.reconcileProxyConfigMap(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Getting proxy configmap")
+			By("Getting proxy configmap from operator namespace")
 			configMap := &corev1.ConfigMap{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName + "-proxy-config",
-				Namespace: testNamespace,
+				Namespace: operatorNamespace,
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -425,7 +425,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 
 			resourceAttrs, ok := authorization["resourceAttributes"].(map[string]interface{})
 			Expect(ok).To(BeTrue())
-			Expect(resourceAttrs["namespace"]).To(Equal(testNamespace))
+			Expect(resourceAttrs["namespace"]).To(Equal(operatorNamespace))
 			Expect(resourceAttrs["apiGroup"]).To(Equal("trustyai.opendatahub.io"))
 			Expect(resourceAttrs["resource"]).To(Equal("evalhubs"))
 			Expect(resourceAttrs["name"]).To(Equal(evalHubName))
@@ -467,11 +467,11 @@ var _ = Describe("EvalHub API RBAC", func() {
 			err := reconciler.reconcileProxyConfigMap(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Getting initial proxy configmap")
+			By("Getting initial proxy configmap from operator namespace")
 			configMap := &corev1.ConfigMap{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName + "-proxy-config",
-				Namespace: testNamespace,
+				Namespace: operatorNamespace,
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -489,7 +489,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			By("Verifying proxy configmap is updated")
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName + "-proxy-config",
-				Namespace: testNamespace,
+				Namespace: operatorNamespace,
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -512,7 +512,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			By("Checking configuration contains EvalHub-specific settings")
 			authorization := proxyConfig["authorization"].(map[string]interface{})
 			resourceAttrs := authorization["resourceAttributes"].(map[string]interface{})
-			Expect(resourceAttrs["namespace"]).To(Equal(evalHub.Namespace))
+			Expect(resourceAttrs["namespace"]).To(Equal(operatorNamespace))
 			Expect(resourceAttrs["name"]).To(Equal(evalHub.Name))
 			Expect(resourceAttrs["resourceName"]).To(Equal(evalHub.Name))
 		})
@@ -553,11 +553,11 @@ var _ = Describe("EvalHub API RBAC", func() {
 			err := reconciler.reconcileProxyConfigMap(ctx, nonPersistedEvalHub)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Verifying proxy configmap was created")
+			By("Verifying proxy configmap was created in operator namespace")
 			configMap := &corev1.ConfigMap{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      "non-persisted-proxy-proxy-config",
-				Namespace: testNamespace,
+				Namespace: operatorNamespace,
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(configMap.OwnerReferences).To(BeEmpty())
@@ -582,7 +582,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			apiRB := &rbacv1.RoleBinding{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName + "-api-access-rb",
-				Namespace: testNamespace,
+				Namespace: operatorNamespace,
 			}, apiRB)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(apiRB.RoleRef.Kind).To(Equal("Role"))

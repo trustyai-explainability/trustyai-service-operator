@@ -21,7 +21,7 @@ func (r *EvalHubReconciler) reconcileService(ctx context.Context, instance *eval
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name,
-			Namespace: instance.Namespace,
+			Namespace: r.targetNamespace(),
 		},
 	}
 

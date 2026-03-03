@@ -482,6 +482,7 @@ func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
 	reconciler := &EvalHubReconciler{
 		Client:        fakeClient,
 		Scheme:        scheme,
+		Namespace:     testNamespace,
 		EventRecorder: record.NewFakeRecorder(10),
 	}
 
@@ -558,6 +559,7 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 	reconciler := &EvalHubReconciler{
 		Client:        fakeClient,
 		Scheme:        scheme,
+		Namespace:     testNamespace,
 		EventRecorder: record.NewFakeRecorder(10),
 	}
 
@@ -657,6 +659,7 @@ func TestEvalHubReconciler_createAPIAccessRole(t *testing.T) {
 	reconciler := &EvalHubReconciler{
 		Client:        fakeClient,
 		Scheme:        scheme,
+		Namespace:     testNamespace,
 		EventRecorder: record.NewFakeRecorder(10),
 	}
 
@@ -739,6 +742,7 @@ func TestEvalHubReconciler_createAPIAccessRoleBinding_RefersToRole(t *testing.T)
 	reconciler := &EvalHubReconciler{
 		Client:        fakeClient,
 		Scheme:        scheme,
+		Namespace:     testNamespace,
 		EventRecorder: record.NewFakeRecorder(10),
 	}
 
@@ -787,6 +791,7 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 	reconciler := &EvalHubReconciler{
 		Client:        fakeClient,
 		Scheme:        scheme,
+		Namespace:     testNamespace,
 		EventRecorder: record.NewFakeRecorder(10),
 	}
 
@@ -877,13 +882,14 @@ func TestEvalHubReconciler_cleanupClusterRoleBinding(t *testing.T) {
 	testNamespace := "test-namespace"
 	evalHubName := "test-evalhub"
 
+	// EvalHub is cluster-scoped (no namespace)
 	evalHub := &evalhubv1alpha1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      evalHubName,
-			Namespace: testNamespace,
+			Name: evalHubName,
 		},
 	}
 
+	// CRB name uses the operator namespace (targetNamespace)
 	authCRBName := evalHubName + "-" + testNamespace + "-auth-reviewer-crb"
 	authCRB := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
@@ -911,6 +917,7 @@ func TestEvalHubReconciler_cleanupClusterRoleBinding(t *testing.T) {
 	reconciler := &EvalHubReconciler{
 		Client:        fakeClient,
 		Scheme:        scheme,
+		Namespace:     testNamespace,
 		EventRecorder: record.NewFakeRecorder(10),
 	}
 
@@ -939,11 +946,11 @@ func TestEvalHubReconciler_reconcileServiceCAConfigMap(t *testing.T) {
 	testNamespace := "test-namespace"
 	evalHubName := "test-evalhub"
 
+	// EvalHub is cluster-scoped (no namespace)
 	evalHub := &evalhubv1alpha1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      evalHubName,
-			Namespace: testNamespace,
-			UID:       "test-uid-123",
+			Name: evalHubName,
+			UID:  "test-uid-123",
 		},
 	}
 
@@ -956,6 +963,7 @@ func TestEvalHubReconciler_reconcileServiceCAConfigMap(t *testing.T) {
 		reconciler := &EvalHubReconciler{
 			Client:        fakeClient,
 			Scheme:        scheme,
+			Namespace:     testNamespace,
 			EventRecorder: record.NewFakeRecorder(10),
 		}
 
@@ -1014,6 +1022,7 @@ func TestEvalHubReconciler_reconcileServiceCAConfigMap(t *testing.T) {
 		reconciler := &EvalHubReconciler{
 			Client:        fakeClient,
 			Scheme:        scheme,
+			Namespace:     testNamespace,
 			EventRecorder: record.NewFakeRecorder(10),
 		}
 
@@ -1059,6 +1068,7 @@ func TestEvalHubReconciler_reconcileServiceCAConfigMap(t *testing.T) {
 		reconciler := &EvalHubReconciler{
 			Client:        fakeClient,
 			Scheme:        scheme,
+			Namespace:     testNamespace,
 			EventRecorder: record.NewFakeRecorder(10),
 		}
 
@@ -1395,7 +1405,6 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 
 	ctx := context.Background()
 	operatorNamespace := "operator-ns"
-	instanceNamespace := "instance-ns"
 	evalHubName := "test-evalhub"
 
 	// Source provider ConfigMap in the operator namespace (simulates what kustomize deploys)
@@ -1413,11 +1422,11 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 		},
 	}
 
-	t.Run("should copy provider ConfigMap to instance namespace", func(t *testing.T) {
+	t.Run("should copy provider ConfigMap to operator namespace", func(t *testing.T) {
+		// EvalHub is cluster-scoped (no namespace)
 		evalHub := &evalhubv1alpha1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      evalHubName,
-				Namespace: instanceNamespace,
+				Name: evalHubName,
 			},
 			Spec: evalhubv1alpha1.EvalHubSpec{
 				Providers: []string{"testprovider"},
@@ -1443,11 +1452,11 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 		require.Len(t, cmNames, 1)
 		assert.Equal(t, evalHubName+"-provider-testprovider", cmNames[0])
 
-		// Verify the ConfigMap was created in the instance namespace with correct data
+		// Verify the ConfigMap was created in the operator namespace with correct data
 		copiedCM := &corev1.ConfigMap{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      evalHubName + "-provider-testprovider",
-			Namespace: instanceNamespace,
+			Namespace: operatorNamespace,
 		}, copiedCM)
 		require.NoError(t, err)
 		assert.Equal(t, sourceProvider.Data["testprovider.yaml"], copiedCM.Data["testprovider.yaml"])
@@ -1456,8 +1465,7 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 	t.Run("should return nil when no providers specified", func(t *testing.T) {
 		evalHub := &evalhubv1alpha1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      evalHubName,
-				Namespace: instanceNamespace,
+				Name: evalHubName,
 			},
 			Spec: evalhubv1alpha1.EvalHubSpec{},
 		}
@@ -1482,8 +1490,7 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 	t.Run("should error when provider not found", func(t *testing.T) {
 		evalHub := &evalhubv1alpha1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      evalHubName,
-				Namespace: instanceNamespace,
+				Name: evalHubName,
 			},
 			Spec: evalhubv1alpha1.EvalHubSpec{
 				Providers: []string{"nonexistent"},
@@ -1509,10 +1516,10 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 	})
 
 	t.Run("should mount providers as projected volume in deployment", func(t *testing.T) {
+		// EvalHub is cluster-scoped (no namespace)
 		evalHub := &evalhubv1alpha1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      evalHubName,
-				Namespace: instanceNamespace,
+				Name: evalHubName,
 			},
 			Spec: evalhubv1alpha1.EvalHubSpec{
 				Providers: []string{"testprovider"},
@@ -1551,11 +1558,11 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 		err = reconciler.reconcileDeployment(ctx, evalHub, cmNames)
 		require.NoError(t, err)
 
-		// Verify the deployment has the projected volume
+		// Verify the deployment has the projected volume in operator namespace
 		deployment := &appsv1.Deployment{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      evalHubName,
-			Namespace: instanceNamespace,
+			Namespace: operatorNamespace,
 		}, deployment)
 		require.NoError(t, err)
 

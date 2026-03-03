@@ -33,7 +33,7 @@ func (r *EvalHubReconciler) reconcileRoute(ctx context.Context, instance *evalhu
 	route := &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name,
-			Namespace: instance.Namespace,
+			Namespace: r.targetNamespace(),
 		},
 	}
 

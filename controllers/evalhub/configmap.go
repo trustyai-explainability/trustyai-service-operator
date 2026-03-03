@@ -71,7 +71,7 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name + "-config",
-			Namespace: instance.Namespace,
+			Namespace: r.targetNamespace(),
 		},
 	}
 
@@ -268,7 +268,7 @@ func (r *EvalHubReconciler) reconcileProxyConfigMap(ctx context.Context, instanc
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name + "-proxy-config",
-			Namespace: instance.Namespace,
+			Namespace: r.targetNamespace(),
 		},
 	}
 
@@ -305,7 +305,7 @@ func (r *EvalHubReconciler) generateProxyConfigData(instance *evalhubv1alpha1.Ev
 	proxyConfig := map[string]interface{}{
 		"authorization": map[string]interface{}{
 			"resourceAttributes": map[string]interface{}{
-				"namespace": instance.Namespace,
+				"namespace": r.targetNamespace(),
 				"apiGroup":  "trustyai.opendatahub.io",
 				"resource":  "evalhubs",
 				// kube-rbac-proxy expects the Kubernetes ResourceAttributes key "name".
@@ -390,7 +390,7 @@ func (r *EvalHubReconciler) reconcileProviderConfigMaps(ctx context.Context, ins
 		configMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      targetName,
-				Namespace: instance.Namespace,
+				Namespace: r.targetNamespace(),
 			},
 		}
 
@@ -450,7 +450,7 @@ func (r *EvalHubReconciler) reconcileServiceCAConfigMap(ctx context.Context, ins
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name + "-service-ca",
-			Namespace: instance.Namespace,
+			Namespace: r.targetNamespace(),
 			Annotations: map[string]string{
 				// This annotation triggers OpenShift service CA operator to inject the CA certificate
 				"service.beta.openshift.io/inject-cabundle": "true",

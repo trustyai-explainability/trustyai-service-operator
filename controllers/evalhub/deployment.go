@@ -25,7 +25,7 @@ func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *e
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name,
-			Namespace: instance.Namespace,
+			Namespace: r.targetNamespace(),
 		},
 	}
 
@@ -109,7 +109,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		},
 		{
 			Name:  "SERVICE_URL",
-			Value: fmt.Sprintf("https://%s.%s.svc.cluster.local:8443", instance.Name, instance.Namespace),
+			Value: fmt.Sprintf("https://%s.%s.svc.cluster.local:8443", instance.Name, r.targetNamespace()),
 		},
 		{
 			Name:  "EVALHUB_INSTANCE_NAME",
@@ -121,7 +121,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		},
 		{
 			Name:  "MLFLOW_WORKSPACE",
-			Value: instance.Namespace,
+			Value: r.targetNamespace(),
 		},
 		{
 			Name:  "MLFLOW_TOKEN_PATH",
@@ -233,7 +233,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 
 	log.FromContext(ctx).Info("Configuring kube-rbac-proxy sidecar",
 		"evalHub", instance.Name,
-		"namespace", instance.Namespace,
+		"namespace", r.targetNamespace(),
 		"proxyImage", kubeRBACProxyImage)
 
 	// kube-rbac-proxy sidecar container

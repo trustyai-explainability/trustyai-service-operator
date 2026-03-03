@@ -62,7 +62,7 @@ func TestAuthReviewerCRB_AppNameLabelIsNormalizedWhenBindingNameTooLong(t *testi
 
 	require.NoError(t, reconciler.createServiceAccount(ctx, evalHub))
 
-	crbName := generateAuthReviewerClusterRoleBindingName(evalHub)
+	crbName := generateAuthReviewerClusterRoleBindingName(evalHub, ns)
 	require.Greater(t, len(crbName), 63, "test must exercise the >63 char case")
 
 	crb := &rbacv1.ClusterRoleBinding{}
@@ -71,5 +71,5 @@ func TestAuthReviewerCRB_AppNameLabelIsNormalizedWhenBindingNameTooLong(t *testi
 	lbl := crb.Labels["app.kubernetes.io/name"]
 	require.LessOrEqual(t, len(lbl), 63)
 	require.Regexp(t, dns1123LabelRe, lbl)
-	require.Equal(t, generateAuthReviewerClusterRoleBindingAppNameLabelValue(evalHub), lbl)
+	require.Equal(t, generateAuthReviewerClusterRoleBindingAppNameLabelValue(evalHub, ns), lbl)
 }

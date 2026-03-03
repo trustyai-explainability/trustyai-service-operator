@@ -1,8 +1,7 @@
 apiVersion: trustyai.opendatahub.io/v1alpha1
 kind: EvalHub
 metadata:
-  name: evalhub-sample
-  namespace: default
+  name: evalhub
 spec:
   # Number of replicas for the eval-hub deployment
   replicas: 2

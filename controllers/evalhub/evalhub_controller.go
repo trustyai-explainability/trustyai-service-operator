@@ -74,7 +74,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return RequeueWithError(err)
 	}
 
-	log.Info("Reconciling EvalHub", "name", instance.Name, "namespace", instance.Namespace)
+	log.Info("Reconciling EvalHub", "name", instance.Name, "targetNamespace", r.targetNamespace())
 
 	// Handle deletion first to avoid blocking removal with status init.
 	if instance.DeletionTimestamp != nil {
@@ -220,6 +220,13 @@ func Requeue() (ctrl.Result, error) {
 	return ctrl.Result{Requeue: true}, nil
 }
 
+// targetNamespace returns the namespace where all EvalHub resources are deployed.
+// EvalHub is a cluster-scoped singleton, so all its namespace-scoped resources
+// (Deployments, Services, ConfigMaps, etc.) are created in the operator namespace.
+func (r *EvalHubReconciler) targetNamespace() string {
+	return r.Namespace
+}
+
 // handleDeletion handles the deletion of EvalHub resources
 func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhubv1alpha1.EvalHub) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
@@ -244,8 +251,8 @@ func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhu
 // cleanupClusterRoleBinding deletes EvalHub cluster-scoped RBAC resources upon instance deletion.
 // Namespace-scoped resources (RoleBindings, ServiceAccounts) are garbage-collected via owner references.
 func (r *EvalHubReconciler) cleanupClusterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
-	// Delete auth reviewer ClusterRoleBinding (cannot be owner-ref'd to a namespaced resource)
-	authCRBName := generateAuthReviewerClusterRoleBindingName(instance)
+	// Delete auth reviewer ClusterRoleBinding (cannot be owner-ref'd to a namespace-scoped resource)
+	authCRBName := generateAuthReviewerClusterRoleBindingName(instance, r.targetNamespace())
 	if err := r.deleteClusterRoleBinding(ctx, authCRBName); err != nil {
 		return err
 	}
@@ -278,10 +285,10 @@ func (r *EvalHubReconciler) deleteClusterRoleBinding(ctx context.Context, crbNam
 func (r *EvalHubReconciler) updateStatus(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
 	log := log.FromContext(ctx)
 
-	// Get the deployment
+	// Get the deployment from the operator namespace (cluster-scoped CR deploys here)
 	deployment := &appsv1.Deployment{}
 	err := r.Get(ctx, client.ObjectKey{
-		Namespace: instance.Namespace,
+		Namespace: r.targetNamespace(),
 		Name:      instance.Name,
 	}, deployment)
 	if err != nil {
@@ -307,9 +314,9 @@ func (r *EvalHubReconciler) updateStatus(ctx context.Context, instance *evalhubv
 		instance.Status.Ready = corev1.ConditionTrue
 		instance.SetStatus("Ready", "DeploymentReady", "All replicas are ready", corev1.ConditionTrue)
 
-		// Set URL based on service (kube-rbac-proxy)
+		// Set URL based on service (kube-rbac-proxy) in the operator namespace
 		instance.Status.URL = fmt.Sprintf("https://%s.%s.svc.cluster.local:%d",
-			instance.Name, instance.Namespace, kubeRBACProxyPort)
+			instance.Name, r.targetNamespace(), kubeRBACProxyPort)
 	} else {
 		instance.Status.Phase = "Pending"
 		instance.Status.Ready = corev1.ConditionFalse

@@ -112,14 +112,14 @@ func generateJobsAPIAccessRoleName(instance *evalhubv1alpha1.EvalHub) string {
 	return instance.Name + "-jobs-api-access-role"
 }
 
-func generateAuthReviewerClusterRoleBindingName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-" + instance.Namespace + "-auth-reviewer-crb"
+func generateAuthReviewerClusterRoleBindingName(instance *evalhubv1alpha1.EvalHub, namespace string) string {
+	return instance.Name + "-" + namespace + "-auth-reviewer-crb"
 }
 
 // generateAuthReviewerClusterRoleBindingAppNameLabelValue returns a deterministic, DNS-1123 compatible
 // label value (<=63 chars) derived from the full auth reviewer ClusterRoleBinding name.
-func generateAuthReviewerClusterRoleBindingAppNameLabelValue(instance *evalhubv1alpha1.EvalHub) string {
-	return normalizeDNS1123LabelValue(generateAuthReviewerClusterRoleBindingName(instance))
+func generateAuthReviewerClusterRoleBindingAppNameLabelValue(instance *evalhubv1alpha1.EvalHub, namespace string) string {
+	return normalizeDNS1123LabelValue(generateAuthReviewerClusterRoleBindingName(instance, namespace))
 }
 
 // createServiceAccount creates a service account for this instance's kube-rbac-proxy
@@ -129,7 +129,7 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceAccountName,
-			Namespace: instance.Namespace,
+			Namespace: r.targetNamespace(),
 			Labels: map[string]string{
 				"app":                        "eval-hub",
 				"app.kubernetes.io/name":     normalizeDNS1123LabelValue(serviceAccountName),
@@ -247,7 +247,7 @@ func (r *EvalHubReconciler) createAPIAccessRole(ctx context.Context, instance *e
 	role := &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      roleName,
-			Namespace: instance.Namespace,
+			Namespace: r.targetNamespace(),
 			Labels: map[string]string{
 				"app":                        "eval-hub",
 				"app.kubernetes.io/name":     roleName,
@@ -304,7 +304,7 @@ func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instanc
 	role := &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      roleName,
-			Namespace: instance.Namespace,
+			Namespace: r.targetNamespace(),
 			Labels: map[string]string{
 				"app":                        "eval-hub",
 				"app.kubernetes.io/name":     roleName,
@@ -356,7 +356,7 @@ func (r *EvalHubReconciler) createMLFlowAccessRoleBinding(ctx context.Context, i
 	roleBinding := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      roleBindingName,
-			Namespace: instance.Namespace,
+			Namespace: r.targetNamespace(),
 			Labels: map[string]string{
 				"app":                        "eval-hub",
 				"app.kubernetes.io/name":     roleBindingName,
@@ -369,7 +369,7 @@ func (r *EvalHubReconciler) createMLFlowAccessRoleBinding(ctx context.Context, i
 			{
 				Kind:      "ServiceAccount",
 				Name:      serviceAccountName,
-				Namespace: instance.Namespace,
+				Namespace: r.targetNamespace(),
 			},
 		},
 		RoleRef: rbacv1.RoleRef{
@@ -422,13 +422,13 @@ func (r *EvalHubReconciler) createMLFlowAccessRoleBinding(ctx context.Context, i
 func (r *EvalHubReconciler) createAuthReviewerClusterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
 	log := log.FromContext(ctx)
 
-	clusterRoleBindingName := generateAuthReviewerClusterRoleBindingName(instance)
+	clusterRoleBindingName := generateAuthReviewerClusterRoleBindingName(instance, r.targetNamespace())
 	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: clusterRoleBindingName,
 			Labels: map[string]string{
 				"app":                        "eval-hub",
-				"app.kubernetes.io/name":     generateAuthReviewerClusterRoleBindingAppNameLabelValue(instance),
+				"app.kubernetes.io/name":     generateAuthReviewerClusterRoleBindingAppNameLabelValue(instance, r.targetNamespace()),
 				"app.kubernetes.io/instance": instance.Name,
 				"app.kubernetes.io/part-of":  "eval-hub",
 				"app.kubernetes.io/version":  constants.Version,
@@ -438,7 +438,7 @@ func (r *EvalHubReconciler) createAuthReviewerClusterRoleBinding(ctx context.Con
 			{
 				Kind:      "ServiceAccount",
 				Name:      serviceAccountName,
-				Namespace: instance.Namespace,
+				Namespace: r.targetNamespace(),
 			},
 		},
 		RoleRef: rbacv1.RoleRef{
@@ -536,7 +536,7 @@ func (r *EvalHubReconciler) createGenericRoleBinding(ctx context.Context, instan
 	roleBinding := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      roleBindingName,
-			Namespace: instance.Namespace,
+			Namespace: r.targetNamespace(),
 			Labels: map[string]string{
 				"app":                        "eval-hub",
 				"app.kubernetes.io/name":     roleBindingName,
@@ -549,7 +549,7 @@ func (r *EvalHubReconciler) createGenericRoleBinding(ctx context.Context, instan
 			{
 				Kind:      "ServiceAccount",
 				Name:      serviceAccountName,
-				Namespace: instance.Namespace,
+				Namespace: r.targetNamespace(),
 			},
 		},
 		RoleRef: roleRef,
@@ -720,7 +720,7 @@ func (r *EvalHubReconciler) createJobsServiceAccount(ctx context.Context, instan
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceAccountName,
-			Namespace: instance.Namespace,
+			Namespace: r.targetNamespace(),
 			Labels: map[string]string{
 				"app":                         "eval-hub",
 				"app.kubernetes.io/name":      normalizeDNS1123LabelValue(serviceAccountName),
