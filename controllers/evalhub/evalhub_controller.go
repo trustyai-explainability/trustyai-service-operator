@@ -17,8 +17,10 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 func ControllerSetUp(mgr manager.Manager, ns string, recorder record.EventRecorder) error {
@@ -54,6 +56,7 @@ type EvalHubReconciler struct {
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -119,6 +122,12 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to create Jobs ServiceAccount: %v", err), corev1.ConditionFalse)
 		r.Status().Update(ctx, instance)
 		return RequeueWithError(err)
+	}
+
+	// Reconcile tenant namespace RBAC (non-fatal)
+	if err := r.reconcileTenantNamespaces(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile tenant namespaces")
+		r.EventRecorder.Event(instance, corev1.EventTypeWarning, "TenantRBACError", err.Error())
 	}
 
 	// Reconcile ConfigMap
@@ -200,7 +209,34 @@ func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.ConfigMap{}).
+		Watches(&corev1.Namespace{},
+			handler.EnqueueRequestsFromMapFunc(r.namespacesToEvalHub),
+		).
 		Complete(r)
+}
+
+// namespacesToEvalHub maps namespace events to EvalHub reconcile requests.
+// When a namespace is created/updated/deleted, all EvalHub instances are re-reconciled
+// so they can provision or clean up tenant RBAC.
+func (r *EvalHubReconciler) namespacesToEvalHub(ctx context.Context, obj client.Object) []reconcile.Request {
+	log := log.FromContext(ctx)
+
+	evalHubList := &evalhubv1alpha1.EvalHubList{}
+	if err := r.List(ctx, evalHubList); err != nil {
+		log.Error(err, "Failed to list EvalHub instances for namespace watch")
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, eh := range evalHubList.Items {
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      eh.Name,
+				Namespace: eh.Namespace,
+			},
+		})
+	}
+	return requests
 }
 
 // Helper functions for reconcile results
@@ -228,6 +264,12 @@ func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhu
 	// Clean up cluster-scoped resources that won't be garbage collected
 	if err := r.cleanupClusterRoleBinding(ctx, instance); err != nil {
 		log.Error(err, "Failed to cleanup ClusterRoleBinding")
+		return RequeueWithError(err)
+	}
+
+	// Clean up tenant namespace resources (label-based, no owner refs)
+	if err := r.cleanupTenantResources(ctx, instance); err != nil {
+		log.Error(err, "Failed to cleanup tenant resources")
 		return RequeueWithError(err)
 	}
 

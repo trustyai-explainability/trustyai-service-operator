@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	corev1 "k8s.io/api/core/v1"
@@ -748,6 +750,253 @@ func (r *EvalHubReconciler) createJobsServiceAccount(ctx context.Context, instan
 		}
 	} else if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// reconcileTenantNamespaces discovers namespaces with the tenant annotation and
+// provisions per-tenant RBAC (SA + RoleBindings) so the API SA can create jobs
+// in tenant namespaces. It also cleans up resources in namespaces that lost the
+// annotation.
+func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+	log := log.FromContext(ctx)
+
+	// List all namespaces
+	nsList := &corev1.NamespaceList{}
+	if err := r.List(ctx, nsList); err != nil {
+		return fmt.Errorf("listing namespaces: %w", err)
+	}
+
+	// Build set of annotated tenant namespaces (excluding control-plane)
+	tenantNS := make(map[string]bool)
+	for _, ns := range nsList.Items {
+		if ns.Name == instance.Namespace {
+			continue
+		}
+		if _, ok := ns.Annotations[tenantAnnotation]; ok {
+			tenantNS[ns.Name] = true
+		}
+	}
+
+	// Reconcile each tenant namespace
+	for ns := range tenantNS {
+		if err := r.reconcileTenantNamespace(ctx, instance, ns); err != nil {
+			log.Error(err, "Failed to reconcile tenant namespace", "namespace", ns)
+			return fmt.Errorf("reconciling tenant namespace %s: %w", ns, err)
+		}
+	}
+
+	// Cleanup: find managed resources in namespaces that no longer have the annotation
+	managedLabel := client.MatchingLabels{tenantLabel: instance.Name}
+
+	// Cleanup stale ServiceAccounts
+	saList := &corev1.ServiceAccountList{}
+	if err := r.List(ctx, saList, managedLabel); err != nil {
+		return fmt.Errorf("listing managed service accounts: %w", err)
+	}
+	for i := range saList.Items {
+		sa := &saList.Items[i]
+		if !tenantNS[sa.Namespace] && sa.Namespace != instance.Namespace {
+			log.Info("Cleaning up stale tenant SA", "namespace", sa.Namespace, "name", sa.Name)
+			if err := r.Delete(ctx, sa); err != nil && !errors.IsNotFound(err) {
+				return fmt.Errorf("deleting stale SA %s/%s: %w", sa.Namespace, sa.Name, err)
+			}
+		}
+	}
+
+	// Cleanup stale RoleBindings
+	rbList := &rbacv1.RoleBindingList{}
+	if err := r.List(ctx, rbList, managedLabel); err != nil {
+		return fmt.Errorf("listing managed role bindings: %w", err)
+	}
+	for i := range rbList.Items {
+		rb := &rbList.Items[i]
+		if !tenantNS[rb.Namespace] && rb.Namespace != instance.Namespace {
+			log.Info("Cleaning up stale tenant RoleBinding", "namespace", rb.Namespace, "name", rb.Name)
+			if err := r.Delete(ctx, rb); err != nil && !errors.IsNotFound(err) {
+				return fmt.Errorf("deleting stale RoleBinding %s/%s: %w", rb.Namespace, rb.Name, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// reconcileTenantNamespace creates per-tenant RBAC resources in the given namespace.
+// All resources are labelled with tenantLabel for cleanup (no owner refs, since
+// cross-namespace owner references are forbidden).
+func (r *EvalHubReconciler) reconcileTenantNamespace(ctx context.Context, instance *evalhubv1alpha1.EvalHub, namespace string) error {
+	log := log.FromContext(ctx)
+	log.Info("Reconciling tenant namespace RBAC", "namespace", namespace)
+
+	apiSAName := generateServiceAccountName(instance)
+	jobsSAName := generateJobsServiceAccountName(instance)
+
+	managedLabels := map[string]string{
+		tenantLabel:                  instance.Name,
+		"app":                        "eval-hub",
+		"app.kubernetes.io/instance": instance.Name,
+		"app.kubernetes.io/part-of":  "eval-hub",
+	}
+
+	// 1. Create jobs SA in the tenant namespace
+	if err := r.ensureTenantServiceAccount(ctx, jobsSAName, namespace, managedLabels); err != nil {
+		return err
+	}
+
+	// 2. RoleBinding: API SA → jobs-writer ClusterRole (create/delete jobs in tenant ns)
+	if err := r.ensureTenantRoleBinding(ctx, instance.Name+"-tenant-jobs-writer", namespace, managedLabels,
+		[]rbacv1.Subject{{
+			Kind:      "ServiceAccount",
+			Name:      apiSAName,
+			Namespace: instance.Namespace,
+		}},
+		rbacv1.RoleRef{Kind: "ClusterRole", Name: jobsWriterClusterRoleName, APIGroup: rbacv1.GroupName},
+	); err != nil {
+		return err
+	}
+
+	// 3. RoleBinding: API SA → job-config ClusterRole (create/get/list configmaps in tenant ns)
+	if err := r.ensureTenantRoleBinding(ctx, instance.Name+"-tenant-job-config", namespace, managedLabels,
+		[]rbacv1.Subject{{
+			Kind:      "ServiceAccount",
+			Name:      apiSAName,
+			Namespace: instance.Namespace,
+		}},
+		rbacv1.RoleRef{Kind: "ClusterRole", Name: jobConfigClusterRoleName, APIGroup: rbacv1.GroupName},
+	); err != nil {
+		return err
+	}
+
+	// 4. RoleBinding: API SA + Jobs SA (tenant) → mlflow-access ClusterRole
+	if err := r.ensureTenantRoleBinding(ctx, instance.Name+"-tenant-mlflow", namespace, managedLabels,
+		[]rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      apiSAName,
+				Namespace: instance.Namespace,
+			},
+			{
+				Kind:      "ServiceAccount",
+				Name:      jobsSAName,
+				Namespace: namespace,
+			},
+		},
+		rbacv1.RoleRef{Kind: "ClusterRole", Name: mlflowAccessClusterRoleName, APIGroup: rbacv1.GroupName},
+	); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ensureTenantServiceAccount creates a ServiceAccount in the given namespace if it
+// does not exist. No owner reference is set (cross-namespace not allowed).
+func (r *EvalHubReconciler) ensureTenantServiceAccount(ctx context.Context, name, namespace string, labels map[string]string) error {
+	sa := &corev1.ServiceAccount{}
+	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sa)
+	if err == nil {
+		return nil // already exists
+	}
+	if !errors.IsNotFound(err) {
+		return err
+	}
+
+	log.FromContext(ctx).Info("Creating tenant SA", "namespace", namespace, "name", name)
+	sa = &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    labels,
+		},
+	}
+	return r.Create(ctx, sa)
+}
+
+// ensureTenantRoleBinding creates or updates a RoleBinding in the given namespace.
+// No owner reference is set (cross-namespace not allowed).
+func (r *EvalHubReconciler) ensureTenantRoleBinding(ctx context.Context, name, namespace string, labels map[string]string, subjects []rbacv1.Subject, roleRef rbacv1.RoleRef) error {
+	log := log.FromContext(ctx)
+
+	desired := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    labels,
+		},
+		Subjects: subjects,
+		RoleRef:  roleRef,
+	}
+
+	found := &rbacv1.RoleBinding{}
+	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, found)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Creating tenant RoleBinding", "namespace", namespace, "name", name)
+		return r.Create(ctx, desired)
+	} else if err != nil {
+		return err
+	}
+
+	// Update if subjects or roleRef changed
+	subjectsEqual := equalRoleBindingSubjects(found.Subjects, desired.Subjects)
+	roleRefEqual := equalRoleBindingRoleRef(found.RoleRef, desired.RoleRef)
+
+	if !subjectsEqual || !roleRefEqual {
+		if roleRefEqual && !subjectsEqual {
+			found.Subjects = desired.Subjects
+			log.Info("Updating tenant RoleBinding subjects", "name", name)
+			return r.Update(ctx, found)
+		}
+		// RoleRef is immutable; delete and recreate
+		log.Info("RoleRef differs, recreating tenant RoleBinding", "name", name)
+		if err := r.Delete(ctx, found); err != nil {
+			return err
+		}
+		return r.Create(ctx, desired)
+	}
+
+	return nil
+}
+
+// cleanupTenantResources removes all tenant-namespace resources managed by this
+// EvalHub instance (identified by tenantLabel). Called during EvalHub deletion.
+func (r *EvalHubReconciler) cleanupTenantResources(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+	log := log.FromContext(ctx)
+	log.Info("Cleaning up tenant resources", "instance", instance.Name)
+
+	managedLabel := client.MatchingLabels{tenantLabel: instance.Name}
+
+	// Delete managed RoleBindings across all namespaces
+	rbList := &rbacv1.RoleBindingList{}
+	if err := r.List(ctx, rbList, managedLabel); err != nil {
+		return fmt.Errorf("listing managed RoleBindings for cleanup: %w", err)
+	}
+	for i := range rbList.Items {
+		rb := &rbList.Items[i]
+		if rb.Namespace == instance.Namespace {
+			continue // control-plane resources cleaned by owner-ref GC
+		}
+		log.Info("Deleting tenant RoleBinding", "namespace", rb.Namespace, "name", rb.Name)
+		if err := r.Delete(ctx, rb); err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("deleting tenant RoleBinding %s/%s: %w", rb.Namespace, rb.Name, err)
+		}
+	}
+
+	// Delete managed ServiceAccounts across all namespaces
+	saList := &corev1.ServiceAccountList{}
+	if err := r.List(ctx, saList, managedLabel); err != nil {
+		return fmt.Errorf("listing managed SAs for cleanup: %w", err)
+	}
+	for i := range saList.Items {
+		sa := &saList.Items[i]
+		if sa.Namespace == instance.Namespace {
+			continue
+		}
+		log.Info("Deleting tenant SA", "namespace", sa.Namespace, "name", sa.Name)
+		if err := r.Delete(ctx, sa); err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("deleting tenant SA %s/%s: %w", sa.Namespace, sa.Name, err)
+		}
 	}
 
 	return nil
