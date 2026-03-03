@@ -58,6 +58,11 @@ const (
 	providerNameLabel   = "trustyai.opendatahub.io/evalhub-provider-name"
 	providersVolumeName = "evalhub-providers"
 	providersMountPath  = configDirPath + "/providers"
+
+	// Tenant namespace configuration
+	tenantAnnotation      = "mlflow.kubeflow.org/workspace-description"
+	tenantLabel           = "trustyai.opendatahub.io/managed-by"
+	tenantOwnerAnnotation = "trustyai.opendatahub.io/owner"
 )
 
 var (
