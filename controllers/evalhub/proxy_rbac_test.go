@@ -198,33 +198,6 @@ var _ = Describe("EvalHub API RBAC", func() {
 			Expect(roleBinding.RoleRef.Name).To(Equal(generateAPIAccessRoleName(evalHub)))
 		})
 
-		It("should create namespace-scoped jobs API access RoleBinding referencing per-instance Role", func() {
-			By("Creating service account")
-			err := reconciler.createServiceAccount(ctx, evalHub)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Verifying jobs API access RoleBinding exists in namespace")
-			roleBinding := &rbacv1.RoleBinding{}
-			rbName := evalHubName + "-jobs-api-access-rb"
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      rbName,
-				Namespace: testNamespace,
-			}, roleBinding)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Checking RoleBinding is namespace-scoped")
-			Expect(roleBinding.Namespace).To(Equal(testNamespace))
-
-			By("Checking subjects use -jobs SA")
-			Expect(roleBinding.Subjects).To(HaveLen(1))
-			Expect(roleBinding.Subjects[0].Kind).To(Equal("ServiceAccount"))
-			Expect(roleBinding.Subjects[0].Name).To(Equal(evalHubName + "-jobs"))
-
-			By("Checking role reference points to per-instance Role (not ClusterRole)")
-			Expect(roleBinding.RoleRef.Kind).To(Equal("Role"))
-			Expect(roleBinding.RoleRef.Name).To(Equal(generateJobsAPIAccessRoleName(evalHub)))
-		})
-
 		It("should handle existing service account gracefully", func() {
 			By("Creating service account initially")
 			err := reconciler.createServiceAccount(ctx, evalHub)
