@@ -255,12 +255,6 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
-  - status-events
-  verbs:
-  - create
-- apiGroups:
-  - trustyai.opendatahub.io
-  resources:
   - evalhubs/status
   - guardrailsorchestrators/status
   - lmevaljobs/status
@@ -270,3 +264,9 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - status-events
+  verbs:
+  - create

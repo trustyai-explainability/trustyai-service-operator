@@ -49,8 +49,8 @@ func TestBuildDeploymentSpec(t *testing.T) {
 			Namespace: testNamespace,
 		},
 		Data: map[string]string{
-			configMapEvalHubImageKey:       "quay.io/test/eval-hub:v1.2.3",
-					},
+			configMapEvalHubImageKey: "quay.io/test/eval-hub:v1.2.3",
+		},
 	}
 
 	// Create fake client with configmap
@@ -269,8 +269,8 @@ func TestGetEvalHubImage(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Data: map[string]string{
-				configMapEvalHubImageKey:       "quay.io/test/eval-hub:custom",
-							},
+				configMapEvalHubImageKey: "quay.io/test/eval-hub:custom",
+			},
 		}
 
 		fakeClient := fake.NewClientBuilder().
@@ -310,8 +310,8 @@ func TestGetEvalHubImage(t *testing.T) {
 				Namespace: "trustyai-service-operator-system",
 			},
 			Data: map[string]string{
-				configMapEvalHubImageKey:       "quay.io/test/eval-hub:default-ns",
-							},
+				configMapEvalHubImageKey: "quay.io/test/eval-hub:default-ns",
+			},
 		}
 
 		fakeClient := fake.NewClientBuilder().
