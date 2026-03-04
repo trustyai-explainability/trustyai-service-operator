@@ -155,20 +155,8 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
-	// Create ClusterRoleBinding for kube-rbac-proxy auth (tokenreviews/subjectaccessreviews only)
+	// Create ClusterRoleBinding for TokenReview and SubjectAccessReview (required for embedded auth)
 	err = r.createAuthReviewerClusterRoleBinding(ctx, instance, serviceAccountName)
-	if err != nil {
-		return err
-	}
-
-	// Create per-instance Roles before RoleBindings
-	err = r.createAPIAccessRole(ctx, instance)
-	if err != nil {
-		return err
-	}
-
-	// Create namespace-scoped RoleBinding for EvalHub API access (evalhubs/proxy)
-	err = r.createAPIAccessRoleBinding(ctx, instance, serviceAccountName)
 	if err != nil {
 		return err
 	}
@@ -241,8 +229,10 @@ func (r *EvalHubReconciler) createAPIAccessRole(ctx context.Context, instance *e
 				Verbs:         []string{"get"},
 			},
 			{
-				APIGroups:     []string{"trustyai.opendatahub.io"},
-				Resources:     []string{"evalhubs/proxy"},
+				APIGroups: []string{"trustyai.opendatahub.io"},
+				// OpenShift rewrites "proxy" to "unsafeproxy" in SAR checks;
+				// both must be listed for kube-rbac-proxy auth to pass.
+				Resources:     []string{"evalhubs/proxy", "evalhubs/unsafeproxy"},
 				ResourceNames: []string{instance.Name},
 				Verbs:         []string{"get", "create"},
 			},
@@ -343,9 +333,9 @@ func (r *EvalHubReconciler) createMLFlowAccessRoleBinding(ctx context.Context, i
 	return nil
 }
 
-// createAuthReviewerClusterRoleBinding creates a ClusterRoleBinding for kube-rbac-proxy
-// auth checks (tokenreviews and subjectaccessreviews only). This is the only
-// cluster-scoped binding needed for the EvalHub API ServiceAccount.
+// createAuthReviewerClusterRoleBinding creates a ClusterRoleBinding granting the
+// EvalHub API ServiceAccount permission to create tokenreviews and subjectaccessreviews.
+// Required for the embedded authentication (TokenReview) and authorization (SAR) middleware.
 func (r *EvalHubReconciler) createAuthReviewerClusterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
 	log := log.FromContext(ctx)
 

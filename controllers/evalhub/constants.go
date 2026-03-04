@@ -14,22 +14,17 @@ const (
 
 	// Container configuration
 	containerName = "evalhub"
-	containerPort = 8080
-
-	// Service configuration
-	serviceName = "evalhub"
-	servicePort = 8080
+	containerPort = 8443
 
 	// Configuration constants
-	configMapName                  = "trustyai-service-operator-config"
-	configMapEvalHubImageKey       = "evalHubImage"
-	configMapKubeRBACProxyImageKey = "kube-rbac-proxy"
+	configMapName            = "trustyai-service-operator-config"
+	configMapEvalHubImageKey = "evalHubImage"
 
-	// kube-rbac-proxy configuration
-	kubeRBACProxyPort = 8443
-
-	// Route configuration
-	routeName = "evalhub"
+	// TLS configuration (OpenShift serving cert)
+	tlsVolumeName = "evalhub-tls"
+	tlsMountPath  = "/etc/tls/private"
+	tlsCertFile   = "tls.crt"
+	tlsKeyFile    = "tls.key"
 
 	// Database configuration
 	dbSecretVolumeName = "evalhub-db-secret"

@@ -17,11 +17,18 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// TLSConfigYAML represents the TLS section in config.yaml
+type TLSConfigYAML struct {
+	CertFile string `json:"cert_file"`
+	KeyFile  string `json:"key_file"`
+}
+
 // ServiceConfig represents the service section in config.yaml
 type ServiceConfig struct {
-	Port            int    `json:"port"`
-	ReadyFile       string `json:"ready_file"`
-	TerminationFile string `json:"termination_file"`
+	Port            int            `json:"port"`
+	ReadyFile       string         `json:"ready_file"`
+	TerminationFile string         `json:"termination_file"`
+	TLS             *TLSConfigYAML `json:"tls,omitempty"`
 }
 
 // DatabaseConfig represents the database configuration in config.yaml
@@ -112,6 +119,10 @@ func (r *EvalHubReconciler) generateConfigData(instance *evalhubv1alpha1.EvalHub
 			Port:            containerPort,
 			ReadyFile:       "/tmp/repo-ready",
 			TerminationFile: "/tmp/termination-log",
+			TLS: &TLSConfigYAML{
+				CertFile: tlsMountPath + "/" + tlsCertFile,
+				KeyFile:  tlsMountPath + "/" + tlsKeyFile,
+			},
 		},
 		EnvMappings: EnvMappings{
 			"PORT":                        "service.port",
