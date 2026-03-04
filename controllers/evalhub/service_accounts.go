@@ -754,6 +754,11 @@ func (r *EvalHubReconciler) reconcileTenantNamespace(ctx context.Context, instan
 		return err
 	}
 
+	// 5. Service CA ConfigMap: jobs need the CA cert to call back to EvalHub over TLS
+	if err := r.ensureTenantServiceCAConfigMap(ctx, instance, namespace, managedLabels, managedAnnotations); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -827,6 +832,44 @@ func (r *EvalHubReconciler) ensureTenantRoleBinding(ctx context.Context, name, n
 	return nil
 }
 
+// ensureTenantServiceCAConfigMap creates a service CA ConfigMap in the tenant namespace
+// so that evaluation jobs can mount the CA certificate for TLS callbacks to EvalHub.
+// The OpenShift service CA operator injects the certificate via the annotation.
+// No owner reference is set (cross-namespace not allowed).
+func (r *EvalHubReconciler) ensureTenantServiceCAConfigMap(ctx context.Context, instance *evalhubv1alpha1.EvalHub, namespace string, labels map[string]string, annotations map[string]string) error {
+	log := log.FromContext(ctx)
+
+	cmName := instance.Name + "-service-ca"
+	configMap := &corev1.ConfigMap{}
+	err := r.Get(ctx, types.NamespacedName{Name: cmName, Namespace: namespace}, configMap)
+	if err == nil {
+		return nil // already exists
+	}
+	if !errors.IsNotFound(err) {
+		return err
+	}
+
+	// Merge managed annotations with the service CA injection annotation
+	cmAnnotations := make(map[string]string, len(annotations)+1)
+	for k, v := range annotations {
+		cmAnnotations[k] = v
+	}
+	cmAnnotations["service.beta.openshift.io/inject-cabundle"] = "true"
+
+	configMap = &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        cmName,
+			Namespace:   namespace,
+			Labels:      labels,
+			Annotations: cmAnnotations,
+		},
+		Data: map[string]string{},
+	}
+
+	log.Info("Creating tenant Service CA ConfigMap", "namespace", namespace, "name", cmName)
+	return r.Create(ctx, configMap)
+}
+
 // cleanupTenantResources removes all tenant-namespace resources managed by this
 // EvalHub instance (identified by tenantLabel). Called during EvalHub deletion.
 func (r *EvalHubReconciler) cleanupTenantResources(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
@@ -864,6 +907,22 @@ func (r *EvalHubReconciler) cleanupTenantResources(ctx context.Context, instance
 		log.Info("Deleting tenant SA", "namespace", sa.Namespace, "name", sa.Name)
 		if err := r.Delete(ctx, sa); err != nil && !errors.IsNotFound(err) {
 			return fmt.Errorf("deleting tenant SA %s/%s: %w", sa.Namespace, sa.Name, err)
+		}
+	}
+
+	// Delete managed ConfigMaps across all namespaces (e.g. service-ca)
+	cmList := &corev1.ConfigMapList{}
+	if err := r.List(ctx, cmList, managedLabel); err != nil {
+		return fmt.Errorf("listing managed ConfigMaps for cleanup: %w", err)
+	}
+	for i := range cmList.Items {
+		cm := &cmList.Items[i]
+		if cm.Namespace == instance.Namespace {
+			continue
+		}
+		log.Info("Deleting tenant ConfigMap", "namespace", cm.Namespace, "name", cm.Name)
+		if err := r.Delete(ctx, cm); err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("deleting tenant ConfigMap %s/%s: %w", cm.Namespace, cm.Name, err)
 		}
 	}
 

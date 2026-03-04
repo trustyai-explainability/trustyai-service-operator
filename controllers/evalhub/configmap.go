@@ -112,6 +112,74 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 	}
 }
 
+// generateAuthConfigData generates the authorization configuration for the ConfigMap.
+// This defines per-endpoint SAR (SubjectAccessReview) policies used for multi-tenancy,
+// mapping the X-Tenant header to namespace-scoped RBAC checks.
+func (r *EvalHubReconciler) generateAuthConfigData() string {
+	return `authorization:
+  endpoints:
+    - path: /api/v1/evaluations/jobs
+      mappings:
+        - methods: [post]
+          resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: evaluations
+                verb: create
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: mlflow.kubeflow.org
+                resource: experiments
+                verb: create
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: mlflow.kubeflow.org
+                resource: experiments
+                verb: get
+        - resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: evaluations
+                verb: "{{.FromMethod}}"
+    - path: /api/v1/evaluations/collections
+      mappings:
+        - resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: collections
+                verb: "{{.FromMethod}}"
+    - path: /api/v1/evaluations/providers
+      mappings:
+        - resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: providers
+                verb: "{{.FromMethod}}"
+`
+}
+
 // generateConfigData generates the configuration data for the ConfigMap
 func (r *EvalHubReconciler) generateConfigData(instance *evalhubv1alpha1.EvalHub) (map[string]string, error) {
 	config := EvalHubConfig{
@@ -191,6 +259,7 @@ func (r *EvalHubReconciler) generateConfigData(instance *evalhubv1alpha1.EvalHub
 
 	return map[string]string{
 		"config.yaml": string(configYAML),
+		"auth.yaml":   r.generateAuthConfigData(),
 	}, nil
 }
 
