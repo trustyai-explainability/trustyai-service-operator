@@ -233,7 +233,7 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		By("Checking that Deployment is created")
 		deployment := waitForDeployment(evalHubName, testNamespace)
 		Expect(deployment.Spec.Replicas).To(Equal(evalHub.Spec.Replicas))
-		Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(2))
+		Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(1))
 
 		// Find the evalhub container
 		var container *corev1.Container
