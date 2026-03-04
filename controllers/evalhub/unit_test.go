@@ -55,7 +55,7 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		},
 		Data: map[string]string{
 			configMapEvalHubImageKey:       "quay.io/test/eval-hub:latest",
-			configMapKubeRBACProxyImageKey: "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
+
 		},
 	}
 
@@ -116,9 +116,8 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		for _, env := range container.Env {
 			envVarMap[env.Name] = env.Value
 		}
-		// API_HOST is 127.0.0.1 to ensure only kube-rbac-proxy can reach the API (security hardening)
-		assert.Equal(t, "127.0.0.1", envVarMap["API_HOST"])
-		assert.Equal(t, "8080", envVarMap["API_PORT"])
+		assert.Equal(t, "0.0.0.0", envVarMap["API_HOST"])
+		assert.Equal(t, "8443", envVarMap["PORT"])
 		assert.Equal(t, "test-value", envVarMap["TEST_VAR"])
 
 		// Check SERVICE_URL and EVALHUB_INSTANCE_NAME are propagated
@@ -140,7 +139,7 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		assert.Equal(t, []string{"/usr/bin/curl", "--fail", "--silent", "--max-time", "2", "http://127.0.0.1:8080/api/v1/health"}, container.ReadinessProbe.Exec.Command)
 	})
 
-	t.Run("should fail when configmap missing", func(t *testing.T) {
+	t.Run("should use fallback image when configmap missing", func(t *testing.T) {
 		// Create client without configmap
 		fakeClientNoConfig := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -155,8 +154,25 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		}
 
 		err := reconcilerNoConfig.reconcileDeployment(ctx, evalHub, nil)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "kube-rbac-proxy configuration error")
+		require.NoError(t, err)
+
+		// Verify the deployment was created with default image
+		deployment := &appsv1.Deployment{}
+		err = fakeClientNoConfig.Get(ctx, types.NamespacedName{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		}, deployment)
+		require.NoError(t, err)
+
+		var container *corev1.Container
+		for i, c := range deployment.Spec.Template.Spec.Containers {
+			if c.Name == containerName {
+				container = &deployment.Spec.Template.Spec.Containers[i]
+				break
+			}
+		}
+		require.NotNil(t, container)
+		assert.Equal(t, defaultEvalHubImage, container.Image)
 	})
 }
 
@@ -1295,7 +1311,7 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 		},
 		Data: map[string]string{
 			configMapEvalHubImageKey:       "quay.io/test/eval-hub:latest",
-			configMapKubeRBACProxyImageKey: "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
+
 		},
 	}
 
@@ -1322,8 +1338,8 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 		}, deployment)
 		require.NoError(t, err)
 
-		// Should have 6 volumes: evalhub-config, kube-rbac-proxy-config, tls, service-ca, mlflow-token, db-secret
-		assert.Len(t, deployment.Spec.Template.Spec.Volumes, 6)
+		// Should have 5 volumes: evalhub-config, tls, service-ca, mlflow-token, db-secret
+		assert.Len(t, deployment.Spec.Template.Spec.Volumes, 5)
 
 		// Find the DB secret volume
 		var dbVolume *corev1.Volume
@@ -1349,7 +1365,7 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 			}
 		}
 		require.NotNil(t, container)
-		assert.Len(t, container.VolumeMounts, 4) // evalhub-config + service-ca + mlflow-token + db-secret
+		assert.Len(t, container.VolumeMounts, 5) // evalhub-config + tls + service-ca + mlflow-token + db-secret
 
 		var dbMount *corev1.VolumeMount
 		for i, m := range container.VolumeMounts {
@@ -1526,7 +1542,7 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 			},
 			Data: map[string]string{
 				configMapEvalHubImageKey:       "quay.io/test/eval-hub:latest",
-				configMapKubeRBACProxyImageKey: "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
+	
 			},
 		}
 

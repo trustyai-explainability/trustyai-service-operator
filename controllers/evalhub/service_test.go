@@ -83,7 +83,7 @@ var _ = Describe("EvalHub Service", func() {
 			Expect(service.Labels["component"]).To(Equal("api"))
 		})
 
-		It("should configure service ports correctly for kube-rbac-proxy", func() {
+		It("should configure service ports correctly for HTTPS", func() {
 			By("Reconciling service")
 			err := reconciler.reconcileService(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())

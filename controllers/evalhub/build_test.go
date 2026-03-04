@@ -50,8 +50,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		},
 		Data: map[string]string{
 			configMapEvalHubImageKey:       "quay.io/test/eval-hub:v1.2.3",
-			configMapKubeRBACProxyImageKey: "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
-		},
+					},
 	}
 
 	// Create fake client with configmap
@@ -85,7 +84,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 
 		// Check pod template
 		podSpec := deploymentSpec.Template.Spec
-		require.Len(t, podSpec.Containers, 2)
+		require.Len(t, podSpec.Containers, 1)
 
 		// Find the evalhub container
 		var container *corev1.Container
@@ -105,8 +104,8 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		// Check ports
 		require.Len(t, container.Ports, 1)
 		port := container.Ports[0]
-		assert.Equal(t, "http", port.Name)
-		assert.Equal(t, int32(8080), port.ContainerPort)
+		assert.Equal(t, "https", port.Name)
+		assert.Equal(t, int32(8443), port.ContainerPort)
 		assert.Equal(t, corev1.ProtocolTCP, port.Protocol)
 
 		// Check environment variables
@@ -116,9 +115,10 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		}
 
 		// Check default environment variables
-		// API_HOST is 127.0.0.1 to ensure only kube-rbac-proxy can reach the API (security hardening)
-		assert.Equal(t, "127.0.0.1", envVarMap["API_HOST"])
-		assert.Equal(t, "8080", envVarMap["API_PORT"])
+		assert.Equal(t, "0.0.0.0", envVarMap["API_HOST"])
+		assert.Equal(t, "8443", envVarMap["PORT"])
+		assert.Equal(t, "/etc/tls/private/tls.crt", envVarMap["TLS_CERT_FILE"])
+		assert.Equal(t, "/etc/tls/private/tls.key", envVarMap["TLS_KEY_FILE"])
 		assert.Equal(t, "INFO", envVarMap["LOG_LEVEL"])
 		assert.Equal(t, "10", envVarMap["MAX_CONCURRENT_EVALUATIONS"])
 		assert.Equal(t, "60", envVarMap["DEFAULT_TIMEOUT_MINUTES"])
@@ -146,16 +146,18 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		assert.True(t, *container.SecurityContext.RunAsNonRoot)
 		assert.Contains(t, container.SecurityContext.Capabilities.Drop, corev1.Capability("ALL"))
 
-		// Check health probes (exec-based because API listens on 127.0.0.1 only)
+		// Check health probes (HTTPGet with HTTPS)
 		require.NotNil(t, container.LivenessProbe)
-		require.NotNil(t, container.LivenessProbe.Exec)
-		assert.Equal(t, []string{"/usr/bin/curl", "--fail", "--silent", "--max-time", "3", "http://127.0.0.1:8080/api/v1/health"}, container.LivenessProbe.Exec.Command)
+		require.NotNil(t, container.LivenessProbe.HTTPGet)
+		assert.Equal(t, "/api/v1/health", container.LivenessProbe.HTTPGet.Path)
+		assert.Equal(t, corev1.URISchemeHTTPS, container.LivenessProbe.HTTPGet.Scheme)
 		assert.Equal(t, int32(30), container.LivenessProbe.InitialDelaySeconds)
 		assert.Equal(t, int32(10), container.LivenessProbe.PeriodSeconds)
 
 		require.NotNil(t, container.ReadinessProbe)
-		require.NotNil(t, container.ReadinessProbe.Exec)
-		assert.Equal(t, []string{"/usr/bin/curl", "--fail", "--silent", "--max-time", "2", "http://127.0.0.1:8080/api/v1/health"}, container.ReadinessProbe.Exec.Command)
+		require.NotNil(t, container.ReadinessProbe.HTTPGet)
+		assert.Equal(t, "/api/v1/health", container.ReadinessProbe.HTTPGet.Path)
+		assert.Equal(t, corev1.URISchemeHTTPS, container.ReadinessProbe.HTTPGet.Scheme)
 		assert.Equal(t, int32(10), container.ReadinessProbe.InitialDelaySeconds)
 		assert.Equal(t, int32(5), container.ReadinessProbe.PeriodSeconds)
 
@@ -170,7 +172,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		assert.Equal(t, "25%", deploymentSpec.Strategy.RollingUpdate.MaxSurge.StrVal)
 	})
 
-	t.Run("should fail when configmap missing", func(t *testing.T) {
+	t.Run("should use fallback image when configmap missing", func(t *testing.T) {
 		// Create client without configmap
 		fakeClientNoConfig := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -184,10 +186,17 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		}
 
 		deploymentSpec, err := reconcilerNoConfig.buildDeploymentSpec(ctx, evalHub, nil)
-		require.Error(t, err)
-		// Should return empty deployment spec (zero value) on error
-		assert.Equal(t, appsv1.DeploymentSpec{}, deploymentSpec)
-		assert.Contains(t, err.Error(), "kube-rbac-proxy configuration error")
+		require.NoError(t, err)
+		// Should use default EvalHub image as fallback
+		var container *corev1.Container
+		for i, c := range deploymentSpec.Template.Spec.Containers {
+			if c.Name == containerName {
+				container = &deploymentSpec.Template.Spec.Containers[i]
+				break
+			}
+		}
+		require.NotNil(t, container)
+		assert.Equal(t, defaultEvalHubImage, container.Image)
 	})
 
 	t.Run("should handle default replicas when not specified", func(t *testing.T) {
@@ -261,8 +270,7 @@ func TestGetEvalHubImage(t *testing.T) {
 			},
 			Data: map[string]string{
 				configMapEvalHubImageKey:       "quay.io/test/eval-hub:custom",
-				configMapKubeRBACProxyImageKey: "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
-			},
+							},
 		}
 
 		fakeClient := fake.NewClientBuilder().
@@ -303,8 +311,7 @@ func TestGetEvalHubImage(t *testing.T) {
 			},
 			Data: map[string]string{
 				configMapEvalHubImageKey:       "quay.io/test/eval-hub:default-ns",
-				configMapKubeRBACProxyImageKey: "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
-			},
+							},
 		}
 
 		fakeClient := fake.NewClientBuilder().

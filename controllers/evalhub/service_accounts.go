@@ -122,7 +122,7 @@ func generateAuthReviewerClusterRoleBindingAppNameLabelValue(instance *evalhubv1
 	return normalizeDNS1123LabelValue(generateAuthReviewerClusterRoleBindingName(instance))
 }
 
-// createServiceAccount creates a service account for this instance's kube-rbac-proxy
+// createServiceAccount creates a service account for this instance's EvalHub API
 func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
 	serviceAccountName := generateServiceAccountName(instance)
 
@@ -158,7 +158,7 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
-	// Create ClusterRoleBinding for kube-rbac-proxy auth (tokenreviews/subjectaccessreviews only)
+	// Create ClusterRoleBinding for EvalHub SAR auth (tokenreviews/subjectaccessreviews only)
 	err = r.createAuthReviewerClusterRoleBinding(ctx, instance, serviceAccountName)
 	if err != nil {
 		return err
@@ -215,7 +215,7 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 	return nil
 }
 
-// authReviewerClusterRoleName is the ClusterRole for kube-rbac-proxy auth checks only.
+// authReviewerClusterRoleName is the ClusterRole for EvalHub SAR auth checks only.
 // It contains only tokenreviews/create and subjectaccessreviews/create permissions.
 const authReviewerClusterRoleName = "trustyai-service-operator-evalhub-auth-reviewer-role"
 
@@ -320,6 +320,11 @@ func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instanc
 				ResourceNames: []string{instance.Name},
 				Verbs:         []string{"get", "create"},
 			},
+			{
+				APIGroups: []string{"trustyai.opendatahub.io"},
+				Resources: []string{"status-events"},
+				Verbs:     []string{"create"},
+			},
 		},
 	}
 
@@ -416,8 +421,8 @@ func (r *EvalHubReconciler) createMLFlowAccessRoleBinding(ctx context.Context, i
 	return nil
 }
 
-// createAuthReviewerClusterRoleBinding creates a ClusterRoleBinding for kube-rbac-proxy
-// auth checks (tokenreviews and subjectaccessreviews only). This is the only
+// createAuthReviewerClusterRoleBinding creates a ClusterRoleBinding for EvalHub
+// SAR auth checks (tokenreviews and subjectaccessreviews only). This is the only
 // cluster-scoped binding needed for the EvalHub API ServiceAccount.
 func (r *EvalHubReconciler) createAuthReviewerClusterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
 	log := log.FromContext(ctx)

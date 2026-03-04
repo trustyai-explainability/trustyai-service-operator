@@ -103,7 +103,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return RequeueWithDelay(time.Second * 5)
 	}
 
-	// Create ServiceAccount for kube-rbac-proxy
+	// Create ServiceAccount for EvalHub
 	err = r.createServiceAccount(ctx, instance)
 	if err != nil {
 		log.Error(err, "Failed to create ServiceAccount")
@@ -125,14 +125,6 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.reconcileConfigMap(ctx, instance); err != nil {
 		log.Error(err, "Failed to reconcile ConfigMap")
 		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile ConfigMap: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-
-	// Reconcile Proxy ConfigMap
-	if err := r.reconcileProxyConfigMap(ctx, instance); err != nil {
-		log.Error(err, "Failed to reconcile Proxy ConfigMap")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Proxy ConfigMap: %v", err), corev1.ConditionFalse)
 		r.Status().Update(ctx, instance)
 		return RequeueWithError(err)
 	}
@@ -307,9 +299,9 @@ func (r *EvalHubReconciler) updateStatus(ctx context.Context, instance *evalhubv
 		instance.Status.Ready = corev1.ConditionTrue
 		instance.SetStatus("Ready", "DeploymentReady", "All replicas are ready", corev1.ConditionTrue)
 
-		// Set URL based on service (kube-rbac-proxy)
+		// Set URL based on service
 		instance.Status.URL = fmt.Sprintf("https://%s.%s.svc.cluster.local:%d",
-			instance.Name, instance.Namespace, kubeRBACProxyPort)
+			instance.Name, instance.Namespace, servicePort)
 	} else {
 		instance.Status.Phase = "Pending"
 		instance.Status.Ready = corev1.ConditionFalse
