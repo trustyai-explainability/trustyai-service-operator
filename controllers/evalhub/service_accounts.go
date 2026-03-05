@@ -278,8 +278,9 @@ func (r *EvalHubReconciler) createAPIAccessRole(ctx context.Context, instance *e
 	return nil
 }
 
-// createJobsAPIAccessRole creates a per-instance namespaced Role for the jobs SA
-// with resourceNames scoped to this specific EvalHub instance.
+// createJobsAPIAccessRole creates a per-instance namespaced Role for the job SA.
+// Job pods only need to post status events back to the EvalHub service — they do
+// not proxy requests, so evalhubs/proxy is not included here.
 func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
 	log := log.FromContext(ctx)
 
@@ -291,12 +292,6 @@ func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instanc
 			Labels:    jobResourceLabels(instance, roleName),
 		},
 		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups:     []string{"trustyai.opendatahub.io"},
-				Resources:     []string{"evalhubs/proxy"},
-				ResourceNames: []string{instance.Name},
-				Verbs:         []string{"get", "create"},
-			},
 			{
 				APIGroups: []string{"trustyai.opendatahub.io"},
 				Resources: []string{"status-events"},
