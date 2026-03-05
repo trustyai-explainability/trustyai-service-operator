@@ -408,12 +408,19 @@ func TestGenerateConfigData(t *testing.T) {
 		},
 	}
 
+	configMap := createConfigMap(configMapName, evalHub.Namespace)
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub, configMap).
+		Build()
 	reconciler := &EvalHubReconciler{
-		Scheme: scheme,
+		Client:    fakeClient,
+		Scheme:    scheme,
+		Namespace: evalHub.Namespace,
 	}
 
 	t.Run("should generate valid configuration data", func(t *testing.T) {
-		configData, err := reconciler.generateConfigData(evalHub)
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
 		require.NoError(t, err)
 
 		// Check keys exist
@@ -423,6 +430,7 @@ func TestGenerateConfigData(t *testing.T) {
 		var config EvalHubConfig
 		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
 		require.NoError(t, err)
+
 	})
 }
 
@@ -1106,8 +1114,17 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 			},
 		}
 
-		reconciler := &EvalHubReconciler{Scheme: scheme}
-		configData, err := reconciler.generateConfigData(evalHub)
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
 		require.NoError(t, err)
 
 		var config EvalHubConfig
@@ -1141,8 +1158,17 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 			},
 		}
 
-		reconciler := &EvalHubReconciler{Scheme: scheme}
-		configData, err := reconciler.generateConfigData(evalHub)
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
 		require.NoError(t, err)
 
 		var config EvalHubConfig
@@ -1162,8 +1188,17 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 			},
 		}
 
-		reconciler := &EvalHubReconciler{Scheme: scheme}
-		configData, err := reconciler.generateConfigData(evalHub)
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
 		require.NoError(t, err)
 
 		var config EvalHubConfig
@@ -1199,8 +1234,17 @@ func TestGenerateConfigData_WithOTEL(t *testing.T) {
 			},
 		}
 
-		reconciler := &EvalHubReconciler{Scheme: scheme}
-		configData, err := reconciler.generateConfigData(evalHub)
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
 		require.NoError(t, err)
 
 		var config EvalHubConfig
@@ -1238,8 +1282,17 @@ func TestGenerateConfigData_WithOTEL(t *testing.T) {
 			},
 		}
 
-		reconciler := &EvalHubReconciler{Scheme: scheme}
-		configData, err := reconciler.generateConfigData(evalHub)
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
 		require.NoError(t, err)
 
 		var config EvalHubConfig
@@ -1265,8 +1318,17 @@ func TestGenerateConfigData_WithOTEL(t *testing.T) {
 			},
 		}
 
-		reconciler := &EvalHubReconciler{Scheme: scheme}
-		configData, err := reconciler.generateConfigData(evalHub)
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
 		require.NoError(t, err)
 
 		var config EvalHubConfig
