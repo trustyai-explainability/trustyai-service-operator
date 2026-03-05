@@ -264,3 +264,9 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - status-events
+  verbs:
+  - create

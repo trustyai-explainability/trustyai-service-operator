@@ -233,7 +233,7 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		By("Checking that Deployment is created")
 		deployment := waitForDeployment(evalHubName, testNamespace)
 		Expect(deployment.Spec.Replicas).To(Equal(evalHub.Spec.Replicas))
-		Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(2))
+		Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(1))
 
 		// Find the evalhub container
 		var container *corev1.Container
@@ -246,7 +246,7 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		Expect(container).NotTo(BeNil(), "evalhub container should be present")
 		Expect(container.Name).To(Equal("evalhub"))
 		Expect(container.Image).To(Equal("quay.io/ruimvieira/eval-hub:test"))
-		Expect(container.Ports[0].ContainerPort).To(Equal(int32(8080)))
+		Expect(container.Ports[0].ContainerPort).To(Equal(int32(8443)))
 
 		// Check custom environment variables are included
 		var hasTestEnv bool

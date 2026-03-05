@@ -81,7 +81,7 @@ func (r *EvalHubReconciler) buildServiceSpec(instance *evalhubv1alpha1.EvalHub) 
 		Ports: []corev1.ServicePort{
 			{
 				Name:       "https",
-				Port:       kubeRBACProxyPort,
+				Port:       servicePort,
 				TargetPort: intstr.FromString("https"),
 				Protocol:   corev1.ProtocolTCP,
 			},

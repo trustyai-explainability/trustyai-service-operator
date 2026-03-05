@@ -11,7 +11,6 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/yaml"
 )
 
 var _ = Describe("EvalHub API RBAC", func() {
@@ -42,15 +41,14 @@ var _ = Describe("EvalHub API RBAC", func() {
 		operatorNS = createNamespace(operatorNamespace)
 		Expect(k8sClient.Create(ctx, operatorNS)).Should(Succeed())
 
-		// Create operator ConfigMap with proxy image
+		// Create operator ConfigMap with EvalHub image
 		operatorCM = &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      configMapName,
 				Namespace: operatorNamespace,
 			},
 			Data: map[string]string{
-				"kube-rbac-proxy": "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1",
-				"evalHubImage":    "quay.io/ruimvieira/eval-hub:test",
+				"evalHubImage": "quay.io/ruimvieira/eval-hub:test",
 			},
 		}
 		Expect(k8sClient.Create(ctx, operatorCM)).Should(Succeed())
@@ -297,11 +295,11 @@ var _ = Describe("EvalHub API RBAC", func() {
 	})
 
 	Context("ConfigMap Image Retrieval", func() {
-		It("should retrieve kube-rbac-proxy image from operator ConfigMap", func() {
+		It("should retrieve EvalHub image from operator ConfigMap", func() {
 			By("Retrieving image from ConfigMap")
-			image, err := reconciler.getImageFromConfigMap(ctx, "kube-rbac-proxy")
+			image, err := reconciler.getImageFromConfigMap(ctx, "evalHubImage")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(image).To(Equal("gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1"))
+			Expect(image).To(Equal("quay.io/ruimvieira/eval-hub:test"))
 		})
 
 		It("should fail when ConfigMap is not found", func() {
@@ -312,7 +310,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			}
 
 			By("Attempting to retrieve image")
-			_, err := badReconciler.getImageFromConfigMap(ctx, "kube-rbac-proxy")
+			_, err := badReconciler.getImageFromConfigMap(ctx, "evalHubImage")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("required configmap"))
 			Expect(err.Error()).To(ContainSubstring("not found"))
@@ -326,7 +324,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			}
 
 			By("Attempting to retrieve image")
-			_, err := badReconciler.getImageFromConfigMap(ctx, "kube-rbac-proxy")
+			_, err := badReconciler.getImageFromConfigMap(ctx, "evalHubImage")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("operator namespace not set"))
 		})
@@ -369,155 +367,6 @@ var _ = Describe("EvalHub API RBAC", func() {
 		})
 	})
 
-	Context("Proxy ConfigMap Management", func() {
-		It("should create proxy config map with correct specifications", func() {
-			By("Reconciling proxy configmap")
-			err := reconciler.reconcileProxyConfigMap(ctx, evalHub)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Verifying proxy configmap exists")
-			configMap := &corev1.ConfigMap{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-proxy-config",
-				Namespace: testNamespace,
-			}, configMap)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Checking configmap specifications")
-			Expect(configMap.Name).To(Equal(evalHubName + "-proxy-config"))
-			Expect(configMap.Namespace).To(Equal(testNamespace))
-
-			By("Checking owner references")
-			Expect(configMap.OwnerReferences).To(HaveLen(1))
-			Expect(configMap.OwnerReferences[0].Name).To(Equal(evalHub.Name))
-			Expect(configMap.OwnerReferences[0].Kind).To(Equal("EvalHub"))
-		})
-
-		It("should contain valid proxy configuration", func() {
-			By("Reconciling proxy configmap")
-			err := reconciler.reconcileProxyConfigMap(ctx, evalHub)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Getting proxy configmap")
-			configMap := &corev1.ConfigMap{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-proxy-config",
-				Namespace: testNamespace,
-			}, configMap)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Checking required keys exist")
-			Expect(configMap.Data).To(HaveKey("config.yaml"))
-
-			By("Parsing proxy configuration")
-			var proxyConfig map[string]interface{}
-			err = yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), &proxyConfig)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Checking proxy configuration structure")
-			Expect(proxyConfig).To(HaveKey("authorization"))
-			Expect(proxyConfig).To(HaveKey("upstreams"))
-
-			// Check authorization configuration
-			authorization, ok := proxyConfig["authorization"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(authorization).To(HaveKey("resourceAttributes"))
-
-			resourceAttrs, ok := authorization["resourceAttributes"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(resourceAttrs["namespace"]).To(Equal(testNamespace))
-			Expect(resourceAttrs["apiGroup"]).To(Equal("trustyai.opendatahub.io"))
-			Expect(resourceAttrs["resource"]).To(Equal("evalhubs"))
-			Expect(resourceAttrs["name"]).To(Equal(evalHubName))
-			Expect(resourceAttrs["resourceName"]).To(Equal(evalHubName))
-			Expect(resourceAttrs["subresource"]).To(Equal("proxy"))
-
-			// Check upstreams configuration
-			upstreams, ok := proxyConfig["upstreams"].([]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(upstreams).To(HaveLen(1))
-
-			upstream, ok := upstreams[0].(map[string]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(upstream["upstream"]).To(Equal("http://127.0.0.1:8080/"))
-			Expect(upstream["path"]).To(Equal("/"))
-			Expect(upstream["rewriteTarget"]).To(Equal("/"))
-
-			// Check allowed paths
-			allowedPaths, ok := upstream["allowedPaths"].([]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(allowedPaths).To(ContainElements(
-				"/api/v1/health", "/api/v1/providers", "/api/v1/benchmarks",
-				"/api/v1/evaluations", "/api/v1/evaluations/",
-				"/api/v1/evaluations/jobs", "/api/v1/evaluations/jobs/",
-				"/api/v1/evaluations/jobs/*",
-				"/api/v1/evaluations/jobs/*/events",
-				"/api/v1/evaluations/*/status", "/api/v1/evaluations/*/results",
-				"/openapi.json", "/docs", "/redoc",
-			))
-
-			// Ensure we don't accidentally broaden the proxy surface area.
-			// Guard against overly broad wildcard patterns that would weaken RBAC.
-			Expect(allowedPaths).NotTo(ContainElement("/*"))
-			Expect(allowedPaths).NotTo(ContainElement("/api/*"))
-		})
-
-		It("should update existing proxy configmap", func() {
-			By("Creating initial proxy configmap")
-			err := reconciler.reconcileProxyConfigMap(ctx, evalHub)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Getting initial proxy configmap")
-			configMap := &corev1.ConfigMap{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-proxy-config",
-				Namespace: testNamespace,
-			}, configMap)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Manually modifying proxy configmap data")
-			configMap.Data["config.yaml"] = "bad: data"
-			err = k8sClient.Update(ctx, configMap)
-			Expect(err).NotTo(HaveOccurred())
-
-			initialResourceVersion := configMap.ResourceVersion
-
-			By("Reconciling proxy configmap again")
-			err = reconciler.reconcileProxyConfigMap(ctx, evalHub)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Verifying proxy configmap is updated")
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-proxy-config",
-				Namespace: testNamespace,
-			}, configMap)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(configMap.ResourceVersion).NotTo(Equal(initialResourceVersion))
-			Expect(configMap.Data["config.yaml"]).NotTo(Equal("bad: data"))
-		})
-
-		It("should generate proxy configuration data correctly", func() {
-			By("Generating proxy configuration data")
-			proxyConfigData := reconciler.generateProxyConfigData(evalHub)
-
-			By("Checking required keys are present")
-			Expect(proxyConfigData).To(HaveKey("config.yaml"))
-
-			By("Validating proxy configuration content")
-			var proxyConfig map[string]interface{}
-			err := yaml.Unmarshal([]byte(proxyConfigData["config.yaml"]), &proxyConfig)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Checking configuration contains EvalHub-specific settings")
-			authorization := proxyConfig["authorization"].(map[string]interface{})
-			resourceAttrs := authorization["resourceAttributes"].(map[string]interface{})
-			Expect(resourceAttrs["namespace"]).To(Equal(evalHub.Namespace))
-			Expect(resourceAttrs["name"]).To(Equal(evalHub.Name))
-			Expect(resourceAttrs["resourceName"]).To(Equal(evalHub.Name))
-		})
-	})
-
 	Context("Error Handling and Edge Cases", func() {
 		It("should handle missing operator ConfigMap gracefully in getImageFromConfigMap", func() {
 			By("Deleting operator ConfigMap")
@@ -525,42 +374,9 @@ var _ = Describe("EvalHub API RBAC", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Attempting to get image from non-existent ConfigMap")
-			_, err = reconciler.getImageFromConfigMap(ctx, "kube-rbac-proxy")
+			_, err = reconciler.getImageFromConfigMap(ctx, "evalHubImage")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not found"))
-		})
-
-		It("should handle proxy configmap creation in non-existent namespace", func() {
-			By("Creating EvalHub in non-existent namespace")
-			badEvalHub := createEvalHubInstance("bad-proxy-evalhub", "non-existent-namespace")
-
-			By("Attempting to reconcile proxy configmap")
-			badReconciler, _ := setupReconciler("non-existent-namespace")
-			err := badReconciler.reconcileProxyConfigMap(ctx, badEvalHub)
-			Expect(err).To(HaveOccurred())
-		})
-
-		It("should create proxy configmap even when EvalHub instance is not persisted", func() {
-			By("Creating proxy configmap for non-persisted EvalHub")
-			nonPersistedEvalHub := &evalhubv1alpha1.EvalHub{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "non-persisted-proxy",
-					Namespace: testNamespace,
-				},
-			}
-
-			By("Attempting to reconcile proxy configmap")
-			err := reconciler.reconcileProxyConfigMap(ctx, nonPersistedEvalHub)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Verifying proxy configmap was created")
-			configMap := &corev1.ConfigMap{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      "non-persisted-proxy-proxy-config",
-				Namespace: testNamespace,
-			}, configMap)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(configMap.OwnerReferences).To(BeEmpty())
 		})
 	})
 

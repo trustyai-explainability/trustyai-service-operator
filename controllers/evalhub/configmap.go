@@ -20,8 +20,11 @@ import (
 // ServiceConfig represents the service section in config.yaml
 type ServiceConfig struct {
 	Port            int    `json:"port"`
+	Host            string `json:"host,omitempty"`
 	ReadyFile       string `json:"ready_file"`
 	TerminationFile string `json:"termination_file"`
+	TLSCertFile     string `json:"tls_cert_file,omitempty"`
+	TLSKeyFile      string `json:"tls_key_file,omitempty"`
 }
 
 // DatabaseConfig represents the database configuration in config.yaml
@@ -115,6 +118,9 @@ func (r *EvalHubReconciler) generateConfigData(instance *evalhubv1alpha1.EvalHub
 		},
 		EnvMappings: EnvMappings{
 			"PORT":                        "service.port",
+			"API_HOST":                    "service.host",
+			"TLS_CERT_FILE":               "service.tls_cert_file",
+			"TLS_KEY_FILE":                "service.tls_key_file",
 			"DB_URL":                      "database.url",
 			"MLFLOW_TRACKING_URI":         "mlflow.tracking_uri",
 			"MLFLOW_CA_CERT_PATH":         "mlflow.ca_cert_path",
@@ -327,98 +333,6 @@ func (r *EvalHubReconciler) validateImageConfiguration(ctx context.Context, imag
 	}
 
 	return nil
-}
-
-// reconcileProxyConfigMap creates or updates the ConfigMap for kube-rbac-proxy configuration
-func (r *EvalHubReconciler) reconcileProxyConfigMap(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
-	log := log.FromContext(ctx)
-	log.Info("Reconciling Proxy ConfigMap", "name", instance.Name)
-
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.Name + "-proxy-config",
-			Namespace: instance.Namespace,
-		},
-	}
-
-	// Check if ConfigMap already exists
-	getErr := r.Get(ctx, client.ObjectKeyFromObject(configMap), configMap)
-	if getErr != nil && !errors.IsNotFound(getErr) {
-		return getErr
-	}
-
-	// Generate proxy configuration data
-	proxyConfigData := r.generateProxyConfigData(instance)
-
-	if errors.IsNotFound(getErr) {
-		// Create new ConfigMap
-		configMap.Data = proxyConfigData
-		if instance.UID != "" {
-			if err := controllerutil.SetControllerReference(instance, configMap, r.Scheme); err != nil {
-				return err
-			}
-		}
-		log.Info("Creating Proxy ConfigMap", "name", configMap.Name)
-		return r.Create(ctx, configMap)
-	} else {
-		// Update existing ConfigMap
-		configMap.Data = proxyConfigData
-		log.Info("Updating Proxy ConfigMap", "name", configMap.Name)
-		return r.Update(ctx, configMap)
-	}
-}
-
-// generateProxyConfigData generates the kube-rbac-proxy configuration data
-func (r *EvalHubReconciler) generateProxyConfigData(instance *evalhubv1alpha1.EvalHub) map[string]string {
-	// kube-rbac-proxy configuration for EvalHub using proper YAML marshaling
-	proxyConfig := map[string]interface{}{
-		"authorization": map[string]interface{}{
-			"resourceAttributes": map[string]interface{}{
-				"namespace": instance.Namespace,
-				"apiGroup":  "trustyai.opendatahub.io",
-				"resource":  "evalhubs",
-				// kube-rbac-proxy expects the Kubernetes ResourceAttributes key "name".
-				// Keep "resourceName" for compatibility with older config consumers.
-				"name":         instance.Name,
-				"resourceName": instance.Name,
-				"subresource":  "proxy",
-			},
-		},
-		"upstreams": []map[string]interface{}{
-			{
-				"upstream":      "http://127.0.0.1:8080/",
-				"path":          "/",
-				"rewriteTarget": "/",
-				"allowedPaths": []string{
-					"/api/v1/health",
-					"/api/v1/providers",
-					"/api/v1/benchmarks",
-					"/api/v1/evaluations",
-					"/api/v1/evaluations/",
-					"/api/v1/evaluations/jobs",
-					"/api/v1/evaluations/jobs/",
-					"/api/v1/evaluations/jobs/*",
-					"/api/v1/evaluations/jobs/*/events",
-					"/api/v1/evaluations/*/status",
-					"/api/v1/evaluations/*/results",
-					"/openapi.json",
-					"/docs",
-					"/redoc",
-				},
-			},
-		},
-	}
-
-	yamlData, err := yaml.Marshal(proxyConfig)
-	if err != nil {
-		// This should never happen with our static config, but handle gracefully
-		log.Log.Error(err, "Failed to marshal proxy configuration to YAML")
-		return map[string]string{"config.yaml": "# Error: Failed to generate configuration"}
-	}
-
-	return map[string]string{
-		"config.yaml": string(yamlData),
-	}
 }
 
 // reconcileProviderConfigMaps copies provider ConfigMaps from the operator namespace to the
