@@ -164,13 +164,9 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
-	// Create per-instance Roles before RoleBindings
+	// Create per-instance service access Role before RoleBinding.
+	// The job access Role is created in createJobsServiceAccount.
 	err = r.createAPIAccessRole(ctx, instance)
-	if err != nil {
-		return err
-	}
-
-	err = r.createJobsAPIAccessRole(ctx, instance)
 	if err != nil {
 		return err
 	}
@@ -192,22 +188,9 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
-	// Create RoleBinding for jobs ServiceAccount to access evalhubs/proxy in this namespace
-	jobsServiceAccountName := generateJobsServiceAccountName(instance)
-	err = r.createJobsAPIAccessRoleBinding(ctx, instance, jobsServiceAccountName)
-	if err != nil {
-		return err
-	}
-
-	// Create MLFlow access RoleBindings for both ServiceAccounts.
-	// MLFlow's kubernetes-auth plugin validates tokens via SubjectAccessReview against
-	// the workspace namespace. The custom "evalhub-mlflow-access" ClusterRole provides
-	// the required mlflow.kubeflow.org permissions for both the api and jobs SAs.
+	// Create MLFlow access RoleBinding for service SA only.
+	// The job SA MLFlow binding is created alongside the job SA in createJobsServiceAccount.
 	err = r.createMLFlowAccessRoleBinding(ctx, instance, serviceAccountName, "service", mlflowAccessClusterRoleName)
-	if err != nil {
-		return err
-	}
-	err = r.createMLFlowAccessRoleBinding(ctx, instance, jobsServiceAccountName, "job", mlflowJobsAccessClusterRoleName)
 	if err != nil {
 		return err
 	}
@@ -305,13 +288,7 @@ func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instanc
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      roleName,
 			Namespace: instance.Namespace,
-			Labels: map[string]string{
-				"app":                        "eval-hub",
-				"app.kubernetes.io/name":     roleName,
-				"app.kubernetes.io/instance": instance.Name,
-				"app.kubernetes.io/part-of":  "eval-hub",
-				"app.kubernetes.io/version":  constants.Version,
-			},
+			Labels:    jobResourceLabels(instance, roleName),
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
@@ -328,14 +305,10 @@ func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instanc
 		},
 	}
 
-	if err := ctrl.SetControllerReference(instance, role, r.Scheme); err != nil {
-		return err
-	}
-
 	found := &rbacv1.Role{}
 	err := r.Get(ctx, types.NamespacedName{Name: role.Name, Namespace: role.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating jobs API access Role", "Namespace", role.Namespace, "Name", role.Name)
+		log.Info("Creating job access Role", "Namespace", role.Namespace, "Name", role.Name)
 		return r.Create(ctx, role)
 	} else if err != nil {
 		return err
@@ -343,7 +316,7 @@ func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instanc
 
 	if !equalPolicyRules(found.Rules, role.Rules) {
 		found.Rules = role.Rules
-		log.Info("Updating jobs API access Role rules", "Name", role.Name)
+		log.Info("Updating job access Role rules", "Name", role.Name)
 		return r.Update(ctx, found)
 	}
 
@@ -718,40 +691,72 @@ func generateJobsServiceAccountName(instance *evalhubv1alpha1.EvalHub) string {
 	return instance.Name + "-job"
 }
 
-// createJobsServiceAccount creates a service account for jobs created by this EvalHub instance
-func (r *EvalHubReconciler) createJobsServiceAccount(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+// jobResourceLabels returns the standard labels for job-related resources. These labels
+// are used for both identification and cleanup. Since job resources may live in a different
+// namespace from the EvalHub CR, owner references cannot be used. Instead, the finalizer
+// uses these labels to discover and delete job resources on CR deletion.
+func jobResourceLabels(instance *evalhubv1alpha1.EvalHub, resourceName string) map[string]string {
+	return map[string]string{
+		"app":                              "eval-hub",
+		"app.kubernetes.io/name":           normalizeDNS1123LabelValue(resourceName),
+		"app.kubernetes.io/instance":       instance.Name,
+		"app.kubernetes.io/part-of":        "eval-hub",
+		"app.kubernetes.io/component":      "job",
+		"app.kubernetes.io/version":        constants.Version,
+		"app.kubernetes.io/managed-by":     "trustyai-service-operator",
+		"eval-hub.trustyai.opendatahub.io": instance.Name,
+	}
+}
+
+// createJobsServiceAccount creates a service account for jobs in the specified namespace,
+// along with its associated RoleBindings (job access and MLFlow).
+//
+// The targetNamespace parameter specifies where the SA and bindings are created. This is
+// the tenant namespace where job pods run. When the EvalHub service and jobs share a
+// namespace (e.g. single-tenant), targetNamespace equals instance.Namespace.
+//
+// Job resources do not use owner references because Kubernetes does not support
+// cross-namespace owner references. Cleanup is handled by the EvalHub finalizer,
+// which discovers job resources by label.
+func (r *EvalHubReconciler) createJobsServiceAccount(ctx context.Context, instance *evalhubv1alpha1.EvalHub, targetNamespace string) error {
+	log := log.FromContext(ctx)
 	serviceAccountName := generateJobsServiceAccountName(instance)
 
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceAccountName,
-			Namespace: instance.Namespace,
-			Labels: map[string]string{
-				"app":                         "eval-hub",
-				"app.kubernetes.io/name":      normalizeDNS1123LabelValue(serviceAccountName),
-				"app.kubernetes.io/instance":  instance.Name,
-				"app.kubernetes.io/part-of":   "eval-hub",
-				"app.kubernetes.io/component": "jobs",
-				"app.kubernetes.io/version":   constants.Version,
-			},
+			Namespace: targetNamespace,
+			Labels:    jobResourceLabels(instance, serviceAccountName),
 		},
-	}
-
-	// Set instance as the owner and controller
-	if err := ctrl.SetControllerReference(instance, sa, r.Scheme); err != nil {
-		return err
 	}
 
 	// Check if this ServiceAccount already exists
 	found := &corev1.ServiceAccount{}
 	err := r.Get(ctx, types.NamespacedName{Name: sa.Name, Namespace: sa.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
-		log.FromContext(ctx).Info("Creating a new Jobs ServiceAccount", "Namespace", sa.Namespace, "Name", sa.Name)
+		log.Info("Creating job ServiceAccount", "Namespace", sa.Namespace, "Name", sa.Name)
 		err = r.Create(ctx, sa)
 		if err != nil {
 			return err
 		}
 	} else if err != nil {
+		return err
+	}
+
+	// Create job access Role and RoleBinding in the target namespace
+	err = r.createJobsAPIAccessRole(ctx, instance)
+	if err != nil {
+		return err
+	}
+
+	err = r.createJobsAPIAccessRoleBinding(ctx, instance, serviceAccountName)
+	if err != nil {
+		return err
+	}
+
+	// Create MLFlow access RoleBinding for the job SA in the target namespace
+	err = r.createMLFlowAccessRoleBinding(ctx, instance, serviceAccountName, "job", mlflowJobsAccessClusterRoleName)
+	if err != nil {
 		return err
 	}
 

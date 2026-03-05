@@ -505,8 +505,8 @@ func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
 		EventRecorder: record.NewFakeRecorder(10),
 	}
 
-	t.Run("should create jobs ServiceAccount with correct properties", func(t *testing.T) {
-		err := reconciler.createJobsServiceAccount(ctx, evalHub)
+	t.Run("should create job ServiceAccount with correct properties", func(t *testing.T) {
+		err := reconciler.createJobsServiceAccount(ctx, evalHub, testNamespace)
 		require.NoError(t, err)
 
 		// Verify ServiceAccount was created
@@ -522,22 +522,21 @@ func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
 		assert.Equal(t, jobsSAName, jobsSA.Name)
 		assert.Equal(t, testNamespace, jobsSA.Namespace)
 
-		// Check labels
+		// Check labels (used for cleanup instead of owner references)
 		assert.Equal(t, "eval-hub", jobsSA.Labels["app"])
 		assert.Equal(t, jobsSAName, jobsSA.Labels["app.kubernetes.io/name"])
 		assert.Equal(t, evalHubName, jobsSA.Labels["app.kubernetes.io/instance"])
-		assert.Equal(t, "jobs", jobsSA.Labels["app.kubernetes.io/component"])
+		assert.Equal(t, "job", jobsSA.Labels["app.kubernetes.io/component"])
+		assert.Equal(t, "trustyai-service-operator", jobsSA.Labels["app.kubernetes.io/managed-by"])
+		assert.Equal(t, evalHubName, jobsSA.Labels["eval-hub.trustyai.opendatahub.io"])
 
-		// Check owner reference
-		require.Len(t, jobsSA.OwnerReferences, 1)
-		assert.Equal(t, evalHubName, jobsSA.OwnerReferences[0].Name)
-		assert.Equal(t, "EvalHub", jobsSA.OwnerReferences[0].Kind)
-		assert.True(t, *jobsSA.OwnerReferences[0].Controller)
+		// No owner references — cleanup is label-based via the finalizer
+		assert.Empty(t, jobsSA.OwnerReferences)
 	})
 
 	t.Run("should be idempotent on repeated calls", func(t *testing.T) {
 		// Call again
-		err := reconciler.createJobsServiceAccount(ctx, evalHub)
+		err := reconciler.createJobsServiceAccount(ctx, evalHub, testNamespace)
 		require.NoError(t, err)
 
 		// Verify still only one ServiceAccount exists
