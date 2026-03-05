@@ -310,7 +310,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 	Context("Configuration data generation", func() {
 		It("should generate valid configuration data", func() {
 			By("Generating configuration data")
-			configData, err := reconciler.generateConfigData(evalHub)
+			configData, err := reconciler.generateConfigData(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking required keys are present")

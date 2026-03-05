@@ -23,6 +23,8 @@ type ServiceConfig struct {
 	Host            string `json:"host,omitempty"`
 	ReadyFile       string `json:"ready_file"`
 	TerminationFile string `json:"termination_file"`
+	EvalInitImage   string `json:"eval_init_image,omitempty"`
+	EvalSidecarImage string `json:"eval_sidecar_image,omitempty"`
 	TLSCertFile     string `json:"tls_cert_file,omitempty"`
 	TLSKeyFile      string `json:"tls_key_file,omitempty"`
 }
@@ -85,7 +87,7 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 	}
 
 	// Generate configuration data
-	configData, err := r.generateConfigData(instance)
+	configData, err := r.generateConfigData(ctx, instance)
 	if err != nil {
 		return fmt.Errorf("failed to generate config data: %w", err)
 	}
@@ -109,12 +111,20 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 }
 
 // generateConfigData generates the configuration data for the ConfigMap
-func (r *EvalHubReconciler) generateConfigData(instance *evalhubv1alpha1.EvalHub) (map[string]string, error) {
+func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *evalhubv1alpha1.EvalHub) (map[string]string, error) {
+	evalHubImage, err := r.getEvalHubImage(ctx)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Error getting EvalHub image from ConfigMap. Using the default image value of "+defaultEvalHubImage)
+		evalHubImage = defaultEvalHubImage
+	}
+
 	config := EvalHubConfig{
 		Service: ServiceConfig{
 			Port:            containerPort,
 			ReadyFile:       "/tmp/repo-ready",
 			TerminationFile: "/tmp/termination-log",
+			EvalInitImage:   evalHubImage,
+			EvalSidecarImage: evalHubImage,
 		},
 		EnvMappings: EnvMappings{
 			"PORT":                        "service.port",
