@@ -15,7 +15,7 @@ import (
 
 var _ = Describe("EvalHub API RBAC", func() {
 	const (
-		testNamespacePrefix     = "evalhub-api-rbac-test"
+		testNamespacePrefix     = "evalhub-service-rbac-test"
 		operatorNamespacePrefix = "operator-system"
 		evalHubName             = "api-rbac-evalhub"
 		configMapName           = "trustyai-service-operator-config"
@@ -86,10 +86,10 @@ var _ = Describe("EvalHub API RBAC", func() {
 	})
 
 	Context("ServiceAccount Management", func() {
-		It("should generate correct service account name with -api suffix", func() {
+		It("should generate correct service account name with -service suffix", func() {
 			By("Generating service account name")
 			saName := generateServiceAccountName(evalHub)
-			Expect(saName).To(Equal(evalHubName + "-api"))
+			Expect(saName).To(Equal(evalHubName + "-service"))
 		})
 
 		It("should create service account with correct configuration", func() {
@@ -97,21 +97,21 @@ var _ = Describe("EvalHub API RBAC", func() {
 			err := reconciler.createServiceAccount(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Verifying service account exists with -api suffix")
+			By("Verifying service account exists with -service suffix")
 			serviceAccount := &corev1.ServiceAccount{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-api",
+				Name:      evalHubName + "-service",
 				Namespace: testNamespace,
 			}, serviceAccount)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking service account specifications")
-			Expect(serviceAccount.Name).To(Equal(evalHubName + "-api"))
+			Expect(serviceAccount.Name).To(Equal(evalHubName + "-service"))
 			Expect(serviceAccount.Namespace).To(Equal(testNamespace))
 
 			By("Checking labels")
 			Expect(serviceAccount.Labels["app"]).To(Equal("eval-hub"))
-			Expect(serviceAccount.Labels["app.kubernetes.io/name"]).To(Equal(evalHubName + "-api"))
+			Expect(serviceAccount.Labels["app.kubernetes.io/name"]).To(Equal(evalHubName + "-service"))
 			Expect(serviceAccount.Labels["app.kubernetes.io/instance"]).To(Equal(evalHub.Name))
 			Expect(serviceAccount.Labels["app.kubernetes.io/part-of"]).To(Equal("eval-hub"))
 
@@ -137,10 +137,10 @@ var _ = Describe("EvalHub API RBAC", func() {
 			By("Checking ClusterRoleBinding specifications")
 			Expect(clusterRoleBinding.Name).To(Equal(bindingName))
 
-			By("Checking subjects use -api SA")
+			By("Checking subjects use -service SA")
 			Expect(clusterRoleBinding.Subjects).To(HaveLen(1))
 			Expect(clusterRoleBinding.Subjects[0].Kind).To(Equal("ServiceAccount"))
-			Expect(clusterRoleBinding.Subjects[0].Name).To(Equal(evalHubName + "-api"))
+			Expect(clusterRoleBinding.Subjects[0].Name).To(Equal(evalHubName + "-service"))
 			Expect(clusterRoleBinding.Subjects[0].Namespace).To(Equal(testNamespace))
 
 			By("Checking role reference points to auth-reviewer (not proxy-role)")
@@ -176,7 +176,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 
 			By("Verifying API access RoleBinding exists in namespace")
 			roleBinding := &rbacv1.RoleBinding{}
-			rbName := evalHubName + "-api-access-rb"
+			rbName := evalHubName + "-service-access-rb"
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      rbName,
 				Namespace: testNamespace,
@@ -186,10 +186,10 @@ var _ = Describe("EvalHub API RBAC", func() {
 			By("Checking RoleBinding is namespace-scoped")
 			Expect(roleBinding.Namespace).To(Equal(testNamespace))
 
-			By("Checking subjects use -api SA")
+			By("Checking subjects use -service SA")
 			Expect(roleBinding.Subjects).To(HaveLen(1))
 			Expect(roleBinding.Subjects[0].Kind).To(Equal("ServiceAccount"))
-			Expect(roleBinding.Subjects[0].Name).To(Equal(evalHubName + "-api"))
+			Expect(roleBinding.Subjects[0].Name).To(Equal(evalHubName + "-service"))
 
 			By("Checking role reference points to per-instance Role (not ClusterRole)")
 			Expect(roleBinding.RoleRef.Kind).To(Equal("Role"))
@@ -203,7 +203,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 
 			By("Verifying jobs API access RoleBinding exists in namespace")
 			roleBinding := &rbacv1.RoleBinding{}
-			rbName := evalHubName + "-jobs-api-access-rb"
+			rbName := evalHubName + "-job-access-rb"
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      rbName,
 				Namespace: testNamespace,
@@ -213,10 +213,10 @@ var _ = Describe("EvalHub API RBAC", func() {
 			By("Checking RoleBinding is namespace-scoped")
 			Expect(roleBinding.Namespace).To(Equal(testNamespace))
 
-			By("Checking subjects use -jobs SA")
+			By("Checking subjects use -job SA")
 			Expect(roleBinding.Subjects).To(HaveLen(1))
 			Expect(roleBinding.Subjects[0].Kind).To(Equal("ServiceAccount"))
-			Expect(roleBinding.Subjects[0].Name).To(Equal(evalHubName + "-jobs"))
+			Expect(roleBinding.Subjects[0].Name).To(Equal(evalHubName + "-job"))
 
 			By("Checking role reference points to per-instance Role (not ClusterRole)")
 			Expect(roleBinding.RoleRef.Kind).To(Equal("Role"))
@@ -235,11 +235,11 @@ var _ = Describe("EvalHub API RBAC", func() {
 			By("Verifying only one service account exists")
 			serviceAccount := &corev1.ServiceAccount{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-api",
+				Name:      evalHubName + "-service",
 				Namespace: testNamespace,
 			}, serviceAccount)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(serviceAccount.Name).To(Equal(evalHubName + "-api"))
+			Expect(serviceAccount.Name).To(Equal(evalHubName + "-service"))
 		})
 	})
 
@@ -249,17 +249,17 @@ var _ = Describe("EvalHub API RBAC", func() {
 			err := reconciler.createServiceAccount(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Verifying jobs-writer RoleBinding exists")
+			By("Verifying job-writer RoleBinding exists")
 			jwRB := &rbacv1.RoleBinding{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-jobs-writer-rb",
+				Name:      evalHubName + "-job-writer-rb",
 				Namespace: testNamespace,
 			}, jwRB)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(jwRB.RoleRef.Kind).To(Equal("ClusterRole"))
 			Expect(jwRB.RoleRef.Name).To(Equal(jobsWriterClusterRoleName))
 			Expect(jwRB.Subjects).To(HaveLen(1))
-			Expect(jwRB.Subjects[0].Name).To(Equal(evalHubName + "-api"))
+			Expect(jwRB.Subjects[0].Name).To(Equal(evalHubName + "-service"))
 
 			By("Verifying job-config RoleBinding exists")
 			jcRB := &rbacv1.RoleBinding{}
@@ -271,7 +271,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			Expect(jcRB.RoleRef.Kind).To(Equal("ClusterRole"))
 			Expect(jcRB.RoleRef.Name).To(Equal(jobConfigClusterRoleName))
 			Expect(jcRB.Subjects).To(HaveLen(1))
-			Expect(jcRB.Subjects[0].Name).To(Equal(evalHubName + "-api"))
+			Expect(jcRB.Subjects[0].Name).To(Equal(evalHubName + "-service"))
 
 		})
 
@@ -280,16 +280,16 @@ var _ = Describe("EvalHub API RBAC", func() {
 			err := reconciler.createServiceAccount(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Checking jobs-writer binding has only API SA")
+			By("Checking job-writer binding has only service SA")
 			jwRB := &rbacv1.RoleBinding{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-jobs-writer-rb",
+				Name:      evalHubName + "-job-writer-rb",
 				Namespace: testNamespace,
 			}, jwRB)
 			Expect(err).NotTo(HaveOccurred())
 			for _, subject := range jwRB.Subjects {
-				Expect(subject.Name).NotTo(Equal(evalHubName+"-jobs"),
-					"Jobs SA should not be bound to resource-manager roles")
+				Expect(subject.Name).NotTo(Equal(evalHubName+"-job"),
+					"Job SA should not be bound to resource-manager roles")
 			}
 		})
 	})
@@ -397,7 +397,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			By("Verifying API access is via namespace-scoped RoleBinding referencing per-instance Role")
 			apiRB := &rbacv1.RoleBinding{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-api-access-rb",
+				Name:      evalHubName + "-service-access-rb",
 				Namespace: testNamespace,
 			}, apiRB)
 			Expect(err).NotTo(HaveOccurred())

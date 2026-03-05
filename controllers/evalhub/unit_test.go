@@ -510,7 +510,7 @@ func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify ServiceAccount was created
-		jobsSAName := evalHubName + "-jobs"
+		jobsSAName := evalHubName + "-job"
 		jobsSA := &corev1.ServiceAccount{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      jobsSAName,
@@ -541,7 +541,7 @@ func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify still only one ServiceAccount exists
-		jobsSAName := evalHubName + "-jobs"
+		jobsSAName := evalHubName + "-job"
 		jobsSA := &corev1.ServiceAccount{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      jobsSAName,
@@ -582,12 +582,12 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 	}
 
 	t.Run("should create jobs API access RoleBinding referencing per-instance Role", func(t *testing.T) {
-		jobsSAName := evalHubName + "-jobs"
+		jobsSAName := evalHubName + "-job"
 		err := reconciler.createJobsAPIAccessRoleBinding(ctx, evalHub, jobsSAName)
 		require.NoError(t, err)
 
 		// Verify RoleBinding was created
-		rbName := evalHubName + "-jobs-api-access-rb"
+		rbName := evalHubName + "-job-access-rb"
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -614,7 +614,7 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 
 	t.Run("should update subjects when they differ", func(t *testing.T) {
 		// Get existing RoleBinding
-		rbName := evalHubName + "-jobs-api-access-rb"
+		rbName := evalHubName + "-job-access-rb"
 		rb := &rbacv1.RoleBinding{}
 		err := fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -634,7 +634,7 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 		require.NoError(t, err)
 
 		// Reconcile again
-		jobsSAName := evalHubName + "-jobs"
+		jobsSAName := evalHubName + "-job"
 		err = reconciler.createJobsAPIAccessRoleBinding(ctx, evalHub, jobsSAName)
 		require.NoError(t, err)
 
@@ -693,7 +693,7 @@ func TestEvalHubReconciler_createAPIAccessRole(t *testing.T) {
 		require.NoError(t, err)
 
 		// Check name
-		assert.Equal(t, evalHubName+"-api-access-role", role.Name)
+		assert.Equal(t, evalHubName+"-service-access-role", role.Name)
 
 		// Check rules have resourceNames scoped to this instance
 		require.Len(t, role.Rules, 2)
@@ -763,11 +763,11 @@ func TestEvalHubReconciler_createAPIAccessRoleBinding_RefersToRole(t *testing.T)
 	}
 
 	t.Run("should reference Role not ClusterRole", func(t *testing.T) {
-		apiSAName := evalHubName + "-api"
+		apiSAName := evalHubName + "-service"
 		err := reconciler.createAPIAccessRoleBinding(ctx, evalHub, apiSAName)
 		require.NoError(t, err)
 
-		rbName := evalHubName + "-api-access-rb"
+		rbName := evalHubName + "-service-access-rb"
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -811,12 +811,12 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 	}
 
 	t.Run("should create jobs MLflow RoleBinding with restricted ClusterRole", func(t *testing.T) {
-		jobsSAName := evalHubName + "-jobs"
+		jobsSAName := evalHubName + "-job"
 		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, jobsSAName, "jobs", mlflowJobsAccessClusterRoleName)
 		require.NoError(t, err)
 
 		// Verify RoleBinding was created
-		rbName := evalHubName + "-mlflow-jobs-rb"
+		rbName := evalHubName + "-mlflow-job-rb"
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -842,12 +842,12 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 	})
 
 	t.Run("should create API MLflow RoleBinding with full ClusterRole", func(t *testing.T) {
-		apiSAName := evalHubName + "-api"
+		apiSAName := evalHubName + "-service"
 		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, apiSAName, "api", mlflowAccessClusterRoleName)
 		require.NoError(t, err)
 
 		// Verify RoleBinding was created
-		rbName := evalHubName + "-mlflow-api-rb"
+		rbName := evalHubName + "-mlflow-service-rb"
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -867,12 +867,12 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 	})
 
 	t.Run("should be idempotent on repeated calls", func(t *testing.T) {
-		jobsSAName := evalHubName + "-jobs"
+		jobsSAName := evalHubName + "-job"
 		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, jobsSAName, "jobs", mlflowJobsAccessClusterRoleName)
 		require.NoError(t, err)
 
 		// Verify RoleBinding still exists with correct properties
-		rbName := evalHubName + "-mlflow-jobs-rb"
+		rbName := evalHubName + "-mlflow-job-rb"
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -917,7 +917,7 @@ func TestEvalHubReconciler_cleanupClusterRoleBinding(t *testing.T) {
 		Subjects: []rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
-				Name:      evalHubName + "-api",
+				Name:      evalHubName + "-service",
 				Namespace: testNamespace,
 			},
 		},

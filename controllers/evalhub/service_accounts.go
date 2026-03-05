@@ -99,17 +99,17 @@ func normalizeDNS1123LabelValue(s string) string {
 }
 
 func generateServiceAccountName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-api"
+	return instance.Name + "-service"
 }
 
 // generateAPIAccessRoleName returns the name for the per-instance API access Role.
 func generateAPIAccessRoleName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-api-access-role"
+	return instance.Name + "-service-access-role"
 }
 
 // generateJobsAPIAccessRoleName returns the name for the per-instance jobs API access Role.
 func generateJobsAPIAccessRoleName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-jobs-api-access-role"
+	return instance.Name + "-job-access-role"
 }
 
 func generateAuthReviewerClusterRoleBindingName(instance *evalhubv1alpha1.EvalHub) string {
@@ -175,7 +175,7 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
-	// Create namespace-scoped RoleBinding for EvalHub API access (evalhubs/proxy)
+	// Create namespace-scoped RoleBinding for EvalHub service access (evalhubs/proxy)
 	err = r.createAPIAccessRoleBinding(ctx, instance, serviceAccountName)
 	if err != nil {
 		return err
@@ -203,11 +203,11 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 	// MLFlow's kubernetes-auth plugin validates tokens via SubjectAccessReview against
 	// the workspace namespace. The custom "evalhub-mlflow-access" ClusterRole provides
 	// the required mlflow.kubeflow.org permissions for both the api and jobs SAs.
-	err = r.createMLFlowAccessRoleBinding(ctx, instance, serviceAccountName, "api", mlflowAccessClusterRoleName)
+	err = r.createMLFlowAccessRoleBinding(ctx, instance, serviceAccountName, "service", mlflowAccessClusterRoleName)
 	if err != nil {
 		return err
 	}
-	err = r.createMLFlowAccessRoleBinding(ctx, instance, jobsServiceAccountName, "jobs", mlflowJobsAccessClusterRoleName)
+	err = r.createMLFlowAccessRoleBinding(ctx, instance, jobsServiceAccountName, "job", mlflowJobsAccessClusterRoleName)
 	if err != nil {
 		return err
 	}
@@ -486,10 +486,10 @@ func (r *EvalHubReconciler) createAuthReviewerClusterRoleBinding(ctx context.Con
 	return nil
 }
 
-// createAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the API
+// createAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the service
 // ServiceAccount to the per-instance Role for evalhubs/proxy access.
 func (r *EvalHubReconciler) createAPIAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
-	roleBindingName := instance.Name + "-api-access-rb"
+	roleBindingName := instance.Name + "-service-access-rb"
 	roleName := generateAPIAccessRoleName(instance)
 
 	return r.createGenericRoleBinding(ctx, instance, roleBindingName, serviceAccountName, rbacv1.RoleRef{
@@ -499,10 +499,10 @@ func (r *EvalHubReconciler) createAPIAccessRoleBinding(ctx context.Context, inst
 	})
 }
 
-// createJobsAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the jobs
+// createJobsAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the job
 // ServiceAccount to the per-instance Role for evalhubs/proxy access.
 func (r *EvalHubReconciler) createJobsAPIAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
-	roleBindingName := instance.Name + "-jobs-api-access-rb"
+	roleBindingName := instance.Name + "-job-access-rb"
 	roleName := generateJobsAPIAccessRoleName(instance)
 
 	return r.createGenericRoleBinding(ctx, instance, roleBindingName, serviceAccountName, rbacv1.RoleRef{
@@ -515,7 +515,7 @@ func (r *EvalHubReconciler) createJobsAPIAccessRoleBinding(ctx context.Context, 
 // createJobsWriterRoleBinding creates a RoleBinding for the API SA to the
 // jobs-writer ClusterRole (batch/jobs create,delete).
 func (r *EvalHubReconciler) createJobsWriterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
-	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-jobs-writer-rb", serviceAccountName, rbacv1.RoleRef{
+	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-job-writer-rb", serviceAccountName, rbacv1.RoleRef{
 		Kind:     "ClusterRole",
 		Name:     jobsWriterClusterRoleName,
 		APIGroup: rbacv1.GroupName,
@@ -713,9 +713,9 @@ func equalRoleRef(existing, desired *rbacv1.ClusterRoleBinding) bool {
 		existing.RoleRef.APIGroup == desired.RoleRef.APIGroup
 }
 
-// generateJobsServiceAccountName generates the name for the jobs service account
+// generateJobsServiceAccountName generates the name for the job service account
 func generateJobsServiceAccountName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-jobs"
+	return instance.Name + "-job"
 }
 
 // createJobsServiceAccount creates a service account for jobs created by this EvalHub instance

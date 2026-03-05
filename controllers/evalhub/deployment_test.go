@@ -533,8 +533,8 @@ var _ = Describe("EvalHub Deployment", func() {
 			By("Getting deployment")
 			deployment := waitForDeployment(evalHubName, testNamespace)
 
-			By("Checking service account name uses -api suffix")
-			Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(evalHubName + "-api"))
+			By("Checking service account name uses -service suffix")
+			Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(evalHubName + "-service"))
 		})
 	})
 })
