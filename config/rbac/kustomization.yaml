@@ -17,6 +17,10 @@ resources:
   - evalhub/evalhub_mlflow_access_role.yaml
   - evalhub/evalhub_mlflow_jobs_binding.yaml
   - evalhub/evalhub_mlflow_jobs_role.yaml
+  - evalhub/evalhub_providers_access_role.yaml
+  - evalhub/evalhub_providers_access_binding.yaml
+  - evalhub/evalhub_collections_access_role.yaml
+  - evalhub/evalhub_collections_access_binding.yaml
   - nemoguardrail_editor_role.yaml
   - nemoguardrail_viewer_role.yaml
   - trustyaiservice_editor_role.yaml
