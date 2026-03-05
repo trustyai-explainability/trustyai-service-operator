@@ -406,39 +406,14 @@ func (r *GuardrailsOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) er
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&gorchv1alpha1.GuardrailsOrchestrator{}).
 		Owns(&appsv1.Deployment{}).
-		// Add a watch for changes to orchestrator-config or gateway-config ConfigMaps
-		Watches(
-			&corev1.ConfigMap{},
-			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
-				var requests []ctrl.Request
-				// List all GuardrailsOrchestrators in the namespace
-				var orchestrators gorchv1alpha1.GuardrailsOrchestratorList
-				if err := r.List(ctx, &orchestrators, &client.ListOptions{Namespace: obj.GetNamespace()}); err != nil {
-					return nil
-				}
-				for _, orch := range orchestrators.Items {
-					orchConfigMap := getOrchestratorConfigMap(&orch)
-					gatewayConfigMap := getGatewayConfigMap(&orch)
-
-					// apply a watch to the orch and gateway configs
-					if (orchConfigMap != nil && *orchConfigMap == obj.GetName()) ||
-						(gatewayConfigMap != nil && *gatewayConfigMap == obj.GetName()) {
-						requests = append(requests, ctrl.Request{
-							NamespacedName: types.NamespacedName{
-								Name:      orch.Name,
-								Namespace: orch.Namespace,
-							},
-						})
-					}
-				}
-				return requests
-			}),
-			builder.WithPredicates(predicate.Or(
-				predicate.AnnotationChangedPredicate{},
-				predicate.ResourceVersionChangedPredicate{},
-				predicate.GenerationChangedPredicate{},
-			)),
-		).
+		// ConfigMap watch removed: Watches(&corev1.ConfigMap{}, ...) creates a
+		// cluster-wide informer that caches ALL ConfigMaps across ALL namespaces,
+		// causing OOM under flooding attacks. Changes to orchestrator-config and
+		// gateway-config ConfigMaps are picked up during the periodic 30s resync
+		// (RequeueAfter in Reconcile). The handler only matched 2 specific named
+		// ConfigMaps, so the latency increase from periodic polling vs watch is
+		// negligible.
+		//
 		// Watch for changes to any matching InferenceService
 		Watches(
 			&kservev1beta1.InferenceService{},

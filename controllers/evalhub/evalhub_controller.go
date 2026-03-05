@@ -213,7 +213,10 @@ func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&evalhubv1alpha1.EvalHub{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
-		Owns(&corev1.ConfigMap{}).
+		// Owns(&corev1.ConfigMap{}) removed: creates a cluster-wide informer
+		// that caches ALL ConfigMaps, causing OOM under flooding attacks.
+		// Owned ConfigMaps are reconciled via the parent EvalHub CR or
+		// the Deployment/Service ownership chain.
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.mapNamespaceToEvalHubs)).
 		Complete(r)
 }
