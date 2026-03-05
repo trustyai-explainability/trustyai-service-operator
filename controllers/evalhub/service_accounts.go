@@ -195,6 +195,27 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
+	// Create RoleBindings for EvalHub API endpoints protected by SAR.
+	// These bind the service SA to ClusterRoles that satisfy the kube-rbac-proxy
+	// SAR checks for providers and collections endpoints.
+	err = r.createGenericRoleBinding(ctx, instance, instance.Name+"-providers-access-rb", serviceAccountName, rbacv1.RoleRef{
+		Kind:     "ClusterRole",
+		Name:     providersAccessClusterRoleName,
+		APIGroup: rbacv1.GroupName,
+	})
+	if err != nil {
+		return err
+	}
+
+	err = r.createGenericRoleBinding(ctx, instance, instance.Name+"-collections-access-rb", serviceAccountName, rbacv1.RoleRef{
+		Kind:     "ClusterRole",
+		Name:     collectionsAccessClusterRoleName,
+		APIGroup: rbacv1.GroupName,
+	})
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -207,6 +228,13 @@ const authReviewerClusterRoleName = "trustyai-service-operator-evalhub-auth-revi
 const (
 	jobsWriterClusterRoleName = "trustyai-service-operator-evalhub-jobs-writer"
 	jobConfigClusterRoleName  = "trustyai-service-operator-evalhub-job-config"
+)
+
+// EvalHub API access ClusterRoles for SAR-protected endpoints.
+// The kube-rbac-proxy auth config checks these virtual resources via SubjectAccessReview.
+const (
+	providersAccessClusterRoleName   = "trustyai-service-operator-evalhub-providers-access"
+	collectionsAccessClusterRoleName = "trustyai-service-operator-evalhub-collections-access"
 )
 
 // MLFlow access uses custom ClusterRoles scoped to the "mlflow.kubeflow.org" API group.
