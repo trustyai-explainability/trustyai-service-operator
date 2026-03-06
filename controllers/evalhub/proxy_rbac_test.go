@@ -277,6 +277,29 @@ var _ = Describe("EvalHub API RBAC", func() {
 			Expect(jcRB.Subjects).To(HaveLen(1))
 			Expect(jcRB.Subjects[0].Name).To(Equal(evalHubName + "-service"))
 
+			By("Verifying providers-access RoleBinding exists")
+			pRB := &rbacv1.RoleBinding{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      evalHubName + "-providers-access-rb",
+				Namespace: testNamespace,
+			}, pRB)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pRB.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(pRB.RoleRef.Name).To(Equal(providersAccessClusterRoleName))
+			Expect(pRB.Subjects).To(HaveLen(1))
+			Expect(pRB.Subjects[0].Name).To(Equal(evalHubName + "-service"))
+
+			By("Verifying collections-access RoleBinding exists")
+			cRB := &rbacv1.RoleBinding{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      evalHubName + "-collections-access-rb",
+				Namespace: testNamespace,
+			}, cRB)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cRB.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(cRB.RoleRef.Name).To(Equal(collectionsAccessClusterRoleName))
+			Expect(cRB.Subjects).To(HaveLen(1))
+			Expect(cRB.Subjects[0].Name).To(Equal(evalHubName + "-service"))
 		})
 
 		It("should not bind jobs SA to resource-manager roles", func() {

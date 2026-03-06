@@ -584,7 +584,7 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 
 	t.Run("should create jobs API access RoleBinding referencing per-instance Role", func(t *testing.T) {
 		jobsSAName := evalHubName + "-job"
-		err := reconciler.createJobsAPIAccessRoleBinding(ctx, evalHub, jobsSAName)
+		err := reconciler.createJobsAPIAccessRoleBinding(ctx, evalHub, jobsSAName, testNamespace)
 		require.NoError(t, err)
 
 		// Verify RoleBinding was created
@@ -607,10 +607,10 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 		assert.Equal(t, jobsSAName, rb.Subjects[0].Name)
 		assert.Equal(t, testNamespace, rb.Subjects[0].Namespace)
 
-		// Check owner reference
-		require.Len(t, rb.OwnerReferences, 1)
-		assert.Equal(t, evalHubName, rb.OwnerReferences[0].Name)
-		assert.Equal(t, "EvalHub", rb.OwnerReferences[0].Kind)
+		// No owner references — cleanup is label-based via the finalizer
+		assert.Empty(t, rb.OwnerReferences)
+		assert.Equal(t, evalHubName, rb.Labels["eval-hub.trustyai.opendatahub.io"])
+		assert.Equal(t, "job", rb.Labels["app.kubernetes.io/component"])
 	})
 
 	t.Run("should update subjects when they differ", func(t *testing.T) {
@@ -636,7 +636,7 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 
 		// Reconcile again
 		jobsSAName := evalHubName + "-job"
-		err = reconciler.createJobsAPIAccessRoleBinding(ctx, evalHub, jobsSAName)
+		err = reconciler.createJobsAPIAccessRoleBinding(ctx, evalHub, jobsSAName, testNamespace)
 		require.NoError(t, err)
 
 		// Verify subjects were updated
@@ -813,7 +813,11 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 
 	t.Run("should create jobs MLflow RoleBinding with restricted ClusterRole", func(t *testing.T) {
 		jobsSAName := evalHubName + "-job"
-		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, jobsSAName, "job", mlflowJobsAccessClusterRoleName)
+		err := reconciler.createJobRoleBinding(ctx, evalHub, evalHubName+"-mlflow-job-rb", jobsSAName, testNamespace, rbacv1.RoleRef{
+			Kind:     "ClusterRole",
+			Name:     mlflowJobsAccessClusterRoleName,
+			APIGroup: rbacv1.GroupName,
+		})
 		require.NoError(t, err)
 
 		// Verify RoleBinding was created
@@ -836,10 +840,10 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 		assert.Equal(t, jobsSAName, rb.Subjects[0].Name)
 		assert.Equal(t, testNamespace, rb.Subjects[0].Namespace)
 
-		// Check owner reference
-		require.Len(t, rb.OwnerReferences, 1)
-		assert.Equal(t, evalHubName, rb.OwnerReferences[0].Name)
-		assert.Equal(t, "EvalHub", rb.OwnerReferences[0].Kind)
+		// No owner references — cleanup is label-based via the finalizer
+		assert.Empty(t, rb.OwnerReferences)
+		assert.Equal(t, evalHubName, rb.Labels["eval-hub.trustyai.opendatahub.io"])
+		assert.Equal(t, "job", rb.Labels["app.kubernetes.io/component"])
 	})
 
 	t.Run("should create API MLflow RoleBinding with full ClusterRole", func(t *testing.T) {
@@ -869,7 +873,11 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 
 	t.Run("should be idempotent on repeated calls", func(t *testing.T) {
 		jobsSAName := evalHubName + "-job"
-		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, jobsSAName, "job", mlflowJobsAccessClusterRoleName)
+		err := reconciler.createJobRoleBinding(ctx, evalHub, evalHubName+"-mlflow-job-rb", jobsSAName, testNamespace, rbacv1.RoleRef{
+			Kind:     "ClusterRole",
+			Name:     mlflowJobsAccessClusterRoleName,
+			APIGroup: rbacv1.GroupName,
+		})
 		require.NoError(t, err)
 
 		// Verify RoleBinding still exists with correct properties
