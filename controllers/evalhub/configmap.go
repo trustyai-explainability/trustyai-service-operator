@@ -19,14 +19,14 @@ import (
 
 // ServiceConfig represents the service section in config.yaml
 type ServiceConfig struct {
-	Port            int    `json:"port"`
-	Host            string `json:"host,omitempty"`
-	ReadyFile       string `json:"ready_file"`
-	TerminationFile string `json:"termination_file"`
-	EvalInitImage   string `json:"eval_init_image,omitempty"`
+	Port             int    `json:"port"`
+	Host             string `json:"host,omitempty"`
+	ReadyFile        string `json:"ready_file"`
+	TerminationFile  string `json:"termination_file"`
+	EvalInitImage    string `json:"eval_init_image,omitempty"`
 	EvalSidecarImage string `json:"eval_sidecar_image,omitempty"`
-	TLSCertFile     string `json:"tls_cert_file,omitempty"`
-	TLSKeyFile      string `json:"tls_key_file,omitempty"`
+	TLSCertFile      string `json:"tls_cert_file,omitempty"`
+	TLSKeyFile       string `json:"tls_key_file,omitempty"`
 }
 
 // DatabaseConfig represents the database configuration in config.yaml
@@ -120,10 +120,10 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 
 	config := EvalHubConfig{
 		Service: ServiceConfig{
-			Port:            containerPort,
-			ReadyFile:       "/tmp/repo-ready",
-			TerminationFile: "/tmp/termination-log",
-			EvalInitImage:   evalHubImage,
+			Port:             containerPort,
+			ReadyFile:        "/tmp/repo-ready",
+			TerminationFile:  "/tmp/termination-log",
+			EvalInitImage:    evalHubImage,
 			EvalSidecarImage: evalHubImage,
 		},
 		EnvMappings: EnvMappings{
@@ -243,6 +243,18 @@ func generateAuthConfigData() string {
                 apiGroup: trustyai.opendatahub.io
                 resource: evaluations
                 verb: "{{.FromMethod}}"
+    - path: /api/v1/evaluations/jobs/*/events
+      mappings:
+        - methods: [post]
+          resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: status-events
+                verb: create
     - path: /api/v1/evaluations/collections
       mappings:
         - resources:

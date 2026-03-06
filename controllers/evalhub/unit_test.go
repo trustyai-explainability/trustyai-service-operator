@@ -399,6 +399,7 @@ func TestEvalHubReconciler_updateStatus(t *testing.T) {
 
 func TestGenerateConfigData(t *testing.T) {
 	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
 
 	evalHub := &evalhubv1alpha1.EvalHub{
@@ -480,6 +481,7 @@ func TestEvalHubHelperMethods(t *testing.T) {
 func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, rbacv1.AddToScheme(scheme))
 	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
 
 	ctx := context.Background()
@@ -505,12 +507,12 @@ func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
 		EventRecorder: record.NewFakeRecorder(10),
 	}
 
-	t.Run("should create jobs ServiceAccount with correct properties", func(t *testing.T) {
-		err := reconciler.createJobsServiceAccount(ctx, evalHub)
+	t.Run("should create job ServiceAccount with correct properties", func(t *testing.T) {
+		err := reconciler.createJobsServiceAccount(ctx, evalHub, testNamespace)
 		require.NoError(t, err)
 
 		// Verify ServiceAccount was created
-		jobsSAName := evalHubName + "-jobs"
+		jobsSAName := generateJobsServiceAccountName(evalHub)
 		jobsSA := &corev1.ServiceAccount{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      jobsSAName,
@@ -522,26 +524,25 @@ func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
 		assert.Equal(t, jobsSAName, jobsSA.Name)
 		assert.Equal(t, testNamespace, jobsSA.Namespace)
 
-		// Check labels
+		// Check labels (used for cleanup instead of owner references)
 		assert.Equal(t, "eval-hub", jobsSA.Labels["app"])
 		assert.Equal(t, jobsSAName, jobsSA.Labels["app.kubernetes.io/name"])
 		assert.Equal(t, evalHubName, jobsSA.Labels["app.kubernetes.io/instance"])
-		assert.Equal(t, "jobs", jobsSA.Labels["app.kubernetes.io/component"])
+		assert.Equal(t, "job", jobsSA.Labels["app.kubernetes.io/component"])
+		assert.Equal(t, "trustyai-service-operator", jobsSA.Labels["app.kubernetes.io/managed-by"])
+		assert.Equal(t, jobResourceInstanceID(evalHub), jobsSA.Labels["eval-hub.trustyai.opendatahub.io"])
 
-		// Check owner reference
-		require.Len(t, jobsSA.OwnerReferences, 1)
-		assert.Equal(t, evalHubName, jobsSA.OwnerReferences[0].Name)
-		assert.Equal(t, "EvalHub", jobsSA.OwnerReferences[0].Kind)
-		assert.True(t, *jobsSA.OwnerReferences[0].Controller)
+		// No owner references — cleanup is label-based via the finalizer
+		assert.Empty(t, jobsSA.OwnerReferences)
 	})
 
 	t.Run("should be idempotent on repeated calls", func(t *testing.T) {
 		// Call again
-		err := reconciler.createJobsServiceAccount(ctx, evalHub)
+		err := reconciler.createJobsServiceAccount(ctx, evalHub, testNamespace)
 		require.NoError(t, err)
 
 		// Verify still only one ServiceAccount exists
-		jobsSAName := evalHubName + "-jobs"
+		jobsSAName := generateJobsServiceAccountName(evalHub)
 		jobsSA := &corev1.ServiceAccount{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      jobsSAName,
@@ -582,12 +583,12 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 	}
 
 	t.Run("should create jobs API access RoleBinding referencing per-instance Role", func(t *testing.T) {
-		jobsSAName := evalHubName + "-jobs"
-		err := reconciler.createJobsAPIAccessRoleBinding(ctx, evalHub, jobsSAName)
+		jobsSAName := generateJobsServiceAccountName(evalHub)
+		err := reconciler.createJobsAPIAccessRoleBinding(ctx, evalHub, jobsSAName, testNamespace)
 		require.NoError(t, err)
 
 		// Verify RoleBinding was created
-		rbName := evalHubName + "-jobs-api-access-rb"
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + testNamespace + "-job-access-rb")
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -606,15 +607,15 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 		assert.Equal(t, jobsSAName, rb.Subjects[0].Name)
 		assert.Equal(t, testNamespace, rb.Subjects[0].Namespace)
 
-		// Check owner reference
-		require.Len(t, rb.OwnerReferences, 1)
-		assert.Equal(t, evalHubName, rb.OwnerReferences[0].Name)
-		assert.Equal(t, "EvalHub", rb.OwnerReferences[0].Kind)
+		// No owner references — cleanup is label-based via the finalizer
+		assert.Empty(t, rb.OwnerReferences)
+		assert.Equal(t, jobResourceInstanceID(evalHub), rb.Labels["eval-hub.trustyai.opendatahub.io"])
+		assert.Equal(t, "job", rb.Labels["app.kubernetes.io/component"])
 	})
 
 	t.Run("should update subjects when they differ", func(t *testing.T) {
 		// Get existing RoleBinding
-		rbName := evalHubName + "-jobs-api-access-rb"
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + testNamespace + "-job-access-rb")
 		rb := &rbacv1.RoleBinding{}
 		err := fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -634,8 +635,8 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 		require.NoError(t, err)
 
 		// Reconcile again
-		jobsSAName := evalHubName + "-jobs"
-		err = reconciler.createJobsAPIAccessRoleBinding(ctx, evalHub, jobsSAName)
+		jobsSAName := generateJobsServiceAccountName(evalHub)
+		err = reconciler.createJobsAPIAccessRoleBinding(ctx, evalHub, jobsSAName, testNamespace)
 		require.NoError(t, err)
 
 		// Verify subjects were updated
@@ -693,7 +694,7 @@ func TestEvalHubReconciler_createAPIAccessRole(t *testing.T) {
 		require.NoError(t, err)
 
 		// Check name
-		assert.Equal(t, evalHubName+"-api-access-role", role.Name)
+		assert.Equal(t, evalHubName+"-service-access-role", role.Name)
 
 		// Check rules have resourceNames scoped to this instance
 		require.Len(t, role.Rules, 2)
@@ -763,11 +764,11 @@ func TestEvalHubReconciler_createAPIAccessRoleBinding_RefersToRole(t *testing.T)
 	}
 
 	t.Run("should reference Role not ClusterRole", func(t *testing.T) {
-		apiSAName := evalHubName + "-api"
+		apiSAName := evalHubName + "-service"
 		err := reconciler.createAPIAccessRoleBinding(ctx, evalHub, apiSAName)
 		require.NoError(t, err)
 
-		rbName := evalHubName + "-api-access-rb"
+		rbName := evalHubName + "-service-access-rb"
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -811,12 +812,16 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 	}
 
 	t.Run("should create jobs MLflow RoleBinding with restricted ClusterRole", func(t *testing.T) {
-		jobsSAName := evalHubName + "-jobs"
-		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, jobsSAName, "jobs", mlflowJobsAccessClusterRoleName)
+		jobsSAName := generateJobsServiceAccountName(evalHub)
+		err := reconciler.createJobRoleBinding(ctx, evalHub, normalizeDNS1123LabelValue(evalHubName+"-"+testNamespace+"-mlflow-job-rb"), jobsSAName, testNamespace, rbacv1.RoleRef{
+			Kind:     "ClusterRole",
+			Name:     mlflowJobsAccessClusterRoleName,
+			APIGroup: rbacv1.GroupName,
+		})
 		require.NoError(t, err)
 
 		// Verify RoleBinding was created
-		rbName := evalHubName + "-mlflow-jobs-rb"
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + testNamespace + "-mlflow-job-rb")
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -835,19 +840,19 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 		assert.Equal(t, jobsSAName, rb.Subjects[0].Name)
 		assert.Equal(t, testNamespace, rb.Subjects[0].Namespace)
 
-		// Check owner reference
-		require.Len(t, rb.OwnerReferences, 1)
-		assert.Equal(t, evalHubName, rb.OwnerReferences[0].Name)
-		assert.Equal(t, "EvalHub", rb.OwnerReferences[0].Kind)
+		// No owner references — cleanup is label-based via the finalizer
+		assert.Empty(t, rb.OwnerReferences)
+		assert.Equal(t, jobResourceInstanceID(evalHub), rb.Labels["eval-hub.trustyai.opendatahub.io"])
+		assert.Equal(t, "job", rb.Labels["app.kubernetes.io/component"])
 	})
 
 	t.Run("should create API MLflow RoleBinding with full ClusterRole", func(t *testing.T) {
-		apiSAName := evalHubName + "-api"
-		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, apiSAName, "api", mlflowAccessClusterRoleName)
+		apiSAName := evalHubName + "-service"
+		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, apiSAName, "service", mlflowAccessClusterRoleName)
 		require.NoError(t, err)
 
 		// Verify RoleBinding was created
-		rbName := evalHubName + "-mlflow-api-rb"
+		rbName := evalHubName + "-mlflow-service-rb"
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -867,12 +872,16 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 	})
 
 	t.Run("should be idempotent on repeated calls", func(t *testing.T) {
-		jobsSAName := evalHubName + "-jobs"
-		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, jobsSAName, "jobs", mlflowJobsAccessClusterRoleName)
+		jobsSAName := generateJobsServiceAccountName(evalHub)
+		err := reconciler.createJobRoleBinding(ctx, evalHub, normalizeDNS1123LabelValue(evalHubName+"-"+testNamespace+"-mlflow-job-rb"), jobsSAName, testNamespace, rbacv1.RoleRef{
+			Kind:     "ClusterRole",
+			Name:     mlflowJobsAccessClusterRoleName,
+			APIGroup: rbacv1.GroupName,
+		})
 		require.NoError(t, err)
 
 		// Verify RoleBinding still exists with correct properties
-		rbName := evalHubName + "-mlflow-jobs-rb"
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + testNamespace + "-mlflow-job-rb")
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
@@ -917,7 +926,7 @@ func TestEvalHubReconciler_cleanupClusterRoleBinding(t *testing.T) {
 		Subjects: []rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
-				Name:      evalHubName + "-api",
+				Name:      evalHubName + "-service",
 				Namespace: testNamespace,
 			},
 		},
@@ -1099,6 +1108,7 @@ func TestEvalHubReconciler_reconcileServiceCAConfigMap(t *testing.T) {
 
 func TestGenerateConfigData_WithDatabase(t *testing.T) {
 	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
 
 	t.Run("should include database and secrets sections when DB configured", func(t *testing.T) {
@@ -1213,6 +1223,7 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 
 func TestGenerateConfigData_WithOTEL(t *testing.T) {
 	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
 
 	t.Run("should include otel section when configured", func(t *testing.T) {

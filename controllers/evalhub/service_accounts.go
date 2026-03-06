@@ -99,17 +99,19 @@ func normalizeDNS1123LabelValue(s string) string {
 }
 
 func generateServiceAccountName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-api"
+	return instance.Name + "-service"
 }
 
 // generateAPIAccessRoleName returns the name for the per-instance API access Role.
 func generateAPIAccessRoleName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-api-access-role"
+	return instance.Name + "-service-access-role"
 }
 
 // generateJobsAPIAccessRoleName returns the name for the per-instance jobs API access Role.
+// The name is namespace-qualified to avoid collisions when multiple EvalHub CRs with
+// the same name in different namespaces create job resources in the same target namespace.
 func generateJobsAPIAccessRoleName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-jobs-api-access-role"
+	return normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-job-access-role")
 }
 
 func generateAuthReviewerClusterRoleBindingName(instance *evalhubv1alpha1.EvalHub) string {
@@ -164,18 +166,14 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
-	// Create per-instance Roles before RoleBindings
+	// Create per-instance service access Role before RoleBinding.
+	// The job access Role is created in createJobsServiceAccount.
 	err = r.createAPIAccessRole(ctx, instance)
 	if err != nil {
 		return err
 	}
 
-	err = r.createJobsAPIAccessRole(ctx, instance)
-	if err != nil {
-		return err
-	}
-
-	// Create namespace-scoped RoleBinding for EvalHub API access (evalhubs/proxy)
+	// Create namespace-scoped RoleBinding for EvalHub service access (evalhubs/proxy)
 	err = r.createAPIAccessRoleBinding(ctx, instance, serviceAccountName)
 	if err != nil {
 		return err
@@ -192,22 +190,30 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
-	// Create RoleBinding for jobs ServiceAccount to access evalhubs/proxy in this namespace
-	jobsServiceAccountName := generateJobsServiceAccountName(instance)
-	err = r.createJobsAPIAccessRoleBinding(ctx, instance, jobsServiceAccountName)
+	// Create MLFlow access RoleBinding for service SA only.
+	// The job SA MLFlow binding is created alongside the job SA in createJobsServiceAccount.
+	err = r.createMLFlowAccessRoleBinding(ctx, instance, serviceAccountName, "service", mlflowAccessClusterRoleName)
 	if err != nil {
 		return err
 	}
 
-	// Create MLFlow access RoleBindings for both ServiceAccounts.
-	// MLFlow's kubernetes-auth plugin validates tokens via SubjectAccessReview against
-	// the workspace namespace. The custom "evalhub-mlflow-access" ClusterRole provides
-	// the required mlflow.kubeflow.org permissions for both the api and jobs SAs.
-	err = r.createMLFlowAccessRoleBinding(ctx, instance, serviceAccountName, "api", mlflowAccessClusterRoleName)
+	// Create RoleBindings for EvalHub API endpoints protected by SAR.
+	// These bind the service SA to ClusterRoles that satisfy the kube-rbac-proxy
+	// SAR checks for providers and collections endpoints.
+	err = r.createGenericRoleBinding(ctx, instance, instance.Name+"-providers-access-rb", serviceAccountName, rbacv1.RoleRef{
+		Kind:     "ClusterRole",
+		Name:     providersAccessClusterRoleName,
+		APIGroup: rbacv1.GroupName,
+	})
 	if err != nil {
 		return err
 	}
-	err = r.createMLFlowAccessRoleBinding(ctx, instance, jobsServiceAccountName, "jobs", mlflowJobsAccessClusterRoleName)
+
+	err = r.createGenericRoleBinding(ctx, instance, instance.Name+"-collections-access-rb", serviceAccountName, rbacv1.RoleRef{
+		Kind:     "ClusterRole",
+		Name:     collectionsAccessClusterRoleName,
+		APIGroup: rbacv1.GroupName,
+	})
 	if err != nil {
 		return err
 	}
@@ -224,6 +230,13 @@ const authReviewerClusterRoleName = "trustyai-service-operator-evalhub-auth-revi
 const (
 	jobsWriterClusterRoleName = "trustyai-service-operator-evalhub-jobs-writer"
 	jobConfigClusterRoleName  = "trustyai-service-operator-evalhub-job-config"
+)
+
+// EvalHub API access ClusterRoles for SAR-protected endpoints.
+// The kube-rbac-proxy auth config checks these virtual resources via SubjectAccessReview.
+const (
+	providersAccessClusterRoleName   = "trustyai-service-operator-evalhub-providers-access"
+	collectionsAccessClusterRoleName = "trustyai-service-operator-evalhub-collections-access"
 )
 
 // MLFlow access uses custom ClusterRoles scoped to the "mlflow.kubeflow.org" API group.
@@ -295,31 +308,20 @@ func (r *EvalHubReconciler) createAPIAccessRole(ctx context.Context, instance *e
 	return nil
 }
 
-// createJobsAPIAccessRole creates a per-instance namespaced Role for the jobs SA
-// with resourceNames scoped to this specific EvalHub instance.
-func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+// createJobsAPIAccessRole creates a per-instance namespaced Role for the job SA.
+// Job pods only need to post status events back to the EvalHub service — they do
+// not proxy requests, so evalhubs/proxy is not included here.
+func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instance *evalhubv1alpha1.EvalHub, targetNamespace string) error {
 	log := log.FromContext(ctx)
 
 	roleName := generateJobsAPIAccessRoleName(instance)
 	role := &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      roleName,
-			Namespace: instance.Namespace,
-			Labels: map[string]string{
-				"app":                        "eval-hub",
-				"app.kubernetes.io/name":     roleName,
-				"app.kubernetes.io/instance": instance.Name,
-				"app.kubernetes.io/part-of":  "eval-hub",
-				"app.kubernetes.io/version":  constants.Version,
-			},
+			Namespace: targetNamespace,
+			Labels:    jobResourceLabels(instance, roleName),
 		},
 		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups:     []string{"trustyai.opendatahub.io"},
-				Resources:     []string{"evalhubs/proxy"},
-				ResourceNames: []string{instance.Name},
-				Verbs:         []string{"get", "create"},
-			},
 			{
 				APIGroups: []string{"trustyai.opendatahub.io"},
 				Resources: []string{"status-events"},
@@ -328,14 +330,10 @@ func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instanc
 		},
 	}
 
-	if err := ctrl.SetControllerReference(instance, role, r.Scheme); err != nil {
-		return err
-	}
-
 	found := &rbacv1.Role{}
 	err := r.Get(ctx, types.NamespacedName{Name: role.Name, Namespace: role.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating jobs API access Role", "Namespace", role.Namespace, "Name", role.Name)
+		log.Info("Creating job access Role", "Namespace", role.Namespace, "Name", role.Name)
 		return r.Create(ctx, role)
 	} else if err != nil {
 		return err
@@ -343,7 +341,7 @@ func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instanc
 
 	if !equalPolicyRules(found.Rules, role.Rules) {
 		found.Rules = role.Rules
-		log.Info("Updating jobs API access Role rules", "Name", role.Name)
+		log.Info("Updating job access Role rules", "Name", role.Name)
 		return r.Update(ctx, found)
 	}
 
@@ -486,10 +484,10 @@ func (r *EvalHubReconciler) createAuthReviewerClusterRoleBinding(ctx context.Con
 	return nil
 }
 
-// createAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the API
+// createAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the service
 // ServiceAccount to the per-instance Role for evalhubs/proxy access.
 func (r *EvalHubReconciler) createAPIAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
-	roleBindingName := instance.Name + "-api-access-rb"
+	roleBindingName := instance.Name + "-service-access-rb"
 	roleName := generateAPIAccessRoleName(instance)
 
 	return r.createGenericRoleBinding(ctx, instance, roleBindingName, serviceAccountName, rbacv1.RoleRef{
@@ -499,13 +497,13 @@ func (r *EvalHubReconciler) createAPIAccessRoleBinding(ctx context.Context, inst
 	})
 }
 
-// createJobsAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the jobs
-// ServiceAccount to the per-instance Role for evalhubs/proxy access.
-func (r *EvalHubReconciler) createJobsAPIAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
-	roleBindingName := instance.Name + "-jobs-api-access-rb"
+// createJobsAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the job
+// ServiceAccount to the per-instance Role for status-events access.
+func (r *EvalHubReconciler) createJobsAPIAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string, targetNamespace string) error {
+	roleBindingName := normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-job-access-rb")
 	roleName := generateJobsAPIAccessRoleName(instance)
 
-	return r.createGenericRoleBinding(ctx, instance, roleBindingName, serviceAccountName, rbacv1.RoleRef{
+	return r.createJobRoleBinding(ctx, instance, roleBindingName, serviceAccountName, targetNamespace, rbacv1.RoleRef{
 		Kind:     "Role",
 		Name:     roleName,
 		APIGroup: rbacv1.GroupName,
@@ -515,7 +513,7 @@ func (r *EvalHubReconciler) createJobsAPIAccessRoleBinding(ctx context.Context, 
 // createJobsWriterRoleBinding creates a RoleBinding for the API SA to the
 // jobs-writer ClusterRole (batch/jobs create,delete).
 func (r *EvalHubReconciler) createJobsWriterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string) error {
-	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-jobs-writer-rb", serviceAccountName, rbacv1.RoleRef{
+	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-job-writer-rb", serviceAccountName, rbacv1.RoleRef{
 		Kind:     "ClusterRole",
 		Name:     jobsWriterClusterRoleName,
 		APIGroup: rbacv1.GroupName,
@@ -530,6 +528,58 @@ func (r *EvalHubReconciler) createJobConfigRoleBinding(ctx context.Context, inst
 		Name:     jobConfigClusterRoleName,
 		APIGroup: rbacv1.GroupName,
 	})
+}
+
+// createJobRoleBinding creates a namespace-scoped RoleBinding for job resources.
+// Unlike createGenericRoleBinding, it uses targetNamespace (not instance.Namespace),
+// job labels (not owner references), and is suitable for cross-namespace use.
+func (r *EvalHubReconciler) createJobRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, roleBindingName string, serviceAccountName string, targetNamespace string, roleRef rbacv1.RoleRef) error {
+	log := log.FromContext(ctx)
+
+	roleBinding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      roleBindingName,
+			Namespace: targetNamespace,
+			Labels:    jobResourceLabels(instance, roleBindingName),
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      serviceAccountName,
+				Namespace: targetNamespace,
+			},
+		},
+		RoleRef: roleRef,
+	}
+
+	found := &rbacv1.RoleBinding{}
+	err := r.Get(ctx, types.NamespacedName{Name: roleBinding.Name, Namespace: roleBinding.Namespace}, found)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Creating job RoleBinding", "Namespace", roleBinding.Namespace, "Name", roleBinding.Name)
+		return r.Create(ctx, roleBinding)
+	} else if err != nil {
+		return err
+	}
+
+	subjectsEqual := equalRoleBindingSubjects(found.Subjects, roleBinding.Subjects)
+	roleRefEqual := equalRoleBindingRoleRef(found.RoleRef, roleBinding.RoleRef)
+
+	if !subjectsEqual || !roleRefEqual {
+		if roleRefEqual && !subjectsEqual {
+			found.Subjects = roleBinding.Subjects
+			log.Info("Updating job RoleBinding subjects", "Name", roleBinding.Name)
+			return r.Update(ctx, found)
+		} else if !roleRefEqual {
+			log.Info("RoleRef differs, deleting and recreating job RoleBinding", "Name", roleBinding.Name)
+			if err := r.Delete(ctx, found); err != nil {
+				return err
+			}
+			log.Info("Creating new job RoleBinding", "Name", roleBinding.Name)
+			return r.Create(ctx, roleBinding)
+		}
+	}
+
+	return nil
 }
 
 // createGenericRoleBinding creates a namespace-scoped RoleBinding with the given
@@ -713,45 +763,95 @@ func equalRoleRef(existing, desired *rbacv1.ClusterRoleBinding) bool {
 		existing.RoleRef.APIGroup == desired.RoleRef.APIGroup
 }
 
-// generateJobsServiceAccountName generates the name for the jobs service account
+// generateJobsServiceAccountName generates the name for the job service account.
+// The name is namespace-qualified to avoid collisions when multiple EvalHub CRs with
+// the same name in different namespaces create job resources in the same target namespace.
 func generateJobsServiceAccountName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-jobs"
+	return normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-job")
 }
 
-// createJobsServiceAccount creates a service account for jobs created by this EvalHub instance
-func (r *EvalHubReconciler) createJobsServiceAccount(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+// jobResourceInstanceID returns a deterministic, DNS-1123 compatible identifier
+// that uniquely identifies an EvalHub instance across namespaces. This is used in
+// both labels and resource names to prevent collisions when two same-named EvalHub
+// CRs in different namespaces create job resources in the same target namespace.
+func jobResourceInstanceID(instance *evalhubv1alpha1.EvalHub) string {
+	return normalizeDNS1123LabelValue(instance.Name + "." + instance.Namespace)
+}
+
+// jobResourceLabels returns the standard labels for job-related resources. These labels
+// are used for both identification and cleanup. Since job resources may live in a different
+// namespace from the EvalHub CR, owner references cannot be used. Instead, the finalizer
+// uses these labels to discover and delete job resources on CR deletion.
+//
+// The eval-hub.trustyai.opendatahub.io label encodes both name and namespace so that
+// cleanup only affects resources belonging to the specific EvalHub instance.
+func jobResourceLabels(instance *evalhubv1alpha1.EvalHub, resourceName string) map[string]string {
+	return map[string]string{
+		"app":                              "eval-hub",
+		"app.kubernetes.io/name":           normalizeDNS1123LabelValue(resourceName),
+		"app.kubernetes.io/instance":       instance.Name,
+		"app.kubernetes.io/part-of":        "eval-hub",
+		"app.kubernetes.io/component":      "job",
+		"app.kubernetes.io/version":        constants.Version,
+		"app.kubernetes.io/managed-by":     "trustyai-service-operator",
+		"eval-hub.trustyai.opendatahub.io": jobResourceInstanceID(instance),
+	}
+}
+
+// createJobsServiceAccount creates a service account for jobs in the specified namespace,
+// along with its associated RoleBindings (job access and MLFlow).
+//
+// The targetNamespace parameter specifies where the SA and bindings are created. This is
+// the tenant namespace where job pods run. When the EvalHub service and jobs share a
+// namespace (e.g. single-tenant), targetNamespace equals instance.Namespace.
+//
+// Job resources do not use owner references because Kubernetes does not support
+// cross-namespace owner references. Cleanup is handled by the EvalHub finalizer,
+// which discovers job resources by label.
+func (r *EvalHubReconciler) createJobsServiceAccount(ctx context.Context, instance *evalhubv1alpha1.EvalHub, targetNamespace string) error {
+	log := log.FromContext(ctx)
 	serviceAccountName := generateJobsServiceAccountName(instance)
 
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceAccountName,
-			Namespace: instance.Namespace,
-			Labels: map[string]string{
-				"app":                         "eval-hub",
-				"app.kubernetes.io/name":      normalizeDNS1123LabelValue(serviceAccountName),
-				"app.kubernetes.io/instance":  instance.Name,
-				"app.kubernetes.io/part-of":   "eval-hub",
-				"app.kubernetes.io/component": "jobs",
-				"app.kubernetes.io/version":   constants.Version,
-			},
+			Namespace: targetNamespace,
+			Labels:    jobResourceLabels(instance, serviceAccountName),
 		},
-	}
-
-	// Set instance as the owner and controller
-	if err := ctrl.SetControllerReference(instance, sa, r.Scheme); err != nil {
-		return err
 	}
 
 	// Check if this ServiceAccount already exists
 	found := &corev1.ServiceAccount{}
 	err := r.Get(ctx, types.NamespacedName{Name: sa.Name, Namespace: sa.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
-		log.FromContext(ctx).Info("Creating a new Jobs ServiceAccount", "Namespace", sa.Namespace, "Name", sa.Name)
+		log.Info("Creating job ServiceAccount", "Namespace", sa.Namespace, "Name", sa.Name)
 		err = r.Create(ctx, sa)
 		if err != nil {
 			return err
 		}
 	} else if err != nil {
+		return err
+	}
+
+	// Create job access Role and RoleBinding in the target namespace
+	err = r.createJobsAPIAccessRole(ctx, instance, targetNamespace)
+	if err != nil {
+		return err
+	}
+
+	err = r.createJobsAPIAccessRoleBinding(ctx, instance, serviceAccountName, targetNamespace)
+	if err != nil {
+		return err
+	}
+
+	// Create MLFlow access RoleBinding for the job SA in the target namespace
+	mlflowJobRBName := normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-mlflow-job-rb")
+	err = r.createJobRoleBinding(ctx, instance, mlflowJobRBName, serviceAccountName, targetNamespace, rbacv1.RoleRef{
+		Kind:     "ClusterRole",
+		Name:     mlflowJobsAccessClusterRoleName,
+		APIGroup: rbacv1.GroupName,
+	})
+	if err != nil {
 		return err
 	}
 

@@ -113,11 +113,13 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return RequeueWithError(err)
 	}
 
-	// Create ServiceAccount for jobs
-	err = r.createJobsServiceAccount(ctx, instance)
+	// Create ServiceAccount for jobs in the instance namespace.
+	// For multi-tenant setups, the tenant namespace watcher will create
+	// additional job SAs in tenant namespaces.
+	err = r.createJobsServiceAccount(ctx, instance, instance.Namespace)
 	if err != nil {
-		log.Error(err, "Failed to create Jobs ServiceAccount")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to create Jobs ServiceAccount: %v", err), corev1.ConditionFalse)
+		log.Error(err, "Failed to create job ServiceAccount")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to create job ServiceAccount: %v", err), corev1.ConditionFalse)
 		r.Status().Update(ctx, instance)
 		return RequeueWithError(err)
 	}
@@ -224,6 +226,12 @@ func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhu
 		return RequeueWithError(err)
 	}
 
+	// Clean up job resources (SA, Roles, RoleBindings) which use labels instead of owner refs
+	if err := r.cleanupJobResources(ctx, instance); err != nil {
+		log.Error(err, "Failed to cleanup job resources")
+		return RequeueWithError(err)
+	}
+
 	// Remove finalizer
 	controllerutil.RemoveFinalizer(instance, evalhubv1alpha1.FinalizerName)
 	if err := r.Update(ctx, instance); err != nil {
@@ -235,12 +243,60 @@ func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhu
 }
 
 // cleanupClusterRoleBinding deletes EvalHub cluster-scoped RBAC resources upon instance deletion.
-// Namespace-scoped resources (RoleBindings, ServiceAccounts) are garbage-collected via owner references.
 func (r *EvalHubReconciler) cleanupClusterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
 	// Delete auth reviewer ClusterRoleBinding (cannot be owner-ref'd to a namespaced resource)
 	authCRBName := generateAuthReviewerClusterRoleBindingName(instance)
 	if err := r.deleteClusterRoleBinding(ctx, authCRBName); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// cleanupJobResources deletes job-related resources (ServiceAccounts, Roles, RoleBindings)
+// that are identified by the eval-hub.trustyai.opendatahub.io label. These resources do not
+// use owner references because they may reside in a different namespace from the EvalHub CR.
+func (r *EvalHubReconciler) cleanupJobResources(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+	log := log.FromContext(ctx)
+	selector := client.MatchingLabels{
+		"eval-hub.trustyai.opendatahub.io": jobResourceInstanceID(instance),
+		"app.kubernetes.io/component":      "job",
+	}
+
+	// Delete RoleBindings
+	rbList := &rbacv1.RoleBindingList{}
+	if err := r.List(ctx, rbList, selector); err != nil {
+		return err
+	}
+	for i := range rbList.Items {
+		log.Info("Deleting job RoleBinding", "Name", rbList.Items[i].Name, "Namespace", rbList.Items[i].Namespace)
+		if err := r.Delete(ctx, &rbList.Items[i]); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	// Delete Roles
+	roleList := &rbacv1.RoleList{}
+	if err := r.List(ctx, roleList, selector); err != nil {
+		return err
+	}
+	for i := range roleList.Items {
+		log.Info("Deleting job Role", "Name", roleList.Items[i].Name, "Namespace", roleList.Items[i].Namespace)
+		if err := r.Delete(ctx, &roleList.Items[i]); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	// Delete ServiceAccounts
+	saList := &corev1.ServiceAccountList{}
+	if err := r.List(ctx, saList, selector); err != nil {
+		return err
+	}
+	for i := range saList.Items {
+		log.Info("Deleting job ServiceAccount", "Name", saList.Items[i].Name, "Namespace", saList.Items[i].Namespace)
+		if err := r.Delete(ctx, &saList.Items[i]); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
 	}
 
 	return nil
