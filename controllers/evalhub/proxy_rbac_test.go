@@ -207,7 +207,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 
 			By("Verifying jobs API access RoleBinding exists in namespace")
 			roleBinding := &rbacv1.RoleBinding{}
-			rbName := evalHubName + "-job-access-rb"
+			rbName := normalizeDNS1123LabelValue(evalHubName + "-" + testNamespace + "-job-access-rb")
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      rbName,
 				Namespace: testNamespace,
@@ -220,11 +220,26 @@ var _ = Describe("EvalHub API RBAC", func() {
 			By("Checking subjects use -job SA")
 			Expect(roleBinding.Subjects).To(HaveLen(1))
 			Expect(roleBinding.Subjects[0].Kind).To(Equal("ServiceAccount"))
-			Expect(roleBinding.Subjects[0].Name).To(Equal(evalHubName + "-job"))
+			Expect(roleBinding.Subjects[0].Name).To(Equal(generateJobsServiceAccountName(evalHub)))
 
 			By("Checking role reference points to per-instance Role (not ClusterRole)")
 			Expect(roleBinding.RoleRef.Kind).To(Equal("Role"))
 			Expect(roleBinding.RoleRef.Name).To(Equal(generateJobsAPIAccessRoleName(evalHub)))
+
+			By("Verifying job Role only grants status-events create, not evalhubs/proxy")
+			jobRole := &rbacv1.Role{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      generateJobsAPIAccessRoleName(evalHub),
+				Namespace: testNamespace,
+			}, jobRole)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(jobRole.Rules).To(HaveLen(1))
+			Expect(jobRole.Rules[0].Resources).To(Equal([]string{"status-events"}))
+			Expect(jobRole.Rules[0].Verbs).To(Equal([]string{"create"}))
+			for _, rule := range jobRole.Rules {
+				Expect(rule.Resources).NotTo(ContainElement("evalhubs/proxy"),
+					"Job Role must not grant access to evalhubs/proxy")
+			}
 		})
 
 		It("should handle existing service account gracefully", func() {

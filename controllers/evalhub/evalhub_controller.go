@@ -259,7 +259,7 @@ func (r *EvalHubReconciler) cleanupClusterRoleBinding(ctx context.Context, insta
 func (r *EvalHubReconciler) cleanupJobResources(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
 	log := log.FromContext(ctx)
 	selector := client.MatchingLabels{
-		"eval-hub.trustyai.opendatahub.io": instance.Name,
+		"eval-hub.trustyai.opendatahub.io": jobResourceInstanceID(instance),
 		"app.kubernetes.io/component":      "job",
 	}
 

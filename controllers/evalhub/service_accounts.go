@@ -108,8 +108,10 @@ func generateAPIAccessRoleName(instance *evalhubv1alpha1.EvalHub) string {
 }
 
 // generateJobsAPIAccessRoleName returns the name for the per-instance jobs API access Role.
+// The name is namespace-qualified to avoid collisions when multiple EvalHub CRs with
+// the same name in different namespaces create job resources in the same target namespace.
 func generateJobsAPIAccessRoleName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-job-access-role"
+	return normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-job-access-role")
 }
 
 func generateAuthReviewerClusterRoleBindingName(instance *evalhubv1alpha1.EvalHub) string {
@@ -498,7 +500,7 @@ func (r *EvalHubReconciler) createAPIAccessRoleBinding(ctx context.Context, inst
 // createJobsAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the job
 // ServiceAccount to the per-instance Role for status-events access.
 func (r *EvalHubReconciler) createJobsAPIAccessRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, serviceAccountName string, targetNamespace string) error {
-	roleBindingName := instance.Name + "-job-access-rb"
+	roleBindingName := normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-job-access-rb")
 	roleName := generateJobsAPIAccessRoleName(instance)
 
 	return r.createJobRoleBinding(ctx, instance, roleBindingName, serviceAccountName, targetNamespace, rbacv1.RoleRef{
@@ -761,15 +763,28 @@ func equalRoleRef(existing, desired *rbacv1.ClusterRoleBinding) bool {
 		existing.RoleRef.APIGroup == desired.RoleRef.APIGroup
 }
 
-// generateJobsServiceAccountName generates the name for the job service account
+// generateJobsServiceAccountName generates the name for the job service account.
+// The name is namespace-qualified to avoid collisions when multiple EvalHub CRs with
+// the same name in different namespaces create job resources in the same target namespace.
 func generateJobsServiceAccountName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-job"
+	return normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-job")
+}
+
+// jobResourceInstanceID returns a deterministic, DNS-1123 compatible identifier
+// that uniquely identifies an EvalHub instance across namespaces. This is used in
+// both labels and resource names to prevent collisions when two same-named EvalHub
+// CRs in different namespaces create job resources in the same target namespace.
+func jobResourceInstanceID(instance *evalhubv1alpha1.EvalHub) string {
+	return normalizeDNS1123LabelValue(instance.Name + "." + instance.Namespace)
 }
 
 // jobResourceLabels returns the standard labels for job-related resources. These labels
 // are used for both identification and cleanup. Since job resources may live in a different
 // namespace from the EvalHub CR, owner references cannot be used. Instead, the finalizer
 // uses these labels to discover and delete job resources on CR deletion.
+//
+// The eval-hub.trustyai.opendatahub.io label encodes both name and namespace so that
+// cleanup only affects resources belonging to the specific EvalHub instance.
 func jobResourceLabels(instance *evalhubv1alpha1.EvalHub, resourceName string) map[string]string {
 	return map[string]string{
 		"app":                              "eval-hub",
@@ -779,7 +794,7 @@ func jobResourceLabels(instance *evalhubv1alpha1.EvalHub, resourceName string) m
 		"app.kubernetes.io/component":      "job",
 		"app.kubernetes.io/version":        constants.Version,
 		"app.kubernetes.io/managed-by":     "trustyai-service-operator",
-		"eval-hub.trustyai.opendatahub.io": instance.Name,
+		"eval-hub.trustyai.opendatahub.io": jobResourceInstanceID(instance),
 	}
 }
 
@@ -830,7 +845,8 @@ func (r *EvalHubReconciler) createJobsServiceAccount(ctx context.Context, instan
 	}
 
 	// Create MLFlow access RoleBinding for the job SA in the target namespace
-	err = r.createJobRoleBinding(ctx, instance, instance.Name+"-mlflow-job-rb", serviceAccountName, targetNamespace, rbacv1.RoleRef{
+	mlflowJobRBName := normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-mlflow-job-rb")
+	err = r.createJobRoleBinding(ctx, instance, mlflowJobRBName, serviceAccountName, targetNamespace, rbacv1.RoleRef{
 		Kind:     "ClusterRole",
 		Name:     mlflowJobsAccessClusterRoleName,
 		APIGroup: rbacv1.GroupName,
