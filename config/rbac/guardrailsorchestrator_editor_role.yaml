@@ -1,4 +1,4 @@
-# permissions for end users to edit nemoguardrails.
+# permissions for end users to edit guardrailsorchestrators.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -7,12 +7,12 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     rbac.authorization.k8s.io/aggregate-to-edit: "true"
     rbac.authorization.k8s.io/aggregate-to-admin: "true"
-  name: nemoguardrail-editor-role
+  name: guardrailsorchestrator-editor-role
 rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
-  - nemoguardrails
+  - guardrailsorchestrators
   verbs:
   - create
   - delete
@@ -24,6 +24,6 @@ rules:
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
-  - nemoguardrails/status
+  - guardrailsorchestrators/status
   verbs:
   - get
