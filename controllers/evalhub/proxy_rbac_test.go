@@ -201,6 +201,10 @@ var _ = Describe("EvalHub API RBAC", func() {
 			err := reconciler.createServiceAccount(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
 
+			By("Creating job service account (which creates job Role and RoleBindings)")
+			err = reconciler.createJobsServiceAccount(ctx, evalHub, testNamespace)
+			Expect(err).NotTo(HaveOccurred())
+
 			By("Verifying jobs API access RoleBinding exists in namespace")
 			roleBinding := &rbacv1.RoleBinding{}
 			rbName := evalHubName + "-job-access-rb"

@@ -399,6 +399,7 @@ func TestEvalHubReconciler_updateStatus(t *testing.T) {
 
 func TestGenerateConfigData(t *testing.T) {
 	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
 
 	evalHub := &evalhubv1alpha1.EvalHub{
@@ -1098,6 +1099,7 @@ func TestEvalHubReconciler_reconcileServiceCAConfigMap(t *testing.T) {
 
 func TestGenerateConfigData_WithDatabase(t *testing.T) {
 	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
 
 	t.Run("should include database and secrets sections when DB configured", func(t *testing.T) {
@@ -1212,6 +1214,7 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 
 func TestGenerateConfigData_WithOTEL(t *testing.T) {
 	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
 
 	t.Run("should include otel section when configured", func(t *testing.T) {
