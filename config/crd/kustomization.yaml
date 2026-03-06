@@ -1,3 +1,7 @@
+# DEPRECATED: This wrapper is maintained for backwards compatibility
+# New overlays should use components instead which include CRDs
+# See config/components/ for modular controller-specific CRDs
+
 resources:
   - bases/trustyai.opendatahub.io_trustyaiservices.yaml
   - bases/trustyai.opendatahub.io_lmevaljobs.yaml

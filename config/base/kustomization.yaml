@@ -1,15 +1,9 @@
 ---
-namePrefix: trustyai-service-operator-
-
 resources:
-  - ../crd
-  - ../rbac
   - ../manager
+  - ../rbac-base
   - ../prometheus
   - ../configmaps
-
-commonLabels:
-  app.kubernetes.io/part-of: trustyai
 
 configMapGenerator:
   - env: params.env
