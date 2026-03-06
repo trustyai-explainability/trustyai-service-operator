@@ -32,8 +32,7 @@ spec:
             - /manager
           args:
             - --leader-elect
-            - --enable-services
-            - "TAS,LMES,GORCH,NEMO_GUARDRAILS,EVALHUB"
+            # --enable-services will be set by overlays based on which components are included
           image: $(trustyaiOperatorImage)
           name: manager
           env:
