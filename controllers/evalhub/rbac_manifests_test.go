@@ -21,9 +21,9 @@ func TestEvalHubJobConfigClusterRoleVerbsAreMinimalAndSufficient(t *testing.T) {
 	}
 
 	// This test file lives at trustyai-service-operator/controllers/evalhub/.
-	// The manifest lives under trustyai-service-operator/config/rbac/evalhub/.
+	// The manifest lives under trustyai-service-operator/config/components/evalhub/rbac/.
 	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", ".."))
-	manifestPath := filepath.Join(moduleRoot, "config", "rbac", "evalhub", "evalhub_job_config_role.yaml")
+	manifestPath := filepath.Join(moduleRoot, "config", "components", "evalhub", "rbac", "evalhub_job_config_role.yaml")
 
 	raw, err := os.ReadFile(manifestPath)
 	if err != nil {
