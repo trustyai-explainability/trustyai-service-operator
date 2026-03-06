@@ -481,6 +481,7 @@ func TestEvalHubHelperMethods(t *testing.T) {
 func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, rbacv1.AddToScheme(scheme))
 	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
 
 	ctx := context.Background()
