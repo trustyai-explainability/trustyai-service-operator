@@ -36,7 +36,7 @@ data:
       tags:
       - security
       - intents
-      - red_team 
+      - red_team
     - id: owasp_llm_top10
       name: OWASP LLM Top 10
       description: OWASP Top 10 for Large Language Model Applications
