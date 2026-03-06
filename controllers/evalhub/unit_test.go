@@ -813,7 +813,7 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 
 	t.Run("should create jobs MLflow RoleBinding with restricted ClusterRole", func(t *testing.T) {
 		jobsSAName := evalHubName + "-job"
-		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, jobsSAName, "jobs", mlflowJobsAccessClusterRoleName)
+		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, jobsSAName, "job", mlflowJobsAccessClusterRoleName)
 		require.NoError(t, err)
 
 		// Verify RoleBinding was created
@@ -844,7 +844,7 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 
 	t.Run("should create API MLflow RoleBinding with full ClusterRole", func(t *testing.T) {
 		apiSAName := evalHubName + "-service"
-		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, apiSAName, "api", mlflowAccessClusterRoleName)
+		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, apiSAName, "service", mlflowAccessClusterRoleName)
 		require.NoError(t, err)
 
 		// Verify RoleBinding was created
@@ -869,7 +869,7 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 
 	t.Run("should be idempotent on repeated calls", func(t *testing.T) {
 		jobsSAName := evalHubName + "-job"
-		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, jobsSAName, "jobs", mlflowJobsAccessClusterRoleName)
+		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, jobsSAName, "job", mlflowJobsAccessClusterRoleName)
 		require.NoError(t, err)
 
 		// Verify RoleBinding still exists with correct properties
