@@ -1940,4 +1940,113 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 		}, cm)
 		assert.True(t, errors.IsNotFound(err))
 	})
+
+	t.Run("should clean up resources when tenant label is removed", func(t *testing.T) {
+		// Namespace WITHOUT the tenant label but WITH stale resources
+		staleNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "former-tenant",
+			},
+		}
+
+		// Simulate stale resources left from when the namespace was a tenant
+		staleSA := &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "evalhub-opendatahub-job",
+				Namespace: "former-tenant",
+				Labels:    jobResourceLabels(evalHub, "evalhub-opendatahub-job"),
+			},
+		}
+		staleRB := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "evalhub-former-tenant-job-writer-rb",
+				Namespace: "former-tenant",
+				Labels:    jobResourceLabels(evalHub, "evalhub-former-tenant-job-writer-rb"),
+			},
+			RoleRef: rbacv1.RoleRef{
+				Kind:     "ClusterRole",
+				Name:     jobsWriterClusterRoleName,
+				APIGroup: rbacv1.GroupName,
+			},
+		}
+		staleCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      evalHubName + "-service-ca",
+				Namespace: "former-tenant",
+				Labels:    jobResourceLabels(evalHub, evalHubName+"-service-ca"),
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, staleNS, staleSA, staleRB, staleCM).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileTenantNamespaces(ctx, evalHub)
+		require.NoError(t, err)
+
+		// All stale resources should be deleted
+		sa := &corev1.ServiceAccount{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name: staleSA.Name, Namespace: "former-tenant",
+		}, sa)
+		assert.True(t, errors.IsNotFound(err), "stale SA should be deleted")
+
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name: staleRB.Name, Namespace: "former-tenant",
+		}, rb)
+		assert.True(t, errors.IsNotFound(err), "stale RoleBinding should be deleted")
+
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name: staleCM.Name, Namespace: "former-tenant",
+		}, cm)
+		assert.True(t, errors.IsNotFound(err), "stale ConfigMap should be deleted")
+	})
+
+	t.Run("should not clean up resources in active tenant namespaces", func(t *testing.T) {
+		// Namespace WITH the tenant label and resources
+		activeNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "active-tenant",
+				Labels: map[string]string{tenantLabel: ""},
+			},
+		}
+
+		activeSA := &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "evalhub-opendatahub-job",
+				Namespace: "active-tenant",
+				Labels:    jobResourceLabels(evalHub, "evalhub-opendatahub-job"),
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, activeNS, activeSA).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileTenantNamespaces(ctx, evalHub)
+		require.NoError(t, err)
+
+		// SA should still exist
+		sa := &corev1.ServiceAccount{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name: activeSA.Name, Namespace: "active-tenant",
+		}, sa)
+		require.NoError(t, err, "active tenant SA should not be deleted")
+	})
 }

@@ -20,7 +20,8 @@ const (
 )
 
 // reconcileTenantNamespaces lists all namespaces with the tenant label and ensures
-// the job ServiceAccount and API SA RoleBindings exist in each one.
+// the job ServiceAccount and API SA RoleBindings exist in each one. It also
+// removes stale resources from namespaces that no longer carry the tenant label.
 func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
 	log := log.FromContext(ctx)
 
@@ -30,9 +31,13 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 		return err
 	}
 
+	// Build set of active tenant namespaces for the cleanup pass
+	activeTenants := make(map[string]bool, len(nsList.Items))
 	for i := range nsList.Items {
-		ns := nsList.Items[i].Name
+		activeTenants[nsList.Items[i].Name] = true
+	}
 
+	for ns := range activeTenants {
 		// Skip the instance namespace (already handled by main reconcile)
 		if ns == instance.Namespace {
 			continue
@@ -75,6 +80,90 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 		// mount the cluster service CA for TLS callbacks to EvalHub.
 		if err := r.createTenantServiceCAConfigMap(ctx, instance, ns); err != nil {
 			log.Error(err, "Failed to create service CA ConfigMap in tenant namespace", "namespace", ns)
+			return err
+		}
+	}
+
+	// Clean up resources from namespaces that lost the tenant label.
+	// Discover all namespaces that have job resources for this instance
+	// and remove those that are no longer active tenants.
+	if err := r.cleanupStaleTenantResources(ctx, instance, activeTenants); err != nil {
+		log.Error(err, "Failed to clean up stale tenant resources")
+		return err
+	}
+
+	return nil
+}
+
+// cleanupStaleTenantResources removes job ServiceAccounts, RoleBindings, Roles,
+// and ConfigMaps from namespaces that no longer carry the tenant label.
+func (r *EvalHubReconciler) cleanupStaleTenantResources(ctx context.Context, instance *evalhubv1alpha1.EvalHub, activeTenants map[string]bool) error {
+	log := log.FromContext(ctx)
+	selector := client.MatchingLabels{
+		"eval-hub.trustyai.opendatahub.io": jobResourceInstanceID(instance),
+		"app.kubernetes.io/component":      "job",
+	}
+
+	// Find ServiceAccounts in non-tenant namespaces
+	saList := &corev1.ServiceAccountList{}
+	if err := r.List(ctx, saList, selector); err != nil {
+		return err
+	}
+	for i := range saList.Items {
+		ns := saList.Items[i].Namespace
+		if ns == instance.Namespace || activeTenants[ns] {
+			continue
+		}
+		log.Info("Removing stale job ServiceAccount", "name", saList.Items[i].Name, "namespace", ns)
+		if err := r.Delete(ctx, &saList.Items[i]); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	// Find RoleBindings in non-tenant namespaces
+	rbList := &rbacv1.RoleBindingList{}
+	if err := r.List(ctx, rbList, selector); err != nil {
+		return err
+	}
+	for i := range rbList.Items {
+		ns := rbList.Items[i].Namespace
+		if ns == instance.Namespace || activeTenants[ns] {
+			continue
+		}
+		log.Info("Removing stale job RoleBinding", "name", rbList.Items[i].Name, "namespace", ns)
+		if err := r.Delete(ctx, &rbList.Items[i]); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	// Find Roles in non-tenant namespaces
+	roleList := &rbacv1.RoleList{}
+	if err := r.List(ctx, roleList, selector); err != nil {
+		return err
+	}
+	for i := range roleList.Items {
+		ns := roleList.Items[i].Namespace
+		if ns == instance.Namespace || activeTenants[ns] {
+			continue
+		}
+		log.Info("Removing stale job Role", "name", roleList.Items[i].Name, "namespace", ns)
+		if err := r.Delete(ctx, &roleList.Items[i]); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	// Find ConfigMaps in non-tenant namespaces
+	cmList := &corev1.ConfigMapList{}
+	if err := r.List(ctx, cmList, selector); err != nil {
+		return err
+	}
+	for i := range cmList.Items {
+		ns := cmList.Items[i].Namespace
+		if ns == instance.Namespace || activeTenants[ns] {
+			continue
+		}
+		log.Info("Removing stale job ConfigMap", "name", cmList.Items[i].Name, "namespace", ns)
+		if err := r.Delete(ctx, &cmList.Items[i]); err != nil && !errors.IsNotFound(err) {
 			return err
 		}
 	}
