@@ -533,8 +533,15 @@ func (r *EvalHubReconciler) createJobConfigRoleBinding(ctx context.Context, inst
 // createJobRoleBinding creates a namespace-scoped RoleBinding for job resources.
 // Unlike createGenericRoleBinding, it uses targetNamespace (not instance.Namespace),
 // job labels (not owner references), and is suitable for cross-namespace use.
-func (r *EvalHubReconciler) createJobRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, roleBindingName string, serviceAccountName string, targetNamespace string, roleRef rbacv1.RoleRef) error {
+// The optional subjectNamespace parameter specifies which namespace the ServiceAccount
+// lives in. If empty, it defaults to targetNamespace (same-namespace binding).
+func (r *EvalHubReconciler) createJobRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub, roleBindingName string, serviceAccountName string, targetNamespace string, roleRef rbacv1.RoleRef, subjectNamespace ...string) error {
 	log := log.FromContext(ctx)
+
+	saNS := targetNamespace
+	if len(subjectNamespace) > 0 && subjectNamespace[0] != "" {
+		saNS = subjectNamespace[0]
+	}
 
 	roleBinding := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
@@ -546,7 +553,7 @@ func (r *EvalHubReconciler) createJobRoleBinding(ctx context.Context, instance *
 			{
 				Kind:      "ServiceAccount",
 				Name:      serviceAccountName,
-				Namespace: targetNamespace,
+				Namespace: saNS,
 			},
 		},
 		RoleRef: roleRef,

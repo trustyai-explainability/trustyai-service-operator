@@ -52,14 +52,15 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 		}
 
 		// Create jobs-writer RoleBinding for the API SA in the tenant namespace
-		// so the EvalHub service can create Jobs there
+		// so the EvalHub service can create Jobs there.
+		// The API SA lives in instance.Namespace, not the tenant namespace.
 		serviceAccountName := generateServiceAccountName(instance)
 		jobWriterRBName := normalizeDNS1123LabelValue(instance.Name + "-" + ns + "-job-writer-rb")
 		if err := r.createJobRoleBinding(ctx, instance, jobWriterRBName, serviceAccountName, ns, rbacv1.RoleRef{
 			Kind:     "ClusterRole",
 			Name:     jobsWriterClusterRoleName,
 			APIGroup: rbacv1.GroupName,
-		}); err != nil {
+		}, instance.Namespace); err != nil {
 			log.Error(err, "Failed to create jobs-writer RoleBinding in tenant namespace", "namespace", ns)
 			return err
 		}
@@ -71,7 +72,7 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 			Kind:     "ClusterRole",
 			Name:     jobConfigClusterRoleName,
 			APIGroup: rbacv1.GroupName,
-		}); err != nil {
+		}, instance.Namespace); err != nil {
 			log.Error(err, "Failed to create job-config RoleBinding in tenant namespace", "namespace", ns)
 			return err
 		}
