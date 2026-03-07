@@ -206,6 +206,18 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 func generateAuthConfigData() string {
 	return `authorization:
   endpoints:
+    - path: /api/v1/evaluations/jobs/*/events
+      mappings:
+        - methods: [post]
+          resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: status-events
+                verb: create
     - path: /api/v1/evaluations/jobs
       mappings:
         - methods: [post]
@@ -243,18 +255,6 @@ func generateAuthConfigData() string {
                 apiGroup: trustyai.opendatahub.io
                 resource: evaluations
                 verb: "{{.FromMethod}}"
-    - path: /api/v1/evaluations/jobs/*/events
-      mappings:
-        - methods: [post]
-          resources:
-            - rewrites:
-                byHttpHeader:
-                  name: X-Tenant
-              resourceAttributes:
-                namespace: "{{.FromHeader}}"
-                apiGroup: trustyai.opendatahub.io
-                resource: status-events
-                verb: create
     - path: /api/v1/evaluations/collections
       mappings:
         - resources:
