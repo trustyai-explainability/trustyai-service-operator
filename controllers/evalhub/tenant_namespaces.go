@@ -6,6 +6,8 @@ import (
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -68,7 +70,54 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 			log.Error(err, "Failed to create job-config RoleBinding in tenant namespace", "namespace", ns)
 			return err
 		}
+
+		// Create service CA ConfigMap in the tenant namespace so job pods can
+		// mount the cluster service CA for TLS callbacks to EvalHub.
+		if err := r.createTenantServiceCAConfigMap(ctx, instance, ns); err != nil {
+			log.Error(err, "Failed to create service CA ConfigMap in tenant namespace", "namespace", ns)
+			return err
+		}
 	}
 
 	return nil
+}
+
+// createTenantServiceCAConfigMap ensures a service CA ConfigMap exists in the
+// tenant namespace. The ConfigMap is annotated so that OpenShift's service CA
+// operator automatically injects the cluster CA bundle.
+func (r *EvalHubReconciler) createTenantServiceCAConfigMap(ctx context.Context, instance *evalhubv1alpha1.EvalHub, namespace string) error {
+	log := log.FromContext(ctx)
+	cmName := instance.Name + "-service-ca"
+
+	cm := &corev1.ConfigMap{}
+	err := r.Get(ctx, client.ObjectKey{Name: cmName, Namespace: namespace}, cm)
+	if err == nil {
+		// Already exists — ensure annotation is present
+		if cm.Annotations == nil {
+			cm.Annotations = make(map[string]string)
+		}
+		if cm.Annotations["service.beta.openshift.io/inject-cabundle"] != "true" {
+			cm.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
+			return r.Update(ctx, cm)
+		}
+		return nil
+	}
+	if !errors.IsNotFound(err) {
+		return err
+	}
+
+	// Create new ConfigMap with CA injection annotation and job resource labels
+	cm = &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      cmName,
+			Namespace: namespace,
+			Labels:    jobResourceLabels(instance, cmName),
+			Annotations: map[string]string{
+				"service.beta.openshift.io/inject-cabundle": "true",
+			},
+		},
+		Data: map[string]string{},
+	}
+	log.Info("Creating service CA ConfigMap in tenant namespace", "namespace", namespace, "name", cmName)
+	return r.Create(ctx, cm)
 }
