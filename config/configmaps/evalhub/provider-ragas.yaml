@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: evalhub-provider-ragas
+  labels:
+    trustyai.opendatahub.io/evalhub-provider-type: system
+    trustyai.opendatahub.io/evalhub-provider-name: ragas
+data:
+  ragas.yaml: |
+    id: ragas
+    name: RAGAS
+    description: RAG Assessment with GAsp-powered metrics; reads dataset from /test_data or /data
+    type: builtin
+    runtime:
+      k8s:
+        image: $(evalhub-provider-ragas-image)
+        entrypoint:
+        - ragas-evalhub-adapter
+        cpu_request: 100m
+        memory_request: 256Mi
+        cpu_limit: 1000m
+        memory_limit: 2Gi
+      local: null
+    benchmarks:
+    - id: ragas_suite
+      name: RAGAS Suite
+      description: Faithfulness, answer relevancy, context precision, context recall, answer similarity
+      category: rag
+      metrics:
+      - faithfulness
+      - answer_relevancy
+      - context_precision
+      - context_recall
+      - answer_similarity
+      tags:
+      - rag
+      - ragas
+      - retrieval
+    - id: ragas_qa
+      name: RAGAS QA
+      description: RAGAS metrics for question-answering evaluation
+      category: rag
+      metrics:
+      - faithfulness
+      - answer_relevancy
+      tags:
+      - rag
+      - ragas
+      - qa
