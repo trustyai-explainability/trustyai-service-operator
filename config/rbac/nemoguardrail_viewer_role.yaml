@@ -5,6 +5,8 @@ metadata:
   labels:
     app.kubernetes.io/name: trustyai-service-operator
     app.kubernetes.io/managed-by: kustomize
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
   name: nemoguardrail-viewer-role
 rules:
 - apiGroups:

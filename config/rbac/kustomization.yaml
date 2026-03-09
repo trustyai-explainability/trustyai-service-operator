@@ -23,6 +23,8 @@ resources:
   - evalhub/evalhub_collections_access_binding.yaml
   - nemoguardrail_editor_role.yaml
   - nemoguardrail_viewer_role.yaml
+  - guardrailsorchestrator_editor_role.yaml
+  - guardrailsorchestrator_viewer_role.yaml
   - trustyaiservice_editor_role.yaml
   - trustyaiservice_viewer_role.yaml
   - non_admin_lmeval_role.yaml
