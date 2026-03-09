@@ -17,6 +17,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
@@ -52,6 +53,7 @@ type EvalHubReconciler struct {
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=list;watch;get;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=namespaces,verbs=list;watch
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
@@ -114,12 +116,19 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Create ServiceAccount for jobs in the instance namespace.
-	// For multi-tenant setups, the tenant namespace watcher will create
-	// additional job SAs in tenant namespaces.
 	err = r.createJobsServiceAccount(ctx, instance, instance.Namespace)
 	if err != nil {
 		log.Error(err, "Failed to create job ServiceAccount")
 		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to create job ServiceAccount: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
+	// Reconcile tenant namespaces: create job SAs and API SA bindings in any
+	// namespace labelled with evalhub.trustyai.opendatahub.io/tenant.
+	if err := r.reconcileTenantNamespaces(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile tenant namespaces")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile tenant namespaces: %v", err), corev1.ConditionFalse)
 		r.Status().Update(ctx, instance)
 		return RequeueWithError(err)
 	}
@@ -195,7 +204,42 @@ func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.ConfigMap{}).
+		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.mapNamespaceToEvalHubs)).
 		Complete(r)
+}
+
+// mapNamespaceToEvalHubs maps a Namespace event to reconcile requests for all EvalHub
+// instances. This is triggered when a namespace is created, updated, or deleted, allowing
+// the controller to provision or clean up tenant resources when the tenant label is added
+// or removed.
+func (r *EvalHubReconciler) mapNamespaceToEvalHubs(ctx context.Context, obj client.Object) []ctrl.Request {
+	ns, ok := obj.(*corev1.Namespace)
+	if !ok {
+		return nil
+	}
+
+	// Only trigger reconciliation for namespaces with the tenant label
+	if _, hasTenantLabel := ns.Labels[tenantLabel]; !hasTenantLabel {
+		return nil
+	}
+
+	// List all EvalHub instances and enqueue reconcile requests for each
+	evalHubList := &evalhubv1alpha1.EvalHubList{}
+	if err := r.List(ctx, evalHubList); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to list EvalHub instances for namespace watch")
+		return nil
+	}
+
+	requests := make([]ctrl.Request, len(evalHubList.Items))
+	for i, eh := range evalHubList.Items {
+		requests[i] = ctrl.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      eh.Name,
+				Namespace: eh.Namespace,
+			},
+		}
+	}
+	return requests
 }
 
 // Helper functions for reconcile results
