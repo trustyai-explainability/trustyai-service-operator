@@ -248,9 +248,19 @@ func TestEvalHubReconciler_reconcileConfigMap(t *testing.T) {
 		},
 	}
 
+	operatorCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMapName,
+			Namespace: testNamespace,
+		},
+		Data: map[string]string{
+			configMapEvalHubImageKey: "quay.io/evalhub/evalhub:test",
+		},
+	}
+
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(evalHub).
+		WithObjects(evalHub, operatorCM).
 		Build()
 
 	reconciler := &EvalHubReconciler{

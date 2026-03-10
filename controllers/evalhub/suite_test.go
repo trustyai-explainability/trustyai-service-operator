@@ -163,6 +163,19 @@ func setupReconciler(namespace string) (*EvalHubReconciler, context.Context) {
 		EventRecorder: eventRecorder,
 	}
 
+	// Create the operator image ConfigMap so getEvalHubImage succeeds.
+	// Ignore errors (e.g. already exists, or namespace doesn't exist for intentionally bad reconcilers).
+	operatorCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMapName,
+			Namespace: namespace,
+		},
+		Data: map[string]string{
+			configMapEvalHubImageKey: "quay.io/evalhub/evalhub:test",
+		},
+	}
+	_ = k8sClient.Create(ctx, operatorCM)
+
 	return reconciler, ctx
 }
 
