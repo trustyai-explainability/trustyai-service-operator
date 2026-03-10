@@ -112,10 +112,9 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 
 // generateConfigData generates the configuration data for the ConfigMap
 func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *evalhubv1alpha1.EvalHub) (map[string]string, error) {
-	evalHubImage, err := r.getEvalHubImage(ctx)
+	evalHubImage, err := r.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Error getting EvalHub image from ConfigMap. Using the default image value of "+defaultEvalHubImage)
-		evalHubImage = defaultEvalHubImage
+		return nil, fmt.Errorf("failed to get EvalHub image: %w", err)
 	}
 
 	config := EvalHubConfig{
