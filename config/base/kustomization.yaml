@@ -85,3 +85,10 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.evalhub-provider-lm-evaluation-harness-image
+  - name: evalhub-provider-ragas-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-ragas-image
