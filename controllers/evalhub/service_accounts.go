@@ -862,5 +862,19 @@ func (r *EvalHubReconciler) createJobsServiceAccount(ctx context.Context, instan
 		return err
 	}
 
+	// Create MLFlow access RoleBinding for the service SA in the target (tenant) namespace.
+	// EvalHub creates experiments scoped to the tenant workspace, so its SA needs
+	// mlflow.kubeflow.org/experiments permission there, not just in instance.Namespace.
+	svcSAName := generateServiceAccountName(instance)
+	mlflowSvcRBName := normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-mlflow-service-rb")
+	err = r.createJobRoleBinding(ctx, instance, mlflowSvcRBName, svcSAName, targetNamespace, rbacv1.RoleRef{
+		Kind:     "ClusterRole",
+		Name:     mlflowAccessClusterRoleName,
+		APIGroup: rbacv1.GroupName,
+	}, instance.Namespace)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

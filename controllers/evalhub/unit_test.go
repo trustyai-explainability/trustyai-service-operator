@@ -550,6 +550,35 @@ func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
 		}, jobsSA)
 		require.NoError(t, err)
 	})
+
+	t.Run("should create MLFlow service SA RoleBinding in target namespace", func(t *testing.T) {
+		// The RoleBinding created by the first sub-test should reference the full
+		// MLFlow access ClusterRole and bind the service SA (not the job SA).
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + testNamespace + "-mlflow-service-rb")
+		rb := &rbacv1.RoleBinding{}
+		err := fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		// Should reference the full MLFlow access ClusterRole, not the restricted jobs role
+		assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
+		assert.Equal(t, mlflowAccessClusterRoleName, rb.RoleRef.Name)
+		assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
+
+		// Subject must be the service SA, not the job SA
+		svcSAName := generateServiceAccountName(evalHub)
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
+		assert.Equal(t, svcSAName, rb.Subjects[0].Name)
+		assert.Equal(t, testNamespace, rb.Subjects[0].Namespace)
+
+		// No owner references — cleanup is label-based via the finalizer
+		assert.Empty(t, rb.OwnerReferences)
+		assert.Equal(t, jobResourceInstanceID(evalHub), rb.Labels["eval-hub.trustyai.opendatahub.io"])
+		assert.Equal(t, "job", rb.Labels["app.kubernetes.io/component"])
+	})
 }
 
 // TestEvalHubReconciler_createJobsAPIAccessRoleBinding verifies that the jobs API access RoleBinding
@@ -2009,6 +2038,52 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 			Name: staleCM.Name, Namespace: "former-tenant",
 		}, cm)
 		assert.True(t, errors.IsNotFound(err), "stale ConfigMap should be deleted")
+	})
+
+	t.Run("should create MLFlow service SA RoleBinding in tenant namespace", func(t *testing.T) {
+		// This is the cross-namespace case: EvalHub runs in instanceNamespace but jobs
+		// run in tenantNamespace. The service SA must be able to create MLFlow experiments
+		// in the tenant workspace, so a RoleBinding is needed there too.
+		tenantNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   tenantNamespace,
+				Labels: map[string]string{tenantLabel: ""},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, tenantNS).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileTenantNamespaces(ctx, evalHub)
+		require.NoError(t, err)
+
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + instanceNamespace + "-mlflow-service-rb")
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: tenantNamespace,
+		}, rb)
+		require.NoError(t, err, "MLFlow service SA RoleBinding should exist in tenant namespace")
+
+		// Must reference the full MLFlow access ClusterRole
+		assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
+		assert.Equal(t, mlflowAccessClusterRoleName, rb.RoleRef.Name)
+		assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
+
+		// Subject is the service SA from instanceNamespace, not the tenant namespace
+		svcSAName := generateServiceAccountName(evalHub)
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
+		assert.Equal(t, svcSAName, rb.Subjects[0].Name)
+		assert.Equal(t, instanceNamespace, rb.Subjects[0].Namespace)
 	})
 
 	t.Run("should not clean up resources in active tenant namespaces", func(t *testing.T) {
