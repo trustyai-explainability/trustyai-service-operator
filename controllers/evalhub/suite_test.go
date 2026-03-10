@@ -164,7 +164,6 @@ func setupReconciler(namespace string) (*EvalHubReconciler, context.Context) {
 	}
 
 	// Create the operator image ConfigMap so getEvalHubImage succeeds.
-	// Ignore errors (e.g. already exists, or namespace doesn't exist for intentionally bad reconcilers).
 	operatorCM := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      configMapName,
@@ -174,7 +173,13 @@ func setupReconciler(namespace string) (*EvalHubReconciler, context.Context) {
 			configMapEvalHubImageKey: "quay.io/evalhub/evalhub:test",
 		},
 	}
-	_ = k8sClient.Create(ctx, operatorCM)
+	if err := k8sClient.Create(ctx, operatorCM); err != nil {
+		// AlreadyExists: another BeforeEach already created it for this namespace.
+		// NotFound: namespace doesn't exist — intentionally-bad reconciler test cases.
+		if !errors.IsAlreadyExists(err) && !errors.IsNotFound(err) {
+			Expect(err).NotTo(HaveOccurred())
+		}
+	}
 
 	return reconciler, ctx
 }
