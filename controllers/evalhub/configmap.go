@@ -62,38 +62,36 @@ type EnvMappings map[string]string
 
 // EvalHubClientConfig represents the eval-hub client configuration in config.yaml
 type EvalHubClientConfig struct {
-	HTTPTimeout        time.Duration `mapstructure:"http_timeout"`
-	CACertPath         string        `mapstructure:"ca_cert_path,omitempty"`
-	InsecureSkipVerify bool          `mapstructure:"insecure_skip_verify,omitempty"`
-	Token              string        `mapstructure:"token,omitempty"`
-	TokenPath          string        `mapstructure:"token_path,omitempty"`
-	TLSConfig          *tls.Config   // set at runtime, not from config file
+	HTTPTimeout        time.Duration `json:"http_timeout"`
+	CACertPath         string        `json:"ca_cert_path,omitempty"`
+	InsecureSkipVerify bool          `json:"insecure_skip_verify,omitempty"`
+	TLSConfig          *tls.Config   `json:"tls_config,omitempty"`
 }
 
 // SidecarContainerConfig represents the sidecar container configuration in config.yaml
 type SidecarContainerConfig struct {
-	Image     string                `mapstructure:"image,omitempty"`
-	Resources *ResourceRequirements `mapstructure:"resources,omitempty"`
+	Image     string                `json:"image,omitempty"`
+	Resources *ResourceRequirements `json:"resources,omitempty"`
 }
 
 // ResourceRequirements represents the resource requirements for the sidecar container in config.yaml
 type ResourceRequirements struct {
-	Requests *ResourceRequirementDef `mapstructure:"requests,omitempty"`
-	Limits   *ResourceRequirementDef `mapstructure:"limits,omitempty"`
+	Requests *ResourceRequirementDef `json:"requests,omitempty"`
+	Limits   *ResourceRequirementDef `json:"limits,omitempty"`
 }
 
 // ResourceRequirementDef represents the resource requirement definition for the sidecar container in config.yaml
 type ResourceRequirementDef struct {
-	CPU    string `mapstructure:"cpu,omitempty"`
-	Memory string `mapstructure:"memory,omitempty"`
+	CPU    string `json:"cpu,omitempty"`
+	Memory string `json:"memory,omitempty"`
 }
 
 // SidecarConfig represents the sidecar configuration in config.yaml
 type SidecarConfig struct {
-	Port             int                     `mapstructure:"port,omitempty"`
-	BaseURL          string                  `mapstructure:"base_url,omitempty"`
-	EvalHub          *EvalHubClientConfig    `mapstructure:"eval_hub"`
-	SidecarContainer *SidecarContainerConfig `mapstructure:"sidecar_container,omitempty"`
+	Port             int                     `json:"port,omitempty"`
+	BaseURL          string                  `json:"base_url,omitempty"`
+	EvalHub          *EvalHubClientConfig    `json:"eval_hub"`
+	SidecarContainer *SidecarContainerConfig `json:"sidecar_container,omitempty"`
 }
 
 // EvalHubConfig represents the eval-hub configuration structure
@@ -189,7 +187,6 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 			EvalHub: &EvalHubClientConfig{
 				HTTPTimeout:        30 * time.Second,
 				InsecureSkipVerify: true,
-				TokenPath:          evalhubTokenMountPath + "/" + evalhubTokenFile,
 			},
 			SidecarContainer: &SidecarContainerConfig{
 				Image: evalHubImage,

@@ -63,10 +63,6 @@ const (
 	// Sidecar configuration
 	sidecarPort    = 8080
 	sidecarBaseURL = "http://localhost:8080"
-
-	//EvalHub client configuration
-	evalhubTokenMountPath = "/var/run/secrets/kubernetes.io/serviceaccount"
-	evalhubTokenFile      = "token"
 )
 
 var (
