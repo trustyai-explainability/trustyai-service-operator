@@ -59,6 +59,14 @@ const (
 	providerNameLabel   = "trustyai.opendatahub.io/evalhub-provider-name"
 	providersVolumeName = "evalhub-providers"
 	providersMountPath  = configDirPath + "/providers"
+
+	// Sidecar configuration
+	sidecarPort    = 8080
+	sidecarBaseURL = "http://localhost:8080"
+
+	//EvalHub client configuration
+	evalhubTokenMountPath = "/var/run/secrets/kubernetes.io/serviceaccount"
+	evalhubTokenFile      = "token"
 )
 
 var (
