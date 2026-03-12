@@ -13,7 +13,7 @@ data:
     type: builtin
     runtime:
       k8s:
-        image: $(evalhub-provider-lm-evaluation-harness-image)
+        image: $(lmes-pod-image)
         entrypoint:
         - /opt/app-root/bin/python
         - /opt/app-root/src/main.py

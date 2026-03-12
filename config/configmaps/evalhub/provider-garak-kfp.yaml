@@ -13,7 +13,7 @@ data:
     type: builtin
     runtime:
       k8s:
-        image: $(evalhub-provider-garak-image)
+        image: $(garak-provider-image)
         entrypoint:
         - python
         - -m
