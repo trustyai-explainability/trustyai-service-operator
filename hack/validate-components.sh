@@ -46,8 +46,8 @@ for component_dir in "${COMPONENTS_DIR}"/*; do
     fi
 
     # Check CRD exists (skip for job-mgr which shares CRD with lmes)
-    if [[ "${component_name}" != "job-mgr" && ! -f "${component_dir}/crd.yaml" ]]; then
-        echo "  ✗ Missing crd.yaml"
+    if [[ "${component_name}" != "job-mgr" ]] && ! compgen -G "${component_dir}/crd/*.yaml" > /dev/null; then
+        echo "  ✗ Missing CRD YAML inside of ${component_name}/crd directory"
         FAILED_COMPONENTS+=("${component_name}")
         continue
     fi
