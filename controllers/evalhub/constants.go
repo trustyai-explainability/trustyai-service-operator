@@ -59,6 +59,12 @@ const (
 	providerNameLabel   = "trustyai.opendatahub.io/evalhub-provider-name"
 	providersVolumeName = "evalhub-providers"
 	providersMountPath  = configDirPath + "/providers"
+
+	// Collection ConfigMap configuration
+	collectionLabel       = "trustyai.opendatahub.io/evalhub-collection-type"
+	collectionNameLabel   = "trustyai.opendatahub.io/evalhub-collection-name"
+	collectionsVolumeName = "evalhub-collections"
+	collectionsMountPath  = configDirPath + "/collections"
 )
 
 var (
