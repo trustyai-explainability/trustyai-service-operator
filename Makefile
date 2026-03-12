@@ -95,7 +95,28 @@ help: ## Display this help.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role,headerFile="hack/boilerplate.yaml.txt" crd:headerFile="hack/boilerplate.yaml.txt" webhook:headerFile="hack/boilerplate.yaml.txt" paths="./..." output:crd:artifacts:config=config/crd/bases
+	@$(MAKE) components-generate
+
+.PHONY: components-generate
+components-generate: ## Generate component kustomizations from controller-gen output
+	@echo "Generating Kustomize components..."
+	@./hack/generate-components.sh
+
+.PHONY: components-validate
+components-validate: kustomize ## Validate all components build correctly
+	@./hack/validate-components.sh
+
+.PHONY: list-overlays
+list-overlays: ## List available overlays
+	@echo "Available overlays:"
+	@echo "  base          - Core operator only (no controllers)"
+	@for overlay in config/overlays/*; do \
+		if [ -d "$$overlay" ]; then \
+			name=$$(basename $$overlay); \
+			echo "  $$name"; \
+		fi \
+	done
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -187,7 +208,7 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 ## Tool Versions
-KUSTOMIZE_VERSION ?= v3.8.7
+KUSTOMIZE_VERSION ?= v5.7.0
 CONTROLLER_TOOLS_VERSION ?= v0.20.0
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
@@ -278,10 +299,35 @@ catalog-push: ## Push a catalog image.
 # Generate the full set of manifests to deploy the TrustyAI operator, with a customizable deployment namespace and operator image
 OPERATOR_IMAGE ?= quay.io/trustyai/trustyai-service-operator:latest
 .PHONY: manifest-gen
-manifest-gen: kustomize
-	@echo "Usage: make manifest-gen NAMESPACE=<namespace> OPERATOR_IMAGE=<image>"
-	@echo "Example: make manifest-gen NAMESPACE=my-namespace OPERATOR_IMAGE=quay.io/myorg/trustyai-service-operator:latest"
-	mkdir -p release
-	@if [ -z "$(NAMESPACE)" ]; then echo "Error: NAMESPACE argument is required"; exit 1; fi
-	$(KUSTOMIZE) build config/base | sed "s|namespace: system|namespace: $(NAMESPACE)|g" | sed "s|quay.io/trustyai/trustyai-service-operator:latest|$(OPERATOR_IMAGE)|g" > release/trustyai_bundle.yaml
-	@echo "Release manifest generated at release/trustyai_bundle.yaml with namespace '$(NAMESPACE)' and operator image '$(OPERATOR_IMAGE)'"
+manifest-gen: kustomize ## Generate deployment manifests. Usage: make manifest-gen NAMESPACE=<namespace> [OVERLAY=<overlay>] [OPERATOR_IMAGE=<image>]
+	@if [ -z "$(NAMESPACE)" ]; then \
+		echo "Error: NAMESPACE argument is required"; \
+		echo ""; \
+		echo "Usage: make manifest-gen NAMESPACE=<namespace> [OVERLAY=<overlay>] [OPERATOR_IMAGE=<image>]"; \
+		echo "Example: make manifest-gen NAMESPACE=my-namespace OVERLAY=odh"; \
+		echo ""; \
+		echo "Available overlays (use 'make list-overlays' for descriptions):"; \
+		echo "  base (default)"; \
+		ls -1 config/overlays/ 2>/dev/null | sed 's/^/  /'; \
+		exit 1; \
+	fi
+	@if [ ! -z "$(OVERLAY)" ] && [ "$(OVERLAY)" != "base" ] && [ ! -d "config/overlays/$(OVERLAY)" ]; then \
+		echo "Error: Overlay '$(OVERLAY)' not found"; \
+		echo "Available overlays:"; \
+		echo "  base"; \
+		ls -1 config/overlays/ 2>/dev/null | sed 's/^/  /' || echo "  (no overlays found)"; \
+		exit 1; \
+	fi
+	@mkdir -p release
+	@if [ -z "$(OVERLAY)" ]; then \
+		echo "Building from config/overlays/testing..."; \
+		$(KUSTOMIZE) build config/overlays/testing | sed "s|namespace: system|namespace: $(NAMESPACE)|g" | sed "s|quay.io/trustyai/trustyai-service-operator:latest|$(OPERATOR_IMAGE)|g" > release/trustyai_bundle.yaml; \
+		echo "✓ Release manifest generated at release/trustyai_bundle.yaml"; \
+	else \
+		echo "Building from config/overlays/$(OVERLAY)..."; \
+		$(KUSTOMIZE) build config/overlays/$(OVERLAY) | sed "s|namespace: system|namespace: $(NAMESPACE)|g" | sed "s|quay.io/trustyai/trustyai-service-operator:latest|$(OPERATOR_IMAGE)|g" > release/trustyai_$(OVERLAY)_bundle.yaml; \
+		echo "✓ Release manifest generated at release/trustyai_$(OVERLAY)_bundle.yaml"; \
+	fi
+	@echo "  Namespace: $(NAMESPACE)"
+	@echo "  Overlay: $(OVERLAY)"
+	@echo "  Image: $(OPERATOR_IMAGE)"
