@@ -23,8 +23,8 @@ data:
         cpu_limit: 500m
         memory_limit: 1Gi
         env:
-        - name: VAR_NAME
-          value: VALUE
+        - name: KUBEFLOW_GARAK_BASE_IMAGE
+          value: $(garak-provider-image)
       local: null
     benchmarks:
     - id: intents
