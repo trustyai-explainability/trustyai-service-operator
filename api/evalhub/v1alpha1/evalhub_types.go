@@ -73,6 +73,11 @@ type EvalHubSpec struct {
 	// +optional
 	Providers []string `json:"providers,omitempty"`
 
+	// Collections is the list of OOTB collection names to mount into the deployment.
+	// Each name must match a collection-name label on a ConfigMap in the operator namespace.
+	// +optional
+	Collections []string `json:"collections,omitempty"`
+
 	// Database configuration for persistent storage.
 	// When set, the operator configures PostgreSQL via the referenced secret.
 	// When omitted, the service uses its default (in-memory SQLite).
@@ -109,6 +114,9 @@ type EvalHubStatus struct {
 
 	// List of active providers
 	ActiveProviders []string `json:"activeProviders,omitempty"`
+
+	// List of active collections
+	ActiveCollections []string `json:"activeCollections,omitempty"`
 
 	// Last time the status was updated
 	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`

@@ -120,6 +120,11 @@ func (in *EvalHubSpec) DeepCopyInto(out *EvalHubSpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.Collections != nil {
+		in, out := &in.Collections, &out.Collections
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.Database != nil {
 		in, out := &in.Database, &out.Database
 		*out = new(DatabaseSpec)
@@ -154,6 +159,11 @@ func (in *EvalHubStatus) DeepCopyInto(out *EvalHubStatus) {
 	}
 	if in.ActiveProviders != nil {
 		in, out := &in.ActiveProviders, &out.ActiveProviders
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.ActiveCollections != nil {
+		in, out := &in.ActiveCollections, &out.ActiveCollections
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}

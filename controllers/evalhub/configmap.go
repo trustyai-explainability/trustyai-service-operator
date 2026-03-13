@@ -429,6 +429,95 @@ func (r *EvalHubReconciler) reconcileProviderConfigMaps(ctx context.Context, ins
 	return cmNames, nil
 }
 
+// reconcileCollectionConfigMaps copies collection ConfigMaps from the operator namespace to the
+// EvalHub CR's namespace. Only collections listed in instance.Spec.Collections are copied.
+// Each source ConfigMap is discovered by the labels:
+//   - trustyai.opendatahub.io/evalhub-collection-type=system
+//   - trustyai.opendatahub.io/evalhub-collection-name=<name>
+//
+// Returns the list of created ConfigMap names (for building projected volumes).
+func (r *EvalHubReconciler) reconcileCollectionConfigMaps(ctx context.Context, instance *evalhubv1alpha1.EvalHub) ([]string, error) {
+	if len(instance.Spec.Collections) == 0 {
+		return nil, nil
+	}
+
+	log := log.FromContext(ctx)
+	log.Info("Reconciling Collection ConfigMaps", "instance", instance.Name, "collections", instance.Spec.Collections)
+
+	var cmNames []string
+	for _, collectionName := range instance.Spec.Collections {
+		// Look up the source ConfigMap by both labels
+		var sourceList corev1.ConfigMapList
+		if err := r.List(ctx, &sourceList,
+			client.InNamespace(r.Namespace),
+			client.MatchingLabels{
+				collectionLabel:     "system",
+				collectionNameLabel: collectionName,
+			}); err != nil {
+			return nil, fmt.Errorf("failed to list collection ConfigMaps for %q in namespace %s: %w", collectionName, r.Namespace, err)
+		}
+		if len(sourceList.Items) == 0 {
+			return nil, fmt.Errorf("collection %q not found: no ConfigMap with label %s=%s in namespace %s",
+				collectionName, collectionNameLabel, collectionName, r.Namespace)
+		}
+
+		src := &sourceList.Items[0]
+		targetName := instance.Name + "-collection-" + collectionName
+
+		configMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      targetName,
+				Namespace: instance.Namespace,
+			},
+		}
+
+		// Check if ConfigMap already exists
+		getErr := r.Get(ctx, client.ObjectKeyFromObject(configMap), configMap)
+		if getErr != nil && !errors.IsNotFound(getErr) {
+			return nil, getErr
+		}
+
+		if errors.IsNotFound(getErr) {
+			configMap.Data = src.Data
+			if instance.UID != "" {
+				if err := controllerutil.SetControllerReference(instance, configMap, r.Scheme); err != nil {
+					return nil, err
+				}
+			}
+			log.Info("Creating Collection ConfigMap", "name", targetName, "collection", collectionName)
+			if err := r.Create(ctx, configMap); err != nil {
+				return nil, err
+			}
+		} else {
+			configMap.Data = src.Data
+			log.Info("Updating Collection ConfigMap", "name", targetName, "collection", collectionName)
+			if err := r.Update(ctx, configMap); err != nil {
+				return nil, err
+			}
+		}
+
+		cmNames = append(cmNames, targetName)
+	}
+
+	return cmNames, nil
+}
+
+// collectionVolumeProjections builds VolumeProjection entries for mounting collection ConfigMaps
+// into a single projected volume.
+func collectionVolumeProjections(cmNames []string) []corev1.VolumeProjection {
+	var projections []corev1.VolumeProjection
+	for _, name := range cmNames {
+		projections = append(projections, corev1.VolumeProjection{
+			ConfigMap: &corev1.ConfigMapProjection{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: name,
+				},
+			},
+		})
+	}
+	return projections
+}
+
 // providerVolumeProjections builds VolumeProjection entries for mounting provider ConfigMaps
 // into a single projected volume.
 func providerVolumeProjections(cmNames []string) []corev1.VolumeProjection {

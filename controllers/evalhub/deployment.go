@@ -17,7 +17,7 @@ import (
 )
 
 // reconcileDeployment creates or updates the Deployment for EvalHub
-func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *evalhubv1alpha1.EvalHub, providerCMNames []string) error {
+func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *evalhubv1alpha1.EvalHub, providerCMNames []string, collectionCMNames []string) error {
 	log := log.FromContext(ctx)
 	log.Info("Reconciling Deployment", "name", instance.Name)
 
@@ -35,7 +35,7 @@ func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *e
 	}
 
 	// Define the desired deployment spec
-	desiredSpec, err := r.buildDeploymentSpec(ctx, instance, providerCMNames)
+	desiredSpec, err := r.buildDeploymentSpec(ctx, instance, providerCMNames, collectionCMNames)
 	if err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *e
 }
 
 // buildDeploymentSpec builds the deployment specification for EvalHub
-func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *evalhubv1alpha1.EvalHub, providerCMNames []string) (appsv1.DeploymentSpec, error) {
+func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *evalhubv1alpha1.EvalHub, providerCMNames []string, collectionCMNames []string) (appsv1.DeploymentSpec, error) {
 	labels := map[string]string{
 		"app":       "eval-hub",
 		"instance":  instance.Name,
@@ -170,6 +170,13 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			ReadOnly:  true,
 		})
 	}
+	if len(collectionCMNames) > 0 {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      collectionsVolumeName,
+			MountPath: collectionsMountPath,
+			ReadOnly:  true,
+		})
+	}
 	if instance.Spec.IsDatabaseConfigured() {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      dbSecretVolumeName,
@@ -274,6 +281,16 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			VolumeSource: corev1.VolumeSource{
 				Projected: &corev1.ProjectedVolumeSource{
 					Sources: providerVolumeProjections(providerCMNames),
+				},
+			},
+		})
+	}
+	if len(collectionCMNames) > 0 {
+		volumes = append(volumes, corev1.Volume{
+			Name: collectionsVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Projected: &corev1.ProjectedVolumeSource{
+					Sources: collectionVolumeProjections(collectionCMNames),
 				},
 			},
 		})

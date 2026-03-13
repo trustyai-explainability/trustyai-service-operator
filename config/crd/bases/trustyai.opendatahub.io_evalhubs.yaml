@@ -49,6 +49,13 @@ spec:
           spec:
             description: EvalHubSpec defines the desired state of EvalHub
             properties:
+              collections:
+                description: |-
+                  Collections is the list of OOTB collection names to mount into the deployment.
+                  Each name must match a collection-name label on a ConfigMap in the operator namespace.
+                items:
+                  type: string
+                type: array
               database:
                 description: |-
                   Database configuration for persistent storage.
@@ -234,6 +241,11 @@ spec:
           status:
             description: EvalHubStatus defines the observed state of EvalHub
             properties:
+              activeCollections:
+                description: List of active collections
+                items:
+                  type: string
+                type: array
               activeProviders:
                 description: List of active providers
                 items:

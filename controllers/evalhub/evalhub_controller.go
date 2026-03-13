@@ -159,8 +159,18 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 	instance.Status.ActiveProviders = instance.Spec.Providers
 
+	// Reconcile Collection ConfigMaps (copy from operator namespace to instance namespace)
+	collectionCMNames, err := r.reconcileCollectionConfigMaps(ctx, instance)
+	if err != nil {
+		log.Error(err, "Failed to reconcile Collection ConfigMaps")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Collection ConfigMaps: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+	instance.Status.ActiveCollections = instance.Spec.Collections
+
 	// Reconcile Deployment
-	if err := r.reconcileDeployment(ctx, instance, providerCMNames); err != nil {
+	if err := r.reconcileDeployment(ctx, instance, providerCMNames, collectionCMNames); err != nil {
 		log.Error(err, "Failed to reconcile Deployment")
 		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Deployment: %v", err), corev1.ConditionFalse)
 		r.Status().Update(ctx, instance)
