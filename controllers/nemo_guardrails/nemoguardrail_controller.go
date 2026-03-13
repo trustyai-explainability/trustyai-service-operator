@@ -18,21 +18,21 @@ package nemo_guardrails
 
 import (
 	"context"
+	"time"
+
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/nemo_guardrails/templates"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"time"
-
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 // NemoGuardrailReconciler reconciles a NemoGuardrails object
@@ -147,6 +147,22 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	} else if err != nil {
 		utils.LogErrorRetrieving(ctx, err, "deployment", nemoGuardrails.Name, nemoGuardrails.Namespace)
 		return ctrl.Result{}, err
+	} else {
+		// Deployment exists - update it with desired spec
+		deployment, err := r.createDeployment(ctx, nemoGuardrails, caBundleInitContainerConfig, configMapsToMount)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Update the existing deployment's spec to match desired state
+		// Kubernetes will handle the comparison and only update if actually changed
+		existingDeployment.Spec = deployment.Spec
+
+		err = r.Update(ctx, existingDeployment)
+		if err != nil {
+			utils.LogErrorUpdating(ctx, err, "deployment", existingDeployment.Name, existingDeployment.Namespace)
+			return ctrl.Result{}, err
+		}
 	}
 
 	// ====== Reconcile Service ===========================================================================================
