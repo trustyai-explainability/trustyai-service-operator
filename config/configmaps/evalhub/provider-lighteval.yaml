@@ -17,10 +17,10 @@ data:
         entrypoint:
         - python
         - main.py
-        cpu_request: 100m
-        memory_request: 128Mi
-        cpu_limit: 500m
-        memory_limit: 1Gi
+        cpu_request: 500m
+        memory_request: 1Gi
+        cpu_limit: 4000m
+        memory_limit: 8Gi
       local: null
     benchmarks:
     - id: commonsense_reasoning
