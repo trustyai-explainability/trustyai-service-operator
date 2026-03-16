@@ -2,7 +2,6 @@ package evalhub
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"strconv"
 	"strings"
@@ -65,7 +64,6 @@ type EvalHubClientConfig struct {
 	HTTPTimeout        time.Duration `json:"http_timeout"`
 	CACertPath         string        `json:"ca_cert_path,omitempty"`
 	InsecureSkipVerify bool          `json:"insecure_skip_verify,omitempty"`
-	TLSConfig          *tls.Config   `json:"tls_config,omitempty"`
 }
 
 // SidecarContainerConfig represents the sidecar container configuration in config.yaml
