@@ -186,7 +186,7 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 			BaseURL: sidecarBaseURL,
 			EvalHub: &EvalHubClientConfig{
 				HTTPTimeout:        30 * time.Second,
-				InsecureSkipVerify: true,
+				InsecureSkipVerify: false,
 			},
 			SidecarContainer: &SidecarContainerConfig{
 				Image: evalHubImage,
