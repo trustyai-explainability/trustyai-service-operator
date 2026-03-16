@@ -63,6 +63,12 @@ const (
 	// Sidecar configuration
 	sidecarPort    = 8080
 	sidecarBaseURL = "http://localhost:8080"
+
+	// Collection ConfigMap configuration
+	collectionLabel       = "trustyai.opendatahub.io/evalhub-collection-type"
+	collectionNameLabel   = "trustyai.opendatahub.io/evalhub-collection-name"
+	collectionsVolumeName = "evalhub-collections"
+	collectionsMountPath  = configDirPath + "/collections"
 )
 
 var (

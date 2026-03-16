@@ -7,6 +7,10 @@ spec:
   # Number of replicas for the eval-hub deployment
   replicas: 2
 
+  # System collections to mount
+  collections:
+    - leaderboard-v2
+
   # Environment variables
   env:
     - name: LOG_LEVEL

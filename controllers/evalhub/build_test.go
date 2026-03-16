@@ -67,7 +67,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 	}
 
 	t.Run("should build correct deployment spec", func(t *testing.T) {
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil)
 		require.NoError(t, err)
 
 		// Check replicas
@@ -185,7 +185,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 			EventRecorder: record.NewFakeRecorder(10),
 		}
 
-		deploymentSpec, err := reconcilerNoConfig.buildDeploymentSpec(ctx, evalHub, nil)
+		deploymentSpec, err := reconcilerNoConfig.buildDeploymentSpec(ctx, evalHub, nil, nil)
 		require.NoError(t, err)
 		// Should use default EvalHub image as fallback
 		var container *corev1.Container
@@ -199,6 +199,134 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		assert.Equal(t, defaultEvalHubImage, container.Image)
 	})
 
+	t.Run("should add provider volume and mount when providerCMNames is non-nil", func(t *testing.T) {
+		providerCMNames := []string{"test-evalhub-provider-lm-eval", "test-evalhub-provider-garak"}
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, providerCMNames, nil)
+		require.NoError(t, err)
+
+		podSpec := deploymentSpec.Template.Spec
+		container := findContainer(t, podSpec.Containers, containerName)
+
+		// Verify provider projected volume exists
+		var providerVol *corev1.Volume
+		for i, v := range podSpec.Volumes {
+			if v.Name == providersVolumeName {
+				providerVol = &podSpec.Volumes[i]
+				break
+			}
+		}
+		require.NotNil(t, providerVol, "providers volume should be present")
+		require.NotNil(t, providerVol.VolumeSource.Projected)
+		assert.Len(t, providerVol.VolumeSource.Projected.Sources, 2)
+
+		// Verify provider volume mount exists
+		var providerMount *corev1.VolumeMount
+		for i, m := range container.VolumeMounts {
+			if m.Name == providersVolumeName {
+				providerMount = &container.VolumeMounts[i]
+				break
+			}
+		}
+		require.NotNil(t, providerMount, "providers volume mount should be present")
+		assert.Equal(t, providersMountPath, providerMount.MountPath)
+		assert.True(t, providerMount.ReadOnly)
+
+		// Verify no collections volume when collectionCMNames is nil
+		for _, v := range podSpec.Volumes {
+			assert.NotEqual(t, collectionsVolumeName, v.Name, "collections volume should not be present")
+		}
+	})
+
+	t.Run("should add collection volume and mount when collectionCMNames is non-nil", func(t *testing.T) {
+		collectionCMNames := []string{"test-evalhub-collection-healthcare-safety"}
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, collectionCMNames)
+		require.NoError(t, err)
+
+		podSpec := deploymentSpec.Template.Spec
+		container := findContainer(t, podSpec.Containers, containerName)
+
+		// Verify collection projected volume exists
+		var collectionVol *corev1.Volume
+		for i, v := range podSpec.Volumes {
+			if v.Name == collectionsVolumeName {
+				collectionVol = &podSpec.Volumes[i]
+				break
+			}
+		}
+		require.NotNil(t, collectionVol, "collections volume should be present")
+		require.NotNil(t, collectionVol.VolumeSource.Projected)
+		assert.Len(t, collectionVol.VolumeSource.Projected.Sources, 1)
+
+		// Verify collection volume mount exists
+		var collectionMount *corev1.VolumeMount
+		for i, m := range container.VolumeMounts {
+			if m.Name == collectionsVolumeName {
+				collectionMount = &container.VolumeMounts[i]
+				break
+			}
+		}
+		require.NotNil(t, collectionMount, "collections volume mount should be present")
+		assert.Equal(t, collectionsMountPath, collectionMount.MountPath)
+		assert.True(t, collectionMount.ReadOnly)
+
+		// Verify no providers volume when providerCMNames is nil
+		for _, v := range podSpec.Volumes {
+			assert.NotEqual(t, providersVolumeName, v.Name, "providers volume should not be present")
+		}
+	})
+
+	t.Run("should add both provider and collection volumes when both are non-nil", func(t *testing.T) {
+		providerCMNames := []string{"test-evalhub-provider-lm-eval"}
+		collectionCMNames := []string{"test-evalhub-collection-healthcare-safety", "test-evalhub-collection-finance"}
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, providerCMNames, collectionCMNames)
+		require.NoError(t, err)
+
+		podSpec := deploymentSpec.Template.Spec
+		container := findContainer(t, podSpec.Containers, containerName)
+
+		// Count base volumes (evalhub-config, tls, service-ca, mlflow-token) + providers + collections
+		var hasProviders, hasCollections bool
+		for _, v := range podSpec.Volumes {
+			if v.Name == providersVolumeName {
+				hasProviders = true
+			}
+			if v.Name == collectionsVolumeName {
+				hasCollections = true
+			}
+		}
+		assert.True(t, hasProviders, "providers volume should be present")
+		assert.True(t, hasCollections, "collections volume should be present")
+
+		// Verify both mounts exist on the container
+		var hasProviderMount, hasCollectionMount bool
+		for _, m := range container.VolumeMounts {
+			if m.Name == providersVolumeName {
+				hasProviderMount = true
+			}
+			if m.Name == collectionsVolumeName {
+				hasCollectionMount = true
+			}
+		}
+		assert.True(t, hasProviderMount, "provider volume mount should be present")
+		assert.True(t, hasCollectionMount, "collection volume mount should be present")
+	})
+
+	t.Run("should not include provider or collection volumes when both are nil", func(t *testing.T) {
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil)
+		require.NoError(t, err)
+
+		for _, v := range deploymentSpec.Template.Spec.Volumes {
+			assert.NotEqual(t, providersVolumeName, v.Name, "providers volume should not be present when nil")
+			assert.NotEqual(t, collectionsVolumeName, v.Name, "collections volume should not be present when nil")
+		}
+
+		container := findContainer(t, deploymentSpec.Template.Spec.Containers, containerName)
+		for _, m := range container.VolumeMounts {
+			assert.NotEqual(t, providersVolumeName, m.Name, "providers mount should not be present when nil")
+			assert.NotEqual(t, collectionsVolumeName, m.Name, "collections mount should not be present when nil")
+		}
+	})
+
 	t.Run("should handle default replicas when not specified", func(t *testing.T) {
 		evalHubNoReplicas := &evalhubv1alpha1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
@@ -210,12 +338,23 @@ func TestBuildDeploymentSpec(t *testing.T) {
 			},
 		}
 
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHubNoReplicas, nil)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHubNoReplicas, nil, nil)
 		require.NoError(t, err)
 
 		// Should use default replicas (1)
 		assert.Equal(t, int32(1), *deploymentSpec.Replicas)
 	})
+}
+
+func findContainer(t *testing.T, containers []corev1.Container, name string) *corev1.Container {
+	t.Helper()
+	for i, c := range containers {
+		if c.Name == name {
+			return &containers[i]
+		}
+	}
+	t.Fatalf("container %q not found", name)
+	return nil
 }
 
 func TestBuildServiceSpec(t *testing.T) {

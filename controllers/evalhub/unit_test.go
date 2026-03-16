@@ -72,7 +72,7 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 	}
 
 	t.Run("should create deployment with correct spec", func(t *testing.T) {
-		err := reconciler.reconcileDeployment(ctx, evalHub, nil)
+		err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
 		require.NoError(t, err)
 
 		// Verify deployment was created
@@ -149,7 +149,7 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 			EventRecorder: record.NewFakeRecorder(10),
 		}
 
-		err := reconcilerNoConfig.reconcileDeployment(ctx, evalHub, nil)
+		err := reconcilerNoConfig.reconcileDeployment(ctx, evalHub, nil, nil)
 		require.NoError(t, err)
 
 		// Verify the deployment was created with default image
@@ -1435,7 +1435,7 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 	}
 
 	t.Run("should add DB secret volume and mount when database configured", func(t *testing.T) {
-		err := reconciler.reconcileDeployment(ctx, evalHub, nil)
+		err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
 		require.NoError(t, err)
 
 		deployment := &appsv1.Deployment{}
@@ -1670,7 +1670,7 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 		require.Len(t, cmNames, 1)
 
 		// Then reconcile deployment with the provider ConfigMap names
-		err = reconciler.reconcileDeployment(ctx, evalHub, cmNames)
+		err = reconciler.reconcileDeployment(ctx, evalHub, cmNames, nil)
 		require.NoError(t, err)
 
 		// Verify the deployment has the projected volume
