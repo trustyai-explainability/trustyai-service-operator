@@ -259,6 +259,65 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		}, time.Second*10, time.Millisecond*100).Should(BeTrue())
 	})
 
+	It("should update the deployment when CR spec.env changes", func() {
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+
+		By("Initial reconciliation creates the deployment")
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Verifying initial env var exists")
+		Eventually(func() bool {
+			deployment := &appsv1.Deployment{}
+			err := k8sClient.Get(ctx, typeNamespacedName, deployment)
+			if err != nil {
+				return false
+			}
+			for _, env := range deployment.Spec.Template.Spec.Containers[0].Env {
+				if env.Name == "LOG_LEVEL" && env.Value == "DEBUG" {
+					return true
+				}
+			}
+			return false
+		}, time.Second*10, time.Millisecond*100).Should(BeTrue())
+
+		By("Updating the CR with a new env var")
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
+		nemo.Spec.Env = []corev1.EnvVar{
+			{Name: "LOG_LEVEL", Value: "DEBUG"},
+			{Name: "HF_HUB_OFFLINE", Value: "1"},
+		}
+		Expect(k8sClient.Update(ctx, nemo)).To(Succeed())
+
+		By("Re-reconciling picks up the change")
+		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Checking the deployment now has the new env var")
+		Eventually(func() bool {
+			deployment := &appsv1.Deployment{}
+			err := k8sClient.Get(ctx, typeNamespacedName, deployment)
+			if err != nil {
+				return false
+			}
+			for _, env := range deployment.Spec.Template.Spec.Containers[0].Env {
+				if env.Name == "HF_HUB_OFFLINE" && env.Value == "1" {
+					return true
+				}
+			}
+			return false
+		}, time.Second*10, time.Millisecond*100).Should(BeTrue())
+	})
+
 	It("should create a ServiceAccount and ClusterRoleBinding and delete them when the instance is deleted", func() {
 		controllerReconciler := &NemoGuardrailsReconciler{
 			Client:    k8sClient,

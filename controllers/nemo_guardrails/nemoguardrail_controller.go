@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"time"
 
@@ -128,7 +129,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	// ====== Create deployment ========================================================================================
+	// ====== Reconcile deployment =====================================================================================
 	existingDeployment := &appsv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Name: nemoGuardrails.Name, Namespace: nemoGuardrails.Namespace}, existingDeployment)
 	if err != nil && errors.IsNotFound(err) {
@@ -147,6 +148,25 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	} else if err != nil {
 		utils.LogErrorRetrieving(ctx, err, "deployment", nemoGuardrails.Name, nemoGuardrails.Namespace)
 		return ctrl.Result{}, err
+	} else {
+		// Update existing deployment to reflect CR changes (e.g. spec.env, configmap mounts)
+		desiredDeployment, err := r.createDeployment(ctx, nemoGuardrails, caBundleInitContainerConfig, configMapsToMount)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		if !reflect.DeepEqual(existingDeployment.Spec.Template.Spec.Containers, desiredDeployment.Spec.Template.Spec.Containers) ||
+			!reflect.DeepEqual(existingDeployment.Spec.Template.Spec.InitContainers, desiredDeployment.Spec.Template.Spec.InitContainers) ||
+			!reflect.DeepEqual(existingDeployment.Spec.Template.Spec.Volumes, desiredDeployment.Spec.Template.Spec.Volumes) {
+			existingDeployment.Spec.Template.Spec.Containers = desiredDeployment.Spec.Template.Spec.Containers
+			existingDeployment.Spec.Template.Spec.InitContainers = desiredDeployment.Spec.Template.Spec.InitContainers
+			existingDeployment.Spec.Template.Spec.Volumes = desiredDeployment.Spec.Template.Spec.Volumes
+			logger.Info("Updating deployment to match desired state", "deployment", nemoGuardrails.Name)
+			if err := r.Update(ctx, existingDeployment); err != nil {
+				utils.LogErrorUpdating(ctx, err, "deployment", nemoGuardrails.Name, nemoGuardrails.Namespace)
+				return ctrl.Result{}, err
+			}
+		}
 	}
 
 	// ====== Reconcile Service ===========================================================================================
