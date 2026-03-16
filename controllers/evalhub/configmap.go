@@ -86,7 +86,6 @@ type ResourceRequirementDef struct {
 
 // SidecarConfig represents the sidecar configuration in config.yaml
 type SidecarConfig struct {
-	Port             int                     `json:"port,omitempty"`
 	BaseURL          string                  `json:"base_url,omitempty"`
 	EvalHub          *EvalHubClientConfig    `json:"eval_hub"`
 	SidecarContainer *SidecarContainerConfig `json:"sidecar_container,omitempty"`
@@ -180,7 +179,6 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 			"enabled": true,
 		},
 		Sidecar: &SidecarConfig{
-			Port:    sidecarPort,
 			BaseURL: sidecarBaseURL,
 			EvalHub: &EvalHubClientConfig{
 				HTTPTimeout:        30 * time.Second,

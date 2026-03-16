@@ -61,7 +61,6 @@ const (
 	providersMountPath  = configDirPath + "/providers"
 
 	// Sidecar configuration
-	sidecarPort    = 8080
 	sidecarBaseURL = "http://localhost:8080"
 
 	// Collection ConfigMap configuration
