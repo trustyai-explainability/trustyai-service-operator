@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -58,6 +59,38 @@ type SecretsMapping struct {
 // EnvMappings maps environment variable names to config field paths
 type EnvMappings map[string]string
 
+// EvalHubClientConfig represents the eval-hub client configuration in config.yaml
+type EvalHubClientConfig struct {
+	HTTPTimeout        time.Duration `json:"http_timeout"`
+	CACertPath         string        `json:"ca_cert_path,omitempty"`
+	InsecureSkipVerify bool          `json:"insecure_skip_verify,omitempty"`
+}
+
+// SidecarContainerConfig represents the sidecar container configuration in config.yaml
+type SidecarContainerConfig struct {
+	Image     string                `json:"image,omitempty"`
+	Resources *ResourceRequirements `json:"resources,omitempty"`
+}
+
+// ResourceRequirements represents the resource requirements for the sidecar container in config.yaml
+type ResourceRequirements struct {
+	Requests *ResourceRequirementDef `json:"requests,omitempty"`
+	Limits   *ResourceRequirementDef `json:"limits,omitempty"`
+}
+
+// ResourceRequirementDef represents the resource requirement definition for the sidecar container in config.yaml
+type ResourceRequirementDef struct {
+	CPU    string `json:"cpu,omitempty"`
+	Memory string `json:"memory,omitempty"`
+}
+
+// SidecarConfig represents the sidecar configuration in config.yaml
+type SidecarConfig struct {
+	BaseURL          string                  `json:"base_url,omitempty"`
+	EvalHub          *EvalHubClientConfig    `json:"eval_hub"`
+	SidecarContainer *SidecarContainerConfig `json:"sidecar_container,omitempty"`
+}
+
 // EvalHubConfig represents the eval-hub configuration structure
 type EvalHubConfig struct {
 	Service     ServiceConfig   `json:"service"`
@@ -66,6 +99,7 @@ type EvalHubConfig struct {
 	Database    *DatabaseConfig `json:"database"`
 	OTEL        *OTELConfig     `json:"otel,omitempty"`
 	Prometheus  map[string]any  `json:"prometheus,omitempty"`
+	Sidecar     *SidecarConfig  `json:"sidecar,omitempty"`
 }
 
 // reconcileConfigMap creates or updates the ConfigMap for EvalHub configuration
@@ -143,6 +177,26 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		},
 		Prometheus: map[string]any{
 			"enabled": true,
+		},
+		Sidecar: &SidecarConfig{
+			BaseURL: sidecarBaseURL,
+			EvalHub: &EvalHubClientConfig{
+				HTTPTimeout:        30 * time.Second,
+				InsecureSkipVerify: false,
+			},
+			SidecarContainer: &SidecarContainerConfig{
+				Image: evalHubImage,
+				Resources: &ResourceRequirements{
+					Requests: &ResourceRequirementDef{
+						CPU:    "200m",
+						Memory: "512Mi",
+					},
+					Limits: &ResourceRequirementDef{
+						CPU:    "500m",
+						Memory: "2Gi",
+					},
+				},
+			},
 		},
 	}
 

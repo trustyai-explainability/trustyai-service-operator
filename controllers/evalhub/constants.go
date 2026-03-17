@@ -60,6 +60,9 @@ const (
 	providersVolumeName = "evalhub-providers"
 	providersMountPath  = configDirPath + "/providers"
 
+	// Sidecar configuration
+	sidecarBaseURL = "http://localhost:8080"
+
 	// Collection ConfigMap configuration
 	collectionLabel       = "trustyai.opendatahub.io/evalhub-collection-type"
 	collectionNameLabel   = "trustyai.opendatahub.io/evalhub-collection-name"
