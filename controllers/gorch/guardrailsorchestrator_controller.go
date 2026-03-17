@@ -223,7 +223,10 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 				r.handleReconciliationErrorWithTrace(ctx, log, orchestrator, err, utils.ReconcileFailed, "Failed to get existing ConfigMap", "ConfigMap.Name", *orchestrator.Spec.OrchestratorConfig, "ConfigMap.Namespace", orchestrator.Namespace)
 				return ctrl.Result{}, err
 			}
-			return ctrl.Result{}, nil
+			log.Info("Referenced orchestrator ConfigMap not found yet; retrying",
+				"ConfigMap.Name", *orchestrator.Spec.OrchestratorConfig,
+				"ConfigMap.Namespace", orchestrator.Namespace)
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 	}
 
@@ -406,14 +409,42 @@ func (r *GuardrailsOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) er
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&gorchv1alpha1.GuardrailsOrchestrator{}).
 		Owns(&appsv1.Deployment{}).
-		// ConfigMap watch removed: Watches(&corev1.ConfigMap{}, ...) creates a
-		// cluster-wide informer that caches ALL ConfigMaps across ALL namespaces,
-		// causing OOM under flooding attacks. Changes to orchestrator-config and
-		// gateway-config ConfigMaps are picked up during the periodic 30s resync
-		// (RequeueAfter in Reconcile). The handler only matched 2 specific named
-		// ConfigMaps, so the latency increase from periodic polling vs watch is
-		// negligible.
-		//
+		// Watch for changes to orchestrator-config or gateway-config ConfigMaps.
+		// OnlyMetadata caches only object metadata (~1KB each) instead of full
+		// objects, preventing OOM when many ConfigMaps exist cluster-wide.
+		Watches(
+			&corev1.ConfigMap{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
+				var requests []ctrl.Request
+				// List all GuardrailsOrchestrators in the namespace
+				var orchestrators gorchv1alpha1.GuardrailsOrchestratorList
+				if err := r.List(ctx, &orchestrators, &client.ListOptions{Namespace: obj.GetNamespace()}); err != nil {
+					return nil
+				}
+				for _, orch := range orchestrators.Items {
+					orchConfigMap := getOrchestratorConfigMap(&orch)
+					gatewayConfigMap := getGatewayConfigMap(&orch)
+
+					// apply a watch to the orch and gateway configs
+					if (orchConfigMap != nil && *orchConfigMap == obj.GetName()) ||
+						(gatewayConfigMap != nil && *gatewayConfigMap == obj.GetName()) {
+						requests = append(requests, ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      orch.Name,
+								Namespace: orch.Namespace,
+							},
+						})
+					}
+				}
+				return requests
+			}),
+			builder.WithPredicates(predicate.Or(
+				predicate.AnnotationChangedPredicate{},
+				predicate.ResourceVersionChangedPredicate{},
+				predicate.GenerationChangedPredicate{},
+			)),
+			builder.OnlyMetadata,
+		).
 		// Watch for changes to any matching InferenceService
 		Watches(
 			&kservev1beta1.InferenceService{},
