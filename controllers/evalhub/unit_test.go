@@ -1158,6 +1158,7 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 			},
 			Spec: evalhubv1alpha1.EvalHubSpec{
 				Database: &evalhubv1alpha1.DatabaseSpec{
+					Type:   "postgresql",
 					Secret: "my-db-secret",
 				},
 			},
@@ -1200,6 +1201,7 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 			},
 			Spec: evalhubv1alpha1.EvalHubSpec{
 				Database: &evalhubv1alpha1.DatabaseSpec{
+					Type:         "postgresql",
 					Secret:       "my-db-secret",
 					MaxOpenConns: 50,
 					MaxIdleConns: 10,
@@ -1229,7 +1231,7 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 		assert.Equal(t, 10, config.Database.MaxIdleConns)
 	})
 
-	t.Run("should default to sqlite when DB not explicitly configured", func(t *testing.T) {
+	t.Run("should not include database section when DB not configured", func(t *testing.T) {
 		evalHub := &evalhubv1alpha1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-evalhub",
@@ -1254,9 +1256,44 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
 		require.NoError(t, err)
 
-		assert.NotNil(t, config.Database)
+		assert.Nil(t, config.Database, "database section should be absent when not configured")
+		assert.Nil(t, config.Secrets, "secrets section should be absent when DB not configured")
+	})
+
+	t.Run("should configure sqlite when type is sqlite", func(t *testing.T) {
+		evalHub := &evalhubv1alpha1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1alpha1.EvalHubSpec{
+				Database: &evalhubv1alpha1.DatabaseSpec{
+					Type: "sqlite",
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		require.NotNil(t, config.Database)
 		assert.Equal(t, "sqlite", config.Database.Driver)
-		assert.Nil(t, config.Secrets)
+		assert.NotEmpty(t, config.Database.URL)
+		assert.Nil(t, config.Secrets, "secrets should be absent for sqlite")
 	})
 }
 
@@ -1407,6 +1444,7 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 		},
 		Spec: evalhubv1alpha1.EvalHubSpec{
 			Database: &evalhubv1alpha1.DatabaseSpec{
+				Type:   "postgresql",
 				Secret: dbSecretName,
 			},
 		},
@@ -1493,20 +1531,34 @@ func TestEvalHubHelperMethods_IsDatabaseConfigured(t *testing.T) {
 		assert.False(t, spec.IsDatabaseConfigured())
 	})
 
-	t.Run("should return false when Database.Secret is empty", func(t *testing.T) {
+	t.Run("should return false when Database.Type is empty", func(t *testing.T) {
 		spec := &evalhubv1alpha1.EvalHubSpec{
 			Database: &evalhubv1alpha1.DatabaseSpec{},
 		}
 		assert.False(t, spec.IsDatabaseConfigured())
 	})
 
-	t.Run("should return true when Database.Secret is set", func(t *testing.T) {
+	t.Run("should return true when Database.Type is postgresql", func(t *testing.T) {
 		spec := &evalhubv1alpha1.EvalHubSpec{
 			Database: &evalhubv1alpha1.DatabaseSpec{
+				Type:   "postgresql",
 				Secret: "my-secret",
 			},
 		}
 		assert.True(t, spec.IsDatabaseConfigured())
+		assert.True(t, spec.IsPostgreSQL())
+		assert.False(t, spec.IsSQLite())
+	})
+
+	t.Run("should return true when Database.Type is sqlite", func(t *testing.T) {
+		spec := &evalhubv1alpha1.EvalHubSpec{
+			Database: &evalhubv1alpha1.DatabaseSpec{
+				Type: "sqlite",
+			},
+		}
+		assert.True(t, spec.IsDatabaseConfigured())
+		assert.True(t, spec.IsSQLite())
+		assert.False(t, spec.IsPostgreSQL())
 	})
 }
 

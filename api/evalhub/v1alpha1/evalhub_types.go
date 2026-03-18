@@ -22,13 +22,18 @@ type EvalHub struct {
 
 // DatabaseSpec defines database configuration for EvalHub
 type DatabaseSpec struct {
-	// Name of the K8s Secret containing a pre-composed db-url key
-	Secret string `json:"secret"`
-	// Maximum number of open database connections
+	// Type of the database backend. Must be explicitly set.
+	// +kubebuilder:validation:Enum=sqlite;postgresql
+	Type string `json:"type"`
+	// Name of the K8s Secret containing a pre-composed db-url key.
+	// Required when type is "postgresql"; ignored for "sqlite".
+	// +optional
+	Secret string `json:"secret,omitempty"`
+	// Maximum number of open database connections (postgresql only)
 	// +kubebuilder:default:=25
 	// +optional
 	MaxOpenConns int `json:"maxOpenConns,omitempty"`
-	// Maximum number of idle database connections
+	// Maximum number of idle database connections (postgresql only)
 	// +kubebuilder:default:=5
 	// +optional
 	MaxIdleConns int `json:"maxIdleConns,omitempty"`
@@ -79,8 +84,10 @@ type EvalHubSpec struct {
 	Collections []string `json:"collections,omitempty"`
 
 	// Database configuration for persistent storage.
-	// When set, the operator configures PostgreSQL via the referenced secret.
-	// When omitted, the service uses its default (in-memory SQLite).
+	// This field is required: the operator will not start the service without
+	// an explicit database configuration.
+	// Set type to "postgresql" with a secret reference, or "sqlite" for
+	// lightweight/development deployments.
 	// +optional
 	Database *DatabaseSpec `json:"database,omitempty"`
 
@@ -172,9 +179,19 @@ func (e *EvalHubSpec) GetReplicas() int32 {
 	return *e.Replicas
 }
 
-// IsDatabaseConfigured returns true if the database spec is set with a secret name
+// IsDatabaseConfigured returns true if the database spec is set with an explicit type
 func (e *EvalHubSpec) IsDatabaseConfigured() bool {
-	return e.Database != nil && e.Database.Secret != ""
+	return e.Database != nil && e.Database.Type != ""
+}
+
+// IsPostgreSQL returns true if the database type is postgresql
+func (e *EvalHubSpec) IsPostgreSQL() bool {
+	return e.IsDatabaseConfigured() && e.Database.Type == "postgresql"
+}
+
+// IsSQLite returns true if the database type is sqlite
+func (e *EvalHubSpec) IsSQLite() bool {
+	return e.IsDatabaseConfigured() && e.Database.Type == "sqlite"
 }
 
 // IsOTELConfigured returns true if the OTEL spec is set

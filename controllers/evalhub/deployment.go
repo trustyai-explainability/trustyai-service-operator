@@ -177,7 +177,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			ReadOnly:  true,
 		})
 	}
-	if instance.Spec.IsDatabaseConfigured() {
+	if instance.Spec.IsPostgreSQL() {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      dbSecretVolumeName,
 			MountPath: dbSecretMountPath,
@@ -295,7 +295,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			},
 		})
 	}
-	if instance.Spec.IsDatabaseConfigured() {
+	if instance.Spec.IsPostgreSQL() {
 		volumes = append(volumes, corev1.Volume{
 			Name: dbSecretVolumeName,
 			VolumeSource: corev1.VolumeSource{

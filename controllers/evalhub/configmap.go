@@ -171,10 +171,6 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 			"MLFLOW_TOKEN_PATH":           "mlflow.token_path",
 			"MLFLOW_WORKSPACE":            "mlflow.workspace",
 		},
-		Database: &DatabaseConfig{
-			Driver: "sqlite",
-			URL:    "file::eval_hub:?mode=memory&cache=shared",
-		},
 		Prometheus: map[string]any{
 			"enabled": true,
 		},
@@ -200,8 +196,14 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		},
 	}
 
-	// Override database configuration when explicitly configured
-	if instance.Spec.IsDatabaseConfigured() {
+	// Database configuration — always present since the controller validates
+	// that spec.database is set before reaching this point.
+	if instance.Spec.IsSQLite() {
+		config.Database = &DatabaseConfig{
+			Driver: "sqlite",
+			URL:    "file::eval_hub:?mode=memory&cache=shared",
+		}
+	} else if instance.Spec.IsPostgreSQL() {
 		maxOpen, maxIdle := dbDefaultMaxOpen, dbDefaultMaxIdle
 		if instance.Spec.Database.MaxOpenConns > 0 {
 			maxOpen = instance.Spec.Database.MaxOpenConns

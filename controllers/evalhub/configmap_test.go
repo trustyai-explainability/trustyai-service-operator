@@ -213,7 +213,37 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			Expect(config.Secrets.Mappings).To(HaveKeyWithValue("db-url", "database.url"))
 		})
 
-		It("should default to sqlite when database is not explicitly configured", func() {
+		It("should configure sqlite when type is sqlite", func() {
+			By("Creating EvalHub with sqlite config")
+			sqliteEvalHub := createEvalHubInstanceWithSQLite("sqlite-configmap-evalhub", testNamespace)
+			Expect(k8sClient.Create(ctx, sqliteEvalHub)).Should(Succeed())
+			defer k8sClient.Delete(ctx, sqliteEvalHub)
+
+			By("Reconciling configmap")
+			err := reconciler.reconcileConfigMap(ctx, sqliteEvalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Getting configmap")
+			configMap := &corev1.ConfigMap{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "sqlite-configmap-evalhub-config",
+				Namespace: testNamespace,
+			}, configMap)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Parsing config.yaml")
+			var config EvalHubConfig
+			err = yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), &config)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking sqlite database section")
+			Expect(config.Database).NotTo(BeNil())
+			Expect(config.Database.Driver).To(Equal("sqlite"))
+			Expect(config.Database.URL).NotTo(BeEmpty())
+			Expect(config.Secrets).To(BeNil())
+		})
+
+		It("should not include database section when database is not configured", func() {
 			By("Reconciling configmap for standard EvalHub (no DB)")
 			err := reconciler.reconcileConfigMap(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
@@ -231,9 +261,8 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			err = yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), &config)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Checking default sqlite database is set and secrets are absent")
-			Expect(config.Database).NotTo(BeNil())
-			Expect(config.Database.Driver).To(Equal("sqlite"))
+			By("Checking database and secrets sections are absent")
+			Expect(config.Database).To(BeNil())
 			Expect(config.Secrets).To(BeNil())
 		})
 	})
