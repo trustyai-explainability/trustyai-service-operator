@@ -4,5 +4,24 @@ kind: Kustomization
 resources:
   - ../../base
 
-patchesStrategicMerge:
-  - lmes-only-patch.yaml
+components:
+  - ../../components/lmes
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app.kubernetes.io/part-of: trustyai
+
+namePrefix: trustyai-service-operator-
+
+patches:
+  - target:
+      kind: Deployment
+      name: controller-manager
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--enable-services"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "LMES"
