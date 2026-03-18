@@ -692,7 +692,7 @@ func (r *GuardrailsOrchestratorReconciler) redeployOnConfigMapChange(
 		if annotations == nil {
 			annotations = map[string]string{}
 		}
-		changedConfigs := r.setConfigMapHashAnnotations(ctx, orchestrator, annotations)
+		changedConfigs := r.setConfigMapHashAnnotations(ctx, orchestrator, annotations, existingConfigMap, existingGatewayConfigMap)
 
 		if len(changedConfigs) > 0 {
 			// refetch deployment
@@ -736,18 +736,35 @@ func (r *GuardrailsOrchestratorReconciler) redeployOnConfigMapChange(
 }
 
 // setConfigMapHashAnnotations applies hashes of the gateway-config and orchestrator-config to the orchestrator deployment, and returns
-// a list of any configmaps that have changed.
+// a list of any configmaps that have changed. When pre-fetched ConfigMaps are provided, they are used directly to avoid redundant
+// API server calls.
 func (r *GuardrailsOrchestratorReconciler) setConfigMapHashAnnotations(
 	ctx context.Context,
 	orchestrator *gorchv1alpha1.GuardrailsOrchestrator,
 	annotations map[string]string,
+	prefetchedCMs ...*corev1.ConfigMap,
 ) []string {
 	var changedConfigs []string
 
+	// Build a lookup map from any pre-fetched ConfigMaps
+	prefetched := make(map[string]*corev1.ConfigMap, len(prefetchedCMs))
+	for _, cm := range prefetchedCMs {
+		if cm != nil {
+			prefetched[cm.Name] = cm
+		}
+	}
+
 	// Orchestrator config hash
 	if getOrchestratorConfigMap(orchestrator) != nil {
-		cm := &corev1.ConfigMap{}
-		if err := r.Get(ctx, types.NamespacedName{Name: *getOrchestratorConfigMap(orchestrator), Namespace: orchestrator.Namespace}, cm); err == nil {
+		cmName := *getOrchestratorConfigMap(orchestrator)
+		cm, ok := prefetched[cmName]
+		if !ok {
+			cm = &corev1.ConfigMap{}
+			if err := r.Get(ctx, types.NamespacedName{Name: cmName, Namespace: orchestrator.Namespace}, cm); err != nil {
+				cm = nil
+			}
+		}
+		if cm != nil {
 			configData := cm.Data["config.yaml"]
 			hash := fmt.Sprintf("%x", sha256.Sum256([]byte(configData)))
 			if annotations["trustyai.opendatahub.io/orchestrator-config-hash"] != hash {
@@ -759,8 +776,15 @@ func (r *GuardrailsOrchestratorReconciler) setConfigMapHashAnnotations(
 
 	// Gateway config hash
 	if orchestrator.Spec.EnableGuardrailsGateway && getGatewayConfigMap(orchestrator) != nil {
-		cm := &corev1.ConfigMap{}
-		if err := r.Get(ctx, types.NamespacedName{Name: *getGatewayConfigMap(orchestrator), Namespace: orchestrator.Namespace}, cm); err == nil {
+		cmName := *getGatewayConfigMap(orchestrator)
+		cm, ok := prefetched[cmName]
+		if !ok {
+			cm = &corev1.ConfigMap{}
+			if err := r.Get(ctx, types.NamespacedName{Name: cmName, Namespace: orchestrator.Namespace}, cm); err != nil {
+				cm = nil
+			}
+		}
+		if cm != nil {
 			configData := cm.Data["config.yaml"]
 			hash := fmt.Sprintf("%x", sha256.Sum256([]byte(configData)))
 			if annotations["trustyai.opendatahub.io/orchestrator-gateway-config-hash"] != hash {
