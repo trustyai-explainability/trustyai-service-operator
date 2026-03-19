@@ -59,23 +59,35 @@ spec:
               database:
                 description: |-
                   Database configuration for persistent storage.
-                  When set, the operator configures PostgreSQL via the referenced secret.
-                  When omitted, the service uses its default (in-memory SQLite).
+                  This field is required: the operator will not start the service without
+                  an explicit database configuration.
+                  Set type to "postgresql" with a secret reference, or "sqlite" for
+                  lightweight/development deployments.
                 properties:
                   maxIdleConns:
                     default: 5
-                    description: Maximum number of idle database connections
+                    description: Maximum number of idle database connections (postgresql
+                      only)
                     type: integer
                   maxOpenConns:
                     default: 25
-                    description: Maximum number of open database connections
+                    description: Maximum number of open database connections (postgresql
+                      only)
                     type: integer
                   secret:
-                    description: Name of the K8s Secret containing a pre-composed
-                      db-url key
+                    description: |-
+                      Name of the K8s Secret containing a pre-composed db-url key.
+                      Required when type is "postgresql"; ignored for "sqlite".
+                    type: string
+                  type:
+                    description: Type of the database backend. Must be explicitly
+                      set.
+                    enum:
+                    - sqlite
+                    - postgresql
                     type: string
                 required:
-                - secret
+                - type
                 type: object
               env:
                 description: Environment variables for the eval-hub container

@@ -106,6 +106,33 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return RequeueWithDelay(time.Second * 5)
 	}
 
+	// Validate that database configuration is explicitly provided
+	if !instance.Spec.IsDatabaseConfigured() {
+		log.Error(nil, "Database configuration is missing from EvalHub spec - database settings must be explicit")
+		instance.SetStatus("Ready", "DatabaseConfigMissing",
+			"spec.database is required: set spec.database.type to \"sqlite\" or \"postgresql\". "+
+				"The operator does not assume a default database.",
+			corev1.ConditionFalse)
+		instance.Status.Phase = "Error"
+		r.Status().Update(ctx, instance)
+		r.EventRecorder.Event(instance, corev1.EventTypeWarning, "DatabaseConfigMissing",
+			"Database configuration is required but not provided in spec.database")
+		return RequeueWithError(fmt.Errorf("spec.database is required: the operator does not assume a default database"))
+	}
+
+	// Validate that postgresql has a secret reference
+	if instance.Spec.IsPostgreSQL() && instance.Spec.Database.Secret == "" {
+		log.Error(nil, "PostgreSQL database type requires a secret reference")
+		instance.SetStatus("Ready", "DatabaseConfigInvalid",
+			"spec.database.secret is required when type is \"postgresql\"",
+			corev1.ConditionFalse)
+		instance.Status.Phase = "Error"
+		r.Status().Update(ctx, instance)
+		r.EventRecorder.Event(instance, corev1.EventTypeWarning, "DatabaseConfigInvalid",
+			"PostgreSQL database type requires spec.database.secret to reference a Secret with a db-url key")
+		return RequeueWithError(fmt.Errorf("spec.database.secret is required for postgresql"))
+	}
+
 	// Create ServiceAccount for EvalHub
 	err = r.createServiceAccount(ctx, instance)
 	if err != nil {

@@ -136,6 +136,26 @@ var _ = Describe("EvalHub Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Requeue).To(BeFalse())
 		})
+
+		It("should fail reconciliation when database config is missing", func() {
+			By("Performing initial reconciliations to set status and finalizer")
+			performReconcile(reconciler, evalHubName, testNamespace)
+			performReconcile(reconciler, evalHubName, testNamespace)
+
+			By("Performing third reconciliation which should fail on missing database config")
+			_, err := performReconcile(reconciler, evalHubName, testNamespace)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("spec.database is required"))
+
+			By("Checking status is set to Error with correct reason")
+			updatedEvalHub := &evalhubv1alpha1.EvalHub{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      evalHubName,
+				Namespace: testNamespace,
+			}, updatedEvalHub)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updatedEvalHub.Status.Phase).To(Equal("Error"))
+		})
 	})
 
 	Context("When reconciling with errors", func() {
@@ -190,8 +210,8 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 			Expect(k8sClient.Create(ctx, cm)).Should(Succeed())
 		}
 
-		// Create EvalHub instance
-		evalHub = createEvalHubInstance(evalHubName, testNamespace)
+		// Create EvalHub instance with database config (required)
+		evalHub = createEvalHubInstanceWithDB(evalHubName, testNamespace, "evalhub-db-credentials")
 		Expect(k8sClient.Create(ctx, evalHub)).Should(Succeed())
 
 		// Setup reconciler

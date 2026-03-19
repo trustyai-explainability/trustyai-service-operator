@@ -263,11 +263,21 @@ func deleteNamespace(namespace *corev1.Namespace) {
 	}
 }
 
-// createEvalHubInstanceWithDB creates an EvalHub instance with database configuration for testing
+// createEvalHubInstanceWithDB creates an EvalHub instance with PostgreSQL database configuration for testing
 func createEvalHubInstanceWithDB(name, namespace, secretName string) *evalhubv1alpha1.EvalHub {
 	instance := createEvalHubInstance(name, namespace)
 	instance.Spec.Database = &evalhubv1alpha1.DatabaseSpec{
+		Type:   "postgresql",
 		Secret: secretName,
+	}
+	return instance
+}
+
+// createEvalHubInstanceWithSQLite creates an EvalHub instance with SQLite database configuration for testing
+func createEvalHubInstanceWithSQLite(name, namespace string) *evalhubv1alpha1.EvalHub {
+	instance := createEvalHubInstance(name, namespace)
+	instance.Spec.Database = &evalhubv1alpha1.DatabaseSpec{
+		Type: "sqlite",
 	}
 	return instance
 }
