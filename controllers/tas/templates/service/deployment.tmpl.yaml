@@ -11,6 +11,7 @@ metadata:
     app.kubernetes.io/name: {{ .Instance.Name }}
     app.kubernetes.io/part-of: trustyai
     app.kubernetes.io/version: {{ .Version }}
+    app.kubernetes.io/managed-by: trustyai-service-operator
 spec:
   strategy:
     type: RollingUpdate

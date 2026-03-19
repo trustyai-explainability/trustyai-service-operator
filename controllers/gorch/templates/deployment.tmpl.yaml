@@ -66,6 +66,7 @@ metadata:
     app.kubernetes.io/instance: {{.Orchestrator.Name}}
     app.kubernetes.io/name: {{.Orchestrator.Name}}
     app.kubernetes.io/part-of: trustyai
+    app.kubernetes.io/managed-by: trustyai-service-operator
 spec:
   replicas: 1
   selector:

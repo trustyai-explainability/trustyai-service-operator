@@ -356,6 +356,9 @@ func (r *GuardrailsOrchestratorReconciler) defineOrchestratorConfigMap(
 		ObjectMeta: ctrl.ObjectMeta{
 			Name:      configMapName,
 			Namespace: namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "trustyai-service-operator",
+			},
 		},
 		Data: map[string]string{
 			"config.yaml": configYaml.String(),
@@ -377,8 +380,16 @@ func (r *GuardrailsOrchestratorReconciler) applyOrchestratorConfigMap(ctx contex
 	existingCM := &corev1.ConfigMap{}
 	err := r.Get(ctx, types.NamespacedName{Name: cm.Name, Namespace: cm.Namespace}, existingCM)
 	if err == nil {
+		// Ensure managed-by label is present
+		if existingCM.Labels == nil {
+			existingCM.Labels = make(map[string]string)
+		}
+		needsUpdate := existingCM.Labels["app.kubernetes.io/managed-by"] != "trustyai-service-operator"
+		if needsUpdate {
+			existingCM.Labels["app.kubernetes.io/managed-by"] = "trustyai-service-operator"
+		}
 		// ConfigMap exists, check if data is the same
-		if existingCM.Data["config.yaml"] == cm.Data["config.yaml"] {
+		if existingCM.Data["config.yaml"] == cm.Data["config.yaml"] && !needsUpdate {
 			//pass
 		} else {
 			existingCM.Data = cm.Data
@@ -463,6 +474,9 @@ func (r *GuardrailsOrchestratorReconciler) defineGatewayConfigMap(
 		ObjectMeta: ctrl.ObjectMeta{
 			Name:      configMapName,
 			Namespace: orchestrator.Namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "trustyai-service-operator",
+			},
 		},
 		Data: map[string]string{
 			"config.yaml": configYaml.String(),
@@ -484,14 +498,19 @@ func (r *GuardrailsOrchestratorReconciler) applyGatewayConfigMap(ctx context.Con
 	existingCM := &corev1.ConfigMap{}
 	err := r.Get(ctx, types.NamespacedName{Name: cm.Name, Namespace: cm.Namespace}, existingCM)
 	if err == nil {
+		// Ensure managed-by label is present
+		if existingCM.Labels == nil {
+			existingCM.Labels = map[string]string{}
+		}
+		needsUpdate := existingCM.Labels["app.kubernetes.io/managed-by"] != "trustyai-service-operator"
+		if needsUpdate {
+			existingCM.Labels["app.kubernetes.io/managed-by"] = "trustyai-service-operator"
+		}
 		// ConfigMap exists, check if data is the same
-		if existingCM.Data["config.yaml"] == cm.Data["config.yaml"] {
+		if existingCM.Data["config.yaml"] == cm.Data["config.yaml"] && !needsUpdate {
 			//pass
 		} else {
 			// if not, add "outdated" label
-			if existingCM.Labels == nil {
-				existingCM.Labels = map[string]string{}
-			}
 			existingCM.Labels["trustyai/has-diverged-from-auto-config"] = "true"
 			if updateErr := r.Update(ctx, existingCM); updateErr != nil {
 				log.Error(updateErr, "Failed to label existing orchestrator configmap as outdated")

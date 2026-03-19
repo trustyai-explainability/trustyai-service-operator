@@ -1336,7 +1336,8 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 
 func getPodLabels(src map[string]string, log logr.Logger) map[string]string {
 	labels := map[string]string{
-		"app.kubernetes.io/name": "ta-lmes",
+		"app.kubernetes.io/name":       "ta-lmes",
+		"app.kubernetes.io/managed-by": "trustyai-service-operator",
 	}
 	mergeMapWithFilters(labels, src, labelFilterPrefixes, log)
 	return labels

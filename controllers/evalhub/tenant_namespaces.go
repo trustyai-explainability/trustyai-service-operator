@@ -182,12 +182,23 @@ func (r *EvalHubReconciler) createTenantServiceCAConfigMap(ctx context.Context, 
 	cm := &corev1.ConfigMap{}
 	err := r.Get(ctx, client.ObjectKey{Name: cmName, Namespace: namespace}, cm)
 	if err == nil {
-		// Already exists — ensure annotation is present
+		// Already exists — ensure annotation and label are present
+		var needsUpdate bool
 		if cm.Annotations == nil {
 			cm.Annotations = make(map[string]string)
 		}
 		if cm.Annotations["service.beta.openshift.io/inject-cabundle"] != "true" {
 			cm.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
+			needsUpdate = true
+		}
+		if cm.Labels == nil {
+			cm.Labels = make(map[string]string)
+		}
+		if cm.Labels["app.kubernetes.io/managed-by"] != "trustyai-service-operator" {
+			cm.Labels["app.kubernetes.io/managed-by"] = "trustyai-service-operator"
+			needsUpdate = true
+		}
+		if needsUpdate {
 			return r.Update(ctx, cm)
 		}
 		return nil

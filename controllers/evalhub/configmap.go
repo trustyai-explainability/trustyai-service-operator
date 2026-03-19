@@ -111,6 +111,9 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name + "-config",
 			Namespace: instance.Namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "trustyai-service-operator",
+			},
 		},
 	}
 
@@ -137,7 +140,11 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 		log.Info("Creating ConfigMap", "name", configMap.Name)
 		return r.Create(ctx, configMap)
 	} else {
-		// Update existing ConfigMap
+		// Update existing ConfigMap — ensure label is present
+		if configMap.Labels == nil {
+			configMap.Labels = make(map[string]string)
+		}
+		configMap.Labels["app.kubernetes.io/managed-by"] = "trustyai-service-operator"
 		configMap.Data = configData
 		log.Info("Updating ConfigMap", "name", configMap.Name)
 		return r.Update(ctx, configMap)
@@ -451,6 +458,9 @@ func (r *EvalHubReconciler) reconcileProviderConfigMaps(ctx context.Context, ins
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      targetName,
 				Namespace: instance.Namespace,
+				Labels: map[string]string{
+					"app.kubernetes.io/managed-by": "trustyai-service-operator",
+				},
 			},
 		}
 
@@ -472,6 +482,10 @@ func (r *EvalHubReconciler) reconcileProviderConfigMaps(ctx context.Context, ins
 				return nil, err
 			}
 		} else {
+			if configMap.Labels == nil {
+				configMap.Labels = make(map[string]string)
+			}
+			configMap.Labels["app.kubernetes.io/managed-by"] = "trustyai-service-operator"
 			configMap.Data = src.Data
 			log.Info("Updating Provider ConfigMap", "name", targetName, "provider", providerName)
 			if err := r.Update(ctx, configMap); err != nil {
@@ -524,6 +538,9 @@ func (r *EvalHubReconciler) reconcileCollectionConfigMaps(ctx context.Context, i
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      targetName,
 				Namespace: instance.Namespace,
+				Labels: map[string]string{
+					"app.kubernetes.io/managed-by": "trustyai-service-operator",
+				},
 			},
 		}
 
@@ -545,6 +562,10 @@ func (r *EvalHubReconciler) reconcileCollectionConfigMaps(ctx context.Context, i
 				return nil, err
 			}
 		} else {
+			if configMap.Labels == nil {
+				configMap.Labels = make(map[string]string)
+			}
+			configMap.Labels["app.kubernetes.io/managed-by"] = "trustyai-service-operator"
 			configMap.Data = src.Data
 			log.Info("Updating Collection ConfigMap", "name", targetName, "collection", collectionName)
 			if err := r.Update(ctx, configMap); err != nil {
@@ -600,6 +621,9 @@ func (r *EvalHubReconciler) reconcileServiceCAConfigMap(ctx context.Context, ins
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name + "-service-ca",
 			Namespace: instance.Namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "trustyai-service-operator",
+			},
 			Annotations: map[string]string{
 				// This annotation triggers OpenShift service CA operator to inject the CA certificate
 				"service.beta.openshift.io/inject-cabundle": "true",
@@ -626,6 +650,10 @@ func (r *EvalHubReconciler) reconcileServiceCAConfigMap(ctx context.Context, ins
 		return r.Create(ctx, configMap)
 	} else {
 		// Update existing ConfigMap to ensure annotation is present
+		if configMap.Labels == nil {
+			configMap.Labels = make(map[string]string)
+		}
+		configMap.Labels["app.kubernetes.io/managed-by"] = "trustyai-service-operator"
 		if configMap.Annotations == nil {
 			configMap.Annotations = make(map[string]string)
 		}

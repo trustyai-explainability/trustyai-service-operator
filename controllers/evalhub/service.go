@@ -38,9 +38,10 @@ func (r *EvalHubReconciler) reconcileService(ctx context.Context, instance *eval
 		// Create new Service
 		service.Spec = desiredSpec
 		service.Labels = map[string]string{
-			"app":       "eval-hub",
-			"instance":  instance.Name,
-			"component": "api",
+			"app":                          "eval-hub",
+			"instance":                     instance.Name,
+			"component":                    "api",
+			"app.kubernetes.io/managed-by": "trustyai-service-operator",
 		}
 		service.Annotations = map[string]string{
 			"service.beta.openshift.io/serving-cert-secret-name": instance.Name + "-tls",
@@ -56,7 +57,11 @@ func (r *EvalHubReconciler) reconcileService(ctx context.Context, instance *eval
 		service.Spec.Selector = desiredSpec.Selector
 		service.Spec.Type = desiredSpec.Type
 
-		// Ensure OpenShift serving certificate annotation is present
+		// Ensure labels and annotations are present
+		if service.Labels == nil {
+			service.Labels = make(map[string]string)
+		}
+		service.Labels["app.kubernetes.io/managed-by"] = "trustyai-service-operator"
 		if service.Annotations == nil {
 			service.Annotations = make(map[string]string)
 		}

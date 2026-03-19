@@ -24,17 +24,23 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -55,6 +61,38 @@ var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
 )
+
+const (
+	ManagedByLabelKey   = "app.kubernetes.io/managed-by"
+	ManagedByLabelValue = "trustyai-service-operator"
+)
+
+// stripManagedFields removes managedFields from cached objects to reduce memory usage.
+func stripManagedFields(obj interface{}) (interface{}, error) {
+	accessor, err := meta.Accessor(obj)
+	if err != nil {
+		return obj, nil
+	}
+	accessor.SetManagedFields(nil)
+	return obj, nil
+}
+
+func newCacheOptions() cache.Options {
+	managedBySelector := labels.SelectorFromSet(labels.Set{
+		ManagedByLabelKey: ManagedByLabelValue,
+	})
+	managedByFilter := cache.ByObject{Label: managedBySelector}
+
+	return cache.Options{
+		DefaultTransform: stripManagedFields,
+		ByObject: map[client.Object]cache.ByObject{
+			&corev1.ConfigMap{}:  managedByFilter,
+			&appsv1.Deployment{}: managedByFilter,
+			&corev1.Service{}:    managedByFilter,
+			&corev1.Pod{}:        managedByFilter,
+		},
+	}
+}
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
@@ -116,6 +154,15 @@ func main() {
 		// if you are doing or is intended to do any operation such as perform cleanups
 		// after the manager stops then its usage might be unsafe.
 		// LeaderElectionReleaseOnCancel: true,
+		Cache: newCacheOptions(),
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				DisableFor: []client.Object{
+					&corev1.ConfigMap{},
+					&corev1.Secret{},
+				},
+			},
+		},
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")

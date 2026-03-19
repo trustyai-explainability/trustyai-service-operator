@@ -25,6 +25,9 @@ func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *e
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name,
 			Namespace: instance.Namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "trustyai-service-operator",
+			},
 		},
 	}
 
