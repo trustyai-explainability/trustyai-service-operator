@@ -66,6 +66,12 @@ type EvalHubClientConfig struct {
 	InsecureSkipVerify bool          `json:"insecure_skip_verify,omitempty"`
 }
 
+type OCIRegistryClientConfig struct {
+	HTTPTimeout        time.Duration `json:"http_timeout"`
+	CACertPath         string        `json:"ca_cert_path,omitempty"`
+	InsecureSkipVerify bool          `json:"insecure_skip_verify,omitempty"`
+}
+
 // SidecarContainerConfig represents the sidecar container configuration in config.yaml
 type SidecarContainerConfig struct {
 	Image     string                `json:"image,omitempty"`
@@ -86,9 +92,10 @@ type ResourceRequirementDef struct {
 
 // SidecarConfig represents the sidecar configuration in config.yaml
 type SidecarConfig struct {
-	BaseURL          string                  `json:"base_url,omitempty"`
-	EvalHub          *EvalHubClientConfig    `json:"eval_hub"`
-	SidecarContainer *SidecarContainerConfig `json:"sidecar_container,omitempty"`
+	BaseURL          string                   `json:"base_url,omitempty"`
+	EvalHub          *EvalHubClientConfig     `json:"eval_hub"`
+	OCI              *OCIRegistryClientConfig `json:"oci"`
+	SidecarContainer *SidecarContainerConfig  `json:"sidecar_container,omitempty"`
 }
 
 // EvalHubConfig represents the eval-hub configuration structure
@@ -179,6 +186,9 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 			EvalHub: &EvalHubClientConfig{
 				HTTPTimeout:        30 * time.Second,
 				InsecureSkipVerify: false,
+			},
+			OCI: &OCIRegistryClientConfig{
+				InsecureSkipVerify: true, // This should be disabled. Will be updated soon.
 			},
 			SidecarContainer: &SidecarContainerConfig{
 				Image: evalHubImage,
