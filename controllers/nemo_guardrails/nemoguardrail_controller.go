@@ -25,6 +25,7 @@ import (
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/nemo_guardrails/templates"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -148,20 +149,19 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		utils.LogErrorRetrieving(ctx, err, "deployment", nemoGuardrails.Name, nemoGuardrails.Namespace)
 		return ctrl.Result{}, err
 	} else {
-		// Deployment exists - update it with desired spec
+		// Deployment exists - update only if the spec actually changed
 		deployment, err := r.createDeployment(ctx, nemoGuardrails, caBundleInitContainerConfig, configMapsToMount)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 
-		// Update the existing deployment's spec to match desired state
-		// Kubernetes will handle the comparison and only update if actually changed
-		existingDeployment.Spec = deployment.Spec
-
-		err = r.Update(ctx, existingDeployment)
-		if err != nil {
-			utils.LogErrorUpdating(ctx, err, "deployment", existingDeployment.Name, existingDeployment.Namespace)
-			return ctrl.Result{}, err
+		if !equality.Semantic.DeepEqual(existingDeployment.Spec, deployment.Spec) {
+			existingDeployment.Spec = deployment.Spec
+			err = r.Update(ctx, existingDeployment)
+			if err != nil {
+				utils.LogErrorUpdating(ctx, err, "deployment", existingDeployment.Name, existingDeployment.Namespace)
+				return ctrl.Result{}, err
+			}
 		}
 	}
 
