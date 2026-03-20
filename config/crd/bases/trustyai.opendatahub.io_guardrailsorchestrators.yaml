@@ -216,11 +216,13 @@ spec:
                     type: string
                 type: object
               replicas:
+                default: 1
                 description: |-
                   INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
                   Important: Run "make" to regenerate code after modifying this file
                   Number of replicas
                 format: int32
+                minimum: 1
                 type: integer
               tlsSecrets:
                 description: Define TLS secrets to be mounted to the orchestrator.
@@ -228,8 +230,6 @@ spec:
                 items:
                   type: string
                 type: array
-            required:
-            - replicas
             type: object
           status:
             properties:
