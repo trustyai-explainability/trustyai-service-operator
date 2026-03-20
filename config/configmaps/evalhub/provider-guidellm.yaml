@@ -17,10 +17,10 @@ data:
         entrypoint:
         - python
         - main.py
-        cpu_request: 100m
-        memory_request: 128Mi
-        cpu_limit: 1000m
-        memory_limit: 2Gi
+        cpu_request: 250m
+        memory_request: 512Mi
+        cpu_limit: 2000m
+        memory_limit: 4Gi
       local: null
     benchmarks:
     - id: sweep
