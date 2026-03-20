@@ -317,6 +317,7 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					return false
 				},
 			}),
+			builder.OnlyMetadata,
 		).
 		Complete(r)
 }
