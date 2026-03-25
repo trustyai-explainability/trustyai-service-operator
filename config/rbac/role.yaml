@@ -34,12 +34,6 @@ rules:
   - ""
   resources:
   - namespaces
-  verbs:
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - persistentvolumes
   verbs:
   - get
@@ -89,6 +83,15 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
 - apiGroups:
   - coordination.k8s.io
   resources:
