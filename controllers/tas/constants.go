@@ -84,3 +84,9 @@ const (
 )
 
 const migrationAnnotationKey = "trustyai.opendatahub.io/db-migration"
+
+// KServe logger HTTP annotation: when set to "true" on a TrustyAIService CR,
+// the operator injects an HTTP (not HTTPS) logger URL into KServe InferenceServices.
+// This avoids x509 certificate verification failures for cluster-internal traffic.
+// See: RHOAIENG-38132
+const kserveLoggerHTTPAnnotationKey = "trustyai.opendatahub.io/kserve-logger-http"
