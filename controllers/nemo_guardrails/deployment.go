@@ -161,6 +161,11 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 		return nil, err
 	}
 
+	// Set replicas from CR spec
+	if nemoGuardrails.Spec.Replicas != nil {
+		deployment.Spec.Replicas = nemoGuardrails.Spec.Replicas
+	}
+
 	// Add user guardrail configs to deployment
 	err = r.mountNemoConfigs(ctx, nemoGuardrails, deployment)
 	if err != nil {
