@@ -36,6 +36,9 @@ spec:
             - "TAS,LMES,GORCH,NEMO_GUARDRAILS,EVALHUB"
           image: $(trustyaiOperatorImage)
           name: manager
+          env:
+            - name: GOMEMLIMIT
+              value: "630MiB"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

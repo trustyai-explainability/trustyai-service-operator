@@ -161,6 +161,11 @@ func (in *NemoGuardrailsSpec) DeepCopyInto(out *NemoGuardrailsSpec) {
 		in, out := &in.CABundleConfig, &out.CABundleConfig
 		*out = (*in).DeepCopy()
 	}
+	if in.Replicas != nil {
+		in, out := &in.Replicas, &out.Replicas
+		*out = new(int32)
+		**out = **in
+	}
 	if in.Env != nil {
 		in, out := &in.Env, &out.Env
 		*out = make([]v1.EnvVar, len(*in))

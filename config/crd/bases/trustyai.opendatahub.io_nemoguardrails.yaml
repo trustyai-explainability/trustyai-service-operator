@@ -204,6 +204,12 @@ spec:
                       type: string
                   type: object
                 type: array
+              replicas:
+                default: 1
+                description: Number of replicas for the NeMo Guardrails deployment
+                format: int32
+                minimum: 1
+                type: integer
             required:
             - nemoConfigs
             type: object

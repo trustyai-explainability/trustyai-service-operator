@@ -44,6 +44,11 @@ type NemoGuardrailsSpec struct {
 	// NemoConfig should be the names of the configmaps containing NeMO server configuration files. All files in NemoConfigs will be mounted to /app/config/$Name
 	NemoConfigs    []NemoConfig           `json:"nemoConfigs"`
 	CABundleConfig *common.CABundleConfig `json:"caBundleConfig,omitempty"`
+	// Number of replicas for the NeMo Guardrails deployment
+	// +optional
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=1
+	Replicas *int32 `json:"replicas,omitempty"`
 	// Define Env information for the main container
 	// +optional
 	Env []corev1.EnvVar `json:"env,omitempty"`

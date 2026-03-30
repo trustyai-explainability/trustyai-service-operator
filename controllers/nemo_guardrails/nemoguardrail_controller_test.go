@@ -259,6 +259,57 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		}, time.Second*10, time.Millisecond*100).Should(BeTrue())
 	})
 
+	It("should default to 1 replica when replicas is not set in CR spec", func() {
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Checking if the Deployment defaults to 1 replica")
+		Eventually(func() int32 {
+			deployment := &appsv1.Deployment{}
+			err := k8sClient.Get(ctx, typeNamespacedName, deployment)
+			if err != nil || deployment.Spec.Replicas == nil {
+				return 0
+			}
+			return *deployment.Spec.Replicas
+		}, time.Second*10, time.Millisecond*100).Should(Equal(int32(1)))
+	})
+
+	It("should set deployment replicas from CR spec", func() {
+		By("Updating the NemoGuardrails resource with replicas=3")
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
+		replicas := int32(3)
+		nemo.Spec.Replicas = &replicas
+		Expect(k8sClient.Update(ctx, nemo)).To(Succeed())
+
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Checking if the Deployment has 3 replicas")
+		Eventually(func() int32 {
+			deployment := &appsv1.Deployment{}
+			err := k8sClient.Get(ctx, typeNamespacedName, deployment)
+			if err != nil || deployment.Spec.Replicas == nil {
+				return 0
+			}
+			return *deployment.Spec.Replicas
+		}, time.Second*10, time.Millisecond*100).Should(Equal(int32(3)))
+	})
+
 	It("should create a ServiceAccount and ClusterRoleBinding and delete them when the instance is deleted", func() {
 		controllerReconciler := &NemoGuardrailsReconciler{
 			Client:    k8sClient,
