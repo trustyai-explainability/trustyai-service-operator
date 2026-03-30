@@ -17,29 +17,6 @@ import (
 )
 
 var _ = Describe("Evaluation job failure reconciler helpers", func() {
-	Describe("parseEvalHubJobSA", func() {
-		DescribeTable("parses or rejects service account names",
-			func(saName string, wantName, wantNS string, wantError bool) {
-				By("parsing " + saName)
-				gotName, gotNS, err := parseEvalHubJobSA(saName)
-				if wantError {
-					Expect(err).To(HaveOccurred(), "expected error for SA name %q", saName)
-					return
-				}
-				Expect(err).NotTo(HaveOccurred(), "parseEvalHubJobSA(%q)", saName)
-				Expect(gotName).To(Equal(wantName), "EvalHub CR name")
-				Expect(gotNS).To(Equal(wantNS), "EvalHub namespace")
-			},
-			Entry("evalhub-prabhu-job", "evalhub-prabhu-job", "evalhub", "prabhu", false),
-			Entry("eval-hub-prabhu-job", "eval-hub-prabhu-job", "eval-hub", "prabhu", false),
-			// Namespace must be a single hyphen-free segment for unambiguous parse (matches common case prabhu, prod, etc.).
-			Entry("my-evalhub-myns-job", "my-evalhub-myns-job", "my-evalhub", "myns", false),
-			Entry("no-suffix", "no-suffix", "", "", true),
-			Entry("only-job", "only-job", "", "", true),
-			Entry("x-job", "x-job", "", "", true),
-		)
-	})
-
 	Describe("benchmarkIndexFromJob", func() {
 		DescribeTable("returns benchmark index from Job labels",
 			func(job *batchv1.Job, want int) {

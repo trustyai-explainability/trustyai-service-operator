@@ -647,8 +647,8 @@ func failurePendingReport(job *batchv1.Job) bool {
 	return job.Annotations[annotationFailurePending] == "true"
 }
 
-// getEvalHubURLFromJob resolves the EvalHub API base URL from Job labels (preferred) or legacy ServiceAccount name.
-// Labels are set by eval-hub job_builders (evalhub_instance_name|evalhub_instance_namespace).
+// getEvalHubURLFromJob resolves the EvalHub API base URL from Job labels evalhub_instance_name and evalhub_instance_namespace
+// (set by eval-hub k8s runtime). Both labels are required.
 func (r *EvalHubEvaluationJobFailureReconciler) getEvalHubURLFromJob(ctx context.Context, job *batchv1.Job) (string, error) {
 	var name, namespace string
 	if job.Labels != nil {
@@ -662,16 +662,8 @@ func (r *EvalHubEvaluationJobFailureReconciler) getEvalHubURLFromJob(ctx context
 		return "", fmt.Errorf("evalhub instance labels incomplete: need both %q and %q (got evalhub_instance_name=%q evalhub_instance_namespace=%q)",
 			evalHubInstanceNameLabel, evalHubInstanceNamespaceLabel, name, namespace)
 	}
-	saName := job.Spec.Template.Spec.ServiceAccountName
-	if saName == "" {
-		return "", fmt.Errorf("missing evalhub instance labels (%s, %s) and job has no ServiceAccount set",
-			evalHubInstanceNameLabel, evalHubInstanceNamespaceLabel)
-	}
-	legacyName, legacyNS, err := parseEvalHubJobSA(saName)
-	if err != nil {
-		return "", fmt.Errorf("missing evalhub instance labels and could not parse ServiceAccount name %q (legacy): %w", saName, err)
-	}
-	return r.evalHubURLFromCR(ctx, legacyName, legacyNS)
+	return "", fmt.Errorf("missing required evalhub instance labels %q and %q",
+		evalHubInstanceNameLabel, evalHubInstanceNamespaceLabel)
 }
 
 func (r *EvalHubEvaluationJobFailureReconciler) evalHubURLFromCR(ctx context.Context, name, namespace string) (string, error) {
@@ -688,22 +680,6 @@ func (r *EvalHubEvaluationJobFailureReconciler) evalHubURLFromCR(ctx context.Con
 		return "", fmt.Errorf("EvalHub %s/%s has no URL", namespace, name)
 	}
 	return strings.TrimSuffix(url, "/"), nil
-}
-
-// parseEvalHubJobSA is legacy: parses ServiceAccount name {EvalHub CR name}-{EvalHub CR namespace}-job.
-// Hyphenated names/namespaces are ambiguous; prefer Job labels evalhub_instance_name|evalhub_instance_namespace.
-func parseEvalHubJobSA(saName string) (name, namespace string, err error) {
-	if !strings.HasSuffix(saName, "-job") {
-		return "", "", fmt.Errorf("SA name %q does not match pattern {name}-{namespace}-job", saName)
-	}
-	withoutSuffix := strings.TrimSuffix(saName, "-job")
-	parts := strings.Split(withoutSuffix, "-")
-	if len(parts) < 2 {
-		return "", "", fmt.Errorf("SA name %q invalid: need at least {name}-{namespace}-job", saName)
-	}
-	namespace = parts[len(parts)-1]
-	name = strings.Join(parts[:len(parts)-1], "-")
-	return name, namespace, nil
 }
 
 // JSON body compatible with EvalHub pkg/api StatusEvent.
