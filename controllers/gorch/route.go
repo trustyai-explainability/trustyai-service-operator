@@ -22,6 +22,11 @@ func (r *GuardrailsOrchestratorReconciler) reconcileGatewayRoute(ctx context.Con
 		ServiceName: orchestrator.Name + "-service",
 		PortName:    "gateway",
 		Termination: utils.StringPointer(gatewayTermination),
+		Annotations: map[string]string{
+			// Fix for RHOAIENG-33054: Set HAProxy timeout to 5 minutes
+			// Gateway route handles LLM traffic that can exceed default 30s timeout
+			"haproxy.router.openshift.io/timeout": "5m",
+		},
 	}
 	err := utils.ReconcileRoute(ctx, r.Client, orchestrator, routeConfig, routeTemplatePath, templateParser.ParseResource)
 	return err
@@ -33,6 +38,11 @@ func (r *GuardrailsOrchestratorReconciler) reconcileOrchestratorRoute(ctx contex
 		ServiceName: orchestrator.Name + "-service",
 		PortName:    "https",
 		Termination: utils.StringPointer(utils.Reencrypt),
+		Annotations: map[string]string{
+			// Fix for RHOAIENG-33054: Set HAProxy timeout to 5 minutes
+			// LLM-based guardrails detection can take longer than the default 30s
+			"haproxy.router.openshift.io/timeout": "5m",
+		},
 	}
 	err := utils.ReconcileRoute(ctx, r.Client, orchestrator, routeConfig, routeTemplatePath, templateParser.ParseResource)
 	return err
@@ -48,6 +58,11 @@ func (r *GuardrailsOrchestratorReconciler) reconcileBuiltInDetectorRoute(ctx con
 		ServiceName: orchestrator.Name + "-service",
 		PortName:    "built-in-detector",
 		Termination: utils.StringPointer(termination),
+		Annotations: map[string]string{
+			// Fix for RHOAIENG-33054: Set HAProxy timeout to 5 minutes
+			// Built-in detector route handles LLM traffic that can exceed default 30s timeout
+			"haproxy.router.openshift.io/timeout": "5m",
+		},
 	}
 	err := utils.ReconcileRoute(ctx, r.Client, orchestrator, routeConfig, routeTemplatePath, templateParser.ParseResource)
 	return err
