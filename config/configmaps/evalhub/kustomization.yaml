@@ -4,6 +4,7 @@ resources:
   - provider-guidellm.yaml
   - provider-lighteval.yaml
   - provider-lm-evaluation-harness.yaml
+  - provider-ibm-clear.yaml
   - collection-leaderboard-v2.yaml
 
 namespace: system
