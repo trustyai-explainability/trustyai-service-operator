@@ -24,6 +24,7 @@ import (
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
@@ -82,7 +83,7 @@ func failureWatcherLogFields() []any {
 	}
 }
 
-//+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;patch;delete
 //+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs,verbs=get;list;watch
@@ -345,6 +346,10 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 		return ctrl.Result{}, nil
 	}
 	if failureAlreadyReported(&job) {
+		// POST succeeded in a prior reconcile; ensure the Job is removed (delete may have failed after patch).
+		if err := r.deleteEvalHubFailureSyncedJob(ctx, &job); err != nil {
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -425,6 +430,10 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 	if err := r.Patch(ctx, &job, promotePatch); err != nil {
 		log.Error(err, "failed to promote failure-reported annotation after successful POST",
 			append(failureWatcherLogFields(), "action", "promote_reported_failed", "job", job.Name)...)
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+
+	if err := r.deleteEvalHubFailureSyncedJob(ctx, &job); err != nil {
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
@@ -645,6 +654,22 @@ func failurePendingReport(job *batchv1.Job) bool {
 		return false
 	}
 	return job.Annotations[annotationFailurePending] == "true"
+}
+
+// deleteEvalHubFailureSyncedJob removes the Batch Job after EvalHub accepted the failure event (pods are GC'd with the Job).
+func (r *EvalHubEvaluationJobFailureReconciler) deleteEvalHubFailureSyncedJob(ctx context.Context, job *batchv1.Job) error {
+	log := log.FromContext(ctx)
+	if err := r.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		log.Error(err, "failed to delete evaluation job after EvalHub failure sync",
+			append(failureWatcherLogFields(), "action", "delete_job_failed", "job", job.Name, "namespace", job.Namespace)...)
+		return err
+	}
+	log.Info("deleted evaluation job after EvalHub failure sync",
+		append(failureWatcherLogFields(), "action", "delete_job_ok", "job", job.Name, "namespace", job.Namespace)...)
+	return nil
 }
 
 // getEvalHubURLFromJob resolves the EvalHub API base URL from Job labels evalhub_instance_name and evalhub_instance_namespace

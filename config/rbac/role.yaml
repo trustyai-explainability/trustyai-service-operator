@@ -88,6 +88,7 @@ rules:
   resources:
   - jobs
   verbs:
+  - delete
   - get
   - list
   - patch
