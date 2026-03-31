@@ -235,15 +235,20 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return RequeueWithDelay(time.Second * 30)
 }
 
-// SetupWithManager sets up the controller with the Manager.
+// SetupWithManager registers the EvalHub CR reconciler and the evaluation Job failure → EvalHub events controller.
+// controller-runtime still runs two controller loops: primary keys are EvalHub vs batch Job (different resource kinds).
 func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	if err := ctrl.NewControllerManagedBy(mgr).
+		Named("evalhub").
 		For(&evalhubv1alpha1.EvalHub{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}, builder.OnlyMetadata).
 		Owns(&corev1.ConfigMap{}, builder.OnlyMetadata).
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.mapNamespaceToEvalHubs), builder.OnlyMetadata).
-		Complete(r)
+		Complete(r); err != nil {
+		return err
+	}
+	return registerEvalHubEvaluationJobFailureController(mgr)
 }
 
 // mapNamespaceToEvalHubs maps a Namespace event to reconcile requests for all EvalHub
