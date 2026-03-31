@@ -51,6 +51,7 @@ func (t *strArrayArg) String() string {
 
 var (
 	taskRecipes         strArrayArg
+	taskGroups          strArrayArg
 	customArtifactArgs  strArrayArg
 	taskNames           strArrayArg
 	copy                = flag.String("copy", "", "copy this binary to specified destination path")
@@ -71,6 +72,7 @@ var (
 
 func init() {
 	flag.Var(&taskRecipes, "task-recipe", "task recipe")
+	flag.Var(&taskGroups, "task-group", "task group")
 	flag.Var(&customArtifactArgs, "custom-artifact", "A string contains an artifact's type, name and value. Use | as separator")
 	flag.Var(&taskNames, "task-name", "A task name for custom tasks")
 }
@@ -126,6 +128,7 @@ func main() {
 		DetectDevice:        *detectDevice,
 		Logger:              driverLog,
 		TaskRecipes:         taskRecipes,
+		TaskGroups:          taskGroups,
 		CustomArtifacts:     customArtifacts,
 		Args:                args,
 		CommPort:            *commPort,
