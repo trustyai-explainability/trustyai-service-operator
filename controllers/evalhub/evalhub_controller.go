@@ -23,23 +23,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
-func ControllerSetUp(mgr manager.Manager, ns string, recorder record.EventRecorder) error {
+func ControllerSetUp(mgr manager.Manager, ns, operatorConfigMapName string, recorder record.EventRecorder) error {
 	return (&EvalHubReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		restMapper:    mgr.GetRESTMapper(),
-		Namespace:     ns,
-		EventRecorder: recorder,
+		Client:                mgr.GetClient(),
+		Scheme:                mgr.GetScheme(),
+		restMapper:            mgr.GetRESTMapper(),
+		Namespace:             ns,
+		OperatorConfigMapName: operatorConfigMapName,
+		EventRecorder:         recorder,
 	}).SetupWithManager(mgr)
 }
 
 // EvalHubReconciler reconciles an EvalHub object
 type EvalHubReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	restMapper    meta.RESTMapper
-	Namespace     string
-	EventRecorder record.EventRecorder
+	Scheme                *runtime.Scheme
+	restMapper            meta.RESTMapper
+	Namespace             string
+	OperatorConfigMapName string
+	EventRecorder         record.EventRecorder
 }
 
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs,verbs=get;list;watch;create;update;patch;delete
@@ -248,7 +250,10 @@ func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r); err != nil {
 		return err
 	}
-	return registerEvalHubEvaluationJobFailureController(mgr)
+	if err := registerEvalHubEvaluationJobFailureController(mgr); err != nil {
+		return err
+	}
+	return registerKueueFailedWorkloadsPoller(mgr, r.Namespace, r.OperatorConfigMapName)
 }
 
 // mapNamespaceToEvalHubs maps a Namespace event to reconcile requests for all EvalHub

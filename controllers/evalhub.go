@@ -11,6 +11,6 @@ func init() {
 	registerService(evalhub.ServiceName, setupEvalHubController)
 }
 
-func setupEvalHubController(mgr manager.Manager, ns, _ string, recorder record.EventRecorder) error {
-	return evalhub.ControllerSetUp(mgr, ns, recorder)
+func setupEvalHubController(mgr manager.Manager, ns, configMap string, recorder record.EventRecorder) error {
+	return evalhub.ControllerSetUp(mgr, ns, configMap, recorder)
 }

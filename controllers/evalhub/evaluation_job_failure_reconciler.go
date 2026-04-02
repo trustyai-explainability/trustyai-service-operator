@@ -61,6 +61,9 @@ const (
 	httpHeaderTenant          = "X-Tenant"
 	eventsPathFmt             = "%s/api/v1/evaluations/jobs/%s/events"
 	messageCodeRuntimeFailure = "RUNTIME_FAILURE"
+	// messageCodeKueueInadmissible is used when reporting EvalHub benchmark failure from a Kueue Workload
+	// QuotaReserved=False / Reason=Inadmissible condition (see kueue_failed_workloads_poller.go).
+	messageCodeKueueInadmissible = "KUEUE_INADMISSIBLE"
 	// openshiftServiceCAMountPath: PEM for the OpenShift service signing CA (trust in-cluster *.svc HTTPS, e.g. EvalHub).
 	// Appended to the HTTP client root CAs; the in-cluster SA transport defaults to apiserver trust only.
 	openshiftServiceCAMountPath = "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
@@ -406,7 +409,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 		}
 	}
 
-	if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, jobID, providerID, benchmarkID, benchmarkIndex, msg); err != nil {
+	if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, jobID, providerID, benchmarkID, benchmarkIndex, msg, ""); err != nil {
 		log.Error(err, "failed to post EvalHub benchmark failure event",
 			append(failureWatcherLogFields(), "action", "post_events_failed", "job", job.Name, "evalJobID", jobID)...)
 		revert := client.MergeFrom(job.DeepCopy())
@@ -771,10 +774,13 @@ func newEvalHubHTTPClient(restCfg *rest.Config) (*http.Client, error) {
 	return &http.Client{Transport: rt, Timeout: 30 * time.Second}, nil
 }
 
-func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseURL, tenant, jobID, providerID, benchmarkID string, benchmarkIndex int, failureMsg string) error {
+func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseURL, tenant, jobID, providerID, benchmarkID string, benchmarkIndex int, failureMsg, messageCode string) error {
 	httpClient, err := newEvalHubHTTPClient(restCfg)
 	if err != nil {
 		return err
+	}
+	if messageCode == "" {
+		messageCode = messageCodeRuntimeFailure
 	}
 
 	body := statusEventPayload{
@@ -785,7 +791,7 @@ func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseU
 			Status:         "failed",
 			ErrorMessage: &msgInfoJSON{
 				Message:     failureMsg,
-				MessageCode: messageCodeRuntimeFailure,
+				MessageCode: messageCode,
 			},
 		},
 	}

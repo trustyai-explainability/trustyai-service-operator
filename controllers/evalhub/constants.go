@@ -1,6 +1,8 @@
 package evalhub
 
 import (
+	"time"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -23,6 +25,13 @@ const (
 	// Configuration constants
 	configMapName            = "trustyai-service-operator-config"
 	configMapEvalHubImageKey = "evalHubImage"
+	// configMapEvalHubKueueFailedWorkloadsPollIntervalKey: operator ConfigMap data key; interval in seconds
+	// between cluster-wide scans for Kueue Workloads (QuotaReserved=False, Reason=Inadmissible).
+	configMapEvalHubKueueFailedWorkloadsPollIntervalKey = "evalHubKueueFailedWorkloadsPollIntervalSeconds"
+	// Legacy key from kueue_inadmissible_poller; still read if the new key is unset.
+	configMapEvalHubKueueFailedWorkloadsPollIntervalKeyLegacy = "evalHubKueueInadmissiblePollIntervalSeconds"
+
+	defaultKueueFailedWorkloadsPollInterval = 60 * time.Second
 
 	// TLS configuration (OpenShift service serving certificates)
 	tlsSecretMountPath = "/etc/tls/private"
