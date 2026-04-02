@@ -184,7 +184,7 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases", "trustyai.opendatahub.io_guardrailsorchestrators.yaml"),
+		CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "components", "gorch", "crd", "trustyai.opendatahub.io_guardrailsorchestrators.yaml"),
 			filepath.Join("..", "..", "tests", "crds"),
 		},
 		ErrorIfCRDPathMissing: true,

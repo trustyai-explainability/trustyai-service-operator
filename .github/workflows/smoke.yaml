@@ -42,21 +42,20 @@ jobs:
           curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
           sudo mv kustomize /usr/local/bin/
 
-      - name: Apply CRDs
+      - name: Apply external CRDs
         run: |
           kubectl apply -f tests/crds/monitoring.coreos.com_servicemonitors.yaml
           kubectl apply -f tests/crds/route_crd.yaml
           kubectl apply -f tests/crds/serving.kserve.io_inferenceservices.yaml
-          kustomize build config/crd | kubectl apply -f -
 
       - name: Update params.env file
         run: |
           sed -i 's|trustyaiOperatorImage=quay.io/trustyai/trustyai-service-operator:latest|trustyaiOperatorImage=smoke/operator:pr-${{ github.event.pull_request.number || env.PR_NUMBER }}|' config/base/params.env
 
-      - name: Deploy the operator with kustomize
+      - name: Deploy the operator with testing overlay
         run: |
           kubectl create namespace system
-          kustomize build config/base | kubectl apply -n system -f -
+          kustomize build config/overlays/testing | sed 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' | kubectl apply -n system -f -
 
       - name: Run smoke tests
         run: ./tests/smoke/test_smoke.sh
