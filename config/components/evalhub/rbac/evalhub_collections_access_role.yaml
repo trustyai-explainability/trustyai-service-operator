@@ -15,4 +15,4 @@ rules:
   - apiGroups: ["trustyai.opendatahub.io"]
     resources:
       - collections
-    verbs: ["get", "list", "create", "update", "delete"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
