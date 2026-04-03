@@ -18,9 +18,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 func ControllerSetUp(mgr manager.Manager, ns string, recorder record.EventRecorder) error {
@@ -244,29 +246,45 @@ func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}, builder.OnlyMetadata).
 		Owns(&corev1.ConfigMap{}, builder.OnlyMetadata).
-		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.mapNamespaceToEvalHubs), builder.OnlyMetadata).
+		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.mapNamespaceToEvalHubs), builder.OnlyMetadata, builder.WithPredicates(tenantLabelPredicate())).
 		Complete(r); err != nil {
 		return err
 	}
 	return registerEvalHubEvaluationJobFailureController(mgr)
 }
 
+// tenantLabelPredicate returns a predicate that fires only when the tenant label is
+// added to or removed from a namespace. This avoids triggering a full reconcile on
+// every namespace update across the cluster.
+//
+// - Create/Delete: pass only if the namespace carries the tenant label.
+// - Update: pass only if the tenant label presence changed (added or removed).
+// - Generic: ignored.
+func tenantLabelPredicate() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			_, has := e.Object.GetLabels()[tenantLabel]
+			return has
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			_, oldHas := e.ObjectOld.GetLabels()[tenantLabel]
+			_, newHas := e.ObjectNew.GetLabels()[tenantLabel]
+			return oldHas != newHas
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			_, has := e.Object.GetLabels()[tenantLabel]
+			return has
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+	}
+}
+
 // mapNamespaceToEvalHubs maps a Namespace event to reconcile requests for all EvalHub
-// instances. This is triggered when a namespace is created, updated, or deleted, allowing
-// the controller to provision or clean up tenant resources when the tenant label is added
-// or removed.
-func (r *EvalHubReconciler) mapNamespaceToEvalHubs(ctx context.Context, obj client.Object) []ctrl.Request {
-	ns, ok := obj.(*corev1.Namespace)
-	if !ok {
-		return nil
-	}
-
-	// Only trigger reconciliation for namespaces with the tenant label
-	if _, hasTenantLabel := ns.Labels[tenantLabel]; !hasTenantLabel {
-		return nil
-	}
-
-	// List all EvalHub instances and enqueue reconcile requests for each
+// instances. The tenantLabelPredicate ensures this is only called when the tenant label
+// is added to or removed from a namespace, so we enqueue unconditionally here.
+func (r *EvalHubReconciler) mapNamespaceToEvalHubs(ctx context.Context, _ client.Object) []ctrl.Request {
 	evalHubList := &evalhubv1alpha1.EvalHubList{}
 	if err := r.List(ctx, evalHubList); err != nil {
 		log.FromContext(ctx).Error(err, "Failed to list EvalHub instances for namespace watch")
