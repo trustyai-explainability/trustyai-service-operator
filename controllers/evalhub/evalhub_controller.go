@@ -284,11 +284,7 @@ func tenantLabelPredicate() predicate.Predicate {
 // mapNamespaceToEvalHubs maps a Namespace event to reconcile requests for all EvalHub
 // instances. The tenantLabelPredicate ensures this is only called when the tenant label
 // is added to or removed from a namespace, so we enqueue unconditionally here.
-func (r *EvalHubReconciler) mapNamespaceToEvalHubs(ctx context.Context, obj client.Object) []ctrl.Request {
-	if _, ok := obj.(*corev1.Namespace); !ok {
-		return nil
-	}
-
+func (r *EvalHubReconciler) mapNamespaceToEvalHubs(ctx context.Context, _ client.Object) []ctrl.Request {
 	evalHubList := &evalhubv1alpha1.EvalHubList{}
 	if err := r.List(ctx, evalHubList); err != nil {
 		log.FromContext(ctx).Error(err, "Failed to list EvalHub instances for namespace watch")
