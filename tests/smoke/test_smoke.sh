@@ -22,6 +22,16 @@ log_success() {
 log_failure() {
     local message=$1
     echo "❌ $message"
+
+    # Dump operator logs if the pod exists
+    OPERATOR_POD=$(kubectl get pods -n system -l control-plane=controller-manager -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    if [[ -n "$OPERATOR_POD" ]]; then
+        echo ""
+        echo "========== Operator Pod Logs =========="
+        kubectl logs -n system "$OPERATOR_POD" --all-containers --tail=100 || echo "Failed to retrieve operator logs"
+        echo "========================================"
+    fi
+
     exit 1
 }
 
