@@ -237,8 +237,10 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return RequeueWithDelay(time.Second * 30)
 }
 
-// SetupWithManager registers the EvalHub CR reconciler and the evaluation Job failure → EvalHub events controller.
-// controller-runtime still runs two controller loops: primary keys are EvalHub vs batch Job (different resource kinds).
+// SetupWithManager registers the EvalHub CR reconciler, the evaluation Job failure → EvalHub events controller,
+// and the evaluation failed Kueue Workload → EvalHub events controller.
+// It creates and bootstraps a shared evalHubTenantNamespaces cache, then passes it to both auxiliary controllers.
+// controller-runtime runs separate loops for EvalHub, batch Job, and kueue Workload.
 func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := ctrl.NewControllerManagedBy(mgr).
 		Named("evalhub").
@@ -250,10 +252,14 @@ func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r); err != nil {
 		return err
 	}
-	if err := registerEvalHubEvaluationJobFailureController(mgr); err != nil {
+	tenantNS := newEvalHubTenantNamespaces()
+	if err := tenantNS.bootstrap(context.Background(), mgr.GetAPIReader()); err != nil {
+		return fmt.Errorf("evalhub: bootstrap tenant namespaces: %w", err)
+	}
+	if err := registerEvalHubEvaluationJobFailureController(mgr, tenantNS); err != nil {
 		return err
 	}
-	return registerKueueFailedWorkloadsPoller(mgr, r.Namespace, r.OperatorConfigMapName)
+	return registerEvalHubEvaluationFailedKueueWorkloadsReconciler(mgr, tenantNS)
 }
 
 // mapNamespaceToEvalHubs maps a Namespace event to reconcile requests for all EvalHub

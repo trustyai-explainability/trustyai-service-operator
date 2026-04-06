@@ -18,10 +18,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -52,7 +50,7 @@ const (
 	evalHubProviderIDLabel     = "provider_id"
 	evalHubBenchmarkIDLabel    = "benchmark_id"
 	evalHubBenchmarkIndexLabel = "benchmark_index"
-	// EvalHub CR identity for getEvalHubURLFromJob (set by eval-hub job_builders; must match eval-hub).
+	// EvalHub CR identity for evalHubBaseURLFromJob (set by eval-hub job_builders; must match eval-hub).
 	evalHubInstanceNameLabel      = "evalhub_instance_name"
 	evalHubInstanceNamespaceLabel = "evalhub_instance_namespace"
 	// annotationFailurePending: in-flight until POST succeeds and we set annotationFailureReported.
@@ -62,7 +60,7 @@ const (
 	eventsPathFmt             = "%s/api/v1/evaluations/jobs/%s/events"
 	messageCodeRuntimeFailure = "RUNTIME_FAILURE"
 	// messageCodeKueueInadmissible is used when reporting EvalHub benchmark failure from a Kueue Workload
-	// QuotaReserved=False / Reason=Inadmissible condition (see kueue_failed_workloads_poller.go).
+	// with status.conditions matching False+Reason=Inadmissible (see evaluation_failed_kueue_workloads_reconciler.go).
 	messageCodeKueueInadmissible = "KUEUE_INADMISSIBLE"
 	// openshiftServiceCAMountPath: PEM for the OpenShift service signing CA (trust in-cluster *.svc HTTPS, e.g. EvalHub).
 	// Appended to the HTTP client root CAs; the in-cluster SA transport defaults to apiserver trust only.
@@ -103,8 +101,8 @@ type EvalHubEvaluationJobFailureReconciler struct {
 	// RESTConfig is used to build an HTTP transport that authenticates like the operator (SA token + cluster CA).
 	RESTConfig *rest.Config
 
-	// tenantNamespaces keys are namespace names with label evalhub.trustyai.opendatahub.io/tenant; values are struct{}.
-	tenantNamespaces sync.Map
+	// tenantNS tracks namespaces labelled evalhub.trustyai.opendatahub.io/tenant (shared with the Kueue workload failure reconciler).
+	tenantNS *evalHubTenantNamespaces
 }
 
 func evalHubJobPodLabelSelector() metav1.LabelSelector {
@@ -124,16 +122,16 @@ func namespaceCarriesTenantLabel(ns *corev1.Namespace) bool {
 	return ok
 }
 
-// tenantNamespaceSync keeps tenantNamespaces in sync with Namespace label changes (no reconcile queue adds).
+// tenantNamespaceSync keeps evalHubTenantNamespaces in sync with Namespace label changes (no reconcile queue adds).
 type tenantNamespaceSync struct {
-	r *EvalHubEvaluationJobFailureReconciler
+	t *evalHubTenantNamespaces
 }
 
 var _ handler.EventHandler = (*tenantNamespaceSync)(nil)
 
 func (h *tenantNamespaceSync) Create(ctx context.Context, e event.CreateEvent, _ workqueue.RateLimitingInterface) {
 	if ns, ok := e.Object.(*corev1.Namespace); ok && namespaceCarriesTenantLabel(ns) {
-		h.r.addTenantNamespace(ns.Name)
+		h.t.Add(ns.Name)
 	}
 }
 
@@ -144,66 +142,33 @@ func (h *tenantNamespaceSync) Update(ctx context.Context, e event.UpdateEvent, _
 		return
 	}
 	if namespaceCarriesTenantLabel(oldNs) && !namespaceCarriesTenantLabel(newNs) {
-		h.r.removeTenantNamespace(newNs.Name)
+		h.t.Remove(newNs.Name)
 	}
 	if !namespaceCarriesTenantLabel(oldNs) && namespaceCarriesTenantLabel(newNs) {
-		h.r.addTenantNamespace(newNs.Name)
+		h.t.Add(newNs.Name)
 	}
 }
 
 func (h *tenantNamespaceSync) Delete(ctx context.Context, e event.DeleteEvent, _ workqueue.RateLimitingInterface) {
 	if e.Object != nil {
-		h.r.removeTenantNamespace(e.Object.GetName())
+		h.t.Remove(e.Object.GetName())
 	}
 }
 
 func (h *tenantNamespaceSync) Generic(ctx context.Context, e event.GenericEvent, _ workqueue.RateLimitingInterface) {
 }
 
-func (r *EvalHubEvaluationJobFailureReconciler) addTenantNamespace(name string) {
-	r.tenantNamespaces.Store(name, struct{}{})
-}
-
-func (r *EvalHubEvaluationJobFailureReconciler) removeTenantNamespace(name string) {
-	r.tenantNamespaces.Delete(name)
-}
-
-func (r *EvalHubEvaluationJobFailureReconciler) isTenantNamespace(name string) bool {
-	_, ok := r.tenantNamespaces.Load(name)
-	return ok
-}
-
-// bootstrapTenantNamespaces must use an API reader that does not rely on the controller-runtime cache.
-// registerEvalHubEvaluationJobFailureController runs during SetupWithManager, before mgr.Start(), so
-// mgr.GetClient().List would fail with "the cache is not started".
-func (r *EvalHubEvaluationJobFailureReconciler) bootstrapTenantNamespaces(ctx context.Context, apiReader client.Reader) error {
-	nsList := &corev1.NamespaceList{}
-	if err := apiReader.List(ctx, nsList, client.HasLabels{tenantLabel}); err != nil {
-		return err
-	}
-	var toDelete []string
-	r.tenantNamespaces.Range(func(key, _ interface{}) bool {
-		toDelete = append(toDelete, key.(string))
-		return true
-	})
-	for _, k := range toDelete {
-		r.tenantNamespaces.Delete(k)
-	}
-	for i := range nsList.Items {
-		r.tenantNamespaces.Store(nsList.Items[i].Name, struct{}{})
-	}
-	return nil
-}
-
 // registerEvalHubEvaluationJobFailureController registers the batch Job–centric failure sync reconciler.
-// It is invoked from EvalHubReconciler.SetupWithManager (single setup entrypoint from ControllerSetUp).
-func registerEvalHubEvaluationJobFailureController(mgr manager.Manager) error {
+// tenantNS must be created and bootstrapped by the caller (e.g. EvalHubReconciler.SetupWithManager).
+func registerEvalHubEvaluationJobFailureController(mgr manager.Manager, tenantNS *evalHubTenantNamespaces) error {
+	if tenantNS == nil {
+		return fmt.Errorf("evalhub failure watcher: tenantNS is nil")
+	}
+
 	r := &EvalHubEvaluationJobFailureReconciler{
 		Client:     mgr.GetClient(),
 		RESTConfig: rest.CopyConfig(mgr.GetConfig()),
-	}
-	if err := r.bootstrapTenantNamespaces(context.Background(), mgr.GetAPIReader()); err != nil {
-		return fmt.Errorf("evalhub failure watcher: bootstrap tenant namespaces: %w", err)
+		tenantNS:   tenantNS,
 	}
 
 	labelPred, err := predicate.LabelSelectorPredicate(evalHubJobPodLabelSelector())
@@ -224,10 +189,13 @@ func registerEvalHubEvaluationJobFailureController(mgr manager.Manager) error {
 		).
 		Watches(
 			&corev1.Namespace{},
-			&tenantNamespaceSync{r: r},
+			&tenantNamespaceSync{t: tenantNS},
 			builder.WithPredicates(namespaceTenantEdgePredicate()),
 		)
-	return b.Complete(r)
+	if err := b.Complete(r); err != nil {
+		return err
+	}
+	return nil
 }
 
 func namespaceTenantEdgePredicate() predicate.Predicate {
@@ -255,7 +223,7 @@ func jobUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			newJob, ok := e.Object.(*batchv1.Job)
-			if !ok || !r.isTenantNamespace(newJob.Namespace) {
+			if !ok || !r.tenantNS.IsTenant(newJob.Namespace) {
 				return false
 			}
 			if !isEvalHubEvaluationJob(newJob) || failureAlreadyReported(newJob) {
@@ -267,7 +235,7 @@ func jobUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			newJob, ok := e.ObjectNew.(*batchv1.Job)
-			if !ok || !r.isTenantNamespace(newJob.Namespace) {
+			if !ok || !r.tenantNS.IsTenant(newJob.Namespace) {
 				return false
 			}
 			if !isEvalHubEvaluationJob(newJob) || failureAlreadyReported(newJob) {
@@ -286,7 +254,7 @@ func podUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			newPod, ok := e.Object.(*corev1.Pod)
-			if !ok || !podOwnedByJob(newPod) || !r.isTenantNamespace(newPod.Namespace) {
+			if !ok || !podOwnedByJob(newPod) || !r.tenantNS.IsTenant(newPod.Namespace) {
 				return false
 			}
 			// Replay and rare creates where status already shows operator-only failure.
@@ -295,7 +263,7 @@ func podUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			oldPod, okOld := e.ObjectOld.(*corev1.Pod)
 			newPod, okNew := e.ObjectNew.(*corev1.Pod)
-			if !okOld || !okNew || !podOwnedByJob(newPod) || !r.isTenantNamespace(newPod.Namespace) {
+			if !okOld || !okNew || !podOwnedByJob(newPod) || !r.tenantNS.IsTenant(newPod.Namespace) {
 				return false
 			}
 			// Only enqueue when init/adapter/sidecar transition into a state that implies no EvalHub callback
@@ -308,7 +276,7 @@ func podUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 
 func (r *EvalHubEvaluationJobFailureReconciler) mapPodToEvalHubJob(_ context.Context, obj client.Object) []reconcile.Request {
 	pod, ok := obj.(*corev1.Pod)
-	if !ok || !r.isTenantNamespace(pod.Namespace) {
+	if !ok || !r.tenantNS.IsTenant(pod.Namespace) {
 		return nil
 	}
 	jobName := jobNameFromPodOwner(pod)
@@ -345,7 +313,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 	if !isEvalHubEvaluationJob(&job) {
 		return ctrl.Result{}, nil
 	}
-	if !r.isTenantNamespace(job.Namespace) {
+	if !r.tenantNS.IsTenant(job.Namespace) {
 		return ctrl.Result{}, nil
 	}
 	if failureAlreadyReported(&job) {
@@ -372,7 +340,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 	log.Info("operator-only failure detected",
 		append(failureWatcherLogFields(), "action", "failure_detected", "job", job.Name, "namespace", job.Namespace, "detail", detailForLog)...)
 
-	baseURL, err := r.getEvalHubURLFromJob(ctx, &job)
+	baseURL, err := evalHubBaseURLFromJob(ctx, r.Client, &job)
 	if err != nil {
 		log.Info("cannot resolve EvalHub URL from job",
 			append(failureWatcherLogFields(), "action", "skip_no_evalhub_url", "error", err.Error())...)
@@ -673,41 +641,6 @@ func (r *EvalHubEvaluationJobFailureReconciler) deleteEvalHubFailureSyncedJob(ct
 	log.Info("deleted evaluation job after EvalHub failure sync",
 		append(failureWatcherLogFields(), "action", "delete_job_ok", "job", job.Name, "namespace", job.Namespace)...)
 	return nil
-}
-
-// getEvalHubURLFromJob resolves the EvalHub API base URL from Job labels evalhub_instance_name and evalhub_instance_namespace
-// (set by eval-hub k8s runtime). Both labels are required.
-func (r *EvalHubEvaluationJobFailureReconciler) getEvalHubURLFromJob(ctx context.Context, job *batchv1.Job) (string, error) {
-	var name, namespace string
-	if job.Labels != nil {
-		name = strings.TrimSpace(job.Labels[evalHubInstanceNameLabel])
-		namespace = strings.TrimSpace(job.Labels[evalHubInstanceNamespaceLabel])
-	}
-	if name != "" && namespace != "" {
-		return r.evalHubURLFromCR(ctx, name, namespace)
-	}
-	if name != "" || namespace != "" {
-		return "", fmt.Errorf("evalhub instance labels incomplete: need both %q and %q (got evalhub_instance_name=%q evalhub_instance_namespace=%q)",
-			evalHubInstanceNameLabel, evalHubInstanceNamespaceLabel, name, namespace)
-	}
-	return "", fmt.Errorf("missing required evalhub instance labels %q and %q",
-		evalHubInstanceNameLabel, evalHubInstanceNamespaceLabel)
-}
-
-func (r *EvalHubEvaluationJobFailureReconciler) evalHubURLFromCR(ctx context.Context, name, namespace string) (string, error) {
-	var eh evalhubv1alpha1.EvalHub
-	key := client.ObjectKey{Namespace: namespace, Name: name}
-	if err := r.Get(ctx, key, &eh); err != nil {
-		return "", fmt.Errorf("get EvalHub %s/%s: %w", namespace, name, err)
-	}
-	if !eh.IsReady() {
-		return "", fmt.Errorf("EvalHub %s/%s not Ready", namespace, name)
-	}
-	url := strings.TrimSpace(eh.Status.URL)
-	if url == "" {
-		return "", fmt.Errorf("EvalHub %s/%s has no URL", namespace, name)
-	}
-	return strings.TrimSuffix(url, "/"), nil
 }
 
 // JSON body compatible with EvalHub pkg/api StatusEvent.
