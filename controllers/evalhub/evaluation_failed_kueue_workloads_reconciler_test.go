@@ -9,7 +9,7 @@ import (
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
-func TestWorkloadInadmissibleCondition(t *testing.T) {
+func TestWorkloadFirstFalseCondition(t *testing.T) {
 	t.Parallel()
 	wl := &kueue.Workload{
 		Status: kueue.WorkloadStatus{
@@ -17,15 +17,15 @@ func TestWorkloadInadmissibleCondition(t *testing.T) {
 				{
 					Type:    kueue.WorkloadQuotaReserved,
 					Status:  metav1.ConditionFalse,
-					Reason:  kueueWorkloadReasonInadmissible,
+					Reason:  "Inadmissible",
 					Message: "ClusterQueue foo is stopped",
 				},
 			},
 		},
 	}
-	c, ok := workloadInadmissibleCondition(wl)
+	c, ok := workloadFirstFalseCondition(wl)
 	if !ok || c == nil {
-		t.Fatalf("expected False + Inadmissible condition")
+		t.Fatalf("expected False condition")
 	}
 	if c.Message != "ClusterQueue foo is stopped" {
 		t.Fatalf("message: got %q", c.Message)
@@ -37,13 +37,13 @@ func TestWorkloadInadmissibleCondition(t *testing.T) {
 				{
 					Type:   "Custom",
 					Status: metav1.ConditionFalse,
-					Reason: kueueWorkloadReasonInadmissible,
+					Reason: "NotInadmissible",
 				},
 			},
 		},
 	}
-	if c2, ok2 := workloadInadmissibleCondition(wlOther); !ok2 || c2.Type != "Custom" {
-		t.Fatalf("expected jq-style match on any condition type: ok=%v cond=%v", ok2, c2)
+	if c2, ok2 := workloadFirstFalseCondition(wlOther); !ok2 || c2.Type != "Custom" || c2.Reason != "NotInadmissible" {
+		t.Fatalf("expected match on False with any reason: ok=%v cond=%v", ok2, c2)
 	}
 
 	wl2 := &kueue.Workload{
@@ -57,7 +57,7 @@ func TestWorkloadInadmissibleCondition(t *testing.T) {
 			},
 		},
 	}
-	if _, ok := workloadInadmissibleCondition(wl2); ok {
+	if _, ok := workloadFirstFalseCondition(wl2); ok {
 		t.Fatalf("expected no match for QuotaReserved=True")
 	}
 }

@@ -28,10 +28,6 @@ import (
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
-// kueueWorkloadReasonInadmissible matches Kueue's condition Reason for workloads that cannot be admitted.
-// Filter aligns with: .status.conditions[]? | select(.status=="False" and .reason=="Inadmissible")
-const kueueWorkloadReasonInadmissible = "Inadmissible"
-
 // After a successful POST to EvalHub, the Workload is annotated so we do not report the same
 // failure on every reconcile.
 const annotationKueueFailedWorkloadEventReported = "trustyai.opendatahub.io/evalhub-kueue-failed-workload-reported"
@@ -52,7 +48,7 @@ func evaluationFailedKueueWorkloadsLogFields() []any {
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs,verbs=get
 
 // EvalHubEvaluationFailedKueueWorkloadsReconciler POSTs a failed benchmark event to EvalHub when a Kueue
-// Workload has status False + Reason=Inadmissible and is owned by an EvalHub evaluation Job.
+// Workload has at least one status condition with Status=False (any Reason) and is owned by an EvalHub evaluation Job.
 type EvalHubEvaluationFailedKueueWorkloadsReconciler struct {
 	client.Client
 	RESTConfig *rest.Config
@@ -93,7 +89,7 @@ func workloadFailurePredicate(r *EvalHubEvaluationFailedKueueWorkloadsReconciler
 }
 
 // workloadEnqueueCandidate mirrors jobUpdatePredicate: tenant namespace, not yet reported, has Job owner,
-// and inadmissible condition present (including informer replay on Create).
+// and at least one workload status condition with Status=False (including informer replay on Create).
 func workloadEnqueueCandidate(wl *kueue.Workload, tenantNS *evalHubTenantNamespaces) bool {
 	if wl == nil || tenantNS == nil || !tenantNS.IsTenant(wl.Namespace) {
 		return false
@@ -104,8 +100,8 @@ func workloadEnqueueCandidate(wl *kueue.Workload, tenantNS *evalHubTenantNamespa
 	if _, _, hasJob := jobOwnerFromWorkload(wl); !hasJob {
 		return false
 	}
-	_, inadmissible := workloadInadmissibleCondition(wl)
-	return inadmissible
+	_, has := workloadFirstFalseCondition(wl)
+	return has
 }
 
 func workloadFailedEventAlreadyReported(wl *kueue.Workload) bool {
@@ -115,13 +111,11 @@ func workloadFailedEventAlreadyReported(wl *kueue.Workload) bool {
 	return wl.Annotations[annotationKueueFailedWorkloadEventReported] == "true"
 }
 
-// workloadInadmissibleCondition matches jq:
-//
-//	select(.status.conditions[]? | (.status=="False" and .reason=="Inadmissible"))
-func workloadInadmissibleCondition(wl *kueue.Workload) (*metav1.Condition, bool) {
+// workloadFirstFalseCondition returns the first workload status condition with Status=False (any Reason).
+func workloadFirstFalseCondition(wl *kueue.Workload) (*metav1.Condition, bool) {
 	for i := range wl.Status.Conditions {
 		c := &wl.Status.Conditions[i]
-		if c.Status == metav1.ConditionFalse && c.Reason == kueueWorkloadReasonInadmissible {
+		if c.Status == metav1.ConditionFalse {
 			return c, true
 		}
 	}
@@ -161,7 +155,7 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 		return ctrl.Result{}, nil
 	}
 
-	cond, ok := workloadInadmissibleCondition(&wl)
+	cond, ok := workloadFirstFalseCondition(&wl)
 	if !ok {
 		return ctrl.Result{}, nil
 	}
@@ -233,10 +227,10 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 
 	msg := strings.TrimSpace(cond.Message)
 	if msg == "" {
-		msg = fmt.Sprintf("Kueue workload inadmissible (conditionType=%s, reason=%s)", cond.Type, cond.Reason)
+		msg = fmt.Sprintf("Kueue workload (conditionType=%s, reason=%s)", cond.Type, cond.Reason)
 	}
 
-	if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, jobID, providerID, benchmarkID, benchmarkIndex, msg, messageCodeKueueInadmissible); err != nil {
+	if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, jobID, providerID, benchmarkID, benchmarkIndex, msg, messageCodeQueueError); err != nil {
 		log.Error(err, "failed to post EvalHub benchmark failure event for Kueue workload",
 			append(evaluationFailedKueueWorkloadsLogFields(), "action", "post_events_failed",
 				"workload", wl.Name, "workloadNamespace", wl.Namespace, "queue", wl.Spec.QueueName,
@@ -251,7 +245,7 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
-	log.Info("posted EvalHub failed status for Kueue inadmissible workload (via owning Job)",
+	log.Info("posted EvalHub failed status for Kueue workload (via owning Job)",
 		append(evaluationFailedKueueWorkloadsLogFields(), "action", "post_events_ok",
 			"workload", wl.Name, "workloadNamespace", wl.Namespace, "queue", wl.Spec.QueueName,
 			"job", job.Name, "jobUid", string(job.UID),
