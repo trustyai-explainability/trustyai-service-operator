@@ -194,3 +194,24 @@ rules:
   - update
   - patch
   - delete
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - workloads
+  verbs:
+  - get
+  - list
+  - watch
+  - patch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - get
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - evalhubs
+  verbs:
+  - get
