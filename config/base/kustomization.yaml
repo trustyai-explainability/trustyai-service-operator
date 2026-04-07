@@ -72,6 +72,13 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.evalhub-provider-lighteval-image
+  - name: evalhub-provider-ibm-clear-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-ibm-clear-image
   - name: lmes-pod-image
     objref:
       kind: ConfigMap
