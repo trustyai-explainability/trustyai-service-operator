@@ -51,7 +51,7 @@ func TestEvalHubJobConfigClusterRoleVerbsAreMinimalAndSufficient(t *testing.T) {
 		t.Fatalf("expected %s to contain a policy rule for resource 'configmaps'", manifestPath)
 	}
 
-	wantVerbs := []string{"create", "delete", "get", "update"}
+	wantVerbs := []string{"create", "delete", "get", "update", "list"}
 	sort.Strings(gotVerbs)
 	sort.Strings(wantVerbs)
 
