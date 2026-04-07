@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
@@ -342,8 +343,15 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 
 	baseURL, err := evalHubBaseURLFromJob(ctx, r.Client, &job)
 	if err != nil {
+		if errors.Is(err, ErrMissingEvalHubLabels) {
+			log.Info("cannot resolve EvalHub URL from job",
+				append(failureWatcherLogFields(), "action", "skip_no_evalhub_url",
+					"job", job.Name, "namespace", job.Namespace, "error", err.Error())...)
+			return ctrl.Result{}, nil
+		}
 		log.Info("cannot resolve EvalHub URL from job",
-			append(failureWatcherLogFields(), "action", "skip_no_evalhub_url", "error", err.Error())...)
+			append(failureWatcherLogFields(), "action", "skip_no_evalhub_url",
+				"job", job.Name, "namespace", job.Namespace, "error", err.Error())...)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 

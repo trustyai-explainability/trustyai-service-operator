@@ -9,6 +9,7 @@ package evalhub
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -225,9 +226,15 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 
 	baseURL, err := evalHubBaseURLFromJob(ctx, r.Client, &job)
 	if err != nil {
+		if errors.Is(err, ErrMissingEvalHubLabels) {
+			log.V(1).Info("cannot resolve EvalHub URL from Job",
+				append(evaluationFailedKueueWorkloadsLogFields(), "action", "skip_no_evalhub_url",
+					"workload", wl.Name, "job", job.Name, "namespace", job.Namespace, "error", err.Error())...)
+			return ctrl.Result{}, nil
+		}
 		log.V(1).Info("cannot resolve EvalHub URL from Job",
 			append(evaluationFailedKueueWorkloadsLogFields(), "action", "skip_no_evalhub_url",
-				"workload", wl.Name, "job", job.Name, "error", err.Error())...)
+				"workload", wl.Name, "job", job.Name, "namespace", job.Namespace, "error", err.Error())...)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 

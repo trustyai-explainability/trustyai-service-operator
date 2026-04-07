@@ -9,6 +9,7 @@ package evalhub
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -16,6 +17,10 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// ErrMissingEvalHubLabels is returned by evalHubBaseURLFromJob when required evalhub_instance_* labels
+// on the Job are absent or only one of the pair is set (malformed / incomplete).
+var ErrMissingEvalHubLabels = errors.New("missing or incomplete evalhub instance labels on Job")
 
 // evalHubBaseURLFromJob resolves the EvalHub API base URL from Job labels evalhub_instance_name and
 // evalhub_instance_namespace (set by eval-hub k8s runtime). Both labels are required.
@@ -29,11 +34,11 @@ func evalHubBaseURLFromJob(ctx context.Context, c client.Client, job *batchv1.Jo
 		return evalHubBaseURLFromCR(ctx, c, name, namespace)
 	}
 	if name != "" || namespace != "" {
-		return "", fmt.Errorf("evalhub instance labels incomplete: need both %q and %q (got evalhub_instance_name=%q evalhub_instance_namespace=%q)",
-			evalHubInstanceNameLabel, evalHubInstanceNamespaceLabel, name, namespace)
+		return "", fmt.Errorf("%w: need both %q and %q (got evalhub_instance_name=%q evalhub_instance_namespace=%q)",
+			ErrMissingEvalHubLabels, evalHubInstanceNameLabel, evalHubInstanceNamespaceLabel, name, namespace)
 	}
-	return "", fmt.Errorf("missing required evalhub instance labels %q and %q",
-		evalHubInstanceNameLabel, evalHubInstanceNamespaceLabel)
+	return "", fmt.Errorf("%w: missing required evalhub instance labels %q and %q",
+		ErrMissingEvalHubLabels, evalHubInstanceNameLabel, evalHubInstanceNamespaceLabel)
 }
 
 func evalHubBaseURLFromCR(ctx context.Context, c client.Client, name, namespace string) (string, error) {
