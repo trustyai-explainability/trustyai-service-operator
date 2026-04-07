@@ -80,11 +80,14 @@ def process_provider(filename: str, branch: str) -> tuple[str, str] | None:
 
     print(f"  id={provider_id} -> {cm_file}")
 
-    # Replace runtime.k8s.image with kustomize placeholder
+    # Capture the original image and replace all occurrences with kustomize placeholder
+    original_image = None
     if "runtime" in data and "k8s" in data["runtime"]:
-        data["runtime"]["k8s"]["image"] = f"$({var_name})"
+        original_image = data["runtime"]["k8s"].get("image")
 
     provider_yaml = yaml.dump(data, default_flow_style=False, sort_keys=False)
+    if original_image:
+        provider_yaml = provider_yaml.replace(original_image, f"$({var_name})")
 
     cm = textwrap.dedent(f"""\
         apiVersion: v1

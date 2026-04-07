@@ -25,7 +25,7 @@ data:
         memory_limit: 1Gi
         env:
         - name: KUBEFLOW_GARAK_BASE_IMAGE
-          value: quay.io/trustyai/trustyai-garak-lls-provider-dsp:latest
+          value: $(garak-provider-image)
       local:
         command: 'true'
     benchmarks:
