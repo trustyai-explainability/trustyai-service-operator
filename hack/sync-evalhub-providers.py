@@ -183,6 +183,9 @@ def main():
 
     # --- Collections ---
     collection_filenames = list_yaml_files(UPSTREAM_COLLECTIONS_DIR, branch)
+    if not collection_filenames:
+        print(f"ERROR: No YAML files found in {UPSTREAM_COLLECTIONS_DIR}", file=sys.stderr)
+        sys.exit(1)
 
     # Clean existing collection ConfigMap files
     for old in OUTPUT_DIR.glob("collection-*.yaml"):
