@@ -14,7 +14,7 @@ import (
 func TestEvalHubJobConfigClusterRoleVerbsAreMinimalAndSufficient(t *testing.T) {
 	// EvalHub sets ConfigMap ownerReferences after creating the Job:
 	// it does a Get+Update on the ConfigMap (see eval-hub/internal/runtimes/k8s/k8s_helper.go:SetConfigMapOwner).
-	// Therefore the job-config ClusterRole must include: create,get,update,delete.
+	// Therefore the job-config ClusterRole must include: create,get,list,update,delete.
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
@@ -51,7 +51,7 @@ func TestEvalHubJobConfigClusterRoleVerbsAreMinimalAndSufficient(t *testing.T) {
 		t.Fatalf("expected %s to contain a policy rule for resource 'configmaps'", manifestPath)
 	}
 
-	wantVerbs := []string{"create", "delete", "get", "update"}
+	wantVerbs := []string{"create", "delete", "get", "list", "update"}
 	sort.Strings(gotVerbs)
 	sort.Strings(wantVerbs)
 
