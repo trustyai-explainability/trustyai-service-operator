@@ -60,7 +60,7 @@ const (
 	eventsPathFmt             = "%s/api/v1/evaluations/jobs/%s/events"
 	messageCodeRuntimeFailure = "RUNTIME_FAILURE"
 	// messageCodeQueueError is used when reporting EvalHub benchmark failure from a Kueue Workload
-	// with at least one status condition Status=False (see evaluation_failed_kueue_workloads_reconciler.go).
+	// with QuotaReserved=False and Reason=Inadmissible (see evaluation_failed_kueue_workloads_reconciler.go).
 	messageCodeQueueError = "queue_error"
 	// openshiftServiceCAMountPath: PEM for the OpenShift service signing CA (trust in-cluster *.svc HTTPS, e.g. EvalHub).
 	// Appended to the HTTP client root CAs; the in-cluster SA transport defaults to apiserver trust only.

@@ -18,8 +18,8 @@ import (
 )
 
 var _ = Describe("Kueue failed workload reconciler helpers", func() {
-	Describe("workloadFirstFalseCondition", func() {
-		It("returns the first False condition with QuotaReserved type and message", func() {
+	Describe("workloadQuotaReservedInadmissibleCondition", func() {
+		It("returns QuotaReserved False Inadmissible with message", func() {
 			wl := &kueue.Workload{
 				Status: kueue.WorkloadStatus{
 					Conditions: []metav1.Condition{
@@ -32,13 +32,13 @@ var _ = Describe("Kueue failed workload reconciler helpers", func() {
 					},
 				},
 			}
-			c, ok := workloadFirstFalseCondition(wl)
+			c, ok := workloadQuotaReservedInadmissibleCondition(wl)
 			Expect(ok).To(BeTrue())
 			Expect(c).NotTo(BeNil())
 			Expect(c.Message).To(Equal("ClusterQueue foo is stopped"))
 		})
 
-		It("matches False with any reason (e.g. Custom / NotInadmissible)", func() {
+		It("does not match Custom type False (non-QuotaReserved)", func() {
 			wl := &kueue.Workload{
 				Status: kueue.WorkloadStatus{
 					Conditions: []metav1.Condition{
@@ -50,14 +50,27 @@ var _ = Describe("Kueue failed workload reconciler helpers", func() {
 					},
 				},
 			}
-			c, ok := workloadFirstFalseCondition(wl)
-			Expect(ok).To(BeTrue())
-			Expect(c).NotTo(BeNil())
-			Expect(c.Type).To(Equal("Custom"))
-			Expect(c.Reason).To(Equal("NotInadmissible"))
+			_, ok := workloadQuotaReservedInadmissibleCondition(wl)
+			Expect(ok).To(BeFalse())
 		})
 
-		It("returns false when only True conditions are present", func() {
+		It("does not match QuotaReserved False with non-Inadmissible reason", func() {
+			wl := &kueue.Workload{
+				Status: kueue.WorkloadStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   kueue.WorkloadQuotaReserved,
+							Status: metav1.ConditionFalse,
+							Reason: "OtherReason",
+						},
+					},
+				},
+			}
+			_, ok := workloadQuotaReservedInadmissibleCondition(wl)
+			Expect(ok).To(BeFalse())
+		})
+
+		It("returns false when only QuotaReserved True is present", func() {
 			wl := &kueue.Workload{
 				Status: kueue.WorkloadStatus{
 					Conditions: []metav1.Condition{
@@ -69,7 +82,7 @@ var _ = Describe("Kueue failed workload reconciler helpers", func() {
 					},
 				},
 			}
-			_, ok := workloadFirstFalseCondition(wl)
+			_, ok := workloadQuotaReservedInadmissibleCondition(wl)
 			Expect(ok).To(BeFalse())
 		})
 	})

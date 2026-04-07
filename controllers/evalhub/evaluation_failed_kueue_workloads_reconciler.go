@@ -28,6 +28,9 @@ import (
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
+// kueueWorkloadReasonInadmissible matches Kueue's Workload condition Reason when quota cannot be reserved.
+const kueueWorkloadReasonInadmissible = "Inadmissible"
+
 // After a successful POST to EvalHub, the Workload is annotated so we do not report the same
 // failure on every reconcile.
 const annotationKueueFailedWorkloadEventReported = "trustyai.opendatahub.io/evalhub-kueue-failed-workload-reported"
@@ -48,7 +51,7 @@ func evaluationFailedKueueWorkloadsLogFields() []any {
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs,verbs=get
 
 // EvalHubEvaluationFailedKueueWorkloadsReconciler POSTs a failed benchmark event to EvalHub when a Kueue
-// Workload has at least one status condition with Status=False (any Reason) and is owned by an EvalHub evaluation Job.
+// Workload has QuotaReserved=False with Reason=Inadmissible and is owned by an EvalHub evaluation Job.
 type EvalHubEvaluationFailedKueueWorkloadsReconciler struct {
 	client.Client
 	RESTConfig *rest.Config
@@ -89,7 +92,7 @@ func workloadFailurePredicate(r *EvalHubEvaluationFailedKueueWorkloadsReconciler
 }
 
 // workloadEnqueueCandidate mirrors jobUpdatePredicate: tenant namespace, not yet reported, has Job owner,
-// and at least one workload status condition with Status=False (including informer replay on Create).
+// and QuotaReserved=False with Reason=Inadmissible (including informer replay on Create).
 func workloadEnqueueCandidate(wl *kueue.Workload, tenantNS *evalHubTenantNamespaces) bool {
 	if wl == nil || tenantNS == nil || !tenantNS.IsTenant(wl.Namespace) {
 		return false
@@ -100,7 +103,7 @@ func workloadEnqueueCandidate(wl *kueue.Workload, tenantNS *evalHubTenantNamespa
 	if _, _, hasJob := jobOwnerFromWorkload(wl); !hasJob {
 		return false
 	}
-	_, has := workloadFirstFalseCondition(wl)
+	_, has := workloadQuotaReservedInadmissibleCondition(wl)
 	return has
 }
 
@@ -111,11 +114,14 @@ func workloadFailedEventAlreadyReported(wl *kueue.Workload) bool {
 	return wl.Annotations[annotationKueueFailedWorkloadEventReported] == "true"
 }
 
-// workloadFirstFalseCondition returns the first workload status condition with Status=False (any Reason).
-func workloadFirstFalseCondition(wl *kueue.Workload) (*metav1.Condition, bool) {
+// workloadQuotaReservedInadmissibleCondition returns a workload condition matching Kueue admission failure:
+// Type QuotaReserved, Status False, Reason Inadmissible.
+func workloadQuotaReservedInadmissibleCondition(wl *kueue.Workload) (*metav1.Condition, bool) {
 	for i := range wl.Status.Conditions {
 		c := &wl.Status.Conditions[i]
-		if c.Status == metav1.ConditionFalse {
+		if c.Type == kueue.WorkloadQuotaReserved &&
+			c.Status == metav1.ConditionFalse &&
+			c.Reason == kueueWorkloadReasonInadmissible {
 			return c, true
 		}
 	}
@@ -155,7 +161,7 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 		return ctrl.Result{}, nil
 	}
 
-	cond, ok := workloadFirstFalseCondition(&wl)
+	cond, ok := workloadQuotaReservedInadmissibleCondition(&wl)
 	if !ok {
 		return ctrl.Result{}, nil
 	}
