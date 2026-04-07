@@ -240,9 +240,10 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 // SetupWithManager registers the EvalHub CR reconciler, the evaluation Job failure → EvalHub events controller,
-// and the evaluation failed Kueue Workload → EvalHub events controller.
-// It creates and bootstraps a shared evalHubTenantNamespaces cache, then passes it to both auxiliary controllers.
-// controller-runtime runs separate loops for EvalHub, batch Job, and kueue Workload.
+// and optionally the evaluation failed Kueue Workload → EvalHub events controller when the cluster serves
+// kueue.x-k8s.io/v1beta1 workloads.
+// It creates and bootstraps a shared evalHubTenantNamespaces cache, then passes it to the auxiliary controllers.
+// controller-runtime runs separate loops for EvalHub, batch Job, and (if installed) kueue Workload.
 func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := ctrl.NewControllerManagedBy(mgr).
 		Named("evalhub").
@@ -261,7 +262,12 @@ func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := registerEvalHubEvaluationJobFailureController(mgr, tenantNS); err != nil {
 		return err
 	}
-	return registerEvalHubEvaluationFailedKueueWorkloadsReconciler(mgr, tenantNS)
+	if clusterSupportsKueueWorkloads(mgr.GetConfig()) {
+		return registerEvalHubEvaluationFailedKueueWorkloadsReconciler(mgr, tenantNS)
+	}
+	log.Log.Info("Kueue Workload API not available; skipping EvalHub failed Kueue Workloads controller",
+		"groupVersion", "kueue.x-k8s.io/v1beta1", "resource", kueueWorkloadResourceName)
+	return nil
 }
 
 // tenantLabelPredicate returns a predicate that fires only when the tenant label is
