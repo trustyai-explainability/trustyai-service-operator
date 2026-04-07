@@ -9,11 +9,11 @@ data:
   ibm-clear.yaml: |
     id: ibm-clear
     name: IBM CLEAR
+    title: IBM CLEAR
     description: IBM CLEAR evaluation framework for error analysis and reporting
-    type: builtin
     runtime:
       k8s:
-        image: quay.io/evalhub/community-ibm-clear:latest
+        image: $(evalhub-provider-ibm-clear-image)
         entrypoint:
         - python
         - main.py
@@ -21,11 +21,13 @@ data:
         memory_request: 128Mi
         cpu_limit: 500m
         memory_limit: 1Gi
-      local: null
+      local:
+        command: 'true'
     benchmarks:
     - id: agentic-evaluation
       name: Agentic Evaluation
-      description: Agentic evaluation that identifies error categories from agent traces and quantifies their frequencies
+      description: Agentic evaluation that identifies error categories from agent traces
+        and quantifies their frequencies
       category: error-analysis
       metrics:
       - total_interactions

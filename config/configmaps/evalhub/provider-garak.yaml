@@ -9,8 +9,8 @@ data:
   garak.yaml: |
     id: garak
     name: Garak
+    title: Garak
     description: LLM vulnerability scanner and red-teaming framework
-    type: builtin
     runtime:
       k8s:
         image: $(garak-provider-image)
@@ -25,7 +25,8 @@ data:
         env:
         - name: VAR_NAME
           value: VALUE
-      local: null
+      local:
+        command: 'true'
     benchmarks:
     - id: owasp_llm_top10
       name: OWASP LLM top 10 risk scan
@@ -80,7 +81,8 @@ data:
       - red_team
     - id: quality
       name: Toxic & harmful content scan
-      description: Scans for violence, profanity, toxicity, hate speech, and integrity issues.
+      description: Scans for violence, profanity, toxicity, hate speech, and integrity
+        issues.
       category: safety
       metrics:
       - attack_success_rate
