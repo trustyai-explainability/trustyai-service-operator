@@ -1,10 +1,12 @@
 resources:
-  - provider-garak.yaml
   - provider-garak-kfp.yaml
+  - provider-garak.yaml
   - provider-guidellm.yaml
+  - provider-ibm-clear.yaml
   - provider-lighteval.yaml
   - provider-lm-evaluation-harness.yaml
-  - provider-ibm-clear.yaml
   - collection-leaderboard-v2.yaml
+  - collection-safety-and-fairness-v1.yaml
+  - collection-toxicity-and-ethical-principles.yaml
 
 namespace: system

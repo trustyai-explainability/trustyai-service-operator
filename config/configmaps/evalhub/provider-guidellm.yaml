@@ -9,8 +9,8 @@ data:
   guidellm.yaml: |
     id: guidellm
     name: GuideLLM
+    title: GuideLLM
     description: Performance benchmarking framework for LLM inference servers
-    type: builtin
     runtime:
       k8s:
         image: $(evalhub-provider-guidellm-image)
@@ -21,12 +21,13 @@ data:
         memory_request: 128Mi
         cpu_limit: 1000m
         memory_limit: 2Gi
-      local: null
+      local:
+        command: 'true'
     benchmarks:
     - id: sweep
-      name: Sweep Profile
-      description: Automatically finds optimal request rate by sweeping from low to high
-        concurrency
+      name: Auto-discover optimal load
+      description: Automatically sweeps from low to high concurrency to find the best
+        throughput-latency tradeoff.
       category: performance
       metrics:
       - requests_per_second
@@ -41,9 +42,9 @@ data:
       - guidellm
       - auto
     - id: throughput
-      name: Throughput Profile
-      description: Measures maximum throughput by gradually increasing request rate until
-        saturation
+      name: Maximum throughput discovery
+      description: Finds the server's maximum requests-per-second by gradually increasing
+        load until saturation.
       category: performance
       metrics:
       - requests_per_second
@@ -57,8 +58,9 @@ data:
       - guidellm
       - saturation
     - id: concurrent
-      name: Concurrent Profile
-      description: Tests performance with fixed number of concurrent requests
+      name: Fixed concurrency stress test
+      description: Measures latency and throughput under a fixed number of simultaneous
+        requests.
       category: performance
       metrics:
       - requests_per_second
@@ -71,8 +73,9 @@ data:
       - concurrency
       - guidellm
     - id: constant
-      name: Constant Rate Profile
-      description: Maintains constant request rate throughout benchmark duration
+      name: Steady-state load test
+      description: Measures performance under a sustained, constant request rate over
+        time.
       category: performance
       metrics:
       - requests_per_second
@@ -85,9 +88,9 @@ data:
       - constant_rate
       - guidellm
     - id: poisson
-      name: Poisson Profile
-      description: Sends requests following Poisson distribution for realistic production
-        simulation
+      name: Realistic traffic simulation
+      description: Simulates real-world traffic patterns using Poisson-distributed request
+        arrivals.
       category: performance
       metrics:
       - requests_per_second
@@ -101,8 +104,9 @@ data:
       - realistic
       - guidellm
     - id: quick_perf_test
-      name: Quick Performance Test
-      description: Fast performance evaluation with sweep profile and limited samples
+      name: Quick performance snapshot
+      description: Fast sweep-based evaluation with limited samples for rapid performance
+        assessment.
       category: performance
       metrics:
       - requests_per_second
@@ -114,8 +118,9 @@ data:
       - guidellm
       - suite
     - id: comprehensive_perf_test
-      name: Comprehensive Performance Test
-      description: Thorough performance evaluation across all profiles
+      name: Full performance characterization
+      description: End-to-end evaluation across all load profiles for complete performance
+        understanding.
       category: performance
       metrics:
       - requests_per_second
