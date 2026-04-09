@@ -26,40 +26,54 @@ data:
     benchmarks:
     - id: commonsense_reasoning
       name: Everyday reasoning suite
-      description: 'Aggregated commonsense tests: activity completion, pronoun resolution,
-        open-book QA, and science reasoning.'
+      description: 'Aggregated commonsense tests: activity completion, pronoun resolution, open-book QA, and science reasoning.'
       category: reasoning
       metrics:
-      - accuracy
+      - acc
       - acc_norm
       tags:
       - reasoning
       - commonsense
       - lighteval
       - suite
+      primary_score:
+        metric: acc_norm
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: scientific_reasoning
       name: Science reasoning suite
       description: Combined easy and hard science question answering (ARC Easy + Challenge).
       category: reasoning
       metrics:
-      - accuracy
+      - acc
       - acc_norm
       tags:
       - reasoning
       - science
       - lighteval
       - suite
+      primary_score:
+        metric: acc_norm
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: physical_commonsense
       name: Physical world understanding suite
       description: Tests intuition about how everyday physical objects and actions work.
       category: reasoning
       metrics:
-      - accuracy
+      - acc
       tags:
       - reasoning
       - physical
       - lighteval
       - suite
+      primary_score:
+        metric: acc
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: truthfulness
       name: Honesty & hallucination suite
       description: Combined multiple-choice and generative tests of model truthfulness.
@@ -72,37 +86,50 @@ data:
       - truthfulness
       - lighteval
       - suite
+      primary_score:
+        metric: mc1
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: math
       name: Mathematical problem-solving suite
-      description: 'Aggregated math benchmarks: grade-school word problems, algebra, and
-        probability.'
+      description: 'Aggregated math benchmarks: grade-school word problems, algebra, and probability.'
       category: math
       metrics:
       - exact_match
-      - accuracy
+      - acc
       tags:
       - math
       - reasoning
       - lighteval
       - suite
+      primary_score:
+        metric: acc
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: knowledge
       name: Factual knowledge suite
       description: Combined factual recall across 57 academic subjects and trivia.
       category: knowledge
       metrics:
-      - accuracy
+      - acc
       - acc_norm
       tags:
       - knowledge
       - lighteval
       - suite
+      primary_score:
+        metric: acc_norm
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: language_understanding
       name: Language understanding suite
-      description: 'Core NLU tasks: grammaticality, sentiment, and paraphrase detection
-        (GLUE).'
+      description: 'Core NLU tasks: grammaticality, sentiment, and paraphrase detection (GLUE).'
       category: language_understanding
       metrics:
-      - accuracy
+      - acc
       - matthews_correlation
       - f1
       tags:
@@ -110,13 +137,17 @@ data:
       - glue
       - lighteval
       - suite
+      primary_score:
+        metric: acc
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: hellaswag
       name: Everyday activity completion
-      description: Picks the most plausible continuation of an everyday scenario (10,042
-        examples).
+      description: Picks the most plausible continuation of an everyday scenario (10,042 examples).
       category: reasoning
       metrics:
-      - accuracy
+      - acc
       - acc_norm
       num_few_shot: 0
       dataset_size: 10042
@@ -124,25 +155,34 @@ data:
       - reasoning
       - commonsense
       - lighteval
+      primary_score:
+        metric: acc_norm
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: winogrande
       name: Pronoun common sense
       description: Resolves ambiguous pronouns using real-world common sense (1,267 examples).
       category: reasoning
       metrics:
-      - accuracy
+      - acc
       num_few_shot: 0
       dataset_size: 1267
       tags:
       - reasoning
       - commonsense
       - lighteval
+      primary_score:
+        metric: acc
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: openbookqa
       name: Open-book science reasoning
-      description: "Answers science questions with access to core facts \u2014 tests multi-hop\
-        \ reasoning (500 examples)."
+      description: Answers science questions with access to core facts — tests multi-hop reasoning (500 examples).
       category: knowledge
       metrics:
-      - accuracy
+      - acc
       - acc_norm
       num_few_shot: 0
       dataset_size: 500
@@ -150,12 +190,17 @@ data:
       - knowledge
       - qa
       - lighteval
+      primary_score:
+        metric: acc_norm
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: arc:easy
       name: Basic science Q&A
       description: Easy grade-school science questions (2,376 examples).
       category: reasoning
       metrics:
-      - accuracy
+      - acc
       - acc_norm
       num_few_shot: 0
       dataset_size: 2376
@@ -163,13 +208,17 @@ data:
       - reasoning
       - science
       - lighteval
+      primary_score:
+        metric: acc_norm
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: arc:challenge
       name: Hard science Q&A
-      description: Difficult science questions requiring deeper reasoning than ARC Easy
-        (1,172 examples).
+      description: Difficult science questions requiring deeper reasoning than ARC Easy (1,172 examples).
       category: reasoning
       metrics:
-      - accuracy
+      - acc
       - acc_norm
       num_few_shot: 0
       dataset_size: 1172
@@ -177,23 +226,31 @@ data:
       - reasoning
       - science
       - lighteval
+      primary_score:
+        metric: acc_norm
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: piqa
       name: Physical interaction intuition
-      description: Tests understanding of everyday physical actions and their outcomes
-        (1,838 examples).
+      description: Tests understanding of everyday physical actions and their outcomes (1,838 examples).
       category: reasoning
       metrics:
-      - accuracy
+      - acc
       num_few_shot: 0
       dataset_size: 1838
       tags:
       - reasoning
       - physical
       - lighteval
+      primary_score:
+        metric: acc
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: truthfulqa:mc
       name: Misconception resistance (multiple choice)
-      description: Tests whether the model avoids popular myths and common misconceptions
-        (817 questions).
+      description: Tests whether the model avoids popular myths and common misconceptions (817 questions).
       category: safety
       metrics:
       - mc1
@@ -204,10 +261,14 @@ data:
       - safety
       - truthfulness
       - lighteval
+      primary_score:
+        metric: mc1
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: truthfulqa:generation
       name: Misconception resistance (generative)
-      description: Tests whether generated answers are truthful and non-misleading (817
-        questions).
+      description: Tests whether generated answers are truthful and non-misleading (817 questions).
       category: safety
       metrics:
       - bleu
@@ -218,51 +279,68 @@ data:
       - safety
       - truthfulness
       - lighteval
+      primary_score:
+        metric: bleu
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.1
     - id: gsm8k
       name: Grade-school math word problems
-      description: Multi-step arithmetic word problems requiring 2-8 reasoning steps (8-shot,
-        1,319 examples).
+      description: Multi-step arithmetic word problems requiring 2-8 reasoning steps (8-shot, 1,319 examples).
       category: math
       metrics:
       - exact_match
-      - accuracy
+      - acc
       num_few_shot: 8
       dataset_size: 1319
       tags:
       - math
       - reasoning
       - lighteval
+      primary_score:
+        metric: acc
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: math:algebra
       name: Competition algebra
-      description: Competition-level algebra problems requiring symbolic manipulation
-        and proof strategies.
+      description: Competition-level algebra problems requiring symbolic manipulation and proof strategies.
       category: math
       metrics:
-      - accuracy
+      - acc
       num_few_shot: 0
       tags:
       - math
       - algebra
       - lighteval
+      primary_score:
+        metric: acc
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: math:counting_and_probability
       name: Counting & probability problems
       description: Competition-level combinatorics and probability reasoning.
       category: math
       metrics:
-      - accuracy
+      - acc
       num_few_shot: 0
       tags:
       - math
       - probability
       - lighteval
+      primary_score:
+        metric: acc
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: aime24
       name: Aime 2024
-      description: American Invitational Mathematics Examination 2024 - competition-level
-        mathematical reasoning
+      description: American Invitational Mathematics Examination 2024 - competition-level mathematical reasoning
       category: reasoning
       metrics:
       - exact_match
-      - accuracy
+      - acc
       num_few_shot: 0
       dataset_size: 30
       tags:
@@ -270,14 +348,18 @@ data:
       - math
       - competition
       - lighteval
+      primary_score:
+        metric: acc
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: aime25
       name: Aime 2025
-      description: American Invitational Mathematics Examination 2025 - competition-level
-        mathematical reasoning
+      description: American Invitational Mathematics Examination 2025 - competition-level mathematical reasoning
       category: reasoning
       metrics:
       - exact_match
-      - accuracy
+      - acc
       num_few_shot: 0
       dataset_size: 30
       tags:
@@ -285,13 +367,17 @@ data:
       - math
       - competition
       - lighteval
+      primary_score:
+        metric: acc
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: mmlu
       name: 57-Subject knowledge test
-      description: Factual recall and reasoning across 57 academic subjects from STEM
-        to humanities (5-shot, 15,908 examples).
+      description: Factual recall and reasoning across 57 academic subjects from STEM to humanities (5-shot, 15,908 examples).
       category: knowledge
       metrics:
-      - accuracy
+      - acc
       - acc_norm
       num_few_shot: 5
       dataset_size: 15908
@@ -299,18 +385,28 @@ data:
       - knowledge
       - multitask
       - lighteval
+      primary_score:
+        metric: acc_norm
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: triviaqa
       name: Trivia factual recall
       description: Answers trivia questions using evidence from web pages and Wikipedia.
       category: knowledge
       metrics:
-      - accuracy
+      - acc
       - exact_match
       num_few_shot: 0
       tags:
       - knowledge
       - qa
       - lighteval
+      primary_score:
+        metric: acc
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: glue:cola
       name: Grammatical acceptability
       description: Judges whether English sentences are grammatically acceptable.
@@ -322,24 +418,34 @@ data:
       - language_understanding
       - glue
       - lighteval
+      primary_score:
+        metric: matthews_correlation
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.0
     - id: glue:sst2
       name: Sentiment classification
       description: Classifies movie review sentences as positive or negative.
       category: language_understanding
       metrics:
-      - accuracy
+      - acc
       num_few_shot: 0
       tags:
       - language_understanding
       - glue
       - sentiment
       - lighteval
+      primary_score:
+        metric: acc
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25
     - id: glue:mrpc
       name: Paraphrase detection
       description: Determines whether two sentences express the same meaning.
       category: language_understanding
       metrics:
-      - accuracy
+      - acc
       - f1
       num_few_shot: 0
       tags:
@@ -347,3 +453,8 @@ data:
       - glue
       - paraphrase
       - lighteval
+      primary_score:
+        metric: acc
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.25

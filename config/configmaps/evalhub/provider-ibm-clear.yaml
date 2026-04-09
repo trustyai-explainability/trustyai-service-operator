@@ -26,8 +26,7 @@ data:
     benchmarks:
     - id: agentic-evaluation
       name: Agentic Evaluation
-      description: Agentic evaluation that identifies error categories from agent traces
-        and quantifies their frequencies
+      description: Agentic evaluation that identifies error categories from agent traces and quantifies their frequencies
       category: error-analysis
       metrics:
       - total_interactions
@@ -41,3 +40,8 @@ data:
       tags:
       - erroranalysis
       - ibmclear
+      primary_score:
+        metric: average_score
+        lower_is_better: false
+      pass_criteria:
+        threshold: 0.5
