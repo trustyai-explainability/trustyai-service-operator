@@ -240,9 +240,6 @@ spec:
                 default:
                 - garak
                 - garak-kfp
-                - guidellm
-                - ibm-clear
-                - lighteval
                 - lm-evaluation-harness
                 description: |-
                   Providers is the list of OOTB provider names to mount into the deployment.

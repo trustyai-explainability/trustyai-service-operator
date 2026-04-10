@@ -74,7 +74,7 @@ type EvalHubSpec struct {
 
 	// Providers is the list of OOTB provider names to mount into the deployment.
 	// Each name must match a provider-name label on a ConfigMap in the operator namespace.
-	// +kubebuilder:default:={"garak","garak-kfp","guidellm","ibm-clear","lighteval","lm-evaluation-harness"}
+	// +kubebuilder:default:={"garak","garak-kfp","lm-evaluation-harness"}
 	// +optional
 	Providers []string `json:"providers,omitempty"`
 

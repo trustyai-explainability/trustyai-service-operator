@@ -131,7 +131,7 @@ func createConfigMap(name, namespace string) *corev1.ConfigMap {
 // createDefaultProviderConfigMaps creates source provider ConfigMaps in the given namespace
 // to satisfy the CRD default providers list during integration tests.
 func createDefaultProviderConfigMaps(namespace string) []*corev1.ConfigMap {
-	defaultProviders := []string{"garak", "garak-kfp", "guidellm", "ibm-clear", "lighteval", "lm-evaluation-harness"}
+	defaultProviders := []string{"garak", "garak-kfp", "lm-evaluation-harness"}
 	var cms []*corev1.ConfigMap
 	for _, id := range defaultProviders {
 		cm := &corev1.ConfigMap{
