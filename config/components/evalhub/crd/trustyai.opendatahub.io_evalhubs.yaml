@@ -51,6 +51,10 @@ spec:
             description: EvalHubSpec defines the desired state of EvalHub
             properties:
               collections:
+                default:
+                - leaderboard-v2
+                - safety-and-fairness-v1
+                - toxicity-and-ethical-principles
                 description: |-
                   Collections is the list of OOTB collection names to mount into the deployment.
                   Each name must match a collection-name label on a ConfigMap in the operator namespace.
@@ -235,8 +239,7 @@ spec:
               providers:
                 default:
                 - garak
-                - guidellm
-                - lighteval
+                - garak-kfp
                 - lm-evaluation-harness
                 description: |-
                   Providers is the list of OOTB provider names to mount into the deployment.

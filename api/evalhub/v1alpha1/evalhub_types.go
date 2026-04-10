@@ -74,12 +74,13 @@ type EvalHubSpec struct {
 
 	// Providers is the list of OOTB provider names to mount into the deployment.
 	// Each name must match a provider-name label on a ConfigMap in the operator namespace.
-	// +kubebuilder:default:={"garak","guidellm","lighteval","lm-evaluation-harness"}
+	// +kubebuilder:default:={"garak","garak-kfp","lm-evaluation-harness"}
 	// +optional
 	Providers []string `json:"providers,omitempty"`
 
 	// Collections is the list of OOTB collection names to mount into the deployment.
 	// Each name must match a collection-name label on a ConfigMap in the operator namespace.
+	// +kubebuilder:default:={"leaderboard-v2","safety-and-fairness-v1","toxicity-and-ethical-principles"}
 	// +optional
 	Collections []string `json:"collections,omitempty"`
 
