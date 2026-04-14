@@ -2,7 +2,11 @@ package nemo_guardrails
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"reflect"
+	"sort"
+
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/nemo_guardrails/templates"
@@ -10,7 +14,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -64,6 +67,9 @@ func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGua
 	var defaultConfig string
 	defaultAlreadyChosen := false
 
+	// Accumulate a hash of all ConfigMap names and data to detect content changes
+	hasher := sha256.New()
+
 	for idx, nemoConfig := range nemoGuardrails.Spec.NemoConfigs {
 		// Take the first config as default for now. If any config manually specifies default-ness, we'll override this
 		if idx == 0 {
@@ -79,6 +85,19 @@ func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGua
 				utils.LogErrorRetrieving(ctx, err, "configmap", configCM, deployment.Namespace)
 				return err
 			}
+
+			// Include ConfigMap name and data in hash for change detection
+			hasher.Write([]byte(configCM))
+			keys := make([]string, 0, len(configmap.Data))
+			for k := range configmap.Data {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				hasher.Write([]byte(k))
+				hasher.Write([]byte(configmap.Data[k]))
+			}
+
 			volumeName := fmt.Sprintf("%s-%s-volume", nemoConfig.Name, configCM)
 			utils.MountConfigMapToDeployment(configmap, volumeName, deployment)
 			volumeMount := corev1.VolumeMount{
@@ -107,6 +126,13 @@ func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGua
 	if !defaultAlreadyChosen {
 		log.FromContext(ctx).Info(fmt.Sprintf("no NemoConfigs were marked as default, using '%s' as default", defaultConfig))
 	}
+
+	// Set ConfigMap content hash as a pod template annotation to trigger rollout on changes
+	configHash := fmt.Sprintf("%x", hasher.Sum(nil))
+	if deployment.Spec.Template.Annotations == nil {
+		deployment.Spec.Template.Annotations = make(map[string]string)
+	}
+	deployment.Spec.Template.Annotations["trustyai.opendatahub.io/nemo-config-hash"] = configHash
 
 	// Set default config
 	deployment.Spec.Template.Spec.Containers[0].Env = append(

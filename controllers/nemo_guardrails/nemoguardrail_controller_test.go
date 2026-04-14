@@ -310,6 +310,117 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		}, time.Second*10, time.Millisecond*100).Should(Equal(int32(3)))
 	})
 
+	It("should set a config hash annotation on the deployment pod template", func() {
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Checking if the Deployment has the config hash annotation")
+		Eventually(func() string {
+			deployment := &appsv1.Deployment{}
+			err := k8sClient.Get(ctx, typeNamespacedName, deployment)
+			if err != nil {
+				return ""
+			}
+			return deployment.Spec.Template.Annotations["trustyai.opendatahub.io/nemo-config-hash"]
+		}, time.Second*10, time.Millisecond*100).ShouldNot(BeEmpty())
+	})
+
+	It("should update the deployment when ConfigMap content changes", func() {
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+
+		By("Performing initial reconciliation")
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Recording the initial config hash")
+		var initialHash string
+		Eventually(func() string {
+			deployment := &appsv1.Deployment{}
+			err := k8sClient.Get(ctx, typeNamespacedName, deployment)
+			if err != nil {
+				return ""
+			}
+			initialHash = deployment.Spec.Template.Annotations["trustyai.opendatahub.io/nemo-config-hash"]
+			return initialHash
+		}, time.Second*10, time.Millisecond*100).ShouldNot(BeEmpty())
+
+		By("Updating the ConfigMap content")
+		configMap := &corev1.ConfigMap{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nemo-config", Namespace: namespace}, configMap)).To(Succeed())
+		configMap.Data["config.yaml"] = "updated: config"
+		Expect(k8sClient.Update(ctx, configMap)).To(Succeed())
+
+		By("Reconciling again after ConfigMap change")
+		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Checking that the config hash annotation has changed")
+		Eventually(func() bool {
+			deployment := &appsv1.Deployment{}
+			err := k8sClient.Get(ctx, typeNamespacedName, deployment)
+			if err != nil {
+				return false
+			}
+			newHash := deployment.Spec.Template.Annotations["trustyai.opendatahub.io/nemo-config-hash"]
+			return newHash != "" && newHash != initialHash
+		}, time.Second*10, time.Millisecond*100).Should(BeTrue())
+	})
+
+	It("should not update the deployment when ConfigMap content is unchanged", func() {
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+
+		By("Performing initial reconciliation")
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Recording the initial config hash and resource version")
+		var initialHash string
+		var initialResourceVersion string
+		Eventually(func() string {
+			deployment := &appsv1.Deployment{}
+			err := k8sClient.Get(ctx, typeNamespacedName, deployment)
+			if err != nil {
+				return ""
+			}
+			initialHash = deployment.Spec.Template.Annotations["trustyai.opendatahub.io/nemo-config-hash"]
+			initialResourceVersion = deployment.ResourceVersion
+			return initialHash
+		}, time.Second*10, time.Millisecond*100).ShouldNot(BeEmpty())
+
+		By("Reconciling again without any changes")
+		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Checking that the deployment was not updated")
+		deployment := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, deployment)).To(Succeed())
+		Expect(deployment.Spec.Template.Annotations["trustyai.opendatahub.io/nemo-config-hash"]).To(Equal(initialHash))
+		Expect(deployment.ResourceVersion).To(Equal(initialResourceVersion))
+	})
+
 	It("should create a ServiceAccount and ClusterRoleBinding and delete them when the instance is deleted", func() {
 		controllerReconciler := &NemoGuardrailsReconciler{
 			Client:    k8sClient,

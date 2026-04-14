@@ -25,15 +25,19 @@ import (
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/nemo_guardrails/templates"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 // NemoGuardrailReconciler reconciles a NemoGuardrails object
@@ -209,6 +213,40 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *NemoGuardrailsReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&nemoguardrailsv1alpha1.NemoGuardrails{}).
+		// Watch for changes to ConfigMaps referenced by NemoGuardrails CRs.
+		// OnlyMetadata caches only object metadata (~1KB each) instead of full
+		// objects, preventing OOM when many ConfigMaps exist cluster-wide.
+		Watches(
+			&corev1.ConfigMap{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
+				var requests []ctrl.Request
+				var nemoGuardrailsList nemoguardrailsv1alpha1.NemoGuardrailsList
+				if err := r.List(ctx, &nemoGuardrailsList, &client.ListOptions{Namespace: obj.GetNamespace()}); err != nil {
+					return nil
+				}
+				for _, ng := range nemoGuardrailsList.Items {
+					for _, nemoConfig := range ng.Spec.NemoConfigs {
+						for _, cmName := range nemoConfig.ConfigMaps {
+							if cmName == obj.GetName() {
+								requests = append(requests, ctrl.Request{
+									NamespacedName: types.NamespacedName{
+										Name:      ng.Name,
+										Namespace: ng.Namespace,
+									},
+								})
+							}
+						}
+					}
+				}
+				return requests
+			}),
+			builder.WithPredicates(predicate.Or(
+				predicate.AnnotationChangedPredicate{},
+				predicate.ResourceVersionChangedPredicate{},
+				predicate.GenerationChangedPredicate{},
+			)),
+			builder.OnlyMetadata,
+		).
 		Complete(r)
 }
 
