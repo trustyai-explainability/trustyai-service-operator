@@ -106,8 +106,7 @@ data:
         threshold: 0.3
     - id: quality
       name: Toxic & harmful content scan
-      description: Scans for violence, profanity, toxicity, hate speech, and integrity
-        issues.
+      description: Scans for violence, profanity, toxicity, hate speech, and integrity issues.
       category: safety
       metrics:
       - attack_success_rate

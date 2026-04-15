@@ -26,8 +26,7 @@ data:
     benchmarks:
     - id: commonsense_reasoning
       name: Everyday reasoning suite
-      description: 'Aggregated commonsense tests: activity completion, pronoun resolution,
-        open-book QA, and science reasoning.'
+      description: 'Aggregated commonsense tests: activity completion, pronoun resolution, open-book QA, and science reasoning.'
       category: reasoning
       metrics:
       - acc
@@ -94,8 +93,7 @@ data:
         threshold: 0.25
     - id: math
       name: Mathematical problem-solving suite
-      description: 'Aggregated math benchmarks: grade-school word problems, algebra, and
-        probability.'
+      description: 'Aggregated math benchmarks: grade-school word problems, algebra, and probability.'
       category: math
       metrics:
       - exact_match
@@ -128,8 +126,7 @@ data:
         threshold: 0.25
     - id: language_understanding
       name: Language understanding suite
-      description: 'Core NLU tasks: grammaticality, sentiment, and paraphrase detection
-        (GLUE).'
+      description: 'Core NLU tasks: grammaticality, sentiment, and paraphrase detection (GLUE).'
       category: language_understanding
       metrics:
       - acc
@@ -147,8 +144,7 @@ data:
         threshold: 0.25
     - id: hellaswag
       name: Everyday activity completion
-      description: Picks the most plausible continuation of an everyday scenario (10,042
-        examples).
+      description: Picks the most plausible continuation of an everyday scenario (10,042 examples).
       category: reasoning
       metrics:
       - acc
@@ -183,8 +179,7 @@ data:
         threshold: 0.25
     - id: openbookqa
       name: Open-book science reasoning
-      description: "Answers science questions with access to core facts \u2014 tests multi-hop\
-        \ reasoning (500 examples)."
+      description: Answers science questions with access to core facts — tests multi-hop reasoning (500 examples).
       category: knowledge
       metrics:
       - acc
@@ -220,8 +215,7 @@ data:
         threshold: 0.25
     - id: arc:challenge
       name: Hard science Q&A
-      description: Difficult science questions requiring deeper reasoning than ARC Easy
-        (1,172 examples).
+      description: Difficult science questions requiring deeper reasoning than ARC Easy (1,172 examples).
       category: reasoning
       metrics:
       - acc
@@ -239,8 +233,7 @@ data:
         threshold: 0.25
     - id: piqa
       name: Physical interaction intuition
-      description: Tests understanding of everyday physical actions and their outcomes
-        (1,838 examples).
+      description: Tests understanding of everyday physical actions and their outcomes (1,838 examples).
       category: reasoning
       metrics:
       - acc
@@ -257,8 +250,7 @@ data:
         threshold: 0.25
     - id: truthfulqa:mc
       name: Misconception resistance (multiple choice)
-      description: Tests whether the model avoids popular myths and common misconceptions
-        (817 questions).
+      description: Tests whether the model avoids popular myths and common misconceptions (817 questions).
       category: safety
       metrics:
       - mc1
@@ -276,8 +268,7 @@ data:
         threshold: 0.25
     - id: truthfulqa:generation
       name: Misconception resistance (generative)
-      description: Tests whether generated answers are truthful and non-misleading (817
-        questions).
+      description: Tests whether generated answers are truthful and non-misleading (817 questions).
       category: safety
       metrics:
       - bleu
@@ -295,8 +286,7 @@ data:
         threshold: 0.1
     - id: gsm8k
       name: Grade-school math word problems
-      description: Multi-step arithmetic word problems requiring 2-8 reasoning steps (8-shot,
-        1,319 examples).
+      description: Multi-step arithmetic word problems requiring 2-8 reasoning steps (8-shot, 1,319 examples).
       category: math
       metrics:
       - exact_match
@@ -314,8 +304,7 @@ data:
         threshold: 0.25
     - id: math:algebra
       name: Competition algebra
-      description: Competition-level algebra problems requiring symbolic manipulation
-        and proof strategies.
+      description: Competition-level algebra problems requiring symbolic manipulation and proof strategies.
       category: math
       metrics:
       - acc
@@ -347,8 +336,7 @@ data:
         threshold: 0.25
     - id: aime24
       name: Aime 2024
-      description: American Invitational Mathematics Examination 2024 - competition-level
-        mathematical reasoning
+      description: American Invitational Mathematics Examination 2024 - competition-level mathematical reasoning
       category: reasoning
       metrics:
       - exact_match
@@ -367,8 +355,7 @@ data:
         threshold: 0.25
     - id: aime25
       name: Aime 2025
-      description: American Invitational Mathematics Examination 2025 - competition-level
-        mathematical reasoning
+      description: American Invitational Mathematics Examination 2025 - competition-level mathematical reasoning
       category: reasoning
       metrics:
       - exact_match
@@ -387,8 +374,7 @@ data:
         threshold: 0.25
     - id: mmlu
       name: 57-Subject knowledge test
-      description: Factual recall and reasoning across 57 academic subjects from STEM
-        to humanities (5-shot, 15,908 examples).
+      description: Factual recall and reasoning across 57 academic subjects from STEM to humanities (5-shot, 15,908 examples).
       category: knowledge
       metrics:
       - acc
