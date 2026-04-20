@@ -5,6 +5,7 @@ import (
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -42,6 +43,8 @@ func (r *EvalHubReconciler) buildServiceMonitor(instance *evalhubv1alpha1.EvalHu
 		"instance":  instance.Name,
 	}
 
+	serverName := instance.Name + "." + instance.Namespace + ".svc"
+
 	return &monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceMonitorName(instance),
@@ -58,7 +61,15 @@ func (r *EvalHubReconciler) buildServiceMonitor(instance *evalhubv1alpha1.EvalHu
 					Port:        "https",
 					TLSConfig: &monitoringv1.TLSConfig{
 						SafeTLSConfig: monitoringv1.SafeTLSConfig{
-							InsecureSkipVerify: true,
+							ServerName: serverName,
+							CA: monitoringv1.SecretOrConfigMap{
+								ConfigMap: &corev1.ConfigMapKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: instance.Name + "-service-ca",
+									},
+									Key: serviceCACertFile,
+								},
+							},
 						},
 					},
 				},
