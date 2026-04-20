@@ -19,7 +19,7 @@ func networkPolicyName(instance *evalhubv1alpha1.EvalHub) string {
 }
 
 func (r *EvalHubReconciler) buildNetworkPolicy(instance *evalhubv1alpha1.EvalHub) *networkingv1.NetworkPolicy {
-	port := intstr.FromInt(containerPort)
+	apiPort := intstr.FromInt(containerPort)
 
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
@@ -41,25 +41,9 @@ func (r *EvalHubReconciler) buildNetworkPolicy(instance *evalhubv1alpha1.EvalHub
 			},
 			Ingress: []networkingv1.NetworkPolicyIngressRule{
 				{
-					From: []networkingv1.NetworkPolicyPeer{
-						{
-							NamespaceSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"kubernetes.io/metadata.name": "openshift-user-workload-monitoring",
-								},
-							},
-						},
-						{
-							NamespaceSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"kubernetes.io/metadata.name": "openshift-monitoring",
-								},
-							},
-						},
-					},
 					Ports: []networkingv1.NetworkPolicyPort{
 						{
-							Port:     &port,
+							Port:     &apiPort,
 							Protocol: protocolPtr(corev1.ProtocolTCP),
 						},
 					},
