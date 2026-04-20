@@ -268,16 +268,20 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 // SetupWithManager registers the EvalHub CR reconciler and the evaluation Job failure → EvalHub events controller.
 // controller-runtime still runs two controller loops: primary keys are EvalHub vs batch Job (different resource kinds).
 func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		Named("evalhub").
 		For(&evalhubv1alpha1.EvalHub{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}, builder.OnlyMetadata).
 		Owns(&corev1.ConfigMap{}, builder.OnlyMetadata).
-		Owns(&monitoringv1.ServiceMonitor{}).
 		Owns(&networkingv1.NetworkPolicy{}, builder.OnlyMetadata).
-		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.mapNamespaceToEvalHubs), builder.OnlyMetadata, builder.WithPredicates(tenantLabelPredicate())).
-		Complete(r); err != nil {
+		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.mapNamespaceToEvalHubs), builder.OnlyMetadata, builder.WithPredicates(tenantLabelPredicate()))
+
+	if r.isServiceMonitorSupported() {
+		b = b.Owns(&monitoringv1.ServiceMonitor{}, builder.OnlyMetadata)
+	}
+
+	if err := b.Complete(r); err != nil {
 		return err
 	}
 	return registerEvalHubEvaluationJobFailureController(mgr)
