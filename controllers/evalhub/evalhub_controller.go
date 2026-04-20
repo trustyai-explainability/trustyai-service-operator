@@ -220,29 +220,27 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return RequeueWithError(err)
 	}
 
-	// Reconcile namespace-scoped RBAC for metrics resources (ServiceMonitor, NetworkPolicy).
-	// This must run before the ServiceMonitor and NetworkPolicy reconcilers.
-	if err := r.reconcileMetricsRBAC(ctx, instance); err != nil {
-		log.Error(err, "Failed to reconcile metrics RBAC")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile metrics RBAC: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-
-	// Reconcile ServiceMonitor for Prometheus metrics scraping
-	if err := r.reconcileServiceMonitor(ctx, instance); err != nil {
-		log.Error(err, "Failed to reconcile ServiceMonitor")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile ServiceMonitor: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-
-	// Reconcile NetworkPolicy to allow Prometheus scraping
-	if err := r.reconcileNetworkPolicy(ctx, instance); err != nil {
-		log.Error(err, "Failed to reconcile NetworkPolicy")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile NetworkPolicy: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
+	// Reconcile monitoring resources (ServiceMonitor, NetworkPolicy, RBAC).
+	// Monitoring failures are non-fatal: log, set a degraded condition, and continue.
+	if r.isServiceMonitorSupported() {
+		if err := r.reconcileMetricsRBAC(ctx, instance); err != nil {
+			log.Error(err, "Failed to reconcile metrics RBAC")
+			instance.SetStatus("MonitoringDegraded", "MetricsRBACFailed", fmt.Sprintf("Failed to reconcile metrics RBAC: %v", err), corev1.ConditionTrue)
+			r.Status().Update(ctx, instance)
+		} else if err := r.reconcileServiceMonitor(ctx, instance); err != nil {
+			log.Error(err, "Failed to reconcile ServiceMonitor")
+			instance.SetStatus("MonitoringDegraded", "ServiceMonitorFailed", fmt.Sprintf("Failed to reconcile ServiceMonitor: %v", err), corev1.ConditionTrue)
+			r.Status().Update(ctx, instance)
+		} else if err := r.reconcileNetworkPolicy(ctx, instance); err != nil {
+			log.Error(err, "Failed to reconcile NetworkPolicy")
+			instance.SetStatus("MonitoringDegraded", "NetworkPolicyFailed", fmt.Sprintf("Failed to reconcile NetworkPolicy: %v", err), corev1.ConditionTrue)
+			r.Status().Update(ctx, instance)
+		} else {
+			instance.SetStatus("MonitoringDegraded", "MonitoringReady", "", corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+		}
+	} else {
+		log.Info("ServiceMonitor CRD not available on this cluster, skipping monitoring reconciliation")
 	}
 
 	// Reconcile Route (if on OpenShift and enabled)

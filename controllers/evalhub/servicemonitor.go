@@ -7,6 +7,7 @@ import (
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -16,6 +17,19 @@ const (
 	metricsPath    = "/metrics"
 	scrapeInterval = monitoringv1.Duration("30s")
 )
+
+func (r *EvalHubReconciler) isServiceMonitorSupported() bool {
+	if r.RESTMapper() == nil {
+		return false
+	}
+	gvk := schema.GroupVersionKind{
+		Group:   "monitoring.coreos.com",
+		Version: "v1",
+		Kind:    "ServiceMonitor",
+	}
+	_, err := r.RESTMapper().RESTMapping(gvk.GroupKind(), gvk.Version)
+	return err == nil
+}
 
 func serviceMonitorName(instance *evalhubv1alpha1.EvalHub) string {
 	return instance.Name + "-metrics"
