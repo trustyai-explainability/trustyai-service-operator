@@ -181,10 +181,11 @@ func setupReconciler(namespace string) (*EvalHubReconciler, context.Context) {
 	eventRecorder := record.NewFakeRecorder(100)
 
 	reconciler := &EvalHubReconciler{
-		Client:        k8sClient,
-		Scheme:        scheme.Scheme,
-		Namespace:     namespace,
-		EventRecorder: eventRecorder,
+		Client:                k8sClient,
+		Scheme:                scheme.Scheme,
+		Namespace:             namespace,
+		OperatorConfigMapName: configMapName,
+		EventRecorder:         eventRecorder,
 	}
 
 	// Create the operator image ConfigMap so getEvalHubImage succeeds.

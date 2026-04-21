@@ -25,23 +25,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
-func ControllerSetUp(mgr manager.Manager, ns string, recorder record.EventRecorder) error {
+func ControllerSetUp(mgr manager.Manager, ns, operatorConfigMapName string, recorder record.EventRecorder) error {
 	return (&EvalHubReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		restMapper:    mgr.GetRESTMapper(),
-		Namespace:     ns,
-		EventRecorder: recorder,
+		Client:                mgr.GetClient(),
+		Scheme:                mgr.GetScheme(),
+		restMapper:            mgr.GetRESTMapper(),
+		Namespace:             ns,
+		OperatorConfigMapName: operatorConfigMapName,
+		EventRecorder:         recorder,
 	}).SetupWithManager(mgr)
 }
 
 // EvalHubReconciler reconciles an EvalHub object
 type EvalHubReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	restMapper    meta.RESTMapper
-	Namespace     string
-	EventRecorder record.EventRecorder
+	Scheme                *runtime.Scheme
+	restMapper            meta.RESTMapper
+	Namespace             string
+	OperatorConfigMapName string
+	EventRecorder         record.EventRecorder
 }
 
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs,verbs=get;list;watch;create;update;patch;delete
@@ -237,8 +239,11 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return RequeueWithDelay(time.Second * 30)
 }
 
-// SetupWithManager registers the EvalHub CR reconciler and the evaluation Job failure → EvalHub events controller.
-// controller-runtime still runs two controller loops: primary keys are EvalHub vs batch Job (different resource kinds).
+// SetupWithManager registers the EvalHub CR reconciler, the evaluation Job failure → EvalHub events controller,
+// and optionally the evaluation failed Kueue Workload → EvalHub events controller when the cluster serves
+// kueue.x-k8s.io/v1beta1 workloads.
+// It creates and bootstraps a shared evalHubTenantNamespaces cache, then passes it to the auxiliary controllers.
+// controller-runtime runs separate loops for EvalHub, batch Job, and (if installed) kueue Workload.
 func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := ctrl.NewControllerManagedBy(mgr).
 		Named("evalhub").
@@ -250,7 +255,19 @@ func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r); err != nil {
 		return err
 	}
-	return registerEvalHubEvaluationJobFailureController(mgr)
+	tenantNS := newEvalHubTenantNamespaces()
+	if err := tenantNS.bootstrap(context.Background(), mgr.GetAPIReader()); err != nil {
+		return fmt.Errorf("evalhub: bootstrap tenant namespaces: %w", err)
+	}
+	if err := registerEvalHubEvaluationJobFailureController(mgr, tenantNS); err != nil {
+		return err
+	}
+	if clusterSupportsKueueWorkloads(mgr.GetConfig()) {
+		return registerEvalHubEvaluationFailedKueueWorkloadsReconciler(mgr, tenantNS)
+	}
+	log.Log.Info("Kueue Workload API not available; skipping EvalHub failed Kueue Workloads controller",
+		"groupVersion", "kueue.x-k8s.io/v1beta1", "resource", kueueWorkloadResourceName)
+	return nil
 }
 
 // tenantLabelPredicate returns a predicate that fires only when the tenant label is
