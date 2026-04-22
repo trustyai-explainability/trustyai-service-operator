@@ -15,7 +15,7 @@ import (
 )
 
 func networkPolicyName(instance *evalhubv1alpha1.EvalHub) string {
-	return instance.Name + "-allow-metrics"
+	return instance.Name + "-allow-ingress"
 }
 
 func (r *EvalHubReconciler) buildNetworkPolicy(instance *evalhubv1alpha1.EvalHub) *networkingv1.NetworkPolicy {
@@ -45,6 +45,32 @@ func (r *EvalHubReconciler) buildNetworkPolicy(instance *evalhubv1alpha1.EvalHub
 						{
 							Port:     &apiPort,
 							Protocol: protocolPtr(corev1.ProtocolTCP),
+						},
+					},
+					From: []networkingv1.NetworkPolicyPeer{
+						{
+							NamespaceSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"evalhub.trustyai.opendatahub.io/tenant": "",
+								},
+							},
+						},
+						{
+							NamespaceSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"openshift.io/cluster-monitoring": "true",
+								},
+							},
+						},
+						{
+							NamespaceSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"network.openshift.io/policy-group": "ingress",
+								},
+							},
+						},
+						{
+							PodSelector: &metav1.LabelSelector{},
 						},
 					},
 				},
