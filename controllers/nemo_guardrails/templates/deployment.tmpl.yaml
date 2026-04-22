@@ -87,11 +87,11 @@ spec:
             path: /
             port: 8000
             scheme: HTTP
-          initialDelaySeconds: 10
-          timeoutSeconds: 10
-          periodSeconds: 20
+          initialDelaySeconds: 5
+          timeoutSeconds: 2
+          periodSeconds: 5
           successThreshold: 1
-          failureThreshold: 3
+          failureThreshold: 12
         ports:
         - containerPort: 8000
       {{ if .UseAuthProxy }}
