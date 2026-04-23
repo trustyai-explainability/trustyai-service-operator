@@ -15,9 +15,9 @@ resources:
   - rbac/evalhub_mlflow_access_role.yaml
   - rbac/evalhub_mlflow_jobs_binding.yaml
   - rbac/evalhub_mlflow_jobs_role.yaml
+  - rbac/evalhub_networkpolicy_rolebinding.yaml
+  - rbac/evalhub_networkpolicy_role.yaml
   - rbac/evalhub_providers_access_binding.yaml
   - rbac/evalhub_providers_access_role.yaml
-  - rbac/evalhub_networkpolicy_role.yaml
-  - rbac/evalhub_networkpolicy_rolebinding.yaml
   - rbac/manager-rbac.yaml
   - rbac/manager-rolebinding.yaml
