@@ -2,6 +2,7 @@ package evalhub
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -49,7 +50,8 @@ func TestBuildDeploymentSpec(t *testing.T) {
 			Namespace: testNamespace,
 		},
 		Data: map[string]string{
-			configMapEvalHubImageKey: "quay.io/test/eval-hub:v1.2.3",
+			configMapEvalHubImageKey:        "quay.io/test/eval-hub:v1.2.3",
+			configMapKubeRBACProxyImageKey: "quay.io/test/kube-rbac-proxy:v1",
 		},
 	}
 
@@ -84,7 +86,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 
 		// Check pod template
 		podSpec := deploymentSpec.Template.Spec
-		require.Len(t, podSpec.Containers, 1)
+		require.Len(t, podSpec.Containers, 2)
 
 		// Find the evalhub container
 		var container *corev1.Container
@@ -104,8 +106,8 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		// Check ports
 		require.Len(t, container.Ports, 1)
 		port := container.Ports[0]
-		assert.Equal(t, "https", port.Name)
-		assert.Equal(t, int32(8443), port.ContainerPort)
+		assert.Equal(t, "evalhub", port.Name)
+		assert.Equal(t, int32(evalHubAppPort), port.ContainerPort)
 		assert.Equal(t, corev1.ProtocolTCP, port.Protocol)
 
 		// Check environment variables
@@ -115,8 +117,8 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		}
 
 		// Check default environment variables
-		assert.Equal(t, "0.0.0.0", envVarMap["API_HOST"])
-		assert.Equal(t, "8443", envVarMap["PORT"])
+		assert.Equal(t, "127.0.0.1", envVarMap["API_HOST"])
+		assert.Equal(t, fmt.Sprintf("%d", evalHubAppPort), envVarMap["PORT"])
 		assert.Equal(t, "/etc/tls/private/tls.crt", envVarMap["TLS_CERT_FILE"])
 		assert.Equal(t, "/etc/tls/private/tls.key", envVarMap["TLS_KEY_FILE"])
 		assert.Equal(t, "INFO", envVarMap["LOG_LEVEL"])
@@ -146,20 +148,29 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		assert.True(t, *container.SecurityContext.RunAsNonRoot)
 		assert.Contains(t, container.SecurityContext.Capabilities.Drop, corev1.Capability("ALL"))
 
-		// Check health probes (HTTPGet with HTTPS)
-		require.NotNil(t, container.LivenessProbe)
-		require.NotNil(t, container.LivenessProbe.HTTPGet)
-		assert.Equal(t, "/api/v1/health", container.LivenessProbe.HTTPGet.Path)
-		assert.Equal(t, corev1.URISchemeHTTPS, container.LivenessProbe.HTTPGet.Scheme)
-		assert.Equal(t, int32(30), container.LivenessProbe.InitialDelaySeconds)
-		assert.Equal(t, int32(10), container.LivenessProbe.PeriodSeconds)
+		// Eval-hub has no kubelet probes; health is checked via kube-rbac-proxy on servicePort.
+		assert.Nil(t, container.LivenessProbe)
+		assert.Nil(t, container.ReadinessProbe)
 
-		require.NotNil(t, container.ReadinessProbe)
-		require.NotNil(t, container.ReadinessProbe.HTTPGet)
-		assert.Equal(t, "/api/v1/health", container.ReadinessProbe.HTTPGet.Path)
-		assert.Equal(t, corev1.URISchemeHTTPS, container.ReadinessProbe.HTTPGet.Scheme)
-		assert.Equal(t, int32(10), container.ReadinessProbe.InitialDelaySeconds)
-		assert.Equal(t, int32(5), container.ReadinessProbe.PeriodSeconds)
+		krp := findContainer(t, podSpec.Containers, kubeRBACProxyContainerName)
+		assert.Equal(t, "quay.io/test/kube-rbac-proxy:v1", krp.Image)
+		assert.Contains(t, krp.Args, "--ignore-paths="+evalHubHealthPath)
+		require.NotNil(t, krp.ReadinessProbe)
+		require.NotNil(t, krp.ReadinessProbe.HTTPGet)
+		assert.Equal(t, evalHubHealthPath, krp.ReadinessProbe.HTTPGet.Path)
+		assert.Equal(t, "127.0.0.1", krp.ReadinessProbe.HTTPGet.Host)
+		assert.Equal(t, intstr.FromInt(servicePort), krp.ReadinessProbe.HTTPGet.Port)
+		assert.Equal(t, corev1.URISchemeHTTPS, krp.ReadinessProbe.HTTPGet.Scheme)
+		assert.Equal(t, int32(10), krp.ReadinessProbe.InitialDelaySeconds)
+		assert.Equal(t, int32(5), krp.ReadinessProbe.PeriodSeconds)
+
+		require.NotNil(t, krp.LivenessProbe)
+		require.NotNil(t, krp.LivenessProbe.HTTPGet)
+		assert.Equal(t, evalHubHealthPath, krp.LivenessProbe.HTTPGet.Path)
+		assert.Equal(t, intstr.FromInt(servicePort), krp.LivenessProbe.HTTPGet.Port)
+		assert.Equal(t, corev1.URISchemeHTTPS, krp.LivenessProbe.HTTPGet.Scheme)
+		assert.Equal(t, int32(30), krp.LivenessProbe.InitialDelaySeconds)
+		assert.Equal(t, int32(10), krp.LivenessProbe.PeriodSeconds)
 
 		// Check pod security context
 		require.NotNil(t, podSpec.SecurityContext)
@@ -197,6 +208,9 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		}
 		require.NotNil(t, container)
 		assert.Equal(t, defaultEvalHubImage, container.Image)
+
+		krp := findContainer(t, deploymentSpec.Template.Spec.Containers, kubeRBACProxyContainerName)
+		assert.Equal(t, defaultKubeRBACProxyImage, krp.Image)
 	})
 
 	t.Run("should add provider volume and mount when providerCMNames is non-nil", func(t *testing.T) {

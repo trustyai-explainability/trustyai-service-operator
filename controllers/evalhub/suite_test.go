@@ -123,7 +123,8 @@ func createConfigMap(name, namespace string) *corev1.ConfigMap {
 			Namespace: namespace,
 		},
 		Data: map[string]string{
-			"evalHubImage": "quay.io/ruimvieira/eval-hub:test",
+			"evalHubImage":    "quay.io/ruimvieira/eval-hub:test",
+			"kube-rbac-proxy": "quay.io/openshift/origin-kube-rbac-proxy:4.19",
 		},
 	}
 }

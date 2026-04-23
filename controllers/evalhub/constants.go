@@ -14,15 +14,27 @@ const (
 
 	// Container configuration
 	containerName = "evalhub"
-	containerPort = 8443
+	// evalHubAppPort is where eval-hub binds TLS (loopback only); kube-rbac-proxy listens on servicePort.
+	evalHubAppPort = 8444
+	// evalHubHealthPath is forwarded by kube-rbac-proxy; use --ignore-paths so kubelet probes skip authn/z.
+	evalHubHealthPath = "/api/v1/health"
 
-	// Service configuration
+	// Service configuration (public HTTPS targets kube-rbac-proxy on this port)
 	serviceName = "evalhub"
 	servicePort = 8443
 
+	// kube-rbac-proxy sidecar
+	kubeRBACProxyContainerName       = "kube-rbac-proxy"
+	kubeRBACProxyConfigMountPath     = "/etc/kube-rbac-proxy/auth.yaml"
+	evalHubAuthConfigMapKey          = "auth.yaml"
+	kubeRBACProxyUpstreamCAMountPath = "/etc/kube-rbac-proxy/upstream-ca"
+	kubeRBACProxyHealthPort          = 9443
+
 	// Configuration constants
-	configMapName            = "trustyai-service-operator-config"
-	configMapEvalHubImageKey = "evalHubImage"
+	configMapName                  = "trustyai-service-operator-config"
+	configMapEvalHubImageKey       = "evalHubImage"
+	configMapKubeRBACProxyImageKey = "kube-rbac-proxy"
+	defaultKubeRBACProxyImage      = "quay.io/openshift/origin-kube-rbac-proxy:4.19"
 
 	// TLS configuration (OpenShift service serving certificates)
 	tlsSecretMountPath = "/etc/tls/private"

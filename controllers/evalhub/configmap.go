@@ -153,7 +153,7 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 
 	config := EvalHubConfig{
 		Service: ServiceConfig{
-			Port:             containerPort,
+			Port:             evalHubAppPort,
 			ReadyFile:        "/tmp/repo-ready",
 			TerminationFile:  "/tmp/termination-log",
 			EvalInitImage:    evalHubImage,

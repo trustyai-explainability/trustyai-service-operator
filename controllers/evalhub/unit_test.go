@@ -2,6 +2,7 @@ package evalhub
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -54,7 +55,8 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 			Namespace: testNamespace,
 		},
 		Data: map[string]string{
-			configMapEvalHubImageKey: "quay.io/test/eval-hub:latest",
+			configMapEvalHubImageKey:        "quay.io/test/eval-hub:latest",
+			configMapKubeRBACProxyImageKey: "quay.io/test/kube-rbac-proxy:latest",
 		},
 	}
 
@@ -88,8 +90,8 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		assert.Equal(t, testNamespace, deployment.Namespace)
 		assert.Equal(t, replicas, *deployment.Spec.Replicas)
 
-		// Check container configuration — single container, no sidecar
-		require.Len(t, deployment.Spec.Template.Spec.Containers, 1)
+		// Check container configuration — evalhub + kube-rbac-proxy
+		require.Len(t, deployment.Spec.Template.Spec.Containers, 2)
 
 		container := &deployment.Spec.Template.Spec.Containers[0]
 
@@ -97,18 +99,18 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		assert.Equal(t, "quay.io/test/eval-hub:latest", container.Image)
 		assert.Equal(t, corev1.PullAlways, container.ImagePullPolicy)
 
-		// Check ports — direct TLS on 8443
+		// Check ports — eval-hub TLS on loopback app port
 		require.Len(t, container.Ports, 1)
-		assert.Equal(t, "https", container.Ports[0].Name)
-		assert.Equal(t, int32(containerPort), container.Ports[0].ContainerPort)
+		assert.Equal(t, "evalhub", container.Ports[0].Name)
+		assert.Equal(t, int32(evalHubAppPort), container.Ports[0].ContainerPort)
 
 		// Check environment variables include both default and custom
 		envVarMap := make(map[string]string)
 		for _, env := range container.Env {
 			envVarMap[env.Name] = env.Value
 		}
-		assert.Equal(t, "0.0.0.0", envVarMap["API_HOST"])
-		assert.Equal(t, "8443", envVarMap["PORT"])
+		assert.Equal(t, "127.0.0.1", envVarMap["API_HOST"])
+		assert.Equal(t, fmt.Sprintf("%d", evalHubAppPort), envVarMap["PORT"])
 		assert.Equal(t, "test-value", envVarMap["TEST_VAR"])
 
 		// Check SERVICE_URL and EVALHUB_INSTANCE_NAME are propagated
@@ -119,20 +121,19 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		assert.Equal(t, resource.MustParse("500m"), container.Resources.Requests[corev1.ResourceCPU])
 		assert.Equal(t, resource.MustParse("512Mi"), container.Resources.Requests[corev1.ResourceMemory])
 
-		// Check health probes — HTTPGet with HTTPS scheme
-		require.NotNil(t, container.LivenessProbe)
-		require.NotNil(t, container.LivenessProbe.HTTPGet)
-		assert.Equal(t, "/api/v1/health", container.LivenessProbe.HTTPGet.Path)
-		assert.Equal(t, intstr.FromInt(containerPort), container.LivenessProbe.HTTPGet.Port)
-		assert.Equal(t, corev1.URISchemeHTTPS, container.LivenessProbe.HTTPGet.Scheme)
-		assert.Equal(t, int32(30), container.LivenessProbe.InitialDelaySeconds)
+		// Probes run on kube-rbac-proxy (eval-hub has none).
+		assert.Nil(t, container.LivenessProbe)
+		assert.Nil(t, container.ReadinessProbe)
 
-		require.NotNil(t, container.ReadinessProbe)
-		require.NotNil(t, container.ReadinessProbe.HTTPGet)
-		assert.Equal(t, "/api/v1/health", container.ReadinessProbe.HTTPGet.Path)
-		assert.Equal(t, intstr.FromInt(containerPort), container.ReadinessProbe.HTTPGet.Port)
-		assert.Equal(t, corev1.URISchemeHTTPS, container.ReadinessProbe.HTTPGet.Scheme)
-		assert.Equal(t, int32(10), container.ReadinessProbe.InitialDelaySeconds)
+		krp := &deployment.Spec.Template.Spec.Containers[1]
+		assert.Equal(t, kubeRBACProxyContainerName, krp.Name)
+		assert.Equal(t, "quay.io/test/kube-rbac-proxy:latest", krp.Image)
+		assert.Contains(t, krp.Args, "--ignore-paths="+evalHubHealthPath)
+		require.NotNil(t, krp.ReadinessProbe)
+		require.NotNil(t, krp.ReadinessProbe.HTTPGet)
+		assert.Equal(t, evalHubHealthPath, krp.ReadinessProbe.HTTPGet.Path)
+		assert.Equal(t, intstr.FromInt(servicePort), krp.ReadinessProbe.HTTPGet.Port)
+		assert.Equal(t, corev1.URISchemeHTTPS, krp.ReadinessProbe.HTTPGet.Scheme)
 	})
 
 	t.Run("should use fallback image when configmap missing", func(t *testing.T) {
@@ -169,6 +170,16 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		}
 		require.NotNil(t, container)
 		assert.Equal(t, defaultEvalHubImage, container.Image)
+
+		var krp *corev1.Container
+		for i := range deployment.Spec.Template.Spec.Containers {
+			if deployment.Spec.Template.Spec.Containers[i].Name == kubeRBACProxyContainerName {
+				krp = &deployment.Spec.Template.Spec.Containers[i]
+				break
+			}
+		}
+		require.NotNil(t, krp)
+		assert.Equal(t, defaultKubeRBACProxyImage, krp.Image)
 	})
 }
 

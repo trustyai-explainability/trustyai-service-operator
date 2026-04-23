@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -74,17 +75,22 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		evalHubImage = defaultEvalHubImage
 	}
 
+	kubeRBACProxyImage, err := r.getKubeRBACProxyImage(ctx)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Error getting kube-rbac-proxy image from ConfigMap. Using the default image value of "+defaultKubeRBACProxyImage)
+		kubeRBACProxyImage = defaultKubeRBACProxyImage
+	}
+
 	// Build default environment variables
-	// EvalHub serves TLS directly using OpenShift service serving certificates.
-	// Auth is handled internally via SAR checks.
+	// EvalHub listens on loopback only; kube-rbac-proxy terminates TLS on servicePort and enforces SAR (auth.yaml).
 	defaultEnvVars := []corev1.EnvVar{
 		{
 			Name:  "API_HOST",
-			Value: "0.0.0.0",
+			Value: "127.0.0.1",
 		},
 		{
 			Name:  "PORT",
-			Value: fmt.Sprintf("%d", containerPort),
+			Value: fmt.Sprintf("%d", evalHubAppPort),
 		},
 		{
 			Name:  "TLS_CERT_FILE",
@@ -116,7 +122,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		},
 		{
 			Name:  "SERVICE_URL",
-			Value: fmt.Sprintf("https://%s.%s.svc.cluster.local:8443", instance.Name, instance.Namespace),
+			Value: fmt.Sprintf("https://%s.%s.svc.cluster.local:%d", instance.Name, instance.Namespace, servicePort),
 		},
 		{
 			Name:  "EVALHUB_INSTANCE_NAME",
@@ -191,40 +197,103 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		ImagePullPolicy: corev1.PullAlways,
 		Ports: []corev1.ContainerPort{
 			{
-				Name:          "https",
-				ContainerPort: containerPort,
+				Name:          "evalhub",
+				ContainerPort: evalHubAppPort,
 				Protocol:      corev1.ProtocolTCP,
 			},
 		},
 		Env:             env,
 		Resources:       defaultResourceRequirements,
 		SecurityContext: defaultSecurityContext,
-		VolumeMounts:    volumeMounts,
-		// HTTPGet probes with HTTPS scheme — kubelet skips TLS verification for probe requests.
+		VolumeMounts: volumeMounts,
+		// Liveness/readiness run on kube-rbac-proxy (same URL path as clients) with --ignore-paths on evalHubHealthPath.
+	}
+
+	upstreamURL := fmt.Sprintf("https://127.0.0.1:%d/", evalHubAppPort)
+	upstreamCAPath := kubeRBACProxyUpstreamCAMountPath + "/" + serviceCACertFile
+
+	kubeRBACProxyContainer := corev1.Container{
+		Name:            kubeRBACProxyContainerName,
+		Image:           kubeRBACProxyImage,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Args: []string{
+			"--secure-listen-address=0.0.0.0:" + fmt.Sprintf("%d", servicePort),
+			"--upstream=" + upstreamURL,
+			"--upstream-ca-file=" + upstreamCAPath,
+			"--config-file=" + kubeRBACProxyConfigMountPath,
+			"--tls-cert-file=" + tlsSecretMountPath + "/" + tlsCertFile,
+			"--tls-private-key-file=" + tlsSecretMountPath + "/" + tlsKeyFile,
+			"--proxy-endpoints-port=" + fmt.Sprintf("%d", kubeRBACProxyHealthPort),
+			"--ignore-paths=" + evalHubHealthPath,
+			"--v=0",
+		},
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          "https",
+				ContainerPort: servicePort,
+				Protocol:      corev1.ProtocolTCP,
+			},
+			{
+				Name:          "proxy-healthz",
+				ContainerPort: kubeRBACProxyHealthPort,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("50m"),
+				corev1.ResourceMemory: resource.MustParse("32Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("64Mi"),
+			},
+		},
+		SecurityContext: defaultSecurityContext,
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      "evalhub-config",
+				MountPath: kubeRBACProxyConfigMountPath,
+				SubPath:   evalHubAuthConfigMapKey,
+				ReadOnly:  true,
+			},
+			{
+				Name:      instance.Name + "-tls",
+				MountPath: tlsSecretMountPath,
+				ReadOnly:  true,
+			},
+			{
+				Name:      serviceCAVolumeName,
+				MountPath: kubeRBACProxyUpstreamCAMountPath,
+				ReadOnly:  true,
+			},
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   evalHubHealthPath,
+					Host:   "127.0.0.1",
+					Port:   intstr.FromInt(servicePort),
+					Scheme: corev1.URISchemeHTTPS,
+				},
+			},
+			InitialDelaySeconds: 10,
+			PeriodSeconds:       5,
+			TimeoutSeconds:      5,
+			FailureThreshold:    3,
+		},
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/api/v1/health",
-					Port:   intstr.FromInt(containerPort),
+					Path:   evalHubHealthPath,
+					Host:   "127.0.0.1",
+					Port:   intstr.FromInt(servicePort),
 					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
 			InitialDelaySeconds: 30,
 			PeriodSeconds:       10,
 			TimeoutSeconds:      5,
-			FailureThreshold:    3,
-		},
-		ReadinessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/api/v1/health",
-					Port:   intstr.FromInt(containerPort),
-					Scheme: corev1.URISchemeHTTPS,
-				},
-			},
-			InitialDelaySeconds: 10,
-			PeriodSeconds:       5,
-			TimeoutSeconds:      3,
 			FailureThreshold:    3,
 		},
 	}
@@ -309,14 +378,14 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			},
 		})
 	}
-	// Pod template with EvalHub container and required volumes
+	// Pod template with EvalHub + kube-rbac-proxy and required volumes
 	podTemplate := corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: labels,
 		},
 		Spec: corev1.PodSpec{
 			ServiceAccountName: generateServiceAccountName(instance),
-			Containers:         []corev1.Container{container},
+			Containers:         []corev1.Container{container, kubeRBACProxyContainer},
 			SecurityContext:    defaultPodSecurityContext,
 			RestartPolicy:      corev1.RestartPolicyAlways,
 			Volumes:            volumes,
@@ -345,6 +414,15 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			},
 		},
 	}, nil
+}
+
+// getKubeRBACProxyImage retrieves the kube-rbac-proxy image from the operator ConfigMap.
+func (r *EvalHubReconciler) getKubeRBACProxyImage(ctx context.Context) (string, error) {
+	namespace := r.Namespace
+	if namespace == "" {
+		namespace = "trustyai-service-operator-system"
+	}
+	return utils.GetImageFromConfigMapWithFallback(ctx, r.Client, configMapKubeRBACProxyImageKey, configMapName, namespace, defaultKubeRBACProxyImage)
 }
 
 // getEvalHubImage retrieves the EvalHub image from ConfigMap with fallback to default
