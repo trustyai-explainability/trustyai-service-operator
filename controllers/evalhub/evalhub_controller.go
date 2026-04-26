@@ -9,7 +9,6 @@ import (
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -58,8 +57,6 @@ type EvalHubReconciler struct {
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update
-// NetworkPolicy RBAC is granted via a static Role in
-// config/components/evalhub/rbac/evalhub_networkpolicy_role.yaml.
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=list;watch;get;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=namespaces,verbs=list;watch
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
@@ -220,16 +217,12 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return RequeueWithError(err)
 	}
 
-	// Reconcile monitoring resources (ServiceMonitor, NetworkPolicy).
+	// Reconcile monitoring resources (ServiceMonitor).
 	// Monitoring failures are non-fatal: log, set a degraded condition, and continue.
 	if r.isServiceMonitorSupported() {
 		if err := r.reconcileServiceMonitor(ctx, instance); err != nil {
 			log.Error(err, "Failed to reconcile ServiceMonitor")
 			instance.SetStatus("MonitoringDegraded", "ServiceMonitorFailed", fmt.Sprintf("Failed to reconcile ServiceMonitor: %v", err), corev1.ConditionTrue)
-			r.Status().Update(ctx, instance)
-		} else if err := r.reconcileNetworkPolicy(ctx, instance); err != nil {
-			log.Error(err, "Failed to reconcile NetworkPolicy")
-			instance.SetStatus("MonitoringDegraded", "NetworkPolicyFailed", fmt.Sprintf("Failed to reconcile NetworkPolicy: %v", err), corev1.ConditionTrue)
 			r.Status().Update(ctx, instance)
 		} else {
 			instance.SetStatus("MonitoringDegraded", "MonitoringReady", "", corev1.ConditionFalse)
@@ -270,7 +263,6 @@ func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}, builder.OnlyMetadata).
 		Owns(&corev1.ConfigMap{}, builder.OnlyMetadata).
-		Owns(&networkingv1.NetworkPolicy{}, builder.OnlyMetadata).
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.mapNamespaceToEvalHubs), builder.OnlyMetadata, builder.WithPredicates(tenantLabelPredicate()))
 
 	if r.isServiceMonitorSupported() {
