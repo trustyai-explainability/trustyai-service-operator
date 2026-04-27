@@ -50,7 +50,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 			Namespace: testNamespace,
 		},
 		Data: map[string]string{
-			configMapEvalHubImageKey:        "quay.io/test/eval-hub:v1.2.3",
+			configMapEvalHubImageKey:       "quay.io/test/eval-hub:v1.2.3",
 			configMapKubeRBACProxyImageKey: "quay.io/test/kube-rbac-proxy:v1",
 		},
 	}
@@ -154,11 +154,12 @@ func TestBuildDeploymentSpec(t *testing.T) {
 
 		krp := findContainer(t, podSpec.Containers, kubeRBACProxyContainerName)
 		assert.Equal(t, "quay.io/test/kube-rbac-proxy:v1", krp.Image)
+		assert.Contains(t, krp.Args, "--upstream=http://127.0.0.1:"+fmt.Sprintf("%d/", evalHubAppPort))
 		assert.Contains(t, krp.Args, "--ignore-paths="+evalHubHealthPath)
 		require.NotNil(t, krp.ReadinessProbe)
 		require.NotNil(t, krp.ReadinessProbe.HTTPGet)
 		assert.Equal(t, evalHubHealthPath, krp.ReadinessProbe.HTTPGet.Path)
-		assert.Equal(t, "127.0.0.1", krp.ReadinessProbe.HTTPGet.Host)
+		assert.Equal(t, "", krp.ReadinessProbe.HTTPGet.Host)
 		assert.Equal(t, intstr.FromInt(servicePort), krp.ReadinessProbe.HTTPGet.Port)
 		assert.Equal(t, corev1.URISchemeHTTPS, krp.ReadinessProbe.HTTPGet.Scheme)
 		assert.Equal(t, int32(10), krp.ReadinessProbe.InitialDelaySeconds)
@@ -167,6 +168,7 @@ func TestBuildDeploymentSpec(t *testing.T) {
 		require.NotNil(t, krp.LivenessProbe)
 		require.NotNil(t, krp.LivenessProbe.HTTPGet)
 		assert.Equal(t, evalHubHealthPath, krp.LivenessProbe.HTTPGet.Path)
+		assert.Equal(t, "", krp.LivenessProbe.HTTPGet.Host)
 		assert.Equal(t, intstr.FromInt(servicePort), krp.LivenessProbe.HTTPGet.Port)
 		assert.Equal(t, corev1.URISchemeHTTPS, krp.LivenessProbe.HTTPGet.Scheme)
 		assert.Equal(t, int32(30), krp.LivenessProbe.InitialDelaySeconds)

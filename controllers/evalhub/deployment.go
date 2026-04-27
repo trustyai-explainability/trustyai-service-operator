@@ -205,7 +205,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		Env:             env,
 		Resources:       defaultResourceRequirements,
 		SecurityContext: defaultSecurityContext,
-		VolumeMounts: volumeMounts,
+		VolumeMounts:    volumeMounts,
 		// Liveness/readiness run on kube-rbac-proxy (same URL path as clients) with --ignore-paths on evalHubHealthPath.
 	}
 

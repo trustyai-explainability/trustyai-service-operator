@@ -55,7 +55,7 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 			Namespace: testNamespace,
 		},
 		Data: map[string]string{
-			configMapEvalHubImageKey:        "quay.io/test/eval-hub:latest",
+			configMapEvalHubImageKey:       "quay.io/test/eval-hub:latest",
 			configMapKubeRBACProxyImageKey: "quay.io/test/kube-rbac-proxy:latest",
 		},
 	}
@@ -128,10 +128,12 @@ func TestEvalHubReconciler_reconcileDeployment(t *testing.T) {
 		krp := &deployment.Spec.Template.Spec.Containers[1]
 		assert.Equal(t, kubeRBACProxyContainerName, krp.Name)
 		assert.Equal(t, "quay.io/test/kube-rbac-proxy:latest", krp.Image)
+		assert.Contains(t, krp.Args, fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort))
 		assert.Contains(t, krp.Args, "--ignore-paths="+evalHubHealthPath)
 		require.NotNil(t, krp.ReadinessProbe)
 		require.NotNil(t, krp.ReadinessProbe.HTTPGet)
 		assert.Equal(t, evalHubHealthPath, krp.ReadinessProbe.HTTPGet.Path)
+		assert.Equal(t, "", krp.ReadinessProbe.HTTPGet.Host)
 		assert.Equal(t, intstr.FromInt(servicePort), krp.ReadinessProbe.HTTPGet.Port)
 		assert.Equal(t, corev1.URISchemeHTTPS, krp.ReadinessProbe.HTTPGet.Scheme)
 	})

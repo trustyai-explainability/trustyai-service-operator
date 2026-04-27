@@ -143,7 +143,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(krp).NotTo(BeNil())
 			Expect(krp.Image).To(Equal("quay.io/openshift/origin-kube-rbac-proxy:4.19"))
 			Expect(krp.Args).To(ContainElement("--config-file=" + kubeRBACProxyConfigMountPath))
-			Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=https://127.0.0.1:%d/", evalHubAppPort)))
+			Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 			var hasAuthMount bool
 			for _, m := range krp.VolumeMounts {
 				if m.Name == "evalhub-config" && m.MountPath == kubeRBACProxyConfigMountPath && m.SubPath == evalHubAuthConfigMapKey {
@@ -177,7 +177,7 @@ var _ = Describe("EvalHub Deployment", func() {
 				envVars[env.Name] = env.Value
 			}
 
-			// EvalHub serves TLS on loopback; kube-rbac-proxy fronts the Service on 8443
+			// In-cluster SERVICE_URL stays https (Service targets kube-rbac-proxy TLS); proxy calls eval-hub over HTTP upstream.
 			Expect(envVars["API_HOST"]).To(Equal("127.0.0.1"))
 			Expect(envVars["PORT"]).To(Equal(fmt.Sprintf("%d", evalHubAppPort)))
 			Expect(envVars["TLS_CERT_FILE"]).To(Equal("/etc/tls/private/tls.crt"))
@@ -279,12 +279,12 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(evalHubContainer.LivenessProbe).To(BeNil())
 			Expect(evalHubContainer.ReadinessProbe).To(BeNil())
 
-			By("Checking kube-rbac-proxy probes hit upstream health via service port")
+			By("Checking kube-rbac-proxy probes (HTTPS to proxy listener; path forwarded to eval-hub over HTTP upstream)")
 			Expect(krpContainer.Args).To(ContainElement("--ignore-paths=" + evalHubHealthPath))
 			Expect(krpContainer.ReadinessProbe).NotTo(BeNil())
 			Expect(krpContainer.ReadinessProbe.HTTPGet).NotTo(BeNil())
 			Expect(krpContainer.ReadinessProbe.HTTPGet.Path).To(Equal(evalHubHealthPath))
-			Expect(krpContainer.ReadinessProbe.HTTPGet.Host).To(Equal("127.0.0.1"))
+			Expect(krpContainer.ReadinessProbe.HTTPGet.Host).To(BeEmpty())
 			Expect(krpContainer.ReadinessProbe.HTTPGet.Port.IntVal).To(Equal(int32(servicePort)))
 			Expect(krpContainer.ReadinessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
 			Expect(krpContainer.ReadinessProbe.InitialDelaySeconds).To(Equal(int32(10)))
@@ -293,6 +293,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(krpContainer.LivenessProbe).NotTo(BeNil())
 			Expect(krpContainer.LivenessProbe.HTTPGet).NotTo(BeNil())
 			Expect(krpContainer.LivenessProbe.HTTPGet.Path).To(Equal(evalHubHealthPath))
+			Expect(krpContainer.LivenessProbe.HTTPGet.Host).To(BeEmpty())
 			Expect(krpContainer.LivenessProbe.HTTPGet.Port.IntVal).To(Equal(int32(servicePort)))
 			Expect(krpContainer.LivenessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
 			Expect(krpContainer.LivenessProbe.InitialDelaySeconds).To(Equal(int32(30)))
