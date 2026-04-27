@@ -209,7 +209,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		// Liveness/readiness run on kube-rbac-proxy (same URL path as clients) with --ignore-paths on evalHubHealthPath.
 	}
 
-	upstreamURL := fmt.Sprintf("https://127.0.0.1:%d/", evalHubAppPort)
+	upstreamURL := fmt.Sprintf("http://127.0.0.1:%d/", evalHubAppPort)
 	upstreamCAPath := kubeRBACProxyUpstreamCAMountPath + "/" + serviceCACertFile
 
 	kubeRBACProxyContainer := corev1.Container{
@@ -225,6 +225,8 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			"--tls-private-key-file=" + tlsSecretMountPath + "/" + tlsKeyFile,
 			"--proxy-endpoints-port=" + fmt.Sprintf("%d", kubeRBACProxyHealthPort),
 			"--ignore-paths=" + evalHubHealthPath,
+			"--auth-header-fields-enabled",
+			"--auth-header-user-field-name=X-User",
 			"--v=0",
 		},
 		Ports: []corev1.ContainerPort{
@@ -272,7 +274,6 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Path:   evalHubHealthPath,
-					Host:   "127.0.0.1",
 					Port:   intstr.FromInt(servicePort),
 					Scheme: corev1.URISchemeHTTPS,
 				},
@@ -286,7 +287,6 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Path:   evalHubHealthPath,
-					Host:   "127.0.0.1",
 					Port:   intstr.FromInt(servicePort),
 					Scheme: corev1.URISchemeHTTPS,
 				},
