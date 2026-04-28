@@ -374,7 +374,7 @@ var _ = Describe("buildServiceSpec", func() {
 		Expect(serviceSpec.Ports).To(HaveLen(1))
 		port := serviceSpec.Ports[0]
 		Expect(port.Name).To(Equal("https"))
-		Expect(port.Port).To(Equal(int32(8443)))
+		Expect(port.Port).To(Equal(int32(servicePort)))
 		Expect(port.TargetPort).To(Equal(intstr.FromString("https")))
 		Expect(port.Protocol).To(Equal(corev1.ProtocolTCP))
 	})
