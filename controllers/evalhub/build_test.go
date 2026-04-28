@@ -53,6 +53,9 @@ var _ = Describe("buildDeploymentSpec", func() {
 			Spec: evalhubv1alpha1.EvalHubSpec{
 				Replicas: &replicas,
 				Env: []corev1.EnvVar{
+					// Operator-managed bind address; must not override defaults
+					{Name: "API_HOST", Value: "0.0.0.0"},
+					{Name: "PORT", Value: "9999"},
 					{Name: "CUSTOM_VAR", Value: "custom-value"},
 					{Name: "ANOTHER_VAR", Value: "another-value"},
 				},

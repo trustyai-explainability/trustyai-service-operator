@@ -143,8 +143,9 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		},
 	}
 
-	// Merge environment variables with CR values taking precedence
-	env := mergeEnvVars(defaultEnvVars, instance.Spec.Env)
+	// Merge environment variables with CR values taking precedence.
+	// API_HOST and PORT are fixed for the loopback listener and kube-rbac-proxy upstream; CR cannot override them.
+	env := mergeEnvVars(defaultEnvVars, instance.Spec.Env, "API_HOST", "PORT")
 
 	// Build volume mounts for the evalhub container
 	volumeMounts := []corev1.VolumeMount{
@@ -429,8 +430,14 @@ func (r *EvalHubReconciler) getEvalHubImage(ctx context.Context) (string, error)
 }
 
 // mergeEnvVars merges default environment variables with CR-specified ones,
-// with CR values taking precedence over defaults when names conflict
-func mergeEnvVars(defaults, overrides []corev1.EnvVar) []corev1.EnvVar {
+// with CR values taking precedence over defaults when names conflict.
+// protectedKeys names are never taken from overrides — defaults always win for those keys.
+func mergeEnvVars(defaults, overrides []corev1.EnvVar, protectedKeys ...string) []corev1.EnvVar {
+	protected := make(map[string]struct{}, len(protectedKeys))
+	for _, k := range protectedKeys {
+		protected[k] = struct{}{}
+	}
+
 	// Build map of environment variables starting with defaults
 	envMap := make(map[string]corev1.EnvVar)
 	for _, env := range defaults {
@@ -439,6 +446,9 @@ func mergeEnvVars(defaults, overrides []corev1.EnvVar) []corev1.EnvVar {
 
 	// Overlay CR-specified values (they win over defaults)
 	for _, env := range overrides {
+		if _, locked := protected[env.Name]; locked {
+			continue
+		}
 		envMap[env.Name] = env
 	}
 

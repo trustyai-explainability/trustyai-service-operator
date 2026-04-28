@@ -309,15 +309,33 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(*deployment.Spec.Replicas).To(Equal(int32(3)))
 		})
 
-		It("should fail when config map is missing", func() {
-			By("Deleting config map")
+		It("should reconcile deployment with default images when operator ConfigMap is missing", func() {
+			By("Deleting the operator ConfigMap so image keys are unavailable")
 			err := k8sClient.Delete(ctx, configMap)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Reconciling deployment without config map")
+			By("Reconciling deployment; getEvalHubImage/getKubeRBACProxyImage fall back to built-in defaults")
 			err = reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
-			// Deployment still succeeds because EvalHub image falls back to default
-			// when the ConfigMap is missing
+			Expect(err).NotTo(HaveOccurred())
+
+			deployment := &appsv1.Deployment{}
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: evalHubName, Namespace: testNamespace}, deployment)
+			Expect(err).NotTo(HaveOccurred())
+
+			var evalHubC, krp *corev1.Container
+			for i := range deployment.Spec.Template.Spec.Containers {
+				c := &deployment.Spec.Template.Spec.Containers[i]
+				switch c.Name {
+				case containerName:
+					evalHubC = c
+				case kubeRBACProxyContainerName:
+					krp = c
+				}
+			}
+			Expect(evalHubC).NotTo(BeNil())
+			Expect(krp).NotTo(BeNil())
+			Expect(evalHubC.Image).To(Equal(defaultEvalHubImage))
+			Expect(krp.Image).To(Equal(defaultKubeRBACProxyImage))
 		})
 
 		It("should configure rolling update strategy", func() {

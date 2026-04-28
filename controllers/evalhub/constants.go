@@ -14,9 +14,12 @@ const (
 
 	// Container configuration
 	containerName = "evalhub"
-	// evalHubAppPort is where eval-hub binds TLS (loopback only); kube-rbac-proxy listens on servicePort.
+	// evalHubAppPort is the eval-hub container listen port on loopback (API_HOST=127.0.0.1, PORT in deployment env).
+	// kube-rbac-proxy upstream is http://127.0.0.1:<evalHubAppPort>/ on the pod network (TLS is terminated on servicePort).
 	evalHubAppPort = 8444
-	// evalHubHealthPath is forwarded by kube-rbac-proxy; use --ignore-paths so kubelet probes skip authn/z.
+	// evalHubHealthPath is the application health check path. kube-rbac-proxy serves HTTPS on servicePort and forwards
+	// this path to the upstream; the proxy is started with --ignore-paths so kubelet HTTPS probes against the proxy
+	// can use this path without going through normal authn/z on every request.
 	evalHubHealthPath = "/api/v1/health"
 
 	// Service configuration (public HTTPS targets kube-rbac-proxy on this port)
