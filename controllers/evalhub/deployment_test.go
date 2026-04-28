@@ -255,45 +255,6 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect((&memLimit).Cmp(resource.MustParse("2Gi"))).To(Equal(0))
 		})
 
-		It("should configure health probes", func() {
-			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Getting deployment")
-			deployment := waitForDeployment(evalHubName, testNamespace)
-
-			By("Finding evalhub container")
-			var evalHubContainer *corev1.Container
-			for _, container := range deployment.Spec.Template.Spec.Containers {
-				if container.Name == "evalhub" {
-					evalHubContainer = &container
-					break
-				}
-			}
-			Expect(evalHubContainer).NotTo(BeNil())
-
-			By("Checking liveness probe (HTTPS)")
-			Expect(evalHubContainer.LivenessProbe).NotTo(BeNil())
-			Expect(evalHubContainer.LivenessProbe.HTTPGet).NotTo(BeNil())
-			Expect(evalHubContainer.LivenessProbe.HTTPGet.Path).To(Equal("/api/v1/health"))
-			Expect(evalHubContainer.LivenessProbe.HTTPGet.Host).To(Equal("127.0.0.1"))
-			Expect(evalHubContainer.LivenessProbe.HTTPGet.Port.IntVal).To(Equal(int32(evalHubAppPort)))
-			Expect(evalHubContainer.LivenessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
-			Expect(evalHubContainer.LivenessProbe.InitialDelaySeconds).To(Equal(int32(30)))
-			Expect(evalHubContainer.LivenessProbe.PeriodSeconds).To(Equal(int32(10)))
-
-			By("Checking readiness probe (HTTPS)")
-			Expect(evalHubContainer.ReadinessProbe).NotTo(BeNil())
-			Expect(evalHubContainer.ReadinessProbe.HTTPGet).NotTo(BeNil())
-			Expect(evalHubContainer.ReadinessProbe.HTTPGet.Path).To(Equal("/api/v1/health"))
-			Expect(evalHubContainer.ReadinessProbe.HTTPGet.Host).To(Equal("127.0.0.1"))
-			Expect(evalHubContainer.ReadinessProbe.HTTPGet.Port.IntVal).To(Equal(int32(evalHubAppPort)))
-			Expect(evalHubContainer.ReadinessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
-			Expect(evalHubContainer.ReadinessProbe.InitialDelaySeconds).To(Equal(int32(10)))
-			Expect(evalHubContainer.ReadinessProbe.PeriodSeconds).To(Equal(int32(5)))
-		})
-
 		It("should configure security contexts", func() {
 			By("Reconciling deployment")
 			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
@@ -675,43 +636,31 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 		Expect(evalHubC.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("500m")))
 		Expect(evalHubC.Resources.Requests[corev1.ResourceMemory]).To(Equal(resource.MustParse("512Mi")))
 
-		By("eval-hub: kubelet probes hit loopback TLS on evalHubAppPort")
-		Expect(evalHubC.LivenessProbe).NotTo(BeNil())
-		Expect(evalHubC.LivenessProbe.HTTPGet).NotTo(BeNil())
-		Expect(evalHubC.LivenessProbe.HTTPGet.Path).To(Equal("/api/v1/health"))
-		Expect(evalHubC.LivenessProbe.HTTPGet.Host).To(Equal("127.0.0.1"))
-		Expect(evalHubC.LivenessProbe.HTTPGet.Port.IntVal).To(Equal(int32(evalHubAppPort)))
-		Expect(evalHubC.LivenessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
-		Expect(evalHubC.ReadinessProbe).NotTo(BeNil())
-		Expect(evalHubC.ReadinessProbe.HTTPGet).NotTo(BeNil())
-		Expect(evalHubC.ReadinessProbe.HTTPGet.Path).To(Equal("/api/v1/health"))
-		Expect(evalHubC.ReadinessProbe.HTTPGet.Host).To(Equal("127.0.0.1"))
-		Expect(evalHubC.ReadinessProbe.HTTPGet.Port.IntVal).To(Equal(int32(evalHubAppPort)))
-		Expect(evalHubC.ReadinessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
-		Expect(evalHubC.ReadinessProbe.TimeoutSeconds).To(Equal(int32(3)))
+		Expect(evalHubC.ReadinessProbe).To(BeNil())
+		Expect(evalHubC.LivenessProbe).To(BeNil())
 
 		Expect(krp.Image).To(Equal("quay.io/test/kube-rbac-proxy:latest"))
-		Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=https://127.0.0.1:%d/", evalHubAppPort)))
+		Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 		Expect(krp.Args).To(ContainElement("--config-file=" + kubeRBACProxyConfigMountPath))
 
-		By("kube-rbac-proxy: kubelet probes use built-in /healthz on proxy metrics port")
+		By("kube-rbac-proxy: kubelet probes hit HTTPS on servicePort (same path as clients; --ignore-paths on eval-hub)")
 		Expect(krp.ReadinessProbe).NotTo(BeNil())
 		Expect(krp.ReadinessProbe.HTTPGet).NotTo(BeNil())
-		Expect(krp.ReadinessProbe.HTTPGet.Host).To(BeEmpty())
-		Expect(krp.ReadinessProbe.HTTPGet.Path).To(Equal("/healthz"))
-		Expect(krp.ReadinessProbe.HTTPGet.Port.IntVal).To(Equal(int32(kubeRBACProxyHealthPort)))
+		Expect(krp.ReadinessProbe.HTTPGet.Path).To(Equal(evalHubHealthPath))
+		Expect(krp.ReadinessProbe.HTTPGet.Port.IntVal).To(Equal(int32(servicePort)))
 		Expect(krp.ReadinessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
-		Expect(krp.ReadinessProbe.InitialDelaySeconds).To(Equal(int32(5)))
-		Expect(krp.ReadinessProbe.TimeoutSeconds).To(Equal(int32(1)))
+		Expect(krp.ReadinessProbe.InitialDelaySeconds).To(Equal(int32(10)))
+		Expect(krp.ReadinessProbe.PeriodSeconds).To(Equal(int32(5)))
+		Expect(krp.ReadinessProbe.TimeoutSeconds).To(Equal(int32(5)))
 
 		Expect(krp.LivenessProbe).NotTo(BeNil())
 		Expect(krp.LivenessProbe.HTTPGet).NotTo(BeNil())
-		Expect(krp.LivenessProbe.HTTPGet.Host).To(BeEmpty())
-		Expect(krp.LivenessProbe.HTTPGet.Path).To(Equal("/healthz"))
-		Expect(krp.LivenessProbe.HTTPGet.Port.IntVal).To(Equal(int32(kubeRBACProxyHealthPort)))
+		Expect(krp.LivenessProbe.HTTPGet.Path).To(Equal(evalHubHealthPath))
+		Expect(krp.LivenessProbe.HTTPGet.Port.IntVal).To(Equal(int32(servicePort)))
 		Expect(krp.LivenessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
 		Expect(krp.LivenessProbe.InitialDelaySeconds).To(Equal(int32(30)))
-		Expect(krp.LivenessProbe.TimeoutSeconds).To(Equal(int32(1)))
+		Expect(krp.LivenessProbe.PeriodSeconds).To(Equal(int32(10)))
+		Expect(krp.LivenessProbe.TimeoutSeconds).To(Equal(int32(5)))
 	})
 
 	It("uses default EvalHub and kube-rbac-proxy images when operator ConfigMap is absent", func() {

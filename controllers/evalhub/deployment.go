@@ -9,7 +9,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -80,6 +79,8 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		log.FromContext(ctx).Error(err, "Error getting kube-rbac-proxy image from ConfigMap. Using the default image value of "+defaultKubeRBACProxyImage)
 		kubeRBACProxyImage = defaultKubeRBACProxyImage
 	}
+
+	settings := mergeEvalHubDeploymentOperatorSettings(ctx, r.readOperatorConfigMapData(ctx))
 
 	// Build default environment variables
 	// EvalHub listens on loopback only; kube-rbac-proxy terminates TLS on servicePort and enforces SAR (auth.yaml).
@@ -203,10 +204,9 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			},
 		},
 		Env:             env,
-		Resources:       defaultResourceRequirements,
+		Resources:       settings.EvalHubResources,
 		SecurityContext: defaultSecurityContext,
 		VolumeMounts:    volumeMounts,
-		// Liveness/readiness run on kube-rbac-proxy (same URL path as clients) with --ignore-paths on evalHubHealthPath.
 	}
 
 	upstreamURL := fmt.Sprintf("http://127.0.0.1:%d/", evalHubAppPort)
@@ -236,21 +236,12 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 				Protocol:      corev1.ProtocolTCP,
 			},
 			{
-				Name:          "proxy-healthz",
-				ContainerPort: kubeRBACProxyHealthPort,
-				Protocol:      corev1.ProtocolTCP,
+				Name:            "proxy-healthz",
+				ContainerPort:   kubeRBACProxyHealthPort,
+				Protocol:        corev1.ProtocolTCP,
 			},
 		},
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("50m"),
-				corev1.ResourceMemory: resource.MustParse("32Mi"),
-			},
-			Limits: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("100m"),
-				corev1.ResourceMemory: resource.MustParse("64Mi"),
-			},
-		},
+		Resources:       settings.KubeRBACProxyResources,
 		SecurityContext: defaultSecurityContext,
 		VolumeMounts: []corev1.VolumeMount{
 			{
@@ -422,7 +413,7 @@ func (r *EvalHubReconciler) getKubeRBACProxyImage(ctx context.Context) (string, 
 	if namespace == "" {
 		namespace = "trustyai-service-operator-system"
 	}
-	return utils.GetImageFromConfigMapWithFallback(ctx, r.Client, configMapKubeRBACProxyImageKey, configMapName, namespace, defaultKubeRBACProxyImage)
+	return utils.GetImageFromConfigMapWithFallback(ctx, r.Client, configMapKubeRBACProxyImageKey, r.effectiveOperatorConfigMapName(), namespace, defaultKubeRBACProxyImage)
 }
 
 // getEvalHubImage retrieves the EvalHub image from ConfigMap with fallback to default
@@ -434,7 +425,7 @@ func (r *EvalHubReconciler) getEvalHubImage(ctx context.Context) (string, error)
 		namespace = "trustyai-service-operator-system"
 	}
 
-	return utils.GetImageFromConfigMapWithFallback(ctx, r.Client, configMapEvalHubImageKey, configMapName, namespace, defaultEvalHubImage)
+	return utils.GetImageFromConfigMapWithFallback(ctx, r.Client, configMapEvalHubImageKey, r.effectiveOperatorConfigMapName(), namespace, defaultEvalHubImage)
 }
 
 // mergeEnvVars merges default environment variables with CR-specified ones,

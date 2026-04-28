@@ -143,37 +143,27 @@ var _ = Describe("buildDeploymentSpec", func() {
 		Expect(*container.SecurityContext.RunAsNonRoot).To(BeTrue())
 		Expect(container.SecurityContext.Capabilities.Drop).To(ContainElement(corev1.Capability("ALL")))
 
-		Expect(container.LivenessProbe).NotTo(BeNil())
-		Expect(container.LivenessProbe.HTTPGet).NotTo(BeNil())
-		Expect(container.LivenessProbe.HTTPGet.Path).To(Equal("/api/v1/health"))
-		Expect(container.LivenessProbe.HTTPGet.Host).To(Equal("127.0.0.1"))
-		Expect(container.LivenessProbe.HTTPGet.Port).To(Equal(intstr.FromInt(evalHubAppPort)))
-		Expect(container.LivenessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
-		Expect(container.LivenessProbe.InitialDelaySeconds).To(Equal(int32(30)))
-		Expect(container.LivenessProbe.PeriodSeconds).To(Equal(int32(10)))
-		Expect(container.LivenessProbe.TimeoutSeconds).To(Equal(int32(5)))
-
-		Expect(container.ReadinessProbe).NotTo(BeNil())
-		Expect(container.ReadinessProbe.HTTPGet).NotTo(BeNil())
-		Expect(container.ReadinessProbe.HTTPGet.Path).To(Equal("/api/v1/health"))
-		Expect(container.ReadinessProbe.HTTPGet.Host).To(Equal("127.0.0.1"))
-		Expect(container.ReadinessProbe.HTTPGet.Port).To(Equal(intstr.FromInt(evalHubAppPort)))
-		Expect(container.ReadinessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
-		Expect(container.ReadinessProbe.InitialDelaySeconds).To(Equal(int32(10)))
-		Expect(container.ReadinessProbe.PeriodSeconds).To(Equal(int32(5)))
-		Expect(container.ReadinessProbe.TimeoutSeconds).To(Equal(int32(3)))
+		Expect(container.ReadinessProbe).To(BeNil())
+		Expect(container.LivenessProbe).To(BeNil())
 
 		krp := findContainerByName(podSpec.Containers, kubeRBACProxyContainerName)
 		Expect(krp).NotTo(BeNil())
 		Expect(krp.Image).To(Equal("quay.io/test/kube-rbac-proxy:v1"))
 		Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 		Expect(krp.ReadinessProbe).NotTo(BeNil())
-		Expect(krp.ReadinessProbe.HTTPGet.Path).To(Equal("/healthz"))
-		Expect(krp.ReadinessProbe.HTTPGet.Port).To(Equal(intstr.FromInt(kubeRBACProxyHealthPort)))
+		Expect(krp.ReadinessProbe.HTTPGet.Path).To(Equal(evalHubHealthPath))
+		Expect(krp.ReadinessProbe.HTTPGet.Port).To(Equal(intstr.FromInt(servicePort)))
 		Expect(krp.ReadinessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
+		Expect(krp.ReadinessProbe.InitialDelaySeconds).To(Equal(int32(10)))
+		Expect(krp.ReadinessProbe.PeriodSeconds).To(Equal(int32(5)))
+		Expect(krp.ReadinessProbe.TimeoutSeconds).To(Equal(int32(5)))
 		Expect(krp.LivenessProbe).NotTo(BeNil())
-		Expect(krp.LivenessProbe.HTTPGet.Path).To(Equal("/healthz"))
-		Expect(krp.LivenessProbe.HTTPGet.Port).To(Equal(intstr.FromInt(kubeRBACProxyHealthPort)))
+		Expect(krp.LivenessProbe.HTTPGet.Path).To(Equal(evalHubHealthPath))
+		Expect(krp.LivenessProbe.HTTPGet.Port).To(Equal(intstr.FromInt(servicePort)))
+		Expect(krp.LivenessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
+		Expect(krp.LivenessProbe.InitialDelaySeconds).To(Equal(int32(30)))
+		Expect(krp.LivenessProbe.PeriodSeconds).To(Equal(int32(10)))
+		Expect(krp.LivenessProbe.TimeoutSeconds).To(Equal(int32(5)))
 
 		Expect(podSpec.SecurityContext).NotTo(BeNil())
 		Expect(*podSpec.SecurityContext.RunAsNonRoot).To(BeTrue())
@@ -182,6 +172,24 @@ var _ = Describe("buildDeploymentSpec", func() {
 		Expect(deploymentSpec.Strategy.RollingUpdate).NotTo(BeNil())
 		Expect(deploymentSpec.Strategy.RollingUpdate.MaxUnavailable.StrVal).To(Equal("25%"))
 		Expect(deploymentSpec.Strategy.RollingUpdate.MaxSurge.StrVal).To(Equal("25%"))
+	})
+
+	It("applies optional operator ConfigMap keys for container resources", func() {
+		operatorCM.Data["evalHubCPURequest"] = "300m"
+		operatorCM.Data["kubeRBACProxyMemoryRequest"] = "64Mi"
+		Expect(k8sClient.Update(ctx, operatorCM)).To(Succeed())
+
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		app := findContainerByName(deploymentSpec.Template.Spec.Containers, containerName)
+		Expect(app).NotTo(BeNil())
+		Expect(app.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("300m")))
+		Expect(app.Resources.Requests[corev1.ResourceMemory]).To(Equal(resource.MustParse("512Mi")))
+
+		krp := findContainerByName(deploymentSpec.Template.Spec.Containers, kubeRBACProxyContainerName)
+		Expect(krp).NotTo(BeNil())
+		Expect(krp.Resources.Requests[corev1.ResourceMemory]).To(Equal(resource.MustParse("64Mi")))
 	})
 
 	It("uses default EvalHub and kube-rbac-proxy images when operator ConfigMap is missing", func() {

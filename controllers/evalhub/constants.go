@@ -36,6 +36,17 @@ const (
 	configMapKubeRBACProxyImageKey = "kube-rbac-proxy"
 	defaultKubeRBACProxyImage      = "quay.io/openshift/origin-kube-rbac-proxy:4.19"
 
+	// Operator ConfigMap keys — optional EvalHub / kube-rbac-proxy container CPU and memory.
+	configMapEvalHubCPURequestKey    = "evalHubCPURequest"
+	configMapEvalHubMemoryRequestKey = "evalHubMemoryRequest"
+	configMapEvalHubCPULimitKey      = "evalHubCPULimit"
+	configMapEvalHubMemoryLimitKey   = "evalHubMemoryLimit"
+
+	configMapKubeRBACProxyCPURequestKey    = "kubeRBACProxyCPURequest"
+	configMapKubeRBACProxyMemoryRequestKey = "kubeRBACProxyMemoryRequest"
+	configMapKubeRBACProxyCPULimitKey      = "kubeRBACProxyCPULimit"
+	configMapKubeRBACProxyMemoryLimitKey   = "kubeRBACProxyMemoryLimit"
+
 	// TLS configuration (OpenShift service serving certificates)
 	tlsSecretMountPath = "/etc/tls/private"
 	tlsCertFile        = "tls.crt"
@@ -83,7 +94,7 @@ const (
 )
 
 var (
-	// Default resource requirements based on k8s examples
+	// Default resource requirements for the eval-hub app container (overridable via operator ConfigMap).
 	defaultResourceRequirements = corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("500m"),
@@ -92,6 +103,18 @@ var (
 		Limits: corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("2000m"),
 			corev1.ResourceMemory: resource.MustParse("2Gi"),
+		},
+	}
+
+	// defaultKubeRBACProxyResourceRequirements are defaults for the kube-rbac-proxy sidecar (overridable via operator ConfigMap).
+	defaultKubeRBACProxyResourceRequirements = corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("128Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("500m"),
+			corev1.ResourceMemory: resource.MustParse("512Mi"),
 		},
 	}
 
