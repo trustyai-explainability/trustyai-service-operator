@@ -145,7 +145,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(krp).NotTo(BeNil())
 			Expect(krp.Image).To(Equal("quay.io/openshift/origin-kube-rbac-proxy:4.19"))
 			Expect(krp.Args).To(ContainElement("--config-file=" + kubeRBACProxyConfigMountPath))
-			Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=https://127.0.0.1:%d/", evalHubAppPort)))
+			Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 			var hasAuthMount bool
 			for _, m := range krp.VolumeMounts {
 				if m.Name == "evalhub-config" && m.MountPath == kubeRBACProxyConfigMountPath && m.SubPath == evalHubAuthConfigMapKey {

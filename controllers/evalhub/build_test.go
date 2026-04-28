@@ -166,7 +166,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 		krp := findContainerByName(podSpec.Containers, kubeRBACProxyContainerName)
 		Expect(krp).NotTo(BeNil())
 		Expect(krp.Image).To(Equal("quay.io/test/kube-rbac-proxy:v1"))
-		Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=https://127.0.0.1:%d/", evalHubAppPort)))
+		Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 		Expect(krp.ReadinessProbe).NotTo(BeNil())
 		Expect(krp.ReadinessProbe.HTTPGet.Path).To(Equal("/healthz"))
 		Expect(krp.ReadinessProbe.HTTPGet.Port).To(Equal(intstr.FromInt(kubeRBACProxyHealthPort)))
