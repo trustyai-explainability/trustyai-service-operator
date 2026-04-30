@@ -49,7 +49,7 @@ func AllTrue(array []bool) bool {
 	return true
 }
 
-// GetNamespace returns the namespace of a pod
+// GetNamespace returns the namespace of the pod.
 func GetNamespace() (string, error) {
 	ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 	if err != nil {
