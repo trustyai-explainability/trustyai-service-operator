@@ -81,12 +81,11 @@ def process_provider(filename: str, branch: str) -> tuple[str, str] | None:
     print(f"  id={provider_id} -> {cm_file}")
 
     # Capture the original image and replace all occurrences with kustomize placeholder
-    # Use the raw content to avoid reformatting the upstream YAML
     original_image = None
     if "runtime" in data and "k8s" in data["runtime"]:
         original_image = data["runtime"]["k8s"].get("image")
 
-    provider_yaml = content
+    provider_yaml = yaml.dump(data, default_flow_style=False, sort_keys=False, width=100)
     if original_image:
         provider_yaml = provider_yaml.replace(original_image, f"$({var_name})")
 
@@ -126,7 +125,7 @@ def process_collection(filename: str, branch: str) -> tuple[str, str] | None:
 
     print(f"  id={collection_id} -> {cm_file}")
 
-    collection_yaml = content
+    collection_yaml = yaml.dump(data, default_flow_style=False, sort_keys=False, width=100)
 
     cm = textwrap.dedent(f"""\
         apiVersion: v1
