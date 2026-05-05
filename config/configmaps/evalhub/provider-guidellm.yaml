@@ -22,7 +22,7 @@ data:
         cpu_limit: 1000m
         memory_limit: 2Gi
       local:
-        command: 'true'
+        command: python tests/features/test_data/runtime/main.py
     benchmarks:
     - id: sweep
       name: Auto-discover optimal load

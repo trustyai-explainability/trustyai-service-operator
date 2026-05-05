@@ -26,7 +26,7 @@ data:
         - name: VAR_NAME
           value: VALUE
       local:
-        command: 'true'
+        command: python tests/features/test_data/runtime/main.py
     benchmarks:
     - id: owasp_llm_top10
       name: OWASP LLM top 10 risk scan

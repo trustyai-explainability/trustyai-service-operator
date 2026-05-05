@@ -85,7 +85,7 @@ def process_provider(filename: str, branch: str) -> tuple[str, str] | None:
     if "runtime" in data and "k8s" in data["runtime"]:
         original_image = data["runtime"]["k8s"].get("image")
 
-    provider_yaml = yaml.dump(data, default_flow_style=False, sort_keys=False)
+    provider_yaml = yaml.dump(data, default_flow_style=False, sort_keys=False, width=130)
     if original_image:
         provider_yaml = provider_yaml.replace(original_image, f"$({var_name})")
 
@@ -125,7 +125,7 @@ def process_collection(filename: str, branch: str) -> tuple[str, str] | None:
 
     print(f"  id={collection_id} -> {cm_file}")
 
-    collection_yaml = yaml.dump(data, default_flow_style=False, sort_keys=False)
+    collection_yaml = yaml.dump(data, default_flow_style=False, sort_keys=False, width=130)
 
     cm = textwrap.dedent(f"""\
         apiVersion: v1

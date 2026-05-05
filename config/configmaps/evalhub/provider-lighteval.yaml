@@ -22,7 +22,7 @@ data:
         cpu_limit: 4000m
         memory_limit: 8Gi
       local:
-        command: 'true'
+        command: python tests/features/test_data/runtime/main.py
     benchmarks:
     - id: commonsense_reasoning
       name: Everyday reasoning suite
@@ -179,7 +179,7 @@ data:
         threshold: 0.25
     - id: openbookqa
       name: Open-book science reasoning
-      description: Answers science questions with access to core facts — tests multi-hop reasoning (500 examples).
+      description: "Answers science questions with access to core facts \u2014 tests multi-hop reasoning (500 examples)."
       category: knowledge
       metrics:
       - acc

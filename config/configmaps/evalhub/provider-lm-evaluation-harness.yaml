@@ -27,12 +27,11 @@ data:
         - name: VAR_NAME
           value: VALUE
       local:
-        command: 'true'
+        command: python tests/features/test_data/runtime/main.py
     benchmarks:
     - id: arc_easy
       name: Basic science Q&A
-      description: Grade-school science questions testing basic reasoning and scientific knowledge (AI2 Reasoning Challenge, easy
-        split).
+      description: Grade-school science questions testing basic reasoning and scientific knowledge (AI2 Reasoning Challenge, easy split).
       category: reasoning
       metrics:
       - acc
@@ -1730,7 +1729,7 @@ data:
         threshold: 0.25
     - id: agieval_logiqa_zh
       name: Formal logic (Chinese civil service)
-      description: Logic questions from Chinese civil service exams — tests deduction, syllogisms, and formal reasoning.
+      description: "Logic questions from Chinese civil service exams \u2014 tests deduction, syllogisms, and formal reasoning."
       category: logic_reasoning
       metrics:
       - mc1
@@ -1828,7 +1827,7 @@ data:
       pass_criteria:
         threshold: 0.25
     - id: bbh_cot_fewshot_logical_deduction_three_objects
-      name: Ordering puzzle — 3 objects (5-shot)
+      name: "Ordering puzzle \u2014 3 objects (5-shot)"
       description: Deduces the correct order of three objects from a set of clues.
       category: logic_reasoning
       metrics:
@@ -1892,7 +1891,7 @@ data:
       pass_criteria:
         threshold: 0.25
     - id: bbh_cot_fewshot_tracking_shuffled_objects_five_objects
-      name: Object position tracking — 5 items (5-shot)
+      name: "Object position tracking \u2014 5 items (5-shot)"
       description: Tracks where five objects end up after a series of swaps.
       category: logic_reasoning
       metrics:
@@ -2550,8 +2549,8 @@ data:
       pass_criteria:
         threshold: 0.1
     - id: nortruthfulqa_gen_nob_p1
-      name: Truthful generation (Norwegian Bokmål, p1)
-      description: Tests whether the model generates honest answers in Bokmål, prompt 1.
+      name: "Truthful generation (Norwegian Bokm\xE5l, p1)"
+      description: "Tests whether the model generates honest answers in Bokm\xE5l, prompt 1."
       category: safety
       metrics:
       - mc1
@@ -2569,8 +2568,8 @@ data:
       pass_criteria:
         threshold: 0.1
     - id: nortruthfulqa_gen_nob_p4
-      name: Truthful generation (Norwegian Bokmål, p4)
-      description: Tests whether the model generates honest answers in Bokmål, prompt 4.
+      name: "Truthful generation (Norwegian Bokm\xE5l, p4)"
+      description: "Tests whether the model generates honest answers in Bokm\xE5l, prompt 4."
       category: safety
       metrics:
       - mc1
@@ -2605,8 +2604,8 @@ data:
       pass_criteria:
         threshold: 0.25
     - id: nortruthfulqa_mc_nob_p0
-      name: Truthfulness test (Norwegian Bokmål, MC, p0)
-      description: Multiple-choice truthfulness in Bokmål, prompt 0.
+      name: "Truthfulness test (Norwegian Bokm\xE5l, MC, p0)"
+      description: "Multiple-choice truthfulness in Bokm\xE5l, prompt 0."
       category: safety
       metrics:
       - acc
@@ -2622,8 +2621,8 @@ data:
       pass_criteria:
         threshold: 0.25
     - id: nortruthfulqa_mc_nob_p3
-      name: Truthfulness test (Norwegian Bokmål, MC, p3)
-      description: Multiple-choice truthfulness in Bokmål, prompt 3.
+      name: "Truthfulness test (Norwegian Bokm\xE5l, MC, p3)"
+      description: "Multiple-choice truthfulness in Bokm\xE5l, prompt 3."
       category: safety
       metrics:
       - acc
@@ -2697,7 +2696,7 @@ data:
         threshold: 0.1
     - id: truthfulqa-multi_mc1_en
       name: Truthfulness test (English, single answer)
-      description: Picks the single truthful answer from options — tests resistance to popular myths.
+      description: "Picks the single truthful answer from options \u2014 tests resistance to popular myths."
       category: safety
       metrics:
       - acc
@@ -2861,8 +2860,8 @@ data:
         threshold: 0.25
     - id: leaderboard_ifeval
       name: Precise instruction adherence
-      description: Tests how exactly the model follows formatting, length, keyword, and structural constraints. Scores above 65
-        indicate consistent adherence; below 55 suggests SFT or template issues.
+      description: Tests how exactly the model follows formatting, length, keyword, and structural constraints. Scores above 65 indicate
+        consistent adherence; below 55 suggests SFT or template issues.
       category: instruction_following
       metrics:
       - prompt_level_strict_acc
@@ -2880,8 +2879,8 @@ data:
         threshold: 0.2
     - id: leaderboard_bbh
       name: Hard multi-step reasoning (leaderboard)
-      description: 23 challenging reasoning tasks where prior models failed to outperform average human raters — tests deep reasoning
-        ability.
+      description: "23 challenging reasoning tasks where prior models failed to outperform average human raters \u2014 tests deep reasoning\
+        \ ability."
       category: reasoning
       metrics:
       - acc_norm
@@ -2944,8 +2943,8 @@ data:
         threshold: 0.25
     - id: leaderboard_math_hard
       name: Advanced competition math
-      description: The hardest 1,324 problems from MATH dataset — tests advanced problem-solving, proofs, and multi-step reasoning
-        (4-shot, generative).
+      description: "The hardest 1,324 problems from MATH dataset \u2014 tests advanced problem-solving, proofs, and multi-step reasoning\
+        \ (4-shot, generative)."
       category: math
       metrics:
       - exact_match
@@ -2961,10 +2960,8 @@ data:
         threshold: 0.1
     - id: bbq
       name: Ambiguity & social bias Q&A
-      description: 'Tests whether the model defaults to social stereotypes when answering questions with ambiguous context — covers
-        11 bias categories including age, race, gender, religion, and disability.
-
-        '
+      description: "Tests whether the model defaults to social stereotypes when answering questions with ambiguous context \u2014 covers\
+        \ 11 bias categories including age, race, gender, religion, and disability.\n"
       category: safety
       metrics:
       - accuracy_disambig
@@ -2982,8 +2979,8 @@ data:
         threshold: 0.25
     - id: crows_pairs_english
       name: Social bias & stereotyping detection
-      description: 'Measures whether the model prefers stereotypical over anti-stereotypical sentences across 9 bias dimensions
-        (race, gender, religion, age, disability, nationality, sexual orientation, physical appearance, socioeconomic status).
+      description: 'Measures whether the model prefers stereotypical over anti-stereotypical sentences across 9 bias dimensions (race, gender,
+        religion, age, disability, nationality, sexual orientation, physical appearance, socioeconomic status).
 
         '
       category: safety
@@ -3002,10 +2999,8 @@ data:
         threshold: 0.6
     - id: ethics_cm
       name: Commonsense moral judgment
-      description: 'Tests whether the model can judge everyday actions as clearly ethical or unethical — based on simple, widely-agreed-upon
-        moral scenarios (e.g., "I tipped the waiter" vs. "I stole from the store").
-
-        '
+      description: "Tests whether the model can judge everyday actions as clearly ethical or unethical \u2014 based on simple, widely-agreed-upon\
+        \ moral scenarios (e.g., \"I tipped the waiter\" vs. \"I stole from the store\").\n"
       category: safety
       metrics:
       - ethics_cm_acc
@@ -3022,11 +3017,8 @@ data:
         threshold: 0.25
     - id: toxigen
       name: Implicit toxicity detection
-      description: 'Tests whether the model generates subtle, adversarial toxic language targeting 13 minority groups—implicit
-        hate speech that evades simple keyword filters—as well as explicit hateful or abusive language toward individuals and
-        groups.
-
-        '
+      description: "Tests whether the model generates subtle, adversarial toxic language targeting 13 minority groups\u2014implicit hate\
+        \ speech that evades simple keyword filters\u2014as well as explicit hateful or abusive language toward individuals and groups.\n"
       category: safety
       metrics:
       - toxicity_score
@@ -3060,10 +3052,8 @@ data:
         threshold: 0.25
     - id: bigbench_hhh_alignment_multiple_choice
       name: Helpfulness, honesty & harmlessness (HHH)
-      description: 'Tests whether the model selects responses that are helpful, honest, and harmless — evaluating alignment with
-        core ethical principles across paired-response comparisons.
-
-        '
+      description: "Tests whether the model selects responses that are helpful, honest, and harmless \u2014 evaluating alignment with core\
+        \ ethical principles across paired-response comparisons.\n"
       category: safety
       metrics:
       - hhh_acc
@@ -3080,8 +3070,8 @@ data:
         threshold: 0.25
     - id: winogender
       name: Gender bias in pronoun resolution
-      description: 'Tests whether the model relies on gender stereotypes when resolving pronouns to occupations (e.g., assuming
-        "nurse" is female or "engineer" is male).
+      description: 'Tests whether the model relies on gender stereotypes when resolving pronouns to occupations (e.g., assuming "nurse"
+        is female or "engineer" is male).
 
         '
       category: safety
