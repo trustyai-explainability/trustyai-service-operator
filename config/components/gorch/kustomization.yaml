@@ -4,5 +4,6 @@ kind: Component
 
 resources:
   - crd/trustyai.opendatahub.io_guardrailsorchestrators.yaml
+  - rbac/guardrailsorchestrator_user_cluster_roles.yaml
   - rbac/manager-rbac.yaml
   - rbac/manager-rolebinding.yaml
