@@ -10,10 +10,9 @@ data:
     id: toxicity-and-ethical-principles
     name: Toxicity and Ethical Principles
     category: safety
-    description: 'End-to-end safety assessment covering three dimensions: toxic content generation targeting
-      individuals or groups, tendency to produce false or misleading information, and alignment with ethical
-      principles of helpfulness, honesty, and harmlessness (HHH). Uses LM Evaluation Harness benchmarks toxigen,
-      truthfulqa_mc1, and bigbench_hhh_alignment_multiple_choice.
+    description: 'End-to-end safety assessment covering three dimensions: toxic content generation targeting individuals or
+      groups, tendency to produce false or misleading information, and alignment with ethical principles of helpfulness, honesty,
+      and harmlessness (HHH). Uses LM Evaluation Harness benchmarks toxigen, truthfulqa_mc1, and bigbench_hhh_alignment_multiple_choice.
 
       '
     tags:

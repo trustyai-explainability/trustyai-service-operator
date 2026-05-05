@@ -26,8 +26,7 @@ data:
     benchmarks:
     - id: commonsense_reasoning
       name: Everyday reasoning suite
-      description: 'Aggregated commonsense tests: activity completion, pronoun resolution, open-book QA, and
-        science reasoning.'
+      description: 'Aggregated commonsense tests: activity completion, pronoun resolution, open-book QA, and science reasoning.'
       category: reasoning
       metrics:
       - acc
@@ -180,8 +179,7 @@ data:
         threshold: 0.25
     - id: openbookqa
       name: Open-book science reasoning
-      description: "Answers science questions with access to core facts \u2014 tests multi-hop reasoning (500\
-        \ examples)."
+      description: "Answers science questions with access to core facts \u2014 tests multi-hop reasoning (500 examples)."
       category: knowledge
       metrics:
       - acc
@@ -376,8 +374,7 @@ data:
         threshold: 0.25
     - id: mmlu
       name: 57-Subject knowledge test
-      description: Factual recall and reasoning across 57 academic subjects from STEM to humanities (5-shot,
-        15,908 examples).
+      description: Factual recall and reasoning across 57 academic subjects from STEM to humanities (5-shot, 15,908 examples).
       category: knowledge
       metrics:
       - acc
