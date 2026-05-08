@@ -2,6 +2,8 @@ package evalhub
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -445,6 +447,106 @@ func TestGenerateConfigData(t *testing.T) {
 		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
 		require.NoError(t, err)
 
+	})
+
+	t.Run("should include offline when enabled", func(t *testing.T) {
+		evalHub := &evalhubv1alpha1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub-offline",
+				Namespace: "test-namespace",
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		configMap.Data[configMapEvalHubOfflineKey] = "true"
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+		assert.True(t, config.Offline)
+	})
+
+	t.Run("should set offline when Hugging Face is unreachable", func(t *testing.T) {
+		evalHub := &evalhubv1alpha1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub-hf-unreachable",
+				Namespace: "test-namespace",
+			},
+		}
+
+		// Simulate "unreachable" by returning a non-2xx/3xx status.
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(503)
+		}))
+		defer srv.Close()
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:     fakeClient,
+			Scheme:     scheme,
+			Namespace:  evalHub.Namespace,
+			httpClient: srv.Client(),
+			hfProbeURL: srv.URL,
+		}
+
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+		assert.True(t, config.Offline)
+	})
+
+	t.Run("should not set offline when Hugging Face is reachable", func(t *testing.T) {
+		evalHub := &evalhubv1alpha1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub-hf-reachable",
+				Namespace: "test-namespace",
+			},
+		}
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(200)
+		}))
+		defer srv.Close()
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:     fakeClient,
+			Scheme:     scheme,
+			Namespace:  evalHub.Namespace,
+			httpClient: srv.Client(),
+			hfProbeURL: srv.URL,
+		}
+
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+		assert.False(t, config.Offline)
 	})
 }
 

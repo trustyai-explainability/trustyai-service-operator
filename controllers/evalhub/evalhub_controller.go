@@ -3,6 +3,8 @@ package evalhub
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"sync"
 	"time"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -33,6 +35,7 @@ func ControllerSetUp(mgr manager.Manager, ns, operatorConfigMapName string, reco
 		restMapper:            mgr.GetRESTMapper(),
 		Namespace:             ns,
 		OperatorConfigMapName: operatorConfigMapName,
+		httpClient:            http.DefaultClient,
 		EventRecorder:         recorder,
 	}).SetupWithManager(mgr)
 }
@@ -45,6 +48,12 @@ type EvalHubReconciler struct {
 	Namespace             string
 	OperatorConfigMapName string
 	EventRecorder         record.EventRecorder
+
+	httpClient *http.Client
+	hfProbeURL string
+
+	hfReachableOnce sync.Once
+	hfReachable     bool
 }
 
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs,verbs=get;list;watch;create;update;patch;delete

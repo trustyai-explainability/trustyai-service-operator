@@ -336,6 +336,37 @@ var _ = Describe("EvalHub ConfigMap", func() {
 		})
 	})
 
+	Context("When offline mode is configured", func() {
+		It("should include offline=true in config.yaml when operator offline mode is enabled", func() {
+			By("Enabling offline mode in operator ConfigMap")
+			operatorCM := &corev1.ConfigMap{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      configMapName,
+				Namespace: testNamespace,
+			}, operatorCM)).Should(Succeed())
+			if operatorCM.Data == nil {
+				operatorCM.Data = map[string]string{}
+			}
+			operatorCM.Data[configMapEvalHubOfflineKey] = "true"
+			Expect(k8sClient.Update(ctx, operatorCM)).Should(Succeed())
+
+			By("Reconciling configmap")
+			err := reconciler.reconcileConfigMap(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Getting configmap")
+			configMap := waitForConfigMap(evalHubName+"-config", testNamespace)
+
+			By("Parsing config.yaml")
+			var config EvalHubConfig
+			err = yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), &config)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking offline is enabled")
+			Expect(config.Offline).To(BeTrue())
+		})
+	})
+
 	Context("Configuration data generation", func() {
 		It("should generate valid configuration data", func() {
 			By("Generating configuration data")

@@ -3,6 +3,7 @@ package evalhub
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -93,6 +94,7 @@ type SidecarConfig struct {
 
 // EvalHubConfig represents the eval-hub configuration structure
 type EvalHubConfig struct {
+	Offline     bool          `json:"offline,omitempty"`
 	Service     ServiceConfig   `json:"service"`
 	Secrets     *SecretsMapping `json:"secrets,omitempty"`
 	EnvMappings EnvMappings     `json:"env_mappings"`
@@ -151,6 +153,15 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		return nil, fmt.Errorf("failed to get EvalHub image: %w", err)
 	}
 
+	offlineEnabled, err := r.getOptionalBoolFromConfigMap(ctx, configMapEvalHubOfflineKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read EvalHub offline mode: %w", err)
+	}
+
+	// Best-effort autodetect: if we cannot reach Hugging Face, assume offline/disconnected.
+	// Cached across reconciles so we don't probe repeatedly.
+	hfReachable := r.isHuggingFaceReachable(ctx)
+
 	config := EvalHubConfig{
 		Service: ServiceConfig{
 			Port:             containerPort,
@@ -194,6 +205,12 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 				},
 			},
 		},
+	}
+
+	// Offline mode is derived from operator configuration, not the EvalHub CR.
+	// This prevents accidentally configuring an online EvalHub in disconnected environments.
+	if offlineEnabled || !hfReachable {
+		config.Offline = true
 	}
 
 	// Database configuration — always present since the controller validates
@@ -253,6 +270,68 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		"config.yaml": string(configYAML),
 		"auth.yaml":   generateAuthConfigData(),
 	}, nil
+}
+
+func (r *EvalHubReconciler) isHuggingFaceReachable(ctx context.Context) bool {
+	r.hfReachableOnce.Do(func() {
+		url := r.hfProbeURL
+		if strings.TrimSpace(url) == "" {
+			url = defaultHFProbeURL
+		}
+
+		client := r.httpClient
+		if client == nil {
+			client = http.DefaultClient
+		}
+
+		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, url, nil)
+		if err != nil {
+			r.hfReachable = false
+			return
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			r.hfReachable = false
+			return
+		}
+		defer resp.Body.Close()
+
+		// Consider 2xx/3xx as "reachable"
+		r.hfReachable = resp.StatusCode >= 200 && resp.StatusCode < 400
+	})
+
+	return r.hfReachable
+}
+
+// getOptionalBoolFromConfigMap retrieves an optional boolean configuration flag from the operator ConfigMap.
+// Missing or empty values are treated as false.
+func (r *EvalHubReconciler) getOptionalBoolFromConfigMap(ctx context.Context, key string) (bool, error) {
+	if r.Namespace == "" {
+		return false, fmt.Errorf("operator namespace not set, cannot retrieve config flag %q", key)
+	}
+
+	cmKey := types.NamespacedName{Namespace: r.Namespace, Name: configMapName}
+	var cm corev1.ConfigMap
+	if err := r.Client.Get(ctx, cmKey, &cm); err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	raw, ok := cm.Data[key]
+	if !ok || strings.TrimSpace(raw) == "" {
+		return false, nil
+	}
+	v, err := strconv.ParseBool(strings.TrimSpace(raw))
+	if err != nil {
+		return false, fmt.Errorf("invalid boolean %q for key %q", raw, key)
+	}
+	return v, nil
 }
 
 // generateAuthConfigData returns the authorization configuration for the ConfigMap.

@@ -23,6 +23,11 @@ const (
 	// Configuration constants
 	configMapName            = "trustyai-service-operator-config"
 	configMapEvalHubImageKey = "evalHubImage"
+	configMapEvalHubOfflineKey = "evalHubOffline"
+
+	// Default probe used to infer disconnected/offline environments.
+	// Keep it small and stable.
+	defaultHFProbeURL = "https://huggingface.co"
 
 	// TLS configuration (OpenShift service serving certificates)
 	tlsSecretMountPath = "/etc/tls/private"
