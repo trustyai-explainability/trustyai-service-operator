@@ -194,6 +194,13 @@ func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// re-runs with the updated configuration.
 	if job.Status.State == lmesv1alpha1.CompleteJobState {
 		if lastGen := getLastScheduledGeneration(job); lastGen > 0 && job.Generation > lastGen {
+			// Delete the completed pod first. The replacement pod reuses the same
+			// name (job.Name), so leaving the old one would cause handleNewCR to
+			// fail with AlreadyExists when it tries to create it.
+			if err := r.deleteJobPod(ctx, job); err != nil && client.IgnoreNotFound(err) != nil {
+				log.Error(err, "failed to delete completed pod before re-run")
+				return ctrl.Result{}, err
+			}
 			log.Info("spec changed for completed job, resetting for re-run",
 				"name", job.Name,
 				"previousGeneration", lastGen,
@@ -829,6 +836,20 @@ func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger,
 		if cm, key, err := r.findCABundle(ctx, job.Namespace); err == nil {
 			caBundle = cm
 			caBundleKey = key
+		}
+	}
+
+	currentGenStr := strconv.FormatInt(job.Generation, 10)
+	annotations := job.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+	if annotations[LastScheduledGenerationAnnotation] != currentGenStr {
+		annotations[LastScheduledGenerationAnnotation] = currentGenStr
+		job.SetAnnotations(annotations)
+		if err := r.Update(ctx, job); err != nil {
+			log.Error(err, "failed to update generation annotation on resume")
+			return ctrl.Result{}, err
 		}
 	}
 
