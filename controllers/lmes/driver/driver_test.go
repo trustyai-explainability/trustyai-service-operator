@@ -232,8 +232,9 @@ func Test_DetectDeviceError(t *testing.T) {
 	assert.Nil(t, err)
 
 	msgs, _ := runDriverAndWait4Complete(t, driver, true)
-	assert.Len(t, msgs, 1)
-	assert.Contains(t, msgs[0], "failed to detect available device(s):")
+	assert.Equal(t, []string{
+		"failed to detect available device(s): exit status 1",
+	}, msgs)
 
 	assert.Nil(t, driver.Shutdown())
 
@@ -259,8 +260,9 @@ func Test_DownloadAssetsS3Error(t *testing.T) {
 	assert.Nil(t, err)
 
 	msgs, _ := runDriverAndWait4Complete(t, driver, true)
-	assert.Len(t, msgs, 1)
-	assert.Contains(t, msgs[0], "failed to download assets from S3:")
+	assert.Equal(t, []string{
+		"failed to download assets from S3: exit status 2",
+	}, msgs)
 
 	assert.Nil(t, driver.Shutdown())
 }
