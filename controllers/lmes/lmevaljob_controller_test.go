@@ -4371,3 +4371,268 @@ func Test_OCIPodConfiguration(t *testing.T) {
 		assert.Equal(t, "sha256:a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef12345678", envMap["OCI_SUBJECT"].Value)
 	})
 }
+
+func Test_hasHTTPSBaseURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []lmesv1alpha1.Arg
+		expected bool
+	}{
+		{
+			name:     "https base_url",
+			args:     []lmesv1alpha1.Arg{{Name: "base_url", Value: "https://model.example.com"}},
+			expected: true,
+		},
+		{
+			name:     "http base_url",
+			args:     []lmesv1alpha1.Arg{{Name: "base_url", Value: "http://model.example.com"}},
+			expected: false,
+		},
+		{
+			name:     "uppercase HTTPS base_url",
+			args:     []lmesv1alpha1.Arg{{Name: "base_url", Value: "HTTPS://model.example.com"}},
+			expected: true,
+		},
+		{
+			name:     "no base_url arg",
+			args:     []lmesv1alpha1.Arg{{Name: "pretrained", Value: "google/flan-t5-base"}},
+			expected: false,
+		},
+		{
+			name:     "empty args",
+			args:     nil,
+			expected: false,
+		},
+		{
+			name: "other arg with https value",
+			args: []lmesv1alpha1.Arg{{Name: "endpoint", Value: "https://other.example.com"}},
+			expected: false,
+		},
+		{
+			name: "base_url among multiple args",
+			args: []lmesv1alpha1.Arg{
+				{Name: "pretrained", Value: "google/flan-t5-base"},
+				{Name: "base_url", Value: "https://model.example.com"},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			job := &lmesv1alpha1.LMEvalJob{
+				Spec: lmesv1alpha1.LMEvalJobSpec{ModelArgs: tt.args},
+			}
+			assert.Equal(t, tt.expected, hasHTTPSBaseURL(job))
+		})
+	}
+}
+
+func Test_hasExplicitVerifyCertificate(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []lmesv1alpha1.Arg
+		expected bool
+	}{
+		{
+			name:     "verify_certificate present",
+			args:     []lmesv1alpha1.Arg{{Name: "verify_certificate", Value: "false"}},
+			expected: true,
+		},
+		{
+			name:     "verify_certificate absent",
+			args:     []lmesv1alpha1.Arg{{Name: "pretrained", Value: "google/flan-t5-base"}},
+			expected: false,
+		},
+		{
+			name:     "empty args",
+			args:     nil,
+			expected: false,
+		},
+		{
+			name: "verify_certificate among multiple args",
+			args: []lmesv1alpha1.Arg{
+				{Name: "base_url", Value: "https://model.example.com"},
+				{Name: "verify_certificate", Value: "true"},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			job := &lmesv1alpha1.LMEvalJob{
+				Spec: lmesv1alpha1.LMEvalJobSpec{ModelArgs: tt.args},
+			}
+			assert.Equal(t, tt.expected, hasExplicitVerifyCertificate(job))
+		})
+	}
+}
+
+func Test_getLastScheduledGeneration(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		expected    int64
+	}{
+		{
+			name:        "nil annotations",
+			annotations: nil,
+			expected:    0,
+		},
+		{
+			name:        "annotation missing",
+			annotations: map[string]string{"other": "value"},
+			expected:    0,
+		},
+		{
+			name:        "valid generation",
+			annotations: map[string]string{LastScheduledGenerationAnnotation: "5"},
+			expected:    5,
+		},
+		{
+			name:        "invalid generation",
+			annotations: map[string]string{LastScheduledGenerationAnnotation: "notanumber"},
+			expected:    0,
+		},
+		{
+			name:        "empty string",
+			annotations: map[string]string{LastScheduledGenerationAnnotation: ""},
+			expected:    0,
+		},
+		{
+			name:        "zero generation",
+			annotations: map[string]string{LastScheduledGenerationAnnotation: "0"},
+			expected:    0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			job := &lmesv1alpha1.LMEvalJob{
+				ObjectMeta: metav1.ObjectMeta{Annotations: tt.annotations},
+			}
+			assert.Equal(t, tt.expected, getLastScheduledGeneration(job))
+		})
+	}
+}
+
+func Test_CreatePodWithCABundle(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
+	}
+
+	job := &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-ca",
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "hf",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "base_url", Value: "https://model.example.com"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1"},
+			},
+		},
+	}
+
+	caBundle := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      DefaultCABundleConfigMapName,
+			Namespace: "default",
+		},
+		Data: map[string]string{
+			"ca-bundle.crt": "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----",
+		},
+	}
+
+	pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), caBundle, "ca-bundle.crt", log)
+	require.NotNil(t, pod)
+
+	// Verify CA bundle volume exists
+	var foundVolume bool
+	for _, v := range pod.Spec.Volumes {
+		if v.Name == CABundleVolumeName {
+			foundVolume = true
+			require.NotNil(t, v.VolumeSource.ConfigMap)
+			assert.Equal(t, DefaultCABundleConfigMapName, v.VolumeSource.ConfigMap.Name)
+			break
+		}
+	}
+	assert.True(t, foundVolume, "expected volume %q not found", CABundleVolumeName)
+
+	// Verify CA bundle volume mount on main container
+	mainContainer := pod.Spec.Containers[0]
+	var foundMount bool
+	for _, m := range mainContainer.VolumeMounts {
+		if m.Name == CABundleVolumeName {
+			foundMount = true
+			assert.Equal(t, CABundleMountPath, m.MountPath)
+			assert.Equal(t, "ca-bundle.crt", m.SubPath)
+			assert.True(t, m.ReadOnly)
+			break
+		}
+	}
+	assert.True(t, foundMount, "expected volume mount %q not found", CABundleVolumeName)
+
+	// Verify REQUESTS_CA_BUNDLE env var
+	envMap := make(map[string]string)
+	for _, env := range mainContainer.Env {
+		envMap[env.Name] = env.Value
+	}
+	assert.Equal(t, CABundleMountPath, envMap["REQUESTS_CA_BUNDLE"])
+}
+
+func Test_CreatePodWithoutCABundle(t *testing.T) {
+	log := log.FromContext(context.Background())
+	svcOpts := &serviceOptions{
+		PodImage:        "podimage:latest",
+		DriverImage:     "driver:latest",
+		ImagePullPolicy: corev1.PullAlways,
+	}
+
+	job := &lmesv1alpha1.LMEvalJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-no-ca",
+			Namespace: "default",
+			UID:       "for-testing",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       lmesv1alpha1.KindName,
+			APIVersion: lmesv1alpha1.Version,
+		},
+		Spec: lmesv1alpha1.LMEvalJobSpec{
+			Model: "hf",
+			ModelArgs: []lmesv1alpha1.Arg{
+				{Name: "base_url", Value: "http://model.example.com"},
+			},
+			TaskList: lmesv1alpha1.TaskList{
+				TaskNames: []string{"task1"},
+			},
+		},
+	}
+
+	pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", log)
+	require.NotNil(t, pod)
+
+	// Verify no CA bundle volume
+	for _, v := range pod.Spec.Volumes {
+		assert.NotEqual(t, CABundleVolumeName, v.Name, "unexpected CA bundle volume")
+	}
+
+	// Verify no REQUESTS_CA_BUNDLE env var
+	mainContainer := pod.Spec.Containers[0]
+	for _, env := range mainContainer.Env {
+		assert.NotEqual(t, "REQUESTS_CA_BUNDLE", env.Name, "unexpected REQUESTS_CA_BUNDLE env var")
+	}
+}
