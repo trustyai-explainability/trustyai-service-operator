@@ -38,6 +38,8 @@ jobs:
           kind load docker-image smoke/operator:pr-${{ github.event.pull_request.number || env.PR_NUMBER }}
 
       - name: Install kustomize
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
           sudo mv kustomize /usr/local/bin/
