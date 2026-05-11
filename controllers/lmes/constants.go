@@ -45,4 +45,19 @@ const (
 	DefaultBatchSize           = "1"
 	DefaultDetectDevice        = true
 	ServiceName                = "LMES"
+
+	// DefaultCABundleConfigMapName is the standard RHOAI ConfigMap that holds the cluster CA bundle.
+	// It is injected into managed namespaces by the RHOAI operator and trusted by cluster-internal
+	// HTTPS services (e.g., KServe external routes using self-signed certs).
+	DefaultCABundleConfigMapName = "odh-trusted-ca-bundle"
+	// CABundleVolumeName is the volume name used when auto-mounting the cluster CA bundle.
+	CABundleVolumeName = "odh-ca-bundle"
+	// CABundleMountPath is the file path at which the CA bundle is mounted inside the lm-eval pod.
+	// REQUESTS_CA_BUNDLE is set to this path so Python's requests library picks it up automatically.
+	CABundleMountPath = "/etc/ssl/certs/odh-ca-bundle.crt"
+
+	// LastScheduledGenerationAnnotation records the spec generation that was active when the pod
+	// was last created. When a completed job's current generation exceeds this value the operator
+	// knows the spec changed and resets the job so it can be re-run with the updated configuration.
+	LastScheduledGenerationAnnotation = "trustyai.opendatahub.io/last-scheduled-generation"
 )

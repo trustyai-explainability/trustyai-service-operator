@@ -188,7 +188,7 @@ func Test_SimplePod(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -453,7 +453,7 @@ func Test_WithCustomPod(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", log)
 
 	assert.Equal(t, expect, newPod)
 
@@ -468,7 +468,7 @@ func Test_WithCustomPod(t *testing.T) {
 		"custom/annotation1": "annotation1",
 	}
 
-	newPod = CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod = CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", log)
 	assert.Equal(t, expect, newPod)
 }
 
@@ -644,7 +644,7 @@ func Test_EnvSecretsPod(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", log)
 	// maybe only verify the envs: Containers[0].Env
 	assert.Equal(t, expect, newPod)
 }
@@ -839,7 +839,7 @@ func Test_FileSecretsPod(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", log)
 	// maybe only verify the envs: Containers[0].Env
 	assert.Equal(t, expect, newPod)
 }
@@ -1789,7 +1789,7 @@ func Test_ManagedPVC(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -1956,7 +1956,7 @@ func Test_ExistingPVC(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -2146,7 +2146,7 @@ func Test_PVCPreference(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -2335,7 +2335,7 @@ func Test_OfflineMode(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -2556,7 +2556,7 @@ func Test_ProtectedVars(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -2752,7 +2752,7 @@ func Test_OnlineModeDisabled(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -2929,7 +2929,7 @@ func Test_OnlineMode(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, permConfig, log)
+	newPod := CreatePod(svcOpts, job, permConfig, nil, "", log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -3109,7 +3109,7 @@ func Test_AllowCodeOnlineMode(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, permConfig, log)
+	newPod := CreatePod(svcOpts, job, permConfig, nil, "", log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -3307,7 +3307,7 @@ func Test_AllowCodeOfflineMode(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, permConfig, log)
+	newPod := CreatePod(svcOpts, job, permConfig, nil, "", log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -3512,7 +3512,7 @@ func Test_OfflineModeWithOutput(t *testing.T) {
 		},
 	}
 
-	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+	newPod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", log)
 
 	assert.Equal(t, expect, newPod)
 }
@@ -3622,7 +3622,7 @@ func Test_CustomTasksGitSource(t *testing.T) {
 				},
 			}
 
-			pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), log)
+			pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", log)
 
 			require.NotNil(t, pod)
 
@@ -3713,7 +3713,7 @@ func Test_CustomTasksGitSourceOfflineMode(t *testing.T) {
 
 	logger := logr.Discard()
 
-	pod := CreatePod(Options, job, NewDefaultPermissionConfig(), logger)
+	pod := CreatePod(Options, job, NewDefaultPermissionConfig(), nil, "", logger)
 
 	if pod == nil {
 		t.Fatal("pod should not be nil")
@@ -4016,7 +4016,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 		hasOCI := job.Spec.HasOCIOutput()
 		assert.True(t, hasOCI, "Job should have OCI output configured")
 
-		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
@@ -4072,7 +4072,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			},
 		}
 
-		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
@@ -4144,7 +4144,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			},
 		}
 
-		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
@@ -4187,7 +4187,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			},
 		}
 
-		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
@@ -4229,7 +4229,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			},
 		}
 
-		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
@@ -4271,7 +4271,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			},
 		}
 
-		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
@@ -4313,7 +4313,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			},
 		}
 
-		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
@@ -4356,7 +4356,7 @@ func Test_OCIPodConfiguration(t *testing.T) {
 			},
 		}
 
-		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), logger)
+		pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), nil, "", logger)
 		assert.NotNil(t, pod, "Should generate pod successfully")
 
 		// Check environment variables
