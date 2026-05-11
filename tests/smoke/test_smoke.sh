@@ -24,7 +24,7 @@ log_failure() {
     echo "❌ $message"
 
     # Dump operator logs if the pod exists
-    OPERATOR_POD=$(kubectl get pods -n system -l control-plane=controller-manager -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    OPERATOR_POD=$(kubectl get pods -n system -l control-plane=trustyai-service-operator -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
     if [[ -n "$OPERATOR_POD" ]]; then
         echo ""
         echo "========== Operator Pod Logs =========="

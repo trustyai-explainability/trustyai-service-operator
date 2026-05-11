@@ -4,7 +4,7 @@ metadata:
   name: controller-manager
   namespace: system
   labels:
-    control-plane: controller-manager
+    control-plane: trustyai-service-operator
     app.kubernetes.io/name: deployment
     app.kubernetes.io/instance: trustyai-service-operator-controller-manager
     app.kubernetes.io/component: manager
@@ -14,14 +14,14 @@ metadata:
 spec:
   selector:
     matchLabels:
-      control-plane: controller-manager
+      control-plane: trustyai-service-operator
   replicas: 1
   template:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
       labels:
-        control-plane: controller-manager
+        control-plane: trustyai-service-operator
     spec:
       securityContext:
         runAsNonRoot: true

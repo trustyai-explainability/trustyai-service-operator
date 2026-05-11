@@ -2,7 +2,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   labels:
-    control-plane: controller-manager
+    control-plane: trustyai-service-operator
     app.kubernetes.io/name: servicemonitor
     app.kubernetes.io/instance: controller-manager-metrics-monitor
     app.kubernetes.io/component: metrics
@@ -21,4 +21,4 @@ spec:
         insecureSkipVerify: true
   selector:
     matchLabels:
-      control-plane: controller-manager
+      control-plane: trustyai-service-operator

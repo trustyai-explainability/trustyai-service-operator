@@ -21,6 +21,7 @@ spec:
                   - '{__name__= "trustyai_spd"}'
                   - '{__name__= "trustyai_dir"}'
           path: /q/metrics
+          port: http
           scheme: http
     namespaceSelector:
         any: true
