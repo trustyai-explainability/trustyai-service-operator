@@ -480,20 +480,16 @@ func createJobCreationMetrics(log logr.Logger, job *lmesv1alpha1.LMEvalJob) {
 		labels["model_type"] = job.Spec.Model
 		labels["task"] = task
 
-		// grab model name
-		hasUrl := false
-		hasName := false
+		// grab model name and base_url; always set both labels so the
+		// CounterVec has a consistent label cardinality across jobs.
+		labels["model_name"] = ""
+		labels["base_url"] = ""
 		for _, arg := range job.Spec.ModelArgs {
 			if arg.Name == "model" {
 				labels["model_name"] = arg.Value
-				hasUrl = true
 			}
 			if arg.Name == "base_url" {
 				labels["base_url"] = arg.Value
-				hasName = true
-			}
-			if hasUrl && hasName {
-				break
 			}
 		}
 
