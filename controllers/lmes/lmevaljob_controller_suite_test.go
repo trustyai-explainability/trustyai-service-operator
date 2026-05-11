@@ -503,12 +503,17 @@ var _ = Describe("LMEvalJob re-run after spec change", func() {
 		Expect(k8sClient.Status().Update(ctx, job)).Should(Succeed())
 
 		// Verify the job stays Complete (no re-run triggered)
-		Consistently(func() lmesv1alpha1.JobState {
-			_ = k8sClient.Get(ctx, types.NamespacedName{
+		Consistently(func() error {
+			if err := k8sClient.Get(ctx, types.NamespacedName{
 				Name: "test-no-rerun", Namespace: testNamespace,
-			}, job)
-			return job.Status.State
-		}, time.Second*3, defaultPolling).Should(Equal(lmesv1alpha1.CompleteJobState),
+			}, job); err != nil {
+				return err
+			}
+			if job.Status.State != lmesv1alpha1.CompleteJobState {
+				return fmt.Errorf("expected Complete, got %s", job.Status.State)
+			}
+			return nil
+		}, time.Second*3, defaultPolling).Should(Succeed(),
 			"completed job should not be reset when spec is unchanged")
 	})
 })
