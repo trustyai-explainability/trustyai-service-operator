@@ -20,7 +20,7 @@ const (
 	DEPLOYMENT_MODE_RAW        = "RawDeployment"
 	DEPLOYMENT_MODE_STANDARD   = "Standard"
 	DEPLOYMENT_MODE_SERVERLESS = "Serverless"
-	DEPLOYMENT_MODE_KNATIVE    = "KNative"
+	DEPLOYMENT_MODE_KNATIVE    = "Knative"
 )
 
 // GetDeploymentsByLabel returns a list of Deployments that match a label key-value pair
@@ -255,7 +255,7 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 			continue
 
 		case DEPLOYMENT_MODE_SERVERLESS, DEPLOYMENT_MODE_KNATIVE:
-			// Handle KServe Serverless/KNative deployments (KServe v0.17+ renamed Serverless to KNative)
+			// Handle KServe Serverless/Knative deployments (KServe v0.17+ renamed Serverless to Knative)
 			if kServeServerlessEnabled {
 				err := r.patchKServe(ctx, instance, infService, namespace, crName, remove, false)
 				if err != nil {
