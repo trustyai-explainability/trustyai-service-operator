@@ -229,6 +229,13 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 		return true, nil
 	}
 
+	// Check if the TrustyAIService CR has the annotation to use HTTP for KServe logger.
+	// When "trustyai.opendatahub.io/kserve-logger-http" is set to "true", the operator
+	// uses HTTP instead of HTTPS to avoid x509 certificate verification failures
+	// with cluster-internal Service CA certificates. (RHOAIENG-38132)
+	instanceAnnotations := instance.GetAnnotations()
+	useHTTPLogger := instanceAnnotations[kserveLoggerHTTPAnnotationKey] == "true"
+
 	for _, infService := range inferenceServices.Items {
 		annotations := infService.GetAnnotations()
 		deploymentMode := annotations["serving.kserve.io/deploymentMode"]
@@ -245,7 +252,8 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 
 		case DEPLOYMENT_MODE_RAW:
 			// Handle KServe Raw deployments
-			err := r.patchKServe(ctx, instance, infService, namespace, crName, remove, true)
+			// Use HTTPS by default, unless the HTTP logger annotation is set
+			err := r.patchKServe(ctx, instance, infService, namespace, crName, remove, !useHTTPLogger)
 			if err != nil {
 				log.FromContext(ctx).Error(err, "Could not patch InferenceLogger for KServe Raw deployment")
 				return false, err
