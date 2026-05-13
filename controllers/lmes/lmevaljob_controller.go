@@ -19,6 +19,7 @@ package lmes
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -31,6 +32,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -96,6 +98,8 @@ var (
 			},
 		},
 	}
+
+	errNoCAData = errors.New("no CA bundle data found")
 )
 
 // maintain a list of key-time pair data.
@@ -170,7 +174,7 @@ func (q *syncedMap4Reconciler) remove(key string) {
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=lmevaljobs/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=pods/exec,verbs=get;list;watch;create;delete
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;watch;list
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;watch;list;create;update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;watch;list
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=list;get;watch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=list;get;watch;create;update;patch;delete
@@ -189,9 +193,9 @@ func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return r.handleDeletion(ctx, job, log)
 	}
 
-	// Bug 3: When a completed job's spec is edited its metadata.Generation is
-	// incremented by the API server. Detect that and reset the status so the job
-	// re-runs with the updated configuration.
+	// When a completed job's spec is edited, metadata.Generation is incremented
+	// by the API server. Detect that and reset the status so the job re-runs
+	// with the updated configuration.
 	if job.Status.State == lmesv1alpha1.CompleteJobState {
 		if lastGen := getLastScheduledGeneration(job); lastGen > 0 && job.Generation > lastGen {
 			// Delete the completed pod first. The replacement pod reuses the same
@@ -563,38 +567,12 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 		return ctrl.Result{}, err
 	}
 
-	// Bug 1: Auto-inject the cluster CA bundle when the model endpoint uses HTTPS
-	// and verify_certificate is not already set. This handles the common RHOAI case
-	// where KServe external routes use self-signed certs trusted by the cluster but
-	// not by Python's default trust store inside the pod.
-	var caBundle *corev1.ConfigMap
-	var caBundleKey string
-	if hasHTTPSBaseURL(job) && !hasExplicitVerifyCertificate(job) {
-		if cm, key, err := r.findCABundle(ctx, job.Namespace); err == nil {
-			caBundle = cm
-			caBundleKey = key
-			log.Info("auto-injecting cluster CA bundle for HTTPS endpoint",
-				"configmap", DefaultCABundleConfigMapName, "key", key)
-		} else {
-			log.Info("HTTPS base_url detected but cluster CA bundle not found, proceeding without auto-injection",
-				"error", err.Error())
-		}
+	caBundle, caBundleKey, err := r.resolveCABundle(ctx, log, job)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
-
-	// Bug 3: Record the spec generation being scheduled. Reconcile reads this back
-	// after completion to detect a spec change and reset the job for re-run.
-	currentGenStr := strconv.FormatInt(job.Generation, 10)
-	annotations := job.GetAnnotations()
-	if annotations == nil {
-		annotations = make(map[string]string)
-	}
-	if annotations[LastScheduledGenerationAnnotation] != currentGenStr {
-		annotations[LastScheduledGenerationAnnotation] = currentGenStr
-		job.SetAnnotations(annotations)
-		if err := r.Update(ctx, job); err != nil {
-			log.Error(err, "failed to update generation annotation")
-			return ctrl.Result{}, err
-		}
+	if err := r.recordScheduledGeneration(ctx, job); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// construct a new pod and create a pod for the job
@@ -825,28 +803,12 @@ func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger,
 		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), err
 	}
 
-	// Bug 1: Apply the same CA bundle auto-injection on resume as on initial scheduling.
-	var caBundle *corev1.ConfigMap
-	var caBundleKey string
-	if hasHTTPSBaseURL(job) && !hasExplicitVerifyCertificate(job) {
-		if cm, key, err := r.findCABundle(ctx, job.Namespace); err == nil {
-			caBundle = cm
-			caBundleKey = key
-		}
+	caBundle, caBundleKey, err := r.resolveCABundle(ctx, log, job)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
-
-	currentGenStr := strconv.FormatInt(job.Generation, 10)
-	annotations := job.GetAnnotations()
-	if annotations == nil {
-		annotations = make(map[string]string)
-	}
-	if annotations[LastScheduledGenerationAnnotation] != currentGenStr {
-		annotations[LastScheduledGenerationAnnotation] = currentGenStr
-		job.SetAnnotations(annotations)
-		if err := r.Update(ctx, job); err != nil {
-			log.Error(err, "failed to update generation annotation on resume")
-			return ctrl.Result{}, err
-		}
+	if err := r.recordScheduledGeneration(ctx, job); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	pod := CreatePod(Options, job, permConfig, caBundle, caBundleKey, log)
@@ -1349,9 +1311,8 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 	volumes = append(volumes, job.Spec.Pod.GetVolumes()...)
 	volumeMounts = append(volumeMounts, job.Spec.Pod.GetContainer().GetVolumMounts()...)
 
-	// Bug 1: Mount the cluster CA bundle so Python's requests library can verify
-	// the self-signed certificate used by OpenShift external routes. REQUESTS_CA_BUNDLE
-	// is the standard env var that the requests library picks up automatically.
+	// Mount the merged CA bundle so REQUESTS_CA_BUNDLE lets Python's requests
+	// library verify certificates signed by cluster or service-serving CAs.
 	if caBundle != nil && caBundleKey != "" {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      CABundleVolumeName,
@@ -1792,6 +1753,43 @@ func removeProtectedEnvVars(envVars []corev1.EnvVar) []corev1.EnvVar {
 	return allowedEnvVars
 }
 
+// resolveCABundle looks up cluster CA sources and returns a merged ConfigMap
+// when the job targets an HTTPS endpoint without an explicit verify_certificate.
+func (r *LMEvalJobReconciler) resolveCABundle(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (*corev1.ConfigMap, string, error) {
+	if !hasHTTPSBaseURL(job) || hasExplicitVerifyCertificate(job) {
+		return nil, "", nil
+	}
+	cm, key, err := r.findAndMergeCABundle(ctx, job)
+	if errors.Is(err, errNoCAData) {
+		log.Info("HTTPS base_url detected but no CA bundle data found, proceeding without auto-injection")
+		return nil, "", nil
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to prepare CA bundle: %w", err)
+	}
+	log.Info("auto-injecting merged CA bundle for HTTPS endpoint",
+		"configmap", cm.Name, "key", key)
+	return cm, key, nil
+}
+
+// recordScheduledGeneration persists the current spec generation so Reconcile
+// can detect a spec change on a completed job and reset it for re-run.
+func (r *LMEvalJobReconciler) recordScheduledGeneration(ctx context.Context, job *lmesv1alpha1.LMEvalJob) error {
+	currentGenStr := strconv.FormatInt(job.Generation, 10)
+	annotations := job.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+	if annotations[LastScheduledGenerationAnnotation] != currentGenStr {
+		annotations[LastScheduledGenerationAnnotation] = currentGenStr
+		job.SetAnnotations(annotations)
+		if err := r.Update(ctx, job); err != nil {
+			return fmt.Errorf("failed to update generation annotation: %w", err)
+		}
+	}
+	return nil
+}
+
 // hasHTTPSBaseURL returns true when any modelArg named "base_url" uses HTTPS.
 func hasHTTPSBaseURL(job *lmesv1alpha1.LMEvalJob) bool {
 	for _, arg := range job.Spec.ModelArgs {
@@ -1830,18 +1828,84 @@ func getLastScheduledGeneration(job *lmesv1alpha1.LMEvalJob) int64 {
 	return gen
 }
 
-// findCABundle looks for the standard RHOAI cluster CA bundle ConfigMap in the
-// given namespace. It tries well-known key names and returns the ConfigMap and
-// the matching key on success.
-func (r *LMEvalJobReconciler) findCABundle(ctx context.Context, namespace string) (*corev1.ConfigMap, string, error) {
-	cm := &corev1.ConfigMap{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: DefaultCABundleConfigMapName}, cm); err != nil {
-		return nil, "", err
+// findAndMergeCABundle collects CA certificates from well-known cluster sources
+// and creates a per-job ConfigMap containing the merged bundle. This ensures
+// that REQUESTS_CA_BUNDLE (which replaces the default trust store) contains
+// both public CAs and the OpenShift service-serving CA.
+//
+// Sources checked (best-effort, each is skipped if not found):
+//   - odh-trusted-ca-bundle: ca-bundle.crt, odh-ca-bundle.crt (public/system CAs)
+//   - openshift-service-ca.crt: service-ca.crt (service-serving CA)
+func (r *LMEvalJobReconciler) findAndMergeCABundle(ctx context.Context, job *lmesv1alpha1.LMEvalJob) (*corev1.ConfigMap, string, error) {
+	log := log.FromContext(ctx)
+	var pemBlocks []string
+
+	// Source 1: odh-trusted-ca-bundle (public/system CAs)
+	odhCM := &corev1.ConfigMap{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: job.Namespace, Name: DefaultCABundleConfigMapName}, odhCM); err == nil {
+		for _, key := range []string{"ca-bundle.crt", "odh-ca-bundle.crt"} {
+			if data, ok := odhCM.Data[key]; ok && strings.TrimSpace(data) != "" {
+				pemBlocks = append(pemBlocks, data)
+				log.V(1).Info("collected CA data", "configmap", DefaultCABundleConfigMapName, "key", key)
+			}
+		}
+	} else if !apierrors.IsNotFound(err) {
+		log.Error(err, "error reading CA bundle ConfigMap", "name", DefaultCABundleConfigMapName)
 	}
-	for _, key := range []string{"ca-bundle.crt", "odh-ca-bundle.crt", "service-ca.crt"} {
-		if _, ok := cm.Data[key]; ok {
-			return cm, key, nil
+
+	// Source 2: openshift-service-ca.crt (service-serving CA)
+	svcCM := &corev1.ConfigMap{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: job.Namespace, Name: ServiceCAConfigMapName}, svcCM); err == nil {
+		if data, ok := svcCM.Data[ServiceCAKey]; ok && strings.TrimSpace(data) != "" {
+			pemBlocks = append(pemBlocks, data)
+			log.V(1).Info("collected CA data", "configmap", ServiceCAConfigMapName, "key", ServiceCAKey)
+		}
+	} else if !apierrors.IsNotFound(err) {
+		log.Error(err, "error reading service CA ConfigMap", "name", ServiceCAConfigMapName)
+	}
+
+	if len(pemBlocks) == 0 {
+		return nil, "", errNoCAData
+	}
+
+	merged := strings.Join(pemBlocks, "\n")
+	mergedCMName := job.Name + MergedCAConfigMapSuffix
+
+	mergedCM := &corev1.ConfigMap{}
+	err := r.Get(ctx, types.NamespacedName{Namespace: job.Namespace, Name: mergedCMName}, mergedCM)
+	if apierrors.IsNotFound(err) {
+		ownerRefController := true
+		mergedCM = &corev1.ConfigMap{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      mergedCMName,
+				Namespace: job.Namespace,
+				OwnerReferences: []v1.OwnerReference{
+					{
+						APIVersion: job.APIVersion,
+						Kind:       job.Kind,
+						Name:       job.Name,
+						Controller: &ownerRefController,
+						UID:        job.UID,
+					},
+				},
+			},
+			Data: map[string]string{
+				MergedCABundleKey: merged,
+			},
+		}
+		if err := r.Create(ctx, mergedCM); err != nil {
+			return nil, "", fmt.Errorf("failed to create merged CA ConfigMap: %w", err)
+		}
+	} else if err != nil {
+		return nil, "", fmt.Errorf("failed to read merged CA ConfigMap: %w", err)
+	} else {
+		mergedCM.Data = map[string]string{
+			MergedCABundleKey: merged,
+		}
+		if err := r.Update(ctx, mergedCM); err != nil {
+			return nil, "", fmt.Errorf("failed to update merged CA ConfigMap: %w", err)
 		}
 	}
-	return nil, "", fmt.Errorf("ConfigMap %s has no recognised CA bundle key", DefaultCABundleConfigMapName)
+
+	return mergedCM, MergedCABundleKey, nil
 }

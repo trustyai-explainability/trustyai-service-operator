@@ -4546,17 +4546,18 @@ func Test_CreatePodWithCABundle(t *testing.T) {
 		},
 	}
 
+	mergedCMName := "test-ca" + MergedCAConfigMapSuffix
 	caBundle := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      DefaultCABundleConfigMapName,
+			Name:      mergedCMName,
 			Namespace: "default",
 		},
 		Data: map[string]string{
-			"ca-bundle.crt": "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----",
+			MergedCABundleKey: "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----",
 		},
 	}
 
-	pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), caBundle, "ca-bundle.crt", log)
+	pod := CreatePod(svcOpts, job, NewDefaultPermissionConfig(), caBundle, MergedCABundleKey, log)
 	require.NotNil(t, pod)
 
 	// Verify CA bundle volume exists
@@ -4565,7 +4566,7 @@ func Test_CreatePodWithCABundle(t *testing.T) {
 		if v.Name == CABundleVolumeName {
 			foundVolume = true
 			require.NotNil(t, v.VolumeSource.ConfigMap)
-			assert.Equal(t, DefaultCABundleConfigMapName, v.VolumeSource.ConfigMap.Name)
+			assert.Equal(t, mergedCMName, v.VolumeSource.ConfigMap.Name)
 			break
 		}
 	}
@@ -4578,7 +4579,7 @@ func Test_CreatePodWithCABundle(t *testing.T) {
 		if m.Name == CABundleVolumeName {
 			foundMount = true
 			assert.Equal(t, CABundleMountPath, m.MountPath)
-			assert.Equal(t, "ca-bundle.crt", m.SubPath)
+			assert.Equal(t, MergedCABundleKey, m.SubPath)
 			assert.True(t, m.ReadOnly)
 			break
 		}
