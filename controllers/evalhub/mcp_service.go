@@ -14,6 +14,9 @@ import (
 )
 
 func mcpServiceName(instance *evalhubv1alpha1.EvalHub) string {
+	if instance == nil {
+		return ""
+	}
 	return instance.Name + "-mcp"
 }
 
@@ -54,12 +57,11 @@ func (r *EvalHubReconciler) reconcileMCPService(ctx context.Context, instance *e
 			return err
 		}
 		log.Info("Creating MCP Service", "name", name)
-		return r.Create(ctx, service)
 	}
-
 	service.Spec.Ports = desiredSpec.Ports
 	service.Spec.Selector = desiredSpec.Selector
 	service.Spec.Type = desiredSpec.Type
+	service.Labels = mcpLabels(instance)
 	if service.Annotations == nil {
 		service.Annotations = make(map[string]string)
 	}

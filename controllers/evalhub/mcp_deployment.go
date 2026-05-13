@@ -232,7 +232,7 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 		},
 	}
 
-	replicas := mcpSpec.GetMCPReplicas()
+	replicas := instance.Spec.GetMCPReplicas()
 	return appsv1.DeploymentSpec{
 		Replicas: &replicas,
 		Selector: &metav1.LabelSelector{
@@ -268,6 +268,6 @@ func (r *EvalHubReconciler) deleteMCPResource(ctx context.Context, instance *eva
 	if err != nil {
 		return err
 	}
-	log.FromContext(ctx).Info("Deleting MCP resource (MCP disabled)", "kind", obj.GetObjectKind().GroupVersionKind().Kind, "name", name)
+	log.FromContext(ctx).Info("Deleting MCP resource (MCP disabled)", "kind", obj.GetObjectKind().GroupVersionKind().Kind, "resource", fmt.Sprintf("%T", obj), "name", name)
 	return r.Delete(ctx, obj)
 }

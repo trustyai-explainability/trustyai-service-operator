@@ -4,10 +4,11 @@ metadata:
   name: evalhub-mcp-sample
   namespace: default
 spec:
+  # SQLite (database below) is file-based and does not support concurrent writes across multiple EvalHub replicas; replicas > 1 can cause locking or corruption. Use postgresql for production or horizontal scaling.
   replicas: 1
 
   database:
-    type: sqlite
+    type: sqlite  # dev / single-replica; use postgresql before increasing spec.replicas
 
   collections:
     - leaderboard-v2

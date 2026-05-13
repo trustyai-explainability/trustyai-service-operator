@@ -568,10 +568,12 @@ func (r *EvalHubReconciler) updateMCPStatus(ctx context.Context, instance *evalh
 		Name:      mcpDeploymentName(instance),
 	}, deployment)
 
+	log := log.FromContext(ctx)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			mcpStatus.Phase = "Pending"
 		} else {
+			log.Error(err, "Failed to get MCP deployment for status update")
 			mcpStatus.Phase = "Error"
 		}
 	} else if deployment.Status.ReadyReplicas > 0 && deployment.Status.ReadyReplicas == deployment.Status.Replicas {

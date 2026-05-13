@@ -78,7 +78,10 @@ func (r *EvalHubReconciler) reconcileMCPConfigMap(ctx context.Context, instance 
 }
 
 func (r *EvalHubReconciler) generateMCPConfigData(instance *evalhubv1alpha1.EvalHub) (map[string]string, error) {
-	transport := instance.Spec.MCP.Transport
+	transport := ""
+	if mcp := instance.Spec.MCP; mcp != nil {
+		transport = mcp.Transport
+	}
 	if transport == "" {
 		transport = "http-sse"
 	}
