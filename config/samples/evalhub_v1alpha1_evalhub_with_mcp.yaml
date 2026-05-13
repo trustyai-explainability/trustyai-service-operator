@@ -1,0 +1,19 @@
+apiVersion: trustyai.opendatahub.io/v1alpha1
+kind: EvalHub
+metadata:
+  name: evalhub-mcp-sample
+  namespace: default
+spec:
+  replicas: 1
+
+  database:
+    type: sqlite
+
+  collections:
+    - leaderboard-v2
+
+  # MCP server deployment configuration
+  mcp:
+    enabled: true
+    replicas: 1
+    transport: http-sse
