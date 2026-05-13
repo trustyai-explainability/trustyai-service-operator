@@ -57,6 +57,7 @@ func (r *EvalHubReconciler) reconcileMCPService(ctx context.Context, instance *e
 			return err
 		}
 		log.Info("Creating MCP Service", "name", name)
+		return r.Create(ctx, service)
 	}
 	service.Spec.Ports = desiredSpec.Ports
 	service.Spec.Selector = desiredSpec.Selector
