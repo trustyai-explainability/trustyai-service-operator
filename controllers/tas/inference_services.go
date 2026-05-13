@@ -18,7 +18,9 @@ import (
 const (
 	DEPLOYMENT_MODE_MODELMESH  = "ModelMesh"
 	DEPLOYMENT_MODE_RAW        = "RawDeployment"
+	DEPLOYMENT_MODE_STANDARD   = "Standard"
 	DEPLOYMENT_MODE_SERVERLESS = "Serverless"
+	DEPLOYMENT_MODE_KNATIVE    = "Knative"
 )
 
 // GetDeploymentsByLabel returns a list of Deployments that match a label key-value pair
@@ -243,8 +245,8 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 			}
 			continue
 
-		case DEPLOYMENT_MODE_RAW:
-			// Handle KServe Raw deployments
+		case DEPLOYMENT_MODE_RAW, DEPLOYMENT_MODE_STANDARD:
+			// Handle KServe Raw/Standard deployments (KServe v0.17+ renamed RawDeployment to Standard)
 			err := r.patchKServe(ctx, instance, infService, namespace, crName, remove, true)
 			if err != nil {
 				log.FromContext(ctx).Error(err, "Could not patch InferenceLogger for KServe Raw deployment")
@@ -252,8 +254,8 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 			}
 			continue
 
-		default:
-			// Handle KServe Serverless deployments
+		case DEPLOYMENT_MODE_SERVERLESS, DEPLOYMENT_MODE_KNATIVE:
+			// Handle KServe Serverless/Knative deployments (KServe v0.17+ renamed Serverless to Knative)
 			if kServeServerlessEnabled {
 				err := r.patchKServe(ctx, instance, infService, namespace, crName, remove, false)
 				if err != nil {
@@ -261,6 +263,10 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 					return false, err
 				}
 			}
+			continue
+
+		default:
+			log.FromContext(ctx).Info("Unknown deployment mode, skipping InferenceService", "deploymentMode", deploymentMode, "inferenceService", infService.Name)
 			continue
 		}
 	}
