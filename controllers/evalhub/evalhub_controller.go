@@ -548,11 +548,9 @@ func (r *EvalHubReconciler) updateStatus(ctx context.Context, instance *evalhubv
 // updateMCPStatus sets the MCP sub-status based on the MCP deployment state.
 func (r *EvalHubReconciler) updateMCPStatus(ctx context.Context, instance *evalhubv1alpha1.EvalHub) {
 	if !instance.Spec.IsMCPEnabled() {
-		if instance.Status.MCP != nil {
-			instance.Status.MCP = &evalhubv1alpha1.EvalHubMCPStatus{
-				Phase: "Disabled",
-				Ready: false,
-			}
+		instance.Status.MCP = &evalhubv1alpha1.EvalHubMCPStatus{
+			Phase: "Disabled",
+			Ready: false,
 		}
 		return
 	}
