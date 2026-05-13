@@ -448,6 +448,36 @@ func TestGenerateConfigData(t *testing.T) {
 	})
 }
 
+func TestGenerateMCPConfigData(t *testing.T) {
+	r := &EvalHubReconciler{}
+	evalHub := &evalhubv1alpha1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-evalhub",
+			Namespace: "test-namespace",
+		},
+		Spec: evalhubv1alpha1.EvalHubSpec{},
+	}
+
+	t.Run("nil MCP defaults transport to http-sse", func(t *testing.T) {
+		data, err := r.generateMCPConfigData(evalHub)
+		require.NoError(t, err)
+		require.Contains(t, data, mcpConfigFileName)
+		var cfg MCPConfig
+		require.NoError(t, yaml.Unmarshal([]byte(data[mcpConfigFileName]), &cfg))
+		assert.Equal(t, "http-sse", cfg.Transport)
+	})
+
+	t.Run("MCP with explicit transport", func(t *testing.T) {
+		eh := evalHub.DeepCopy()
+		eh.Spec.MCP = &evalhubv1alpha1.EvalHubMCPSpec{Transport: "http"}
+		data, err := r.generateMCPConfigData(eh)
+		require.NoError(t, err)
+		var cfg MCPConfig
+		require.NoError(t, yaml.Unmarshal([]byte(data[mcpConfigFileName]), &cfg))
+		assert.Equal(t, "http", cfg.Transport)
+	})
+}
+
 func TestEvalHubHelperMethods(t *testing.T) {
 	t.Run("EvalHub IsReady method", func(t *testing.T) {
 		evalHub := &evalhubv1alpha1.EvalHub{}
@@ -486,6 +516,21 @@ func TestEvalHubHelperMethods(t *testing.T) {
 		customReplicas := int32(3)
 		spec.Replicas = &customReplicas
 		assert.Equal(t, int32(3), spec.GetReplicas())
+	})
+
+	t.Run("EvalHubSpec GetMCPReplicas method", func(t *testing.T) {
+		var nilSpec *evalhubv1alpha1.EvalHubSpec
+		assert.Equal(t, int32(1), nilSpec.GetMCPReplicas())
+
+		spec := &evalhubv1alpha1.EvalHubSpec{}
+		assert.Equal(t, int32(1), spec.GetMCPReplicas())
+
+		spec.MCP = &evalhubv1alpha1.EvalHubMCPSpec{}
+		assert.Equal(t, int32(1), spec.GetMCPReplicas())
+
+		three := int32(3)
+		spec.MCP.Replicas = &three
+		assert.Equal(t, int32(3), spec.GetMCPReplicas())
 	})
 }
 

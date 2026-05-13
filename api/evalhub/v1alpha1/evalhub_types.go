@@ -265,8 +265,17 @@ func (e *EvalHubSpec) IsMCPEnabled() bool {
 	return e.MCP != nil && e.MCP.Enabled != nil && *e.MCP.Enabled
 }
 
-// GetMCPReplicas returns the number of MCP replicas, defaulting to 1
-func (e *EvalHubMCPSpec) GetMCPReplicas() int32 {
+// GetMCPReplicas returns the number of MCP server replicas, defaulting to 1 when the spec,
+// MCP block, or replicas pointer is unset.
+func (e *EvalHubSpec) GetMCPReplicas() int32 {
+	if e == nil || e.MCP == nil {
+		return 1
+	}
+	return e.MCP.getMCPReplicas()
+}
+
+// getMCPReplicas returns MCP replica count; the receiver must be non-nil — use EvalHubSpec.GetMCPReplicas otherwise.
+func (e *EvalHubMCPSpec) getMCPReplicas() int32 {
 	if e.Replicas == nil {
 		return 1
 	}
