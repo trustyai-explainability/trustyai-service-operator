@@ -120,7 +120,7 @@ func (job *LMEvalJob) PodSets() []kueue.PodSet {
 		AllowOnline:        lmes.Options.AllowOnline,
 		AllowCodeExecution: lmes.Options.AllowCodeExecution,
 	}
-	pod := lmes.CreatePod(lmes.Options, &job.LMEvalJob, permConfig, log)
+	pod := lmes.CreatePod(lmes.Options, &job.LMEvalJob, permConfig, nil, "", log)
 	podSet := kueue.PodSet{
 		Name:     job.GetPodName(),
 		Count:    1,
