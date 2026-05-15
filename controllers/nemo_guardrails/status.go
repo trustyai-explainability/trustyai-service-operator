@@ -26,12 +26,32 @@ func (r *NemoGuardrailsReconciler) updateStatus(ctx context.Context, original *n
 	return saved, err
 }
 
+// flushMCPStatus persists the MCP and BBRPlugin status fields without touching
+// Conditions or Phase. Used before early returns so the API reflects the latest
+// discovery results even when the full reconcile doesn't complete.
+func (r *NemoGuardrailsReconciler) flushMCPStatus(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails) {
+	mcp := nemoGuardrails.Status.MCP
+	bbr := nemoGuardrails.Status.BBRPlugin
+	_, err := r.updateStatus(ctx, nemoGuardrails, func(saved *nemoguardrailsv1alpha1.NemoGuardrails) {
+		saved.Status.MCP = mcp
+		saved.Status.BBRPlugin = bbr
+	})
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to flush MCP/BBR status")
+	}
+}
+
 func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails) (ctrl.Result, error) {
 	deploymentReady, _ := utils.CheckDeploymentReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
 	routeReady, _ := utils.CheckRouteReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
 
+	mcp := nemoGuardrails.Status.MCP
+	bbr := nemoGuardrails.Status.BBRPlugin
+
 	if deploymentReady && routeReady {
 		_, updateErr := r.updateStatus(ctx, nemoGuardrails, func(saved *nemoguardrailsv1alpha1.NemoGuardrails) {
+			saved.Status.MCP = mcp
+			saved.Status.BBRPlugin = bbr
 			utils.SetResourceCondition(&saved.Status.Conditions, "Deployment", "DeploymentReady", "Deployment is ready", corev1.ConditionTrue)
 			utils.SetResourceCondition(&saved.Status.Conditions, "Route", "RouteReady", "Route is ready", corev1.ConditionTrue)
 			utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionTrue, utils.ReconcileCompleted, utils.ReconcileCompletedMessage)
@@ -43,7 +63,8 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 		}
 	} else {
 		_, updateErr := r.updateStatus(ctx, nemoGuardrails, func(saved *nemoguardrailsv1alpha1.NemoGuardrails) {
-
+			saved.Status.MCP = mcp
+			saved.Status.BBRPlugin = bbr
 			utils.SetStatus(&saved.Status.Conditions, "Deployment", deploymentReady)
 			utils.SetStatus(&saved.Status.Conditions, "Route", routeReady)
 			utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionFalse, utils.ReconcileFailed, utils.ReconcileFailedMessage)

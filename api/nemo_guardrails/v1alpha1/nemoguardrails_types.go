@@ -36,6 +36,18 @@ type NemoConfig struct {
 	Default bool `json:"default,omitempty"`
 }
 
+// MCPGatewayConfig holds the name and namespace of the MCPGatewayExtension resource
+type MCPGatewayConfig struct {
+	// MCPGatewayName is the name of the MCPGatewayExtension resource
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`
+	// +optional
+	Name string `json:"name,omitempty"`
+	// MCPGatewayNamespace is the namespace of the MCPGatewayExtension resource
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+}
+
 // NemoGuardrailsSpec defines the desired state of NemoGuardrails
 type NemoGuardrailsSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -52,6 +64,9 @@ type NemoGuardrailsSpec struct {
 	// Define Env information for the main container
 	// +optional
 	Env []corev1.EnvVar `json:"env,omitempty"`
+	// MCPGateway is the name and namespace of the MCPGatewayExtension resource
+	// +optional
+	MCPGateway *MCPGatewayConfig `json:"mcpGateway,omitempty"`
 }
 
 type CAStatus struct {
@@ -63,16 +78,31 @@ type CAStatus struct {
 	UserCAError             string `json:"userCAError,omitempty"`
 }
 
+type MCPGatewayStatus struct {
+	MCPGatewayFound bool   `json:"mcpGatewayFound"`
+	MCPGatewayError string `json:"mcpGatewayError,omitempty"`
+}
+
+type BBRPluginStatus struct {
+	BBRPluginFound bool   `json:"bbrPluginFound"`
+	BBRPluginError string `json:"bbrPluginError,omitempty"`
+}
+
 // NemoGuardrailStatus defines the observed state of NemoGuardrails
 type NemoGuardrailStatus struct {
 	Phase string `json:"phase,omitempty"`
-
 	// Conditions describes the state of the NemoGuardrails resource.
 	// +optional
 	Conditions []common.Condition `json:"conditions,omitempty"`
 	// CA describes the status of the CA configmaps
 	// +optional
 	CA *CAStatus `json:"ca,omitempty"`
+	// MCP describes the status of the MCP-related resources
+	// +optional
+	MCP *MCPGatewayStatus `json:"mcpGateway,omitempty"`
+	// BBRPlugin describes the status of the BBR plugin
+	// +optional
+	BBRPlugin *BBRPluginStatus `json:"bbrPlugin,omitempty"`
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 }
