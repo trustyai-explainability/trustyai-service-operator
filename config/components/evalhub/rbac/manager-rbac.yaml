@@ -226,9 +226,32 @@ rules:
   - patch
   - delete
 - apiGroups:
+<<<<<<< HEAD
   - infrastructure.opendatahub.io
   resources:
   - hardwareprofiles
   verbs:
   - get
   - list
+=======
+  - kueue.x-k8s.io
+  resources:
+  - workloads
+  verbs:
+  - get
+  - list
+  - watch
+  - patch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - get
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - evalhubs
+  verbs:
+  - get
+>>>>>>> 00ba771 (feat(mcp-guardrails): Validate MCPGateway and deploy EnvoyFilter)
