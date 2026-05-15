@@ -577,7 +577,7 @@ func (r *EvalHubReconciler) updateMCPStatus(ctx context.Context, instance *evalh
 	} else if deployment.Status.ReadyReplicas > 0 && deployment.Status.ReadyReplicas == deployment.Status.Replicas {
 		mcpStatus.Phase = "Ready"
 		mcpStatus.Ready = true
-		mcpStatus.URL = fmt.Sprintf("https://%s.%s.svc.cluster.local:%d",
+		mcpStatus.URL = fmt.Sprintf("http://%s.%s.svc.cluster.local:%d",
 			mcpServiceName(instance), instance.Namespace, mcpServicePort)
 	}
 

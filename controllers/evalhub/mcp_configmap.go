@@ -29,6 +29,7 @@ type MCPConfig struct {
 // MCPEvalHubConfig represents the EvalHub connection settings within MCP config
 type MCPEvalHubConfig struct {
 	BaseURL            string `json:"base_url"`
+	Transport          string `json:"transport,omitempty"`
 	CACertPath         string `json:"ca_cert_path,omitempty"`
 	InsecureSkipVerify bool   `json:"insecure_skip_verify"`
 }
@@ -78,23 +79,20 @@ func (r *EvalHubReconciler) reconcileMCPConfigMap(ctx context.Context, instance 
 }
 
 func (r *EvalHubReconciler) generateMCPConfigData(instance *evalhubv1alpha1.EvalHub) (map[string]string, error) {
-	transport := ""
-	if mcp := instance.Spec.MCP; mcp != nil {
-		transport = mcp.Transport
-	}
-	if transport == "" {
-		transport = "http-sse"
-	}
+	mcp := instance.Spec.MCP
+	clientTransport := mcpClientTransport(mcp)
+	backendTransport := evalHubBackendTransport(mcp)
 
 	evalHubServiceURL := fmt.Sprintf("https://%s.%s.svc.cluster.local:%d", instance.Name, instance.Namespace, servicePort)
 
 	config := MCPConfig{
 		EvalHub: MCPEvalHubConfig{
 			BaseURL:            evalHubServiceURL,
+			Transport:          backendTransport,
 			CACertPath:         mcpServiceCAMountPath + "/" + serviceCACertFile,
 			InsecureSkipVerify: false,
 		},
-		Transport: transport,
+		Transport: clientTransport,
 		Host:      "0.0.0.0",
 		Port:      mcpContainerPort,
 	}

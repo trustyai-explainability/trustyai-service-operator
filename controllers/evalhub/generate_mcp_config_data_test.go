@@ -15,7 +15,7 @@ var _ = Describe("GenerateMCPConfigData", func() {
 		r = &EvalHubReconciler{}
 	})
 
-	It("defaults transport to http-sse when MCP is nil", func() {
+	It("defaults MCP client and EvalHub backend transport to http", func() {
 		evalHub := &evalhubv1alpha1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-evalhub",
@@ -28,17 +28,21 @@ var _ = Describe("GenerateMCPConfigData", func() {
 		Expect(data).To(HaveKey(mcpConfigFileName))
 		var cfg MCPConfig
 		Expect(yaml.Unmarshal([]byte(data[mcpConfigFileName]), &cfg)).To(Succeed())
-		Expect(cfg.Transport).To(Equal("http-sse"))
+		Expect(cfg.Transport).To(Equal("http"))
+		Expect(cfg.EvalHub.Transport).To(Equal("http"))
 	})
 
-	It("uses explicit transport from MCP spec", func() {
+	It("uses explicit transport values from MCP spec", func() {
 		evalHub := &evalhubv1alpha1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-evalhub",
 				Namespace: "test-namespace",
 			},
 			Spec: evalhubv1alpha1.EvalHubSpec{
-				MCP: &evalhubv1alpha1.EvalHubMCPSpec{Transport: "http"},
+				MCP: &evalhubv1alpha1.EvalHubMCPSpec{
+					Transport:        "http-sse",
+					EvalHubTransport: "http-sse",
+				},
 			},
 		}
 		data, err := r.generateMCPConfigData(evalHub)
@@ -46,6 +50,7 @@ var _ = Describe("GenerateMCPConfigData", func() {
 		Expect(data).To(HaveKey(mcpConfigFileName))
 		var cfg MCPConfig
 		Expect(yaml.Unmarshal([]byte(data[mcpConfigFileName]), &cfg)).To(Succeed())
-		Expect(cfg.Transport).To(Equal("http"))
+		Expect(cfg.Transport).To(Equal("http-sse"))
+		Expect(cfg.EvalHub.Transport).To(Equal("http-sse"))
 	})
 })
