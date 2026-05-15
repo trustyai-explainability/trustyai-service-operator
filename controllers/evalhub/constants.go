@@ -23,7 +23,6 @@ const (
 	evalHubHealthPath = "/api/v1/health"
 
 	// Service configuration (public HTTPS targets kube-rbac-proxy on this port)
-	serviceName = "evalhub"
 	servicePort = 8443
 
 	// kube-rbac-proxy sidecar
@@ -53,9 +52,6 @@ const (
 	tlsSecretMountPath = "/etc/tls/private"
 	tlsCertFile        = "tls.crt"
 	tlsKeyFile         = "tls.key"
-
-	// Route configuration
-	routeName = "evalhub"
 
 	// Database configuration
 	dbSecretVolumeName = "evalhub-db-secret"
