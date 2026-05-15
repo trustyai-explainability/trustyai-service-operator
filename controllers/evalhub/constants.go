@@ -66,6 +66,7 @@ const (
 	// MCP server configuration
 	defaultMCPImage        = "quay.io/evalhub/evalhub-mcp:latest"
 	configMapMCPImageKey   = "evalHubMCPImage"
+	mcpBinaryPath          = "/app/evalhub-mcp"
 	mcpContainerName       = "evalhub-mcp"
 	mcpContainerPort       = 8443
 	mcpServicePort         = 8443

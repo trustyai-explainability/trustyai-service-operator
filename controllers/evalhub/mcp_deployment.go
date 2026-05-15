@@ -3,6 +3,7 @@ package evalhub
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
@@ -88,15 +89,13 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 		}
 	}
 
-	transport := mcpSpec.Transport
-	if transport == "" {
-		transport = "http-sse"
-	}
+	clientTransport := mcpClientTransport(mcpSpec)
+	backendTransport := evalHubBackendTransport(mcpSpec)
 
 	evalHubServiceURL := fmt.Sprintf("https://%s.%s.svc.cluster.local:%d", instance.Name, instance.Namespace, servicePort)
 
 	defaultEnvVars := []corev1.EnvVar{
-		{Name: "EVALHUB_TRANSPORT", Value: transport},
+		{Name: "EVALHUB_TRANSPORT", Value: backendTransport},
 		{Name: "EVALHUB_HOST", Value: "0.0.0.0"},
 		{Name: "EVALHUB_PORT", Value: fmt.Sprintf("%d", mcpContainerPort)},
 		{Name: "EVALHUB_BASE_URL", Value: evalHubServiceURL},
@@ -149,9 +148,15 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 		Name:            mcpContainerName,
 		Image:           image,
 		ImagePullPolicy: corev1.PullAlways,
+		Command:         []string{mcpBinaryPath},
+		Args: []string{
+			"--transport", clientTransport,
+			"--host", "0.0.0.0",
+			"--port", strconv.Itoa(mcpContainerPort),
+		},
 		Ports: []corev1.ContainerPort{
 			{
-				Name:          "https",
+				Name:          "http",
 				ContainerPort: mcpContainerPort,
 				Protocol:      corev1.ProtocolTCP,
 			},
@@ -165,7 +170,7 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 				HTTPGet: &corev1.HTTPGetAction{
 					Path:   "/health",
 					Port:   intstr.FromInt(mcpContainerPort),
-					Scheme: corev1.URISchemeHTTPS,
+					Scheme: corev1.URISchemeHTTP,
 				},
 			},
 			InitialDelaySeconds: 15,
@@ -178,7 +183,7 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 				HTTPGet: &corev1.HTTPGetAction{
 					Path:   "/health",
 					Port:   intstr.FromInt(mcpContainerPort),
-					Scheme: corev1.URISchemeHTTPS,
+					Scheme: corev1.URISchemeHTTP,
 				},
 			},
 			InitialDelaySeconds: 5,
