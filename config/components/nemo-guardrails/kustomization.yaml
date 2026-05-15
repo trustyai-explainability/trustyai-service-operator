@@ -6,5 +6,4 @@ resources:
   - crd/trustyai.opendatahub.io_nemoguardrails.yaml
   - rbac/manager-rbac.yaml
   - rbac/manager-rolebinding.yaml
-  - rbac/nemoguardrail_editor_role.yaml
-  - rbac/nemoguardrail_viewer_role.yaml
+  - rbac/nemoguardrails_user_cluster_roles.yaml

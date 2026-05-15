@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
@@ -18,7 +19,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/yaml"
 )
 
@@ -2186,4 +2189,46 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 		}, sa)
 		require.NoError(t, err, "active tenant SA should not be deleted")
 	})
+}
+
+func TestEvalHubReconciler_reconcileServiceMonitor_NoOpUpdate(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, monitoringv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	evalHub := &evalhubv1alpha1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+	}
+
+	var smUpdateCount int
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+				if _, ok := obj.(*monitoringv1.ServiceMonitor); ok {
+					smUpdateCount++
+				}
+				return c.Update(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		Namespace:     "ns",
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	// First call: creates the ServiceMonitor (Create, not Update)
+	require.NoError(t, reconciler.reconcileServiceMonitor(ctx, evalHub))
+	assert.Equal(t, 0, smUpdateCount, "first call should Create, not Update")
+
+	// Second call: spec unchanged — should NOT call Update
+	require.NoError(t, reconciler.reconcileServiceMonitor(ctx, evalHub))
+	assert.Equal(t, 0, smUpdateCount,
+		"reconcileServiceMonitor should not update when spec is unchanged")
 }

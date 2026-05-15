@@ -51,6 +51,7 @@ var _ = Describe("Service Monitor Reconciliation", func() {
 			Expect(endpoint.HonorLabels).To(BeTrue())
 
 			Expect(endpoint.Path).To(Equal("/q/metrics"))
+			Expect(endpoint.Port).To(Equal("http"))
 			Expect(endpoint.Scheme).To(Equal("http"))
 			Expect(endpoint.Params["match[]"]).To(ConsistOf("{__name__= \"trustyai_spd\"}", "{__name__= \"trustyai_dir\"}"))
 
@@ -90,6 +91,7 @@ var _ = Describe("Service Monitor Reconciliation", func() {
 			Expect(endpoint.HonorLabels).To(BeTrue())
 
 			Expect(endpoint.Path).To(Equal("/q/metrics"))
+			Expect(endpoint.Port).To(Equal("http"))
 			Expect(endpoint.Scheme).To(Equal("http"))
 			Expect(endpoint.Params["match[]"]).To(ConsistOf("{__name__= \"trustyai_spd\"}", "{__name__= \"trustyai_dir\"}"))
 

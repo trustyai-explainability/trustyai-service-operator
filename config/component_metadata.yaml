@@ -20,3 +20,6 @@ releases:
   - name: TrustyAI sidecar gateway
     version: v0.2.1
     repoUrl: https://github.com/trustyai-explainability/vllm-orchestrator-gateway
+  - name: EvalHub
+    version: v0.3.0
+    repoUrl: https://github.com/eval-hub/eval-hub
