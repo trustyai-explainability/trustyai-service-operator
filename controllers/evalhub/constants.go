@@ -17,7 +17,6 @@ const (
 	containerPort = 8443
 
 	// Service configuration
-	serviceName = "evalhub"
 	servicePort = 8443
 
 	// Configuration constants
@@ -28,9 +27,6 @@ const (
 	tlsSecretMountPath = "/etc/tls/private"
 	tlsCertFile        = "tls.crt"
 	tlsKeyFile         = "tls.key"
-
-	// Route configuration
-	routeName = "evalhub"
 
 	// Database configuration
 	dbSecretVolumeName = "evalhub-db-secret"

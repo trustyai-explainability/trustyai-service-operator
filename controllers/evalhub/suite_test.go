@@ -315,7 +315,7 @@ func createEvalHubInstanceWithSQLite(name, namespace string) *evalhubv1alpha1.Ev
 }
 
 // cleanupResourcesInNamespace deletes all test resources in a namespace
-func cleanupResourcesInNamespace(namespace string, evalHub *evalhubv1alpha1.EvalHub, configMap *corev1.ConfigMap) {
+func cleanupResourcesInNamespace(_ string, evalHub *evalhubv1alpha1.EvalHub, configMap *corev1.ConfigMap) {
 	if evalHub != nil {
 		k8sClient.Delete(ctx, evalHub)
 	}
