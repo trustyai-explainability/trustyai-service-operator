@@ -174,6 +174,20 @@ spec:
                   - name
                   type: object
                 type: array
+              mcpGateway:
+                description: MCPGateway is the name and namespace of the MCPGatewayExtension
+                  resource
+                properties:
+                  name:
+                    description: MCPGatewayName is the name of the Gateway resource
+                    pattern: ^[a-zA-Z0-9_-]+$
+                    type: string
+                  namespace:
+                    description: MCPGatewayNamespace is the namespace of the MCPGatewayExtension
+                      resource
+                    pattern: ^[a-zA-Z0-9_-]+$
+                    type: string
+                type: object
               nemoConfigs:
                 description: NemoConfig should be the names of the configmaps containing
                   NeMO server configuration files. All files in NemoConfigs will be
@@ -217,6 +231,16 @@ spec:
           status:
             description: NemoGuardrailStatus defines the observed state of NemoGuardrails
             properties:
+              bbrPlugin:
+                description: BBRPlugin describes the status of the BBR plugin
+                properties:
+                  bbrPluginError:
+                    type: string
+                  bbrPluginFound:
+                    type: boolean
+                required:
+                - bbrPluginFound
+                type: object
               ca:
                 description: CA describes the status of the CA configmaps
                 properties:
@@ -257,6 +281,16 @@ spec:
                   - type
                   type: object
                 type: array
+              mcpGateway:
+                description: MCP describes the status of the MCP-related resources
+                properties:
+                  mcpGatewayError:
+                    type: string
+                  mcpGatewayFound:
+                    type: boolean
+                required:
+                - mcpGatewayFound
+                type: object
               phase:
                 type: string
             type: object

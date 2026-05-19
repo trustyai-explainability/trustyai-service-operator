@@ -66,6 +66,10 @@ const (
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments/finalizers,verbs=update
+// +kubebuilder:rbac:groups=networking.istio.io,resources=envoyfilters,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list
+// +kubebuilder:rbac:groups=mcp.kuadrant.io,resources=mcpgatewayextensions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gateways,verbs=get;list;watch
 
 func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -198,6 +202,44 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		utils.LogErrorReconciling(ctx, err, "route", nemoGuardrails.Name, nemoGuardrails.Namespace)
 		return ctrl.Result{}, err
+	}
+
+	// ====== Conditionally reconcile EnvoyFilter ========================================================================
+	// Auto-discover an MCPGatewayExtension in the CR's namespace. If the user
+	// set spec.mcpGateway, only extensions targeting that gateway match;
+	// otherwise the first extension found is used (zero-config path).
+	// When prerequisites are absent, any previously-created EnvoyFilter is removed.
+	if nemoGuardrails.Spec.MCPGateway == nil {
+		if err := r.deleteEnvoyFilter(ctx, nemoGuardrails.Namespace); err != nil {
+			logger.Error(err, "failed to clean up EnvoyFilter")
+		}
+	} else {
+		mcpGatewayRef, mcpGatewayStatus := r.discoverMCPGateway(ctx, nemoGuardrails.Spec.MCPGateway.Namespace, nemoGuardrails.Spec.MCPGateway.Name, nemoGuardrails)
+		nemoGuardrails.Status.MCP = mcpGatewayStatus
+		if !mcpGatewayStatus.MCPGatewayFound {
+			if err := r.deleteEnvoyFilter(ctx, nemoGuardrails.Spec.MCPGateway.Namespace); err != nil {
+				logger.Error(err, "failed to clean up EnvoyFilter")
+			}
+			r.flushMCPStatus(ctx, nemoGuardrails)
+			logger.Info("MCP gateway not found, will retry", "error", mcpGatewayStatus.MCPGatewayError)
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+
+		bbrPluginStatus := r.isBBRPluginPresent(ctx, mcpGatewayRef.Namespace)
+		nemoGuardrails.Status.BBRPlugin = bbrPluginStatus
+		if !bbrPluginStatus.BBRPluginFound {
+			if err := r.deleteEnvoyFilter(ctx, mcpGatewayRef.Namespace); err != nil {
+				logger.Error(err, "failed to clean up EnvoyFilter")
+			}
+			r.flushMCPStatus(ctx, nemoGuardrails)
+			logger.Info("BBR plugin not found, will retry", "error", bbrPluginStatus.BBRPluginError)
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+
+		if err := r.ensureEnvoyFilter(ctx, nemoGuardrails, mcpGatewayRef.Name, mcpGatewayRef.Namespace); err != nil {
+			utils.LogErrorReconciling(ctx, err, "EnvoyFilter", mcpGatewayRef.Name, mcpGatewayRef.Namespace)
+			return ctrl.Result{}, err
+		}
 	}
 
 	// ====== Finalize reconciliation ==================================================================================
