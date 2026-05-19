@@ -22,6 +22,7 @@ import (
 type ServiceConfig struct {
 	Port             int    `json:"port"`
 	Host             string `json:"host,omitempty"`
+	DisableAuth      bool   `json:"disable_auth,omitempty"`
 	ReadyFile        string `json:"ready_file"`
 	TerminationFile  string `json:"termination_file"`
 	EvalInitImage    string `json:"eval_init_image,omitempty"`
@@ -153,7 +154,8 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 
 	config := EvalHubConfig{
 		Service: ServiceConfig{
-			Port:             containerPort,
+			Port:             evalHubAppPort,
+			DisableAuth:      true,
 			ReadyFile:        "/tmp/repo-ready",
 			TerminationFile:  "/tmp/termination-log",
 			EvalInitImage:    evalHubImage,
@@ -162,6 +164,7 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		EnvMappings: EnvMappings{
 			"PORT":                        "service.port",
 			"API_HOST":                    "service.host",
+			"DISABLE_AUTH":                "service.disable_auth",
 			"TLS_CERT_FILE":               "service.tls_cert_file",
 			"TLS_KEY_FILE":                "service.tls_key_file",
 			"DB_URL":                      "database.url",
