@@ -37,7 +37,6 @@ const (
 	configMapName                  = "trustyai-service-operator-config"
 	configMapEvalHubImageKey       = "evalHubImage"
 	configMapKubeRBACProxyImageKey = "kube-rbac-proxy"
-	defaultKubeRBACProxyImage      = "quay.io/openshift/origin-kube-rbac-proxy:4.19"
 
 	// Operator ConfigMap keys — optional EvalHub / kube-rbac-proxy container CPU and memory.
 	configMapEvalHubCPURequestKey    = "evalHubCPURequest"

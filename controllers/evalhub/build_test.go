@@ -195,7 +195,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 		Expect(krp.Resources.Requests[corev1.ResourceMemory]).To(Equal(resource.MustParse("64Mi")))
 	})
 
-	It("uses default EvalHub and kube-rbac-proxy images when operator ConfigMap is missing", func() {
+	It("fails buildDeploymentSpec when operator ConfigMap is missing", func() {
 		fallbackNS := fmt.Sprintf("evalhub-buildspec-fallback-%d", time.Now().UnixNano())
 		ns := createNamespace(fallbackNS)
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
@@ -209,16 +209,9 @@ var _ = Describe("buildDeploymentSpec", func() {
 			EventRecorder:         record.NewFakeRecorder(10),
 		}
 
-		deploymentSpec, err := r.buildDeploymentSpec(ctx, evalHub, nil, nil)
-		Expect(err).NotTo(HaveOccurred())
-
-		app := findContainerByName(deploymentSpec.Template.Spec.Containers, containerName)
-		Expect(app).NotTo(BeNil())
-		Expect(app.Image).To(Equal(defaultEvalHubImage))
-
-		krp := findContainerByName(deploymentSpec.Template.Spec.Containers, kubeRBACProxyContainerName)
-		Expect(krp).NotTo(BeNil())
-		Expect(krp.Image).To(Equal(defaultKubeRBACProxyImage))
+		_, err := r.buildDeploymentSpec(ctx, evalHub, nil, nil)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("getting kube-rbac-proxy image"))
 	})
 
 	It("adds provider volume and mount when providerCMNames is non-nil", func() {

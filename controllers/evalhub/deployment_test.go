@@ -309,33 +309,14 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(*deployment.Spec.Replicas).To(Equal(int32(3)))
 		})
 
-		It("should reconcile deployment with default images when operator ConfigMap is missing", func() {
-			By("Deleting the operator ConfigMap so image keys are unavailable")
+		It("should fail to reconcile deployment when operator ConfigMap is missing", func() {
+			By("Deleting the operator ConfigMap so kube-rbac-proxy image is unavailable")
 			err := k8sClient.Delete(ctx, configMap)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Reconciling deployment; getEvalHubImage/getKubeRBACProxyImage fall back to built-in defaults")
 			err = reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
-			Expect(err).NotTo(HaveOccurred())
-
-			deployment := &appsv1.Deployment{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: evalHubName, Namespace: testNamespace}, deployment)
-			Expect(err).NotTo(HaveOccurred())
-
-			var evalHubC, krp *corev1.Container
-			for i := range deployment.Spec.Template.Spec.Containers {
-				c := &deployment.Spec.Template.Spec.Containers[i]
-				switch c.Name {
-				case containerName:
-					evalHubC = c
-				case kubeRBACProxyContainerName:
-					krp = c
-				}
-			}
-			Expect(evalHubC).NotTo(BeNil())
-			Expect(krp).NotTo(BeNil())
-			Expect(evalHubC.Image).To(Equal(defaultEvalHubImage))
-			Expect(krp.Image).To(Equal(defaultKubeRBACProxyImage))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("getting kube-rbac-proxy image"))
 		})
 
 		It("should configure rolling update strategy", func() {
@@ -681,7 +662,7 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 		Expect(krp.LivenessProbe.TimeoutSeconds).To(Equal(int32(5)))
 	})
 
-	It("uses default EvalHub and kube-rbac-proxy images when operator ConfigMap is absent", func() {
+	It("fails reconcileDeployment when operator ConfigMap is absent", func() {
 		fallbackNS := fmt.Sprintf("evalhub-reconcile-fallback-%d", time.Now().UnixNano())
 		ns := createNamespace(fallbackNS)
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
@@ -711,24 +692,8 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 			OperatorConfigMapName: configMapName,
 			EventRecorder:         record.NewFakeRecorder(100),
 		}
-		Expect(r.reconcileDeployment(ctx, fh, nil, nil)).To(Succeed())
-
-		deployment := waitForDeployment("fallback-evalhub", fallbackNS)
-
-		var evalHubC *corev1.Container
-		var krp *corev1.Container
-		for i := range deployment.Spec.Template.Spec.Containers {
-			c := &deployment.Spec.Template.Spec.Containers[i]
-			switch c.Name {
-			case containerName:
-				evalHubC = c
-			case kubeRBACProxyContainerName:
-				krp = c
-			}
-		}
-		Expect(evalHubC).NotTo(BeNil())
-		Expect(krp).NotTo(BeNil())
-		Expect(evalHubC.Image).To(Equal(defaultEvalHubImage))
-		Expect(krp.Image).To(Equal(defaultKubeRBACProxyImage))
+		err := r.reconcileDeployment(ctx, fh, nil, nil)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("getting kube-rbac-proxy image"))
 	})
 })

@@ -103,7 +103,8 @@ func TestEvalHubReconciler_reconcileConfigMap(t *testing.T) {
 			Namespace: testNamespace,
 		},
 		Data: map[string]string{
-			configMapEvalHubImageKey: "quay.io/evalhub/evalhub:test",
+			configMapEvalHubImageKey:       "quay.io/evalhub/evalhub:test",
+			configMapKubeRBACProxyImageKey: "quay.io/openshift/origin-kube-rbac-proxy:4.19",
 		},
 	}
 
@@ -1305,7 +1306,8 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 			Namespace: testNamespace,
 		},
 		Data: map[string]string{
-			configMapEvalHubImageKey: "quay.io/test/eval-hub:latest",
+			configMapEvalHubImageKey:       "quay.io/test/eval-hub:latest",
+			configMapKubeRBACProxyImageKey: "quay.io/openshift/origin-kube-rbac-proxy:4.19",
 		},
 	}
 
@@ -1549,7 +1551,8 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 				Namespace: operatorNamespace,
 			},
 			Data: map[string]string{
-				configMapEvalHubImageKey: "quay.io/test/eval-hub:latest",
+				configMapEvalHubImageKey:       "quay.io/test/eval-hub:latest",
+				configMapKubeRBACProxyImageKey: "quay.io/openshift/origin-kube-rbac-proxy:4.19",
 			},
 		}
 

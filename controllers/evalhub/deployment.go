@@ -76,8 +76,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 
 	kubeRBACProxyImage, err := r.getKubeRBACProxyImage(ctx)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Error getting kube-rbac-proxy image from ConfigMap. Using the default image value of "+defaultKubeRBACProxyImage)
-		kubeRBACProxyImage = defaultKubeRBACProxyImage
+		return appsv1.DeploymentSpec{}, fmt.Errorf("getting kube-rbac-proxy image: %w", err)
 	}
 
 	settings := mergeEvalHubDeploymentOperatorSettings(ctx, r.readOperatorConfigMapData(ctx))
@@ -414,7 +413,7 @@ func (r *EvalHubReconciler) getKubeRBACProxyImage(ctx context.Context) (string, 
 	if namespace == "" {
 		namespace = "trustyai-service-operator-system"
 	}
-	return utils.GetImageFromConfigMapWithFallback(ctx, r.Client, configMapKubeRBACProxyImageKey, r.effectiveOperatorConfigMapName(), namespace, defaultKubeRBACProxyImage)
+	return utils.GetImageFromConfigMap(ctx, r.Client, configMapKubeRBACProxyImageKey, r.effectiveOperatorConfigMapName(), namespace)
 }
 
 // getEvalHubImage retrieves the EvalHub image from ConfigMap with fallback to default
