@@ -68,7 +68,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	}
 
 	// Get image from ConfigMap with fallback
-	evalHubImage, err := r.getEvalHubImage(ctx)
+	evalHubImage, err := r.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error getting EvalHub image from ConfigMap. Using the default image value of "+defaultEvalHubImage)
 		evalHubImage = defaultEvalHubImage
@@ -412,18 +412,6 @@ func (r *EvalHubReconciler) getKubeRBACProxyImage(ctx context.Context) (string, 
 		return "", fmt.Errorf("operator namespace not set")
 	}
 	return utils.GetImageFromConfigMap(ctx, r.Client, configMapKubeRBACProxyImageKey, r.effectiveOperatorConfigMapName(), namespace)
-}
-
-// getEvalHubImage retrieves the EvalHub image from ConfigMap with fallback to default
-func (r *EvalHubReconciler) getEvalHubImage(ctx context.Context) (string, error) {
-	// Get the namespace where the operator is deployed (where the ConfigMap should be)
-	namespace := r.Namespace
-	if namespace == "" {
-		// Fallback to default namespace if not set
-		namespace = "trustyai-service-operator-system"
-	}
-
-	return utils.GetImageFromConfigMapWithFallback(ctx, r.Client, configMapEvalHubImageKey, r.effectiveOperatorConfigMapName(), namespace, defaultEvalHubImage)
 }
 
 // mergeEnvVars merges default environment variables with CR-specified ones,
