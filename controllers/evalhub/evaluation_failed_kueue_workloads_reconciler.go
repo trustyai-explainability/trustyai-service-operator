@@ -15,6 +15,7 @@ import (
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -35,6 +36,15 @@ const kueueWorkloadReasonInadmissible = "Inadmissible"
 // After a successful POST to EvalHub, the Workload is annotated so we do not report the same
 // failure on every reconcile.
 const annotationKueueFailedWorkloadEventReported = "trustyai.opendatahub.io/evalhub-kueue-failed-workload-reported"
+
+// messageCodeGPUUnavailable is sent to EvalHub when Kueue cannot admit a workload because GPU
+// resources required by the adapter are not available in the requested queue.
+const messageCodeGPUUnavailable = "gpu_unavailable"
+
+// gpuResourceSuffixes are the trailing parts of Kubernetes extended resource names that identify
+// GPU accelerators (e.g. "nvidia.com/gpu", "amd.com/gpu"). We match by suffix to avoid hard-coding
+// vendor-specific resource names and to remain forward-compatible.
+var gpuResourceSuffixes = []string{"/gpu", ".gpu"}
 
 // evalHubEvaluationFailedKueueWorkloadsControllerName matches ctrl.NewControllerManagedBy(mgr).Named(...).
 const evalHubEvaluationFailedKueueWorkloadsControllerName = "evalhub-evaluation-failed-kueue-workloads"
@@ -144,6 +154,71 @@ func jobOwnerFromWorkload(wl *kueue.Workload) (name string, uid types.UID, ok bo
 	return "", "", false
 }
 
+// jobRequestsGPU returns true if any container in the Job's pod template requests GPU resources.
+func jobRequestsGPU(job *batchv1.Job) bool {
+	return podSpecRequestsGPU(&job.Spec.Template.Spec)
+}
+
+func podSpecRequestsGPU(spec *corev1.PodSpec) bool {
+	for _, c := range spec.InitContainers {
+		if containerRequestsGPU(c) {
+			return true
+		}
+	}
+	for _, c := range spec.Containers {
+		if containerRequestsGPU(c) {
+			return true
+		}
+	}
+	return false
+}
+
+func containerRequestsGPU(c corev1.Container) bool {
+	for name := range c.Resources.Requests {
+		if isGPUResource(string(name)) {
+			return true
+		}
+	}
+	for name := range c.Resources.Limits {
+		if isGPUResource(string(name)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isGPUResource(name string) bool {
+	for _, suffix := range gpuResourceSuffixes {
+		if strings.HasSuffix(name, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// kueueConditionMentionsGPU returns true when the Kueue inadmissible condition message references
+// a GPU resource by name (e.g. "nvidia.com/gpu"). This lets us distinguish GPU-specific quota
+// failures from other admission failures without parsing structured data out of free-form text.
+func kueueConditionMentionsGPU(msg string) bool {
+	for _, suffix := range gpuResourceSuffixes {
+		if strings.Contains(msg, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// classifyKueueAdmissionFailure analyses an inadmissible Kueue workload and the owning Job to
+// produce a user-facing failure message and EvalHub message code. It intentionally avoids exposing
+// internal cluster details (queue names, flavor names, raw quota numbers).
+func classifyKueueAdmissionFailure(job *batchv1.Job, cond *metav1.Condition) (msg, messageCode string) {
+	if jobRequestsGPU(job) && kueueConditionMentionsGPU(cond.Message) {
+		return "GPU resources required by this evaluation are not currently available in the requested queue. The job will run when GPU capacity becomes available.", messageCodeGPUUnavailable
+	}
+	// Non-GPU or unrecognised failure: surface a generic queue-error without internal detail.
+	return "The evaluation job cannot be admitted to the requested queue. The job will run when sufficient resources become available.", messageCodeQueueError
+}
+
 func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 	log.Info("reconcile start",
@@ -238,12 +313,9 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	msg := strings.TrimSpace(cond.Message)
-	if msg == "" {
-		msg = fmt.Sprintf("Kueue workload (conditionType=%s, reason=%s)", cond.Type, cond.Reason)
-	}
+	failureMsg, failureCode := classifyKueueAdmissionFailure(&job, cond)
 
-	if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, jobID, providerID, benchmarkID, benchmarkIndex, msg, messageCodeQueueError); err != nil {
+	if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, jobID, providerID, benchmarkID, benchmarkIndex, failureMsg, failureCode); err != nil {
 		log.Error(err, "failed to post EvalHub benchmark failure event for Kueue workload",
 			append(evaluationFailedKueueWorkloadsLogFields(), "action", "post_events_failed",
 				"workload", wl.Name, "workloadNamespace", wl.Namespace, "queue", wl.Spec.QueueName,
@@ -263,7 +335,8 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 			"workload", wl.Name, "workloadNamespace", wl.Namespace, "queue", wl.Spec.QueueName,
 			"job", job.Name, "jobUid", string(job.UID),
 			"evalJobID", jobID, "providerID", providerID, "benchmarkID", benchmarkID,
-			"conditionType", cond.Type, "conditionReason", cond.Reason)...)
+			"conditionType", cond.Type, "conditionReason", cond.Reason,
+			"messageCode", failureCode)...)
 
 	return ctrl.Result{}, nil
 }
