@@ -210,7 +210,6 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	}
 
 	upstreamURL := fmt.Sprintf("http://127.0.0.1:%d/", evalHubAppPort)
-	upstreamCAPath := kubeRBACProxyUpstreamCAMountPath + "/" + serviceCACertFile
 
 	kubeRBACProxyContainer := corev1.Container{
 		Name:            kubeRBACProxyContainerName,
@@ -219,7 +218,6 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		Args: []string{
 			"--secure-listen-address=0.0.0.0:" + fmt.Sprintf("%d", servicePort),
 			"--upstream=" + upstreamURL,
-			"--upstream-ca-file=" + upstreamCAPath,
 			"--config-file=" + kubeRBACProxyConfigMountPath,
 			"--tls-cert-file=" + tlsSecretMountPath + "/" + tlsCertFile,
 			"--tls-private-key-file=" + tlsSecretMountPath + "/" + tlsKeyFile,
@@ -236,9 +234,9 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 				Protocol:      corev1.ProtocolTCP,
 			},
 			{
-				Name:            "proxy-healthz",
-				ContainerPort:   kubeRBACProxyHealthPort,
-				Protocol:        corev1.ProtocolTCP,
+				Name:          "proxy-healthz",
+				ContainerPort: kubeRBACProxyHealthPort,
+				Protocol:      corev1.ProtocolTCP,
 			},
 		},
 		Resources:       settings.KubeRBACProxyResources,
