@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -74,7 +73,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		evalHubImage = defaultEvalHubImage
 	}
 
-	kubeRBACProxyImage, err := r.getKubeRBACProxyImage(ctx)
+	kubeRBACProxyImage, err := r.getImageFromConfigMap(ctx, configMapKubeRBACProxyImageKey)
 	if err != nil {
 		return appsv1.DeploymentSpec{}, fmt.Errorf("getting kube-rbac-proxy image: %w", err)
 	}
@@ -403,15 +402,6 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			},
 		},
 	}, nil
-}
-
-// getKubeRBACProxyImage retrieves the kube-rbac-proxy image from the operator ConfigMap.
-func (r *EvalHubReconciler) getKubeRBACProxyImage(ctx context.Context) (string, error) {
-	namespace := r.Namespace
-	if namespace == "" {
-		return "", fmt.Errorf("operator namespace not set")
-	}
-	return utils.GetImageFromConfigMap(ctx, r.Client, configMapKubeRBACProxyImageKey, r.effectiveOperatorConfigMapName(), namespace)
 }
 
 // mergeEnvVars merges default environment variables with CR-specified ones,
