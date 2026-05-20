@@ -30,7 +30,7 @@ spec:
   - name: output-image
     value: quay.io/rhoai/odh-trustyai-service-operator-rhel9:{{target_branch}}
   - name: rhoai-version
-    value: "3.4.0"
+    value: "3.4.1"
   - name: dockerfile
     value: Dockerfile.konflux
   - name: path-context
