@@ -487,6 +487,21 @@ func TestEvalHubHelperMethods(t *testing.T) {
 		spec.Replicas = &customReplicas
 		assert.Equal(t, int32(3), spec.GetReplicas())
 	})
+
+	t.Run("EvalHubSpec GetMCPReplicas method", func(t *testing.T) {
+		var nilSpec *evalhubv1alpha1.EvalHubSpec
+		assert.Equal(t, int32(1), nilSpec.GetMCPReplicas())
+
+		spec := &evalhubv1alpha1.EvalHubSpec{}
+		assert.Equal(t, int32(1), spec.GetMCPReplicas())
+
+		spec.MCP = &evalhubv1alpha1.EvalHubMCPSpec{}
+		assert.Equal(t, int32(1), spec.GetMCPReplicas())
+
+		three := int32(3)
+		spec.MCP.Replicas = &three
+		assert.Equal(t, int32(3), spec.GetMCPReplicas())
+	})
 }
 
 // TestEvalHubReconciler_createJobsServiceAccount verifies that the jobs ServiceAccount

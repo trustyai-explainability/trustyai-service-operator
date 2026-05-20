@@ -243,6 +243,31 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		// Route errors are not fatal, continue
 	}
 
+	// Reconcile MCP server resources (ConfigMap, Deployment, Service, Route).
+	// When MCP is disabled, the sub-reconcilers clean up any existing resources.
+	if err := r.reconcileMCPConfigMap(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile MCP ConfigMap")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile MCP ConfigMap: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+	if err := r.reconcileMCPDeployment(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile MCP Deployment")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile MCP Deployment: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+	if err := r.reconcileMCPService(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile MCP Service")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile MCP Service: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+	if err := r.reconcileMCPRoute(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile MCP Route")
+		// MCP Route errors are not fatal, continue
+	}
+
 	// Check deployment status and update EvalHub status
 	if err := r.updateStatus(ctx, instance); err != nil {
 		log.Error(err, "Failed to update EvalHub status")
@@ -513,6 +538,48 @@ func (r *EvalHubReconciler) updateStatus(ctx context.Context, instance *evalhubv
 			corev1.ConditionFalse)
 	}
 
+	// Update MCP status
+	r.updateMCPStatus(ctx, instance)
+
 	log.Info("Updating EvalHub status", "phase", instance.Status.Phase, "ready", instance.Status.Ready)
 	return r.Status().Update(ctx, instance)
+}
+
+// updateMCPStatus sets the MCP sub-status based on the MCP deployment state.
+func (r *EvalHubReconciler) updateMCPStatus(ctx context.Context, instance *evalhubv1alpha1.EvalHub) {
+	if !instance.Spec.IsMCPEnabled() {
+		instance.Status.MCP = &evalhubv1alpha1.EvalHubMCPStatus{
+			Phase: "Disabled",
+			Ready: false,
+		}
+		return
+	}
+
+	mcpStatus := &evalhubv1alpha1.EvalHubMCPStatus{
+		Phase: "Pending",
+		Ready: false,
+	}
+
+	deployment := &appsv1.Deployment{}
+	err := r.Get(ctx, client.ObjectKey{
+		Namespace: instance.Namespace,
+		Name:      mcpDeploymentName(instance),
+	}, deployment)
+
+	log := log.FromContext(ctx)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			mcpStatus.Phase = "Pending"
+		} else {
+			log.Error(err, "Failed to get MCP deployment for status update")
+			mcpStatus.Phase = "Error"
+		}
+	} else if deployment.Status.ReadyReplicas > 0 && deployment.Status.ReadyReplicas == deployment.Status.Replicas {
+		mcpStatus.Phase = "Ready"
+		mcpStatus.Ready = true
+		mcpStatus.URL = fmt.Sprintf("http://%s.%s.svc.cluster.local:%d",
+			mcpServiceName(instance), instance.Namespace, mcpServicePort)
+	}
+
+	instance.Status.MCP = mcpStatus
 }

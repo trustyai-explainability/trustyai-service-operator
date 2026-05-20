@@ -17,7 +17,6 @@ const (
 	containerPort = 8443
 
 	// Service configuration
-	serviceName = "evalhub"
 	servicePort = 8443
 
 	// Configuration constants
@@ -28,9 +27,6 @@ const (
 	tlsSecretMountPath = "/etc/tls/private"
 	tlsCertFile        = "tls.crt"
 	tlsKeyFile         = "tls.key"
-
-	// Route configuration
-	routeName = "evalhub"
 
 	// Database configuration
 	dbSecretVolumeName = "evalhub-db-secret"
@@ -63,6 +59,20 @@ const (
 	// Sidecar configuration
 	sidecarBaseURL = "http://localhost:8080"
 
+	// MCP server configuration
+	defaultMCPImage        = "quay.io/evalhub/evalhub-mcp:latest"
+	configMapMCPImageKey   = "evalHubMCPImage"
+	mcpBinaryPath          = "/app/evalhub-mcp"
+	mcpContainerName       = "evalhub-mcp"
+	mcpContainerPort       = 8443
+	mcpServicePort         = 8443
+	mcpConfigVolumeName    = "evalhub-mcp-config"
+	mcpConfigMountPath     = "/etc/evalhub-mcp"
+	mcpConfigFileName      = "config.yaml"
+	mcpTLSMountPath        = "/etc/tls/private"
+	mcpServiceCAVolumeName = "mcp-service-ca"
+	mcpServiceCAMountPath  = "/etc/evalhub-mcp/ca"
+
 	// Collection ConfigMap configuration
 	collectionLabel       = "trustyai.opendatahub.io/evalhub-collection-type"
 	collectionNameLabel   = "trustyai.opendatahub.io/evalhub-collection-name"
@@ -80,6 +90,18 @@ var (
 		Limits: corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("2000m"),
 			corev1.ResourceMemory: resource.MustParse("2Gi"),
+		},
+	}
+
+	// Default MCP resource requirements
+	defaultMCPResourceRequirements = corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("128Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("500m"),
+			corev1.ResourceMemory: resource.MustParse("256Mi"),
 		},
 	}
 
