@@ -200,8 +200,10 @@ func isGPUResource(name string) bool {
 // a GPU resource by name (e.g. "nvidia.com/gpu"). This lets us distinguish GPU-specific quota
 // failures from other admission failures without parsing structured data out of free-form text.
 func kueueConditionMentionsGPU(msg string) bool {
-	for _, suffix := range gpuResourceSuffixes {
-		if strings.Contains(msg, suffix) {
+	for _, field := range strings.Fields(msg) {
+		token := strings.Trim(field, ",.;:()[]{}")
+		// K8s extended resources are qualified names containing "/".
+		if strings.Contains(token, "/") && isGPUResource(token) {
 			return true
 		}
 	}
