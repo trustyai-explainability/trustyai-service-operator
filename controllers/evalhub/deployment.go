@@ -409,7 +409,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 func (r *EvalHubReconciler) getKubeRBACProxyImage(ctx context.Context) (string, error) {
 	namespace := r.Namespace
 	if namespace == "" {
-		namespace = "trustyai-service-operator-system"
+		return "", fmt.Errorf("operator namespace not set")
 	}
 	return utils.GetImageFromConfigMap(ctx, r.Client, configMapKubeRBACProxyImageKey, r.effectiveOperatorConfigMapName(), namespace)
 }
