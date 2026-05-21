@@ -40,13 +40,6 @@ func cloneResourceRequirements(r corev1.ResourceRequirements) corev1.ResourceReq
 	return out
 }
 
-func (r *EvalHubReconciler) operatorNamespace() string {
-	if r.Namespace != "" {
-		return r.Namespace
-	}
-	return "trustyai-service-operator-system"
-}
-
 func (r *EvalHubReconciler) effectiveOperatorConfigMapName() string {
 	if r.OperatorConfigMapName != "" {
 		return r.OperatorConfigMapName
@@ -57,7 +50,7 @@ func (r *EvalHubReconciler) effectiveOperatorConfigMapName() string {
 // readOperatorConfigMapData returns ConfigMap .Data for the operator settings CM, or nil if absent / on read error.
 func (r *EvalHubReconciler) readOperatorConfigMapData(ctx context.Context) map[string]string {
 	cm := &corev1.ConfigMap{}
-	key := types.NamespacedName{Namespace: r.operatorNamespace(), Name: r.effectiveOperatorConfigMapName()}
+	key := types.NamespacedName{Namespace: r.Namespace, Name: r.effectiveOperatorConfigMapName()}
 	err := r.Get(ctx, key, cm)
 	if errors.IsNotFound(err) {
 		return nil

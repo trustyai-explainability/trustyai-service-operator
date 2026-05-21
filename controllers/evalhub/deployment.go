@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -68,13 +67,13 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	}
 
 	// Get image from ConfigMap with fallback
-	evalHubImage, err := r.getEvalHubImage(ctx)
+	evalHubImage, err := r.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error getting EvalHub image from ConfigMap. Using the default image value of "+defaultEvalHubImage)
 		evalHubImage = defaultEvalHubImage
 	}
 
-	kubeRBACProxyImage, err := r.getKubeRBACProxyImage(ctx)
+	kubeRBACProxyImage, err := r.getImageFromConfigMap(ctx, configMapKubeRBACProxyImageKey)
 	if err != nil {
 		return appsv1.DeploymentSpec{}, fmt.Errorf("getting kube-rbac-proxy image: %w", err)
 	}
@@ -403,27 +402,6 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			},
 		},
 	}, nil
-}
-
-// getKubeRBACProxyImage retrieves the kube-rbac-proxy image from the operator ConfigMap.
-func (r *EvalHubReconciler) getKubeRBACProxyImage(ctx context.Context) (string, error) {
-	namespace := r.Namespace
-	if namespace == "" {
-		return "", fmt.Errorf("operator namespace not set")
-	}
-	return utils.GetImageFromConfigMap(ctx, r.Client, configMapKubeRBACProxyImageKey, r.effectiveOperatorConfigMapName(), namespace)
-}
-
-// getEvalHubImage retrieves the EvalHub image from ConfigMap with fallback to default
-func (r *EvalHubReconciler) getEvalHubImage(ctx context.Context) (string, error) {
-	// Get the namespace where the operator is deployed (where the ConfigMap should be)
-	namespace := r.Namespace
-	if namespace == "" {
-		// Fallback to default namespace if not set
-		namespace = "trustyai-service-operator-system"
-	}
-
-	return utils.GetImageFromConfigMapWithFallback(ctx, r.Client, configMapEvalHubImageKey, r.effectiveOperatorConfigMapName(), namespace, defaultEvalHubImage)
 }
 
 // mergeEnvVars merges default environment variables with CR-specified ones,
