@@ -187,7 +187,7 @@ func setupReconciler(namespace string) (*EvalHubReconciler, context.Context) {
 		EventRecorder: eventRecorder,
 	}
 
-	// Create the operator image ConfigMap so getEvalHubImage succeeds.
+	// Create the operator image ConfigMap so getImageFromConfigMap succeeds.
 	operatorCM := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      configMapName,
