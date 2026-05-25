@@ -394,7 +394,7 @@ func TestBuildServiceSpec(t *testing.T) {
 	})
 }
 
-func TestGetEvalHubImage(t *testing.T) {
+func TestGetImageFromConfigMap(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 
@@ -422,12 +422,12 @@ func TestGetEvalHubImage(t *testing.T) {
 			Namespace: testNamespace,
 		}
 
-		image, err := reconciler.getEvalHubImage(ctx)
+		image, err := reconciler.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
 		require.NoError(t, err)
 		assert.Equal(t, "quay.io/test/eval-hub:custom", image)
 	})
 
-	t.Run("should return fallback image when configmap not found", func(t *testing.T) {
+	t.Run("returns error when configmap not found", func(t *testing.T) {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
 			Build()
@@ -437,34 +437,19 @@ func TestGetEvalHubImage(t *testing.T) {
 			Namespace: testNamespace,
 		}
 
-		image, err := reconciler.getEvalHubImage(ctx)
-		require.Error(t, err)                       // Error is expected when configmap not found
-		assert.Equal(t, defaultEvalHubImage, image) // But fallback image is returned
+		_, err := reconciler.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
 	})
 
-	t.Run("should use default namespace when namespace not set", func(t *testing.T) {
-		configMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      configMapName,
-				Namespace: "trustyai-service-operator-system",
-			},
-			Data: map[string]string{
-				configMapEvalHubImageKey: "quay.io/test/eval-hub:default-ns",
-			},
-		}
-
-		fakeClient := fake.NewClientBuilder().
-			WithScheme(scheme).
-			WithObjects(configMap).
-			Build()
-
+	t.Run("returns error when reconciler namespace is empty", func(t *testing.T) {
 		reconciler := &EvalHubReconciler{
-			Client:    fakeClient,
-			Namespace: "", // Empty namespace should use default
+			Client:    fake.NewClientBuilder().WithScheme(scheme).Build(),
+			Namespace: "",
 		}
 
-		image, err := reconciler.getEvalHubImage(ctx)
-		require.NoError(t, err)
-		assert.Equal(t, "quay.io/test/eval-hub:default-ns", image)
+		_, err := reconciler.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "operator namespace not set")
 	})
 }
