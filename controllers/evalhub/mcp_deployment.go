@@ -276,6 +276,10 @@ func (r *EvalHubReconciler) deleteMCPResource(ctx context.Context, instance *eva
 	if err != nil {
 		return err
 	}
-	log.FromContext(ctx).Info("Deleting MCP resource (MCP disabled)", "kind", obj.GetObjectKind().GroupVersionKind().Kind, "resource", fmt.Sprintf("%T", obj), "name", name)
+	log.FromContext(ctx).Info("Deleting MCP resource (MCP disabled)",
+		"resource", fmt.Sprintf("%T", obj),
+		"name", name,
+		"namespace", instance.Namespace,
+	)
 	return r.Delete(ctx, obj)
 }

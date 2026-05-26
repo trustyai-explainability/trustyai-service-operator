@@ -104,7 +104,8 @@ type EvalHubMCPSpec struct {
 
 // EvalHubMCPStatus contains status information for the optional MCP server.
 type EvalHubMCPStatus struct {
-	// Phase is the current lifecycle phase: Pending, Ready, Error, or Disabled.
+	// Phase is the current lifecycle phase of the MCP server.
+	// +kubebuilder:validation:Enum=Pending;Ready;Error;Disabled
 	Phase string `json:"phase,omitempty"`
 
 	// Ready indicates whether the MCP server deployment is available.
