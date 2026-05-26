@@ -17,4 +17,8 @@ spec:
   mcp:
     enabled: true
     replicas: 1
-    # transport and evalHubTransport default to http
+    # transport defaults to http (streamable HTTP). Use http-sse only for legacy MCP clients.
+    # Required when EvalHub is fronted by kube-rbac-proxy: token must be accepted by EvalHub SAR checks.
+    authSecret: evalhub-mcp-token
+    # transport: http
+    # evalHubTransport: http-sse  # optional override for EVALHUB_TRANSPORT only

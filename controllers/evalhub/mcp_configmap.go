@@ -18,20 +18,19 @@ func mcpConfigMapName(instance *evalhubv1alpha1.EvalHub) string {
 	return instance.Name + "-mcp-config"
 }
 
-// MCPConfig represents the MCP server configuration file structure
-type MCPConfig struct {
-	EvalHub   MCPEvalHubConfig `json:"evalhub"`
-	Transport string           `json:"transport"`
-	Host      string           `json:"host"`
-	Port      int              `json:"port"`
+func mcpConfigFilePath() string {
+	return mcpConfigMountPath + "/" + mcpConfigFileName
 }
 
-// MCPEvalHubConfig represents the EvalHub connection settings within MCP config
-type MCPEvalHubConfig struct {
+// MCPConfig is the evalhub-mcp YAML config (see https://eval-hub.github.io/mcp/installation/).
+// Tokens are supplied via EVALHUB_TOKEN env, not this file.
+type MCPConfig struct {
 	BaseURL            string `json:"base_url"`
 	Transport          string `json:"transport,omitempty"`
+	Host               string `json:"host,omitempty"`
+	Port               int    `json:"port,omitempty"`
 	CACertPath         string `json:"ca_cert_path,omitempty"`
-	InsecureSkipVerify bool   `json:"insecure_skip_verify"`
+	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty"`
 }
 
 // reconcileMCPConfigMap creates or updates the ConfigMap for the MCP server.
@@ -80,21 +79,17 @@ func (r *EvalHubReconciler) reconcileMCPConfigMap(ctx context.Context, instance 
 
 func (r *EvalHubReconciler) generateMCPConfigData(instance *evalhubv1alpha1.EvalHub) (map[string]string, error) {
 	mcp := instance.Spec.MCP
-	clientTransport := mcpClientTransport(mcp)
-	backendTransport := evalHubBackendTransport(mcp)
+	transport := mcpClientTransport(mcp)
 
 	evalHubServiceURL := fmt.Sprintf("https://%s.%s.svc.cluster.local:%d", instance.Name, instance.Namespace, servicePort)
 
 	config := MCPConfig{
-		EvalHub: MCPEvalHubConfig{
-			BaseURL:            evalHubServiceURL,
-			Transport:          backendTransport,
-			CACertPath:         mcpServiceCAMountPath + "/" + serviceCACertFile,
-			InsecureSkipVerify: false,
-		},
-		Transport: clientTransport,
-		Host:      "0.0.0.0",
-		Port:      mcpContainerPort,
+		BaseURL:            evalHubServiceURL,
+		Transport:          transport,
+		Host:               "0.0.0.0",
+		Port:               mcpContainerPort,
+		CACertPath:         mcpServiceCAMountPath + "/" + serviceCACertFile,
+		InsecureSkipVerify: false,
 	}
 
 	configYAML, err := yaml.Marshal(config)

@@ -16,12 +16,16 @@ func TestMCPClientTransport(t *testing.T) {
 	}
 }
 
-func TestEvalHubBackendTransport(t *testing.T) {
-	if got := evalHubBackendTransport(nil); got != "http" {
+func TestMCPTransportEnv(t *testing.T) {
+	if got := mcpTransportEnv(nil); got != "http" {
 		t.Fatalf("expected http default, got %q", got)
 	}
-	spec := &evalhubv1alpha1.EvalHubMCPSpec{EvalHubTransport: "http-sse"}
-	if got := evalHubBackendTransport(spec); got != "http-sse" {
-		t.Fatalf("expected http-sse, got %q", got)
+	spec := &evalhubv1alpha1.EvalHubMCPSpec{Transport: "http", EvalHubTransport: "http-sse"}
+	if got := mcpTransportEnv(spec); got != "http-sse" {
+		t.Fatalf("expected evalHubTransport override http-sse, got %q", got)
+	}
+	spec = &evalhubv1alpha1.EvalHubMCPSpec{Transport: "http-sse"}
+	if got := mcpTransportEnv(spec); got != "http-sse" {
+		t.Fatalf("expected http-sse from transport, got %q", got)
 	}
 }

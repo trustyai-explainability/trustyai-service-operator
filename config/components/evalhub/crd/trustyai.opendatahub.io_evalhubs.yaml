@@ -331,9 +331,9 @@ spec:
                       type: object
                     type: array
                   evalHubTransport:
-                    default: http
-                    description: 'EvalHubTransport is the transport mode used by the
-                      MCP server to reach the EvalHub API: "http" (default) or "http-sse".'
+                    description: |-
+                      EvalHubTransport overrides EVALHUB_TRANSPORT when set (MCP server transport: "http" or "http-sse").
+                      When omitted, the value of transport is used for both --transport and EVALHUB_TRANSPORT.
                     enum:
                     - http-sse
                     - http

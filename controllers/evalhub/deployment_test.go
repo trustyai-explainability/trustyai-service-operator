@@ -494,9 +494,10 @@ var _ = Describe("EvalHub Deployment", func() {
 
 			var evalHubConfigVolume, tlsVolume *corev1.Volume
 			for _, volume := range deployment.Spec.Template.Spec.Volumes {
-				if volume.Name == "evalhub-config" {
+				switch volume.Name {
+				case "evalhub-config":
 					evalHubConfigVolume = &volume
-				} else if volume.Name == evalHubName+"-tls" {
+				case evalHubName + "-tls":
 					tlsVolume = &volume
 				}
 			}

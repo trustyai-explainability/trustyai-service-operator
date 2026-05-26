@@ -78,8 +78,8 @@ type EvalHubMCPSpec struct {
 	// +optional
 	Transport string `json:"transport,omitempty"`
 
-	// EvalHubTransport is the transport mode used by the MCP server to reach the EvalHub API: "http" (default) or "http-sse".
-	// +kubebuilder:default:="http"
+	// EvalHubTransport overrides EVALHUB_TRANSPORT when set (MCP server transport: "http" or "http-sse").
+	// When omitted, the value of transport is used for both --transport and EVALHUB_TRANSPORT.
 	// +kubebuilder:validation:Enum="http-sse";"http"
 	// +optional
 	EvalHubTransport string `json:"evalHubTransport,omitempty"`

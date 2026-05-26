@@ -90,24 +90,26 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 	}
 
 	clientTransport := mcpClientTransport(mcpSpec)
-	backendTransport := evalHubBackendTransport(mcpSpec)
+	transportEnv := mcpTransportEnv(mcpSpec)
+	configPath := mcpConfigFilePath()
 
 	evalHubServiceURL := fmt.Sprintf("https://%s.%s.svc.cluster.local:%d", instance.Name, instance.Namespace, servicePort)
 
 	defaultEnvVars := []corev1.EnvVar{
-		{Name: "EVALHUB_TRANSPORT", Value: backendTransport},
+		{Name: "EVALHUB_TRANSPORT", Value: transportEnv},
 		{Name: "EVALHUB_HOST", Value: "0.0.0.0"},
 		{Name: "EVALHUB_PORT", Value: fmt.Sprintf("%d", mcpContainerPort)},
 		{Name: "EVALHUB_BASE_URL", Value: evalHubServiceURL},
+		{Name: "EVALHUB_TENANT", Value: instance.Namespace},
 		{Name: "EVALHUB_TLS_CERT_FILE", Value: mcpTLSMountPath + "/" + tlsCertFile},
 		{Name: "EVALHUB_TLS_KEY_FILE", Value: mcpTLSMountPath + "/" + tlsKeyFile},
 		{Name: "EVALHUB_CA_CERT_PATH", Value: mcpServiceCAMountPath + "/" + serviceCACertFile},
-		{Name: "EVALHUB_INSECURE_SKIP_VERIFY", Value: "false"},
+		{Name: "EVALHUB_INSECURE", Value: "false"},
 	}
 
 	if mcpSpec.AuthSecret != "" {
 		defaultEnvVars = append(defaultEnvVars, corev1.EnvVar{
-			Name: "EVALHUB_AUTH_TOKEN",
+			Name: "EVALHUB_TOKEN",
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{Name: mcpSpec.AuthSecret},
@@ -150,6 +152,7 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 		ImagePullPolicy: corev1.PullAlways,
 		Command:         []string{mcpBinaryPath},
 		Args: []string{
+			"--config", configPath,
 			"--transport", clientTransport,
 			"--host", "0.0.0.0",
 			"--port", strconv.Itoa(mcpContainerPort),
