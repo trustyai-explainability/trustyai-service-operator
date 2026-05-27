@@ -205,7 +205,7 @@ func setupReconciler(namespace string) (*EvalHubReconciler, context.Context) {
 		},
 		Data: map[string]string{
 			configMapEvalHubImageKey: "quay.io/evalhub/evalhub:test",
-			configMapMCPImageKey:     "quay.io/evalhub/evalhub-mcp:test",
+			configMapMCPImageKey:     "quay.io/evalhub/evalhub:test",
 		},
 	}
 	if err := k8sClient.Create(ctx, operatorCM); err != nil {
