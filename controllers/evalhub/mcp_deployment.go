@@ -173,7 +173,7 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 				HTTPGet: &corev1.HTTPGetAction{
 					Path:   "/health",
 					Port:   intstr.FromInt(mcpContainerPort),
-					Scheme: corev1.URISchemeHTTP,
+					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
 			InitialDelaySeconds: 15,
@@ -186,7 +186,7 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 				HTTPGet: &corev1.HTTPGetAction{
 					Path:   "/health",
 					Port:   intstr.FromInt(mcpContainerPort),
-					Scheme: corev1.URISchemeHTTP,
+					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
 			InitialDelaySeconds: 5,
