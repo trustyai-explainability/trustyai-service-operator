@@ -85,7 +85,7 @@ const (
 	sidecarBaseURL = "http://localhost:8080"
 
 	// MCP server configuration
-	defaultMCPImage        = "quay.io/evalhub/evalhub-mcp:latest"
+	defaultMCPImage        = "quay.io/evalhub/evalhub:latest"
 	configMapMCPImageKey   = "evalHubMCPImage"
 	mcpBinaryPath          = "/app/evalhub-mcp"
 	mcpContainerName       = "evalhub-mcp"
