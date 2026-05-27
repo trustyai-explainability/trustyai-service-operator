@@ -1,31 +1,38 @@
 package evalhub
 
 import (
-	"testing"
-
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 )
 
-func TestMCPClientTransport(t *testing.T) {
-	if got := mcpClientTransport(nil); got != "http" {
-		t.Fatalf("expected http default, got %q", got)
-	}
-	spec := &evalhubv1alpha1.EvalHubMCPSpec{Transport: "http-sse"}
-	if got := mcpClientTransport(spec); got != "http-sse" {
-		t.Fatalf("expected http-sse, got %q", got)
-	}
-}
+// Runs under the EvalHub Controller Suite envtest lifecycle in suite_test.go (BeforeSuite/AfterSuite).
 
-func TestMCPTransportEnv(t *testing.T) {
-	if got := mcpTransportEnv(nil); got != "http" {
-		t.Fatalf("expected http default, got %q", got)
-	}
-	spec := &evalhubv1alpha1.EvalHubMCPSpec{Transport: "http", EvalHubTransport: "http-sse"}
-	if got := mcpTransportEnv(spec); got != "http-sse" {
-		t.Fatalf("expected evalHubTransport override http-sse, got %q", got)
-	}
-	spec = &evalhubv1alpha1.EvalHubMCPSpec{Transport: "http-sse"}
-	if got := mcpTransportEnv(spec); got != "http-sse" {
-		t.Fatalf("expected http-sse from transport, got %q", got)
-	}
-}
+var _ = Describe("MCP transport helpers", func() {
+	Describe("mcpClientTransport", func() {
+		It("defaults to http when spec is nil", func() {
+			Expect(mcpClientTransport(nil)).To(Equal("http"))
+		})
+
+		It("returns spec.transport when set", func() {
+			spec := &evalhubv1alpha1.EvalHubMCPSpec{Transport: "http-sse"}
+			Expect(mcpClientTransport(spec)).To(Equal("http-sse"))
+		})
+	})
+
+	Describe("mcpTransportEnv", func() {
+		It("defaults to http when spec is nil", func() {
+			Expect(mcpTransportEnv(nil)).To(Equal("http"))
+		})
+
+		It("uses evalHubTransport when set", func() {
+			spec := &evalhubv1alpha1.EvalHubMCPSpec{Transport: "http", EvalHubTransport: "http-sse"}
+			Expect(mcpTransportEnv(spec)).To(Equal("http-sse"))
+		})
+
+		It("falls back to transport when evalHubTransport is unset", func() {
+			spec := &evalhubv1alpha1.EvalHubMCPSpec{Transport: "http-sse"}
+			Expect(mcpTransportEnv(spec)).To(Equal("http-sse"))
+		})
+	})
+})

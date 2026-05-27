@@ -3,6 +3,7 @@ package evalhub
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -62,9 +63,11 @@ func (r *EvalHubReconciler) reconcileMCPConfigMap(ctx context.Context, instance 
 		return fmt.Errorf("failed to generate MCP config data: %w", err)
 	}
 
+	desiredLabels := mcpLabels(instance)
+
 	if errors.IsNotFound(getErr) {
 		configMap.Data = configData
-		configMap.Labels = mcpLabels(instance)
+		configMap.Labels = desiredLabels
 		if err := controllerutil.SetControllerReference(instance, configMap, r.Scheme); err != nil {
 			return err
 		}
@@ -72,9 +75,28 @@ func (r *EvalHubReconciler) reconcileMCPConfigMap(ctx context.Context, instance 
 		return r.Create(ctx, configMap)
 	}
 
+	if mcpConfigMapMatchesDesired(configMap, configData, desiredLabels, instance) {
+		return nil
+	}
+
 	configMap.Data = configData
+	configMap.Labels = desiredLabels
+	if err := controllerutil.SetControllerReference(instance, configMap, r.Scheme); err != nil {
+		return err
+	}
 	log.Info("Updating MCP ConfigMap", "name", name)
 	return r.Update(ctx, configMap)
+}
+
+// mcpConfigMapMatchesDesired reports whether the live ConfigMap already matches desired data, labels, and controller ownership.
+func mcpConfigMapMatchesDesired(cm *corev1.ConfigMap, data map[string]string, labels map[string]string, instance *evalhubv1alpha1.EvalHub) bool {
+	if !maps.Equal(cm.Data, data) {
+		return false
+	}
+	if !maps.Equal(cm.Labels, labels) {
+		return false
+	}
+	return metav1.IsControlledBy(cm, instance)
 }
 
 func (r *EvalHubReconciler) generateMCPConfigData(instance *evalhubv1alpha1.EvalHub) (map[string]string, error) {
