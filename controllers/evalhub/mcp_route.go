@@ -74,10 +74,10 @@ func (r *EvalHubReconciler) buildMCPRouteSpec(instance *evalhubv1alpha1.EvalHub)
 			Weight: &[]int32{100}[0],
 		},
 		Port: &routev1.RoutePort{
-			TargetPort: intstr.FromString("http"),
+			TargetPort: intstr.FromString("https"),
 		},
 		TLS: &routev1.TLSConfig{
-			Termination:                   routev1.TLSTerminationEdge,
+			Termination:                   routev1.TLSTerminationReencrypt,
 			InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
 		},
 	}
