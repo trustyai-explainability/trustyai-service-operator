@@ -89,6 +89,13 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 		}
 	}
 
+	kubeRBACProxyImage, err := r.getImageFromConfigMap(ctx, configMapKubeRBACProxyImageKey)
+	if err != nil {
+		return appsv1.DeploymentSpec{}, fmt.Errorf("getting kube-rbac-proxy image for MCP: %w", err)
+	}
+
+	settings := mergeEvalHubDeploymentOperatorSettings(ctx, r.readOperatorConfigMapData(ctx))
+
 	clientTransport := mcpClientTransport(mcpSpec)
 	transportEnv := mcpTransportEnv(mcpSpec)
 	configPath := mcpConfigFilePath()
@@ -97,12 +104,10 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 
 	defaultEnvVars := []corev1.EnvVar{
 		{Name: "EVALHUB_TRANSPORT", Value: transportEnv},
-		{Name: "EVALHUB_HOST", Value: "0.0.0.0"},
-		{Name: "EVALHUB_PORT", Value: fmt.Sprintf("%d", mcpContainerPort)},
+		{Name: "EVALHUB_HOST", Value: "127.0.0.1"},
+		{Name: "EVALHUB_PORT", Value: fmt.Sprintf("%d", mcpAppPort)},
 		{Name: "EVALHUB_BASE_URL", Value: evalHubServiceURL},
 		{Name: "EVALHUB_TENANT", Value: instance.Namespace},
-		{Name: "EVALHUB_TLS_CERT_FILE", Value: mcpTLSMountPath + "/" + tlsCertFile},
-		{Name: "EVALHUB_TLS_KEY_FILE", Value: mcpTLSMountPath + "/" + tlsKeyFile},
 		{Name: "EVALHUB_CA_CERT_PATH", Value: mcpServiceCAMountPath + "/" + serviceCACertFile},
 		{Name: "EVALHUB_INSECURE", Value: "false"},
 	}
@@ -119,7 +124,8 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 		})
 	}
 
-	env := mergeEnvVars(defaultEnvVars, mcpSpec.Env)
+	env := mergeEnvVars(defaultEnvVars, mcpSpec.Env,
+		"EVALHUB_HOST", "EVALHUB_PORT", "EVALHUB_TLS_CERT_FILE", "EVALHUB_TLS_KEY_FILE")
 
 	resources := defaultMCPResourceRequirements
 	if mcpSpec.Resources.Requests != nil || mcpSpec.Resources.Limits != nil {
@@ -127,16 +133,12 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 	}
 
 	tlsSecretName := mcpDeploymentName(instance) + "-tls"
+	mcpConfigCMName := mcpDeploymentName(instance) + "-config"
 
-	volumeMounts := []corev1.VolumeMount{
+	mcpVolumeMounts := []corev1.VolumeMount{
 		{
 			Name:      mcpConfigVolumeName,
 			MountPath: mcpConfigMountPath,
-			ReadOnly:  true,
-		},
-		{
-			Name:      tlsSecretName,
-			MountPath: mcpTLSMountPath,
 			ReadOnly:  true,
 		},
 		{
@@ -146,7 +148,7 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 		},
 	}
 
-	container := corev1.Container{
+	mcpContainer := corev1.Container{
 		Name:            mcpContainerName,
 		Image:           image,
 		ImagePullPolicy: corev1.PullAlways,
@@ -154,44 +156,102 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 		Args: []string{
 			"--config", configPath,
 			"--transport", clientTransport,
-			"--host", "0.0.0.0",
-			"--port", strconv.Itoa(mcpContainerPort),
+			"--host", "127.0.0.1",
+			"--port", strconv.Itoa(mcpAppPort),
 		},
 		Ports: []corev1.ContainerPort{
 			{
-				Name:          "http",
-				ContainerPort: mcpContainerPort,
+				Name:          "mcp",
+				ContainerPort: mcpAppPort,
 				Protocol:      corev1.ProtocolTCP,
 			},
 		},
 		Env:             env,
 		Resources:       resources,
 		SecurityContext: defaultSecurityContext,
-		VolumeMounts:    volumeMounts,
-		LivenessProbe: &corev1.Probe{
+		VolumeMounts:    mcpVolumeMounts,
+	}
+
+	upstreamURL := fmt.Sprintf("http://127.0.0.1:%d/", mcpAppPort)
+
+	kubeRBACProxyContainer := corev1.Container{
+		Name:            kubeRBACProxyContainerName,
+		Image:           kubeRBACProxyImage,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Args: []string{
+			"--secure-listen-address=0.0.0.0:" + fmt.Sprintf("%d", mcpServicePort),
+			"--upstream=" + upstreamURL,
+			"--config-file=" + kubeRBACProxyConfigMountPath,
+			"--tls-cert-file=" + tlsSecretMountPath + "/" + tlsCertFile,
+			"--tls-private-key-file=" + tlsSecretMountPath + "/" + tlsKeyFile,
+			"--proxy-endpoints-port=" + fmt.Sprintf("%d", kubeRBACProxyHealthPort),
+			"--ignore-paths=" + mcpHealthPath,
+			"--auth-header-fields-enabled",
+			"--auth-header-user-field-name=X-User",
+			"--v=0",
+		},
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          "https",
+				ContainerPort: mcpServicePort,
+				Protocol:      corev1.ProtocolTCP,
+			},
+			{
+				Name:          "proxy-healthz",
+				ContainerPort: kubeRBACProxyHealthPort,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		},
+		Resources:       settings.KubeRBACProxyResources,
+		SecurityContext: defaultSecurityContext,
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      mcpConfigVolumeName,
+				MountPath: kubeRBACProxyConfigMountPath,
+				SubPath:   evalHubAuthConfigMapKey,
+				ReadOnly:  true,
+			},
+			{
+				Name:      tlsSecretName,
+				MountPath: tlsSecretMountPath,
+				ReadOnly:  true,
+			},
+		},
+		StartupProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/health",
-					Port:   intstr.FromInt(mcpContainerPort),
+					Path:   mcpHealthPath,
+					Port:   intstr.FromInt(mcpServicePort),
 					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
-			InitialDelaySeconds: 15,
-			PeriodSeconds:       10,
-			TimeoutSeconds:      5,
-			FailureThreshold:    3,
+			PeriodSeconds:    10,
+			TimeoutSeconds:   5,
+			FailureThreshold: 30,
 		},
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/health",
-					Port:   intstr.FromInt(mcpContainerPort),
+					Path:   mcpHealthPath,
+					Port:   intstr.FromInt(mcpServicePort),
 					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
-			InitialDelaySeconds: 5,
-			PeriodSeconds:       5,
-			TimeoutSeconds:      3,
+			PeriodSeconds:    10,
+			TimeoutSeconds:   5,
+			FailureThreshold: 3,
+		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   kubeRBACProxyHealthPath,
+					Port:   intstr.FromInt(kubeRBACProxyHealthPort),
+					Scheme: corev1.URISchemeHTTPS,
+				},
+			},
+			InitialDelaySeconds: 30,
+			PeriodSeconds:       10,
+			TimeoutSeconds:      5,
 			FailureThreshold:    3,
 		},
 	}
@@ -202,7 +262,7 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: mcpDeploymentName(instance) + "-config",
+						Name: mcpConfigCMName,
 					},
 				},
 			},
@@ -233,7 +293,7 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 		},
 		Spec: corev1.PodSpec{
 			ServiceAccountName: generateServiceAccountName(instance),
-			Containers:         []corev1.Container{container},
+			Containers:         []corev1.Container{mcpContainer, kubeRBACProxyContainer},
 			SecurityContext:    defaultPodSecurityContext,
 			RestartPolicy:      corev1.RestartPolicyAlways,
 			Volumes:            volumes,

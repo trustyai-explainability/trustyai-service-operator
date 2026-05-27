@@ -96,8 +96,9 @@ type EvalHubMCPSpec struct {
 	// +optional
 	Image string `json:"image,omitempty"`
 
-	// AuthSecret is the name of a Secret containing a "token" key for EvalHub API auth.
-	// If omitted, the controller uses the EvalHub's internal service URL without auth.
+	// AuthSecret is the name of a Secret containing a "token" key used by evalhub-mcp to call the EvalHub API
+	// (fronted by kube-rbac-proxy). External MCP clients reach the MCP Service through a separate kube-rbac-proxy
+	// sidecar and must have RBAC get/create on evalhubs/proxy for this instance.
 	// +optional
 	AuthSecret string `json:"authSecret,omitempty"`
 }

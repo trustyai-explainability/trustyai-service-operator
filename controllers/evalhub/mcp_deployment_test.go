@@ -2,6 +2,7 @@ package evalhub
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -35,39 +36,54 @@ func TestBuildMCPDeploymentSpec_envAndArgs(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "mcp-token", Namespace: "team-a"},
 		Data:       map[string][]byte{"token": []byte("secret")},
 	}
+	operatorCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: configMapName, Namespace: "op-system"},
+		Data: map[string]string{
+			configMapKubeRBACProxyImageKey: "quay.io/test/kube-rbac-proxy:v1",
+		},
+	}
 
 	r := &EvalHubReconciler{
-		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, secret).Build(),
-		Scheme: scheme,
+		Client:                fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, secret, operatorCM).Build(),
+		Scheme:                scheme,
+		Namespace:             "op-system",
+		OperatorConfigMapName: configMapName,
 	}
 
 	spec, err := r.buildMCPDeploymentSpec(context.Background(), evalHub)
 	require.NoError(t, err)
-	require.Len(t, spec.Template.Spec.Containers, 1)
+	require.Len(t, spec.Template.Spec.Containers, 2)
 
-	c := spec.Template.Spec.Containers[0]
-	assert.Equal(t, []string{mcpBinaryPath}, c.Command)
+	mcpC := spec.Template.Spec.Containers[0]
+	assert.Equal(t, mcpContainerName, mcpC.Name)
+	assert.Equal(t, []string{mcpBinaryPath}, mcpC.Command)
 	assert.Equal(t, []string{
 		"--config", mcpConfigFilePath(),
 		"--transport", "http",
-		"--host", "0.0.0.0",
-		"--port", "8443",
-	}, c.Args)
+		"--host", "127.0.0.1",
+		"--port", "8445",
+	}, mcpC.Args)
+	assert.Nil(t, mcpC.LivenessProbe)
+	assert.Nil(t, mcpC.ReadinessProbe)
 
-	env := envVarMap(c.Env)
+	env := envVarMap(mcpC.Env)
 	assert.Equal(t, "http-sse", env["EVALHUB_TRANSPORT"])
 	assert.Equal(t, "https://eh.team-a.svc.cluster.local:8443", env["EVALHUB_BASE_URL"])
 	assert.Equal(t, "team-a", env["EVALHUB_TENANT"])
 	assert.Equal(t, "false", env["EVALHUB_INSECURE"])
-	assert.NotContains(t, env, "EVALHUB_AUTH_TOKEN")
-	assert.NotContains(t, env, "EVALHUB_INSECURE_SKIP_VERIFY")
+	assert.NotContains(t, env, "EVALHUB_TLS_CERT_FILE")
 
-	tokenEnv := findEnv(c.Env, "EVALHUB_TOKEN")
+	tokenEnv := findEnv(mcpC.Env, "EVALHUB_TOKEN")
 	require.NotNil(t, tokenEnv)
-	require.NotNil(t, tokenEnv.ValueFrom)
 	require.NotNil(t, tokenEnv.ValueFrom.SecretKeyRef)
 	assert.Equal(t, "mcp-token", tokenEnv.ValueFrom.SecretKeyRef.Name)
-	assert.Equal(t, "token", tokenEnv.ValueFrom.SecretKeyRef.Key)
+
+	krp := spec.Template.Spec.Containers[1]
+	assert.Equal(t, kubeRBACProxyContainerName, krp.Name)
+	assert.Contains(t, strings.Join(krp.Args, " "), "--upstream=http://127.0.0.1:8445/")
+	assert.Contains(t, strings.Join(krp.Args, " "), "--ignore-paths="+mcpHealthPath)
+	assert.NotNil(t, krp.ReadinessProbe)
+	assert.Equal(t, mcpServicePort, int(krp.ReadinessProbe.HTTPGet.Port.IntValue()))
 }
 
 func envVarMap(env []corev1.EnvVar) map[string]string {

@@ -77,9 +77,9 @@ func (r *EvalHubReconciler) buildMCPServiceSpec(instance *evalhubv1alpha1.EvalHu
 		Type:     corev1.ServiceTypeClusterIP,
 		Ports: []corev1.ServicePort{
 			{
-				Name:       "http",
+				Name:       "https",
 				Port:       mcpServicePort,
-				TargetPort: intstr.FromString("http"),
+				TargetPort: intstr.FromString("https"),
 				Protocol:   corev1.ProtocolTCP,
 			},
 		},

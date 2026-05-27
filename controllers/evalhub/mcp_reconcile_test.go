@@ -65,10 +65,18 @@ var _ = Describe("EvalHub MCP reconciliation", func() {
 
 			deploy := waitForDeployment(mcpDeploymentName(evalHub), testNamespace)
 			Expect(deploy.Spec.Template.Labels["component"]).To(Equal("mcp"))
-			Expect(deploy.Spec.Template.Spec.Containers).To(HaveLen(1))
-			container := deploy.Spec.Template.Spec.Containers[0]
-			Expect(container.Args).To(ContainElement("--config"))
-			Expect(container.Args).To(ContainElement(mcpConfigFilePath()))
+			Expect(deploy.Spec.Template.Spec.Containers).To(HaveLen(2))
+			mcpContainer := deploy.Spec.Template.Spec.Containers[0]
+			Expect(mcpContainer.Name).To(Equal(mcpContainerName))
+			Expect(mcpContainer.Args).To(ContainElement("--config"))
+			Expect(mcpContainer.Args).To(ContainElement(mcpConfigFilePath()))
+			Expect(mcpContainer.Args).To(ContainElement("127.0.0.1"))
+
+			krp := deploy.Spec.Template.Spec.Containers[1]
+			Expect(krp.Name).To(Equal(kubeRBACProxyContainerName))
+			Expect(krp.Args).To(ContainElement("--config-file=" + kubeRBACProxyConfigMountPath))
+
+			Expect(cm.Data).To(HaveKey(evalHubAuthConfigMapKey))
 
 			svc := waitForService(mcpServiceName(evalHub), testNamespace)
 			Expect(svc.Annotations["service.beta.openshift.io/serving-cert-secret-name"]).To(Equal(mcpServiceName(evalHub) + "-tls"))

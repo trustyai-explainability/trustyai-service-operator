@@ -86,8 +86,8 @@ func (r *EvalHubReconciler) generateMCPConfigData(instance *evalhubv1alpha1.Eval
 	config := MCPConfig{
 		BaseURL:            evalHubServiceURL,
 		Transport:          transport,
-		Host:               "0.0.0.0",
-		Port:               mcpContainerPort,
+		Host:               "127.0.0.1",
+		Port:               mcpAppPort,
 		CACertPath:         mcpServiceCAMountPath + "/" + serviceCACertFile,
 		InsecureSkipVerify: false,
 	}
@@ -98,6 +98,32 @@ func (r *EvalHubReconciler) generateMCPConfigData(instance *evalhubv1alpha1.Eval
 	}
 
 	return map[string]string{
-		mcpConfigFileName: string(configYAML),
+		mcpConfigFileName:     string(configYAML),
+		evalHubAuthConfigMapKey: generateMCPAuthConfigData(instance),
 	}, nil
+}
+
+// generateMCPAuthConfigData returns kube-rbac-proxy authorization for the MCP server.
+// Clients must hold get/create on evalhubs/proxy for this EvalHub instance (see createAPIAccessRole).
+func generateMCPAuthConfigData(instance *evalhubv1alpha1.EvalHub) string {
+	return fmt.Sprintf(`authorization:
+  endpoints:
+    - path: /*
+      mappings:
+        - resources:
+            - resourceAttributes:
+                namespace: %q
+                apiGroup: trustyai.opendatahub.io
+                resource: evalhubs
+                subresource: proxy
+                name: %q
+                verb: get
+            - resourceAttributes:
+                namespace: %q
+                apiGroup: trustyai.opendatahub.io
+                resource: evalhubs
+                subresource: proxy
+                name: %q
+                verb: create
+`, instance.Namespace, instance.Name, instance.Namespace, instance.Name)
 }

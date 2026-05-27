@@ -1,6 +1,7 @@
 package evalhub
 
 import (
+	"strings"
 	"testing"
 
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
@@ -29,8 +30,17 @@ func TestGenerateMCPConfigData(t *testing.T) {
 	if cfg.BaseURL != "https://test-evalhub.team-a.svc.cluster.local:8443" {
 		t.Fatalf("base_url: got %q", cfg.BaseURL)
 	}
-	if cfg.Port != mcpContainerPort {
-		t.Fatalf("port: got %d want %d", cfg.Port, mcpContainerPort)
+	if cfg.Host != "127.0.0.1" {
+		t.Fatalf("host: got %q want 127.0.0.1", cfg.Host)
+	}
+	if cfg.Port != mcpAppPort {
+		t.Fatalf("port: got %d want %d", cfg.Port, mcpAppPort)
+	}
+	if _, ok := data[evalHubAuthConfigMapKey]; !ok {
+		t.Fatalf("expected %q in MCP config data", evalHubAuthConfigMapKey)
+	}
+	if !strings.Contains(data[evalHubAuthConfigMapKey], "evalhubs") {
+		t.Fatalf("auth.yaml should authorize evalhubs/proxy")
 	}
 }
 
