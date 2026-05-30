@@ -76,6 +76,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	// One-time migration: adopt pre-existing resources via SSA
+	if err := r.runMigration(ctx, instance); err != nil {
+		log.Error(err, "Migration failed, will retry")
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+
 	// Mark provisioning succeeded (operator is running and CRDs are installed)
 	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
 		Type:               ConditionProvisioningSucceeded,
