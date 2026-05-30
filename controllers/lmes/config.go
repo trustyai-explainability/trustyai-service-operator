@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/dsc"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes/driver"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -61,6 +62,20 @@ type serviceOptions struct {
 }
 
 func constructOptionsFromConfigMap(log *logr.Logger, configmap *corev1.ConfigMap) error {
+	// Pre-populate image fields from RELATED_IMAGE_* env vars (modular architecture).
+	// These take precedence over ConfigMap values, so we apply them first and
+	// skip those keys in the ConfigMap loop below.
+	envOverrides := map[string]bool{}
+	for fname, configKey := range optionKeys {
+		if img := images.FromEnvByConfigMapKey(configKey); img != "" {
+			rv := reflect.ValueOf(Options).Elem()
+			fv := rv.FieldByName(fname)
+			if fv.IsValid() && fv.Kind() == reflect.String {
+				fv.SetString(img)
+				envOverrides[fname] = true
+			}
+		}
+	}
 
 	rv := reflect.ValueOf(Options).Elem()
 	var msgs []string
@@ -70,6 +85,11 @@ func constructOptionsFromConfigMap(log *logr.Logger, configmap *corev1.ConfigMap
 		fname := rv.Type().Field(idx).Name
 		configKey, ok := optionKeys[fname]
 		if !ok {
+			continue
+		}
+
+		// Skip fields already set from env vars
+		if envOverrides[fname] {
 			continue
 		}
 

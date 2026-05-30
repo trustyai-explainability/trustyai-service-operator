@@ -8,6 +8,7 @@ import (
 	"time"
 
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -343,6 +344,12 @@ func generateAuthConfigData() string {
 // This ensures explicit configuration and prevents deployment with unconfigured images
 func (r *EvalHubReconciler) getImageFromConfigMap(ctx context.Context, key string) (string, error) {
 	log := log.FromContext(ctx)
+
+	// Check RELATED_IMAGE_* env var first (modular architecture injection)
+	if img := images.FromEnvByConfigMapKey(key); img != "" {
+		log.V(1).Info("image resolved from env var", "key", key, "image", img)
+		return img, nil
+	}
 
 	if r.Namespace == "" {
 		return "", fmt.Errorf("operator namespace not set, cannot retrieve image configuration")

@@ -5,6 +5,7 @@ import (
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/gorch/templates"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	"reflect"
@@ -33,7 +34,7 @@ type DeploymentConfig struct {
 func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (*appsv1.Deployment, error) {
 	var containerImages ContainerImages
 
-	orchestratorImage, err := utils.GetImageFromConfigMap(ctx, r.Client, orchestratorImageKey, constants.ConfigMap, r.Namespace)
+	orchestratorImage, err := images.Resolve(ctx, r.Client, orchestratorImageKey, constants.ConfigMap, r.Namespace)
 	if orchestratorImage == "" || err != nil {
 		log.FromContext(ctx).Error(err, "Error getting container image from ConfigMap.")
 		return nil, err
@@ -43,7 +44,7 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 
 	// Check if the regex detectors are enabled
 	if orchestrator.Spec.EnableBuiltInDetectors {
-		detectorImage, err := utils.GetImageFromConfigMap(ctx, r.Client, detectorImageKey, constants.ConfigMap, r.Namespace)
+		detectorImage, err := images.Resolve(ctx, r.Client, detectorImageKey, constants.ConfigMap, r.Namespace)
 		if detectorImage == "" || err != nil {
 			log.FromContext(ctx).Error(err, "Error getting detectors image from ConfigMap.")
 			return nil, err
@@ -54,7 +55,7 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 
 	// Check if the guardrails sidecar gateway is enabled
 	if orchestrator.Spec.EnableGuardrailsGateway {
-		guardrailsGatewayImage, err := utils.GetImageFromConfigMap(ctx, r.Client, gatewayImageKey, constants.ConfigMap, r.Namespace)
+		guardrailsGatewayImage, err := images.Resolve(ctx, r.Client, gatewayImageKey, constants.ConfigMap, r.Namespace)
 		if guardrailsGatewayImage == "" || err != nil {
 			log.FromContext(ctx).Error(err, "Error getting guardrails sidecar gateway image from ConfigMap.")
 		}
