@@ -140,9 +140,17 @@ func main() {
 		setupLog.Error(err, "unable to operator's namespace")
 	}
 
-	if err = controllers.SetupControllers(enabledServices, mgr, ns, configMap, recorder); err != nil {
+	healthCheckers, err := controllers.SetupControllers(enabledServices, mgr, ns, configMap, recorder)
+	if err != nil {
 		setupLog.Error(err, "unable to initialize controller(s)")
 		os.Exit(1)
+	}
+
+	// Convert health checkers to the ServiceHealthChecker interface for
+	// the module reconciler.
+	var moduleHealthCheckers []modulecontroller.ServiceHealthChecker
+	for _, hc := range healthCheckers {
+		moduleHealthCheckers = append(moduleHealthCheckers, hc)
 	}
 
 	// Register the module CR reconciler unconditionally. It watches the
@@ -150,9 +158,10 @@ func main() {
 	// the ODH platform orchestrator. In standalone mode (no module CR
 	// exists) the reconciler is a no-op.
 	moduleReconciler := &modulecontroller.Reconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: recorder,
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+		Recorder:       recorder,
+		HealthCheckers: moduleHealthCheckers,
 	}
 	if err = moduleReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "module-trustyai")
