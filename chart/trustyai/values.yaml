@@ -1,0 +1,38 @@
+operator:
+  image: quay.io/trustyai/trustyai-service-operator:latest
+  resources:
+    limits:
+      cpu: 900m
+      memory: 700Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+
+enabledServices: "TAS,LMES,EVALHUB,GORCH,NEMO_GUARDRAILS"
+
+operatorNamespace: opendatahub
+
+config:
+  kServeServerless: "enabled"
+  lmesPodCheckingInterval: "10s"
+  lmesImagePullPolicy: "Always"
+  lmesMaxBatchSize: "24"
+  lmesDefaultBatchSize: "8"
+  lmesDetectDevice: "true"
+  lmesAllowOnline: "true"
+  lmesAllowCodeExecution: "true"
+
+relatedImages:
+  RELATED_IMAGE_TRUSTYAI_SERVICE: "quay.io/trustyai/trustyai-service:latest"
+  RELATED_IMAGE_EVALHUB: "quay.io/evalhub/evalhub:latest"
+  RELATED_IMAGE_KUBE_RBAC_PROXY: "quay.io/openshift/origin-kube-rbac-proxy:4.19"
+  RELATED_IMAGE_LMES_POD: "quay.io/opendatahub/ta-lmes-job:latest"
+  RELATED_IMAGE_LMES_DRIVER: "quay.io/trustyai/ta-lmes-driver:latest"
+  RELATED_IMAGE_GUARDRAILS_ORCHESTRATOR: "quay.io/trustyai/ta-guardrails-orchestrator:latest"
+  RELATED_IMAGE_GUARDRAILS_DETECTOR: "quay.io/trustyai/guardrails-detector-built-in:latest"
+  RELATED_IMAGE_GUARDRAILS_GATEWAY: "quay.io/trustyai/guardrails-sidecar-gateway:latest"
+  RELATED_IMAGE_GARAK_PROVIDER: "quay.io/trustyai/llama-stack-provider-trustyai-garak:latest"
+  RELATED_IMAGE_NEMO_GUARDRAILS: "quay.io/trustyai/nemo-guardrails-server:latest"
+  RELATED_IMAGE_EVALHUB_GUIDELLM: "quay.io/evalhub/community-guidellm:latest"
+  RELATED_IMAGE_EVALHUB_LIGHTEVAL: "quay.io/evalhub/community-lighteval:latest"
+  RELATED_IMAGE_EVALHUB_IBM_CLEAR: "quay.io/evalhub/community-ibm-clear:latest"

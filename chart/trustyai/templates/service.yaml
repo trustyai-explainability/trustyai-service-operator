@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: trustyai-service-operator-metrics
+  namespace: {{ .Values.operatorNamespace }}
+  labels:
+    {{- include "trustyai.labels" . | nindent 4 }}
+spec:
+  ports:
+    - name: https
+      port: 8443
+      protocol: TCP
+      targetPort: https
+  selector:
+    {{- include "trustyai.selectorLabels" . | nindent 4 }}
