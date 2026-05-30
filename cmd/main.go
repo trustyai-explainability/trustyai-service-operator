@@ -44,10 +44,12 @@ import (
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
+	modulev1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/module/v1alpha1"
 	tasv1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	tasv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
+	modulecontroller "github.com/trustyai-explainability/trustyai-service-operator/controllers/module"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	//+kubebuilder:scaffold:imports
@@ -72,6 +74,7 @@ func init() {
 	utilruntime.Must(kueuev1beta1.AddToScheme(scheme))
 	utilruntime.Must(gorchv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(nemoguardrailsv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(modulev1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -141,6 +144,21 @@ func main() {
 		setupLog.Error(err, "unable to initialize controller(s)")
 		os.Exit(1)
 	}
+
+	// Register the module CR reconciler unconditionally. It watches the
+	// cluster-scoped TrustyAI singleton and reports aggregated health to
+	// the ODH platform orchestrator. In standalone mode (no module CR
+	// exists) the reconciler is a no-op.
+	moduleReconciler := &modulecontroller.Reconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: recorder,
+	}
+	if err = moduleReconciler.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "module-trustyai")
+		os.Exit(1)
+	}
+
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
