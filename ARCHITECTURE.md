@@ -107,6 +107,10 @@ flowchart LR
     subgraph controllers["controllers/"]
         registry["controllers.go\n(service registry,\nSetupControllers)"]
 
+        subgraph module_ctrl["module/"]
+            module_rec["Reconciler\n(module CR lifecycle,\nstatus aggregation)"]
+        end
+
         subgraph tas_ctrl["tas/"]
             tas_rec["TrustyAIServiceReconciler"]
             tas_isvc["inference_services.go\n(KServe patching)"]
@@ -159,6 +163,7 @@ flowchart LR
     end
 
     main --> registry
+    main --> module_rec
     registry --> tas_rec
     registry --> lmes_rec
     registry --> evalhub_rec
@@ -460,6 +465,7 @@ trustyai-service-operator/
 ├── controllers/
 │   ├── controllers.go             # Service registry (init-based registration)
 │   ├── images/                    # Image resolution (RELATED_IMAGE env vars + ConfigMap fallback)
+│   ├── module/                    # Module CR reconciler (status aggregation, finalizer)
 │   ├── tas/                       # TAS reconciler (KServe, TLS, storage)
 │   ├── lmes/                      # LMES reconciler (pod lifecycle, state machine)
 │   ├── evalhub/                   # EvalHub reconciler (providers, tenants, DB)
