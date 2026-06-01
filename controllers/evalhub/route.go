@@ -43,7 +43,6 @@ func (r *EvalHubReconciler) reconcileRoute(ctx context.Context, instance *evalhu
 		return getErr
 	}
 
-	// Define the desired route spec
 	desiredSpec := r.buildRouteSpec(instance)
 
 	if errors.IsNotFound(getErr) {
@@ -69,9 +68,9 @@ func (r *EvalHubReconciler) reconcileRoute(ctx context.Context, instance *evalhu
 	}
 }
 
-// buildRouteSpec builds the route specification for EvalHub
+// buildRouteSpec builds the route specification for EvalHub.
 func (r *EvalHubReconciler) buildRouteSpec(instance *evalhubv1alpha1.EvalHub) routev1.RouteSpec {
-	routeSpec := routev1.RouteSpec{
+	return routev1.RouteSpec{
 		To: routev1.RouteTargetReference{
 			Kind:   "Service",
 			Name:   instance.Name,
@@ -80,14 +79,11 @@ func (r *EvalHubReconciler) buildRouteSpec(instance *evalhubv1alpha1.EvalHub) ro
 		Port: &routev1.RoutePort{
 			TargetPort: intstr.FromString("https"),
 		},
-		// Default TLS configuration for EvalHub
 		TLS: &routev1.TLSConfig{
 			Termination:                   routev1.TLSTerminationReencrypt,
 			InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
 		},
 	}
-
-	return routeSpec
 }
 
 // isRouteSupported checks if Route resources are supported in the cluster
