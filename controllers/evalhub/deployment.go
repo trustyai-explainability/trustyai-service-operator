@@ -134,8 +134,8 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	}
 
 	// Merge environment variables with CR values taking precedence.
-	// API_HOST and PORT are fixed for the loopback listener and kube-rbac-proxy upstream; CR cannot override them.
-	env := mergeEnvVars(defaultEnvVars, instance.Spec.Env, "API_HOST", "PORT")
+	// API_HOST and PORT are fixed for the loopback HTTP listener; TLS is terminated by kube-rbac-proxy only.
+	env := mergeEnvVars(defaultEnvVars, instance.Spec.Env, "API_HOST", "PORT", "TLS_CERT_FILE", "TLS_KEY_FILE")
 
 	// Build volume mounts for the evalhub container
 	volumeMounts := []corev1.VolumeMount{
@@ -155,12 +155,6 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			ReadOnly:  true,
 		},
 	}
-	// TLS volume mount for OpenShift service serving certificates
-	volumeMounts = append(volumeMounts, corev1.VolumeMount{
-		Name:      instance.Name + "-tls",
-		MountPath: tlsSecretMountPath,
-		ReadOnly:  true,
-	})
 	if len(providerCMNames) > 0 {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      providersVolumeName,
@@ -250,6 +244,18 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 				ReadOnly:  true,
 			},
 		},
+		StartupProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   evalHubHealthPath,
+					Port:   intstr.FromInt(servicePort),
+					Scheme: corev1.URISchemeHTTPS,
+				},
+			},
+			PeriodSeconds:    10,
+			TimeoutSeconds:   5,
+			FailureThreshold: 30,
+		},
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
@@ -258,16 +264,15 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
-			InitialDelaySeconds: 10,
-			PeriodSeconds:       5,
-			TimeoutSeconds:      5,
-			FailureThreshold:    3,
+			PeriodSeconds:    10,
+			TimeoutSeconds:   5,
+			FailureThreshold: 3,
 		},
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   evalHubHealthPath,
-					Port:   intstr.FromInt(servicePort),
+					Path:   kubeRBACProxyHealthPath,
+					Port:   intstr.FromInt(kubeRBACProxyHealthPort),
 					Scheme: corev1.URISchemeHTTPS,
 				},
 			},

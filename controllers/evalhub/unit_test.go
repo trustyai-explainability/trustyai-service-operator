@@ -191,7 +191,7 @@ func TestEvalHubReconciler_updateStatus(t *testing.T) {
 	}
 
 	t.Run("should update status to Ready when deployment is ready", func(t *testing.T) {
-		err := reconciler.updateStatus(ctx, evalHub)
+		err := reconciler.updateStatus(ctx, evalHub, true)
 		require.NoError(t, err)
 
 		// Verify status was updated
@@ -230,7 +230,7 @@ func TestEvalHubReconciler_updateStatus(t *testing.T) {
 		err := fakeClient.Status().Update(ctx, deployment)
 		require.NoError(t, err)
 
-		err = reconciler.updateStatus(ctx, evalHub)
+		err = reconciler.updateStatus(ctx, evalHub, true)
 		require.NoError(t, err)
 
 		// Verify status was updated
@@ -336,6 +336,21 @@ func TestEvalHubHelperMethods(t *testing.T) {
 		customReplicas := int32(3)
 		spec.Replicas = &customReplicas
 		assert.Equal(t, int32(3), spec.GetReplicas())
+	})
+
+	t.Run("EvalHubSpec GetMCPReplicas method", func(t *testing.T) {
+		var nilSpec *evalhubv1alpha1.EvalHubSpec
+		assert.Equal(t, int32(1), nilSpec.GetMCPReplicas())
+
+		spec := &evalhubv1alpha1.EvalHubSpec{}
+		assert.Equal(t, int32(1), spec.GetMCPReplicas())
+
+		spec.MCP = &evalhubv1alpha1.EvalHubMCPSpec{}
+		assert.Equal(t, int32(1), spec.GetMCPReplicas())
+
+		three := int32(3)
+		spec.MCP.Replicas = &three
+		assert.Equal(t, int32(3), spec.GetMCPReplicas())
 	})
 }
 
@@ -1364,7 +1379,7 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 			}
 		}
 		require.NotNil(t, container)
-		assert.Len(t, container.VolumeMounts, 5) // evalhub-config + tls + service-ca + mlflow-token + db-secret
+		assert.Len(t, container.VolumeMounts, 4) // evalhub-config + service-ca + mlflow-token + db-secret
 
 		var dbMount *corev1.VolumeMount
 		for i, m := range container.VolumeMounts {

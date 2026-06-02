@@ -131,6 +131,7 @@ func createConfigMap(name, namespace string) *corev1.ConfigMap {
 		},
 		Data: map[string]string{
 			"evalHubImage":    "quay.io/ruimvieira/eval-hub:test",
+			"evalHubMCPImage": "quay.io/evalhub/evalhub-mcp:test",
 			"kube-rbac-proxy": "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable",
 		},
 	}
@@ -203,7 +204,9 @@ func setupReconciler(namespace string) (*EvalHubReconciler, context.Context) {
 			Namespace: namespace,
 		},
 		Data: map[string]string{
-			configMapEvalHubImageKey: "quay.io/evalhub/evalhub:test",
+			configMapEvalHubImageKey:       "quay.io/evalhub/evalhub:test",
+			configMapMCPImageKey:           "quay.io/evalhub/evalhub:test",
+			configMapKubeRBACProxyImageKey: "quay.io/openshift/origin-kube-rbac-proxy:4.19",
 		},
 	}
 	if err := k8sClient.Create(ctx, operatorCM); err != nil {
@@ -306,6 +309,23 @@ func createEvalHubInstanceWithDB(name, namespace, secretName string) *evalhubv1a
 	return instance
 }
 
+// createEvalHubWithMCP creates an EvalHub instance with optional MCP server enabled.
+func createEvalHubWithMCP(name, namespace string, enabled bool) *evalhubv1alpha1.EvalHub {
+	instance := createEvalHubInstanceWithSQLite(name, namespace)
+	instance.Spec.MCP = &evalhubv1alpha1.EvalHubMCPSpec{Enabled: &enabled}
+	return instance
+}
+
+// createServiceCAConfigMap creates the service CA ConfigMap required by the MCP deployment volume.
+func createServiceCAConfigMap(evalHubName, namespace string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName + "-service-ca",
+			Namespace: namespace,
+		},
+	}
+}
+
 // createEvalHubInstanceWithSQLite creates an EvalHub instance with SQLite database configuration for testing
 func createEvalHubInstanceWithSQLite(name, namespace string) *evalhubv1alpha1.EvalHub {
 	instance := createEvalHubInstance(name, namespace)
@@ -316,7 +336,7 @@ func createEvalHubInstanceWithSQLite(name, namespace string) *evalhubv1alpha1.Ev
 }
 
 // cleanupResourcesInNamespace deletes all test resources in a namespace
-func cleanupResourcesInNamespace(namespace string, evalHub *evalhubv1alpha1.EvalHub, configMap *corev1.ConfigMap) {
+func cleanupResourcesInNamespace(_ string, evalHub *evalhubv1alpha1.EvalHub, configMap *corev1.ConfigMap) {
 	if evalHub != nil {
 		k8sClient.Delete(ctx, evalHub)
 	}
