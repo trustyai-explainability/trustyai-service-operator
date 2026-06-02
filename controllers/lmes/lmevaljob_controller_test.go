@@ -4404,8 +4404,8 @@ func Test_hasHTTPSBaseURL(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "other arg with https value",
-			args: []lmesv1alpha1.Arg{{Name: "endpoint", Value: "https://other.example.com"}},
+			name:     "other arg with https value",
+			args:     []lmesv1alpha1.Arg{{Name: "endpoint", Value: "https://other.example.com"}},
 			expected: false,
 		},
 		{

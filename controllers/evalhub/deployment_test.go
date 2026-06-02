@@ -48,7 +48,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			},
 			Data: map[string]string{
 				"evalHubImage":    "quay.io/ruimvieira/eval-hub:test",
-				"kube-rbac-proxy": "quay.io/openshift/origin-kube-rbac-proxy:4.19",
+				"kube-rbac-proxy": "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable",
 			},
 		}
 		Expect(k8sClient.Create(ctx, configMap)).Should(Succeed())
@@ -143,7 +143,7 @@ var _ = Describe("EvalHub Deployment", func() {
 				}
 			}
 			Expect(krp).NotTo(BeNil())
-			Expect(krp.Image).To(Equal("quay.io/openshift/origin-kube-rbac-proxy:4.19"))
+			Expect(krp.Image).To(Equal("quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable"))
 			Expect(krp.Args).To(ContainElement("--config-file=" + kubeRBACProxyConfigMountPath))
 			Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 			var hasAuthMount bool

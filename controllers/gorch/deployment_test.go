@@ -51,7 +51,7 @@ func TestDeploymentTemplateRendering(t *testing.T) {
 			"guardrails-orchestrator-image":      "quay.io/trustyai/ta-guardrails-orchestrator:latest",
 			"guardrails-sidecar-gateway-image":   "quay.io/trustyai/ta-guardrails-gateway:latest",
 			"guardrails-built-in-detector-image": "quay.io/trustyai/ta-guardrails-regex:latest",
-			"kube-rbac-proxy":                    "quay.io/openshift/origin-kube-rbac-proxy:4.19",
+			"kube-rbac-proxy":                    "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable",
 		},
 	}
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(operatorConfigMap).Build()

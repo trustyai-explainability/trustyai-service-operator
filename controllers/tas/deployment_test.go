@@ -54,7 +54,7 @@ func setupAndTestDeploymentDefault(instance *trustyaiopendatahubiov1alpha1.Trust
 
 	Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
 	Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
-	Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("quay.io/openshift/origin-kube-rbac-proxy:4.19"))
+	Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable"))
 
 	WaitFor(func() error {
 		internalServiceConfig := getServiceConfig(instance.Name, instance)
@@ -889,7 +889,7 @@ var _ = Describe("TrustyAI operator", func() {
 
 				Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
 				Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
-				Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("quay.io/openshift/origin-kube-rbac-proxy:4.19"))
+				Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable"))
 
 				WaitFor(func() error {
 					err := reconciler.createServiceAccount(ctx, instance)

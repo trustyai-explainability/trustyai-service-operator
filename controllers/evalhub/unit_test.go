@@ -107,7 +107,7 @@ func TestEvalHubReconciler_reconcileConfigMap(t *testing.T) {
 		},
 		Data: map[string]string{
 			configMapEvalHubImageKey:       "quay.io/evalhub/evalhub:test",
-			configMapKubeRBACProxyImageKey: "quay.io/openshift/origin-kube-rbac-proxy:4.19",
+			configMapKubeRBACProxyImageKey: "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable",
 		},
 	}
 
@@ -1310,7 +1310,7 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 		},
 		Data: map[string]string{
 			configMapEvalHubImageKey:       "quay.io/test/eval-hub:latest",
-			configMapKubeRBACProxyImageKey: "quay.io/openshift/origin-kube-rbac-proxy:4.19",
+			configMapKubeRBACProxyImageKey: "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable",
 		},
 	}
 
@@ -1555,7 +1555,7 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 			},
 			Data: map[string]string{
 				configMapEvalHubImageKey:       "quay.io/test/eval-hub:latest",
-				configMapKubeRBACProxyImageKey: "quay.io/openshift/origin-kube-rbac-proxy:4.19",
+				configMapKubeRBACProxyImageKey: "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable",
 			},
 		}
 
