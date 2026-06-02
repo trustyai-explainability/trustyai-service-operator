@@ -38,6 +38,8 @@ func (r *EvalHubReconciler) reconcileMCPServer(ctx context.Context, instance *ev
 	if err := r.reconcileMCPRoute(ctx, instance); err != nil {
 		log.Error(err, "Failed to reconcile MCP Route")
 		setMCPRouteWarning(instance, err.Error())
+	} else {
+		setMCPRouteSuccess(instance)
 	}
 	return true
 }
@@ -63,6 +65,17 @@ func setMCPRouteWarning(instance *evalhubv1alpha1.EvalHub, message string) {
 	}
 	conditions := mcp.Conditions
 	setMCPCondition(&conditions, mcpConditionRouteReady, metav1.ConditionFalse, "MCPRouteFailed", message, instance.Generation)
+	mcp.Conditions = conditions
+	instance.Status.MCP = mcp
+}
+
+func setMCPRouteSuccess(instance *evalhubv1alpha1.EvalHub) {
+	mcp := instance.Status.MCP
+	if mcp == nil {
+		mcp = &evalhubv1alpha1.EvalHubMCPStatus{}
+	}
+	conditions := mcp.Conditions
+	setMCPCondition(&conditions, mcpConditionRouteReady, metav1.ConditionTrue, "MCPRouteReady", "Route reconciliation succeeded", instance.Generation)
 	mcp.Conditions = conditions
 	instance.Status.MCP = mcp
 }

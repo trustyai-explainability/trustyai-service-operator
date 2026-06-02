@@ -1,6 +1,8 @@
 package evalhub
 
 import (
+	"testing"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
@@ -38,4 +40,39 @@ var _ = Describe("MCP status helpers", func() {
 		Expect(cond.Reason).To(Equal("MCPConfigMapFailed"))
 		Expect(cond.Message).To(Equal("boom"))
 	})
+
 })
+
+func TestSetMCPRouteSuccess(t *testing.T) {
+	evalHub := &evalhubv1alpha1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{Name: "eh", Namespace: "ns", Generation: 3},
+		Status: evalhubv1alpha1.EvalHubStatus{
+			MCP: &evalhubv1alpha1.EvalHubMCPStatus{
+				Conditions: []metav1.Condition{{
+					Type:   mcpConditionRouteReady,
+					Status: metav1.ConditionFalse,
+					Reason: "MCPRouteFailed",
+				}},
+			},
+		},
+	}
+
+	setMCPRouteSuccess(evalHub)
+
+	cond := meta.FindStatusCondition(evalHub.Status.MCP.Conditions, mcpConditionRouteReady)
+	if cond == nil {
+		t.Fatal("expected RouteReady condition")
+	}
+	if cond.Status != metav1.ConditionTrue {
+		t.Fatalf("status: got %s, want True", cond.Status)
+	}
+	if cond.Reason != "MCPRouteReady" {
+		t.Fatalf("reason: got %q, want MCPRouteReady", cond.Reason)
+	}
+	if cond.Message != "Route reconciliation succeeded" {
+		t.Fatalf("message: got %q", cond.Message)
+	}
+	if cond.ObservedGeneration != 3 {
+		t.Fatalf("observedGeneration: got %d, want 3", cond.ObservedGeneration)
+	}
+}
