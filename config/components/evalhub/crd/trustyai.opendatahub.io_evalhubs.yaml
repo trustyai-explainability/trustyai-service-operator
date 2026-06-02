@@ -210,8 +210,9 @@ spec:
                 properties:
                   authSecret:
                     description: |-
-                      AuthSecret is the name of a Secret containing a "token" key for EvalHub API auth.
-                      If omitted, the controller uses the EvalHub's internal service URL without auth.
+                      AuthSecret is the name of a Secret containing a "token" key used by evalhub-mcp to call the EvalHub API
+                      (fronted by kube-rbac-proxy). External MCP clients reach the MCP Service through a separate kube-rbac-proxy
+                      sidecar and must have RBAC get/create on evalhubs/proxy for this instance.
                     type: string
                   enabled:
                     description: Enabled controls whether the MCP server is deployed.
