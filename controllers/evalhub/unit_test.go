@@ -191,7 +191,7 @@ func TestEvalHubReconciler_updateStatus(t *testing.T) {
 	}
 
 	t.Run("should update status to Ready when deployment is ready", func(t *testing.T) {
-		err := reconciler.updateStatus(ctx, evalHub)
+		err := reconciler.updateStatus(ctx, evalHub, true)
 		require.NoError(t, err)
 
 		// Verify status was updated
@@ -230,7 +230,7 @@ func TestEvalHubReconciler_updateStatus(t *testing.T) {
 		err := fakeClient.Status().Update(ctx, deployment)
 		require.NoError(t, err)
 
-		err = reconciler.updateStatus(ctx, evalHub)
+		err = reconciler.updateStatus(ctx, evalHub, true)
 		require.NoError(t, err)
 
 		// Verify status was updated

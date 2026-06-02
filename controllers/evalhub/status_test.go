@@ -111,7 +111,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Updating EvalHub status")
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking updated status")
@@ -136,7 +136,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Updating EvalHub status")
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking updated status")
@@ -169,7 +169,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Updating EvalHub status")
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking updated status")
@@ -193,7 +193,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			err := k8sClient.Status().Update(ctx, deployment)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Verifying initial status is Pending")
@@ -210,7 +210,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			err = k8sClient.Status().Update(ctx, deployment)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Verifying status is now Ready")
@@ -238,7 +238,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			By("Updating EvalHub status")
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking status reflects missing deployment")
@@ -261,7 +261,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Updating EvalHub status")
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking URL is set correctly")
@@ -288,7 +288,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			}
 
 			By("Attempting to update status")
-			err := reconciler.updateStatus(ctx, nonExistentEvalHub)
+			err := reconciler.updateStatus(ctx, nonExistentEvalHub, true)
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -297,7 +297,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			badEvalHub := createEvalHubInstance("bad-status-evalhub", "non-existent-namespace")
 			badReconciler, _ := setupReconciler("non-existent-namespace")
 
-			err := badReconciler.updateStatus(ctx, badEvalHub)
+			err := badReconciler.updateStatus(ctx, badEvalHub, true)
 			Expect(err).To(HaveOccurred())
 		})
 	})
@@ -310,7 +310,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			err := k8sClient.Status().Update(ctx, deployment)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			updatedEvalHub := &evalhubv1alpha1.EvalHub{}
@@ -344,7 +344,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			err := k8sClient.Status().Update(ctx, deployment)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			updatedEvalHub := &evalhubv1alpha1.EvalHub{}

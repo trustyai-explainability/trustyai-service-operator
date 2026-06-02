@@ -115,7 +115,7 @@ var _ = Describe("EvalHub MCP reconciliation", func() {
 			deploy.Status.Replicas = 1
 			Expect(k8sClient.Status().Update(ctx, deploy)).Should(Succeed())
 
-			reconciler.updateMCPStatus(ctx, evalHub)
+			reconciler.updateMCPStatus(ctx, evalHub, true)
 			Expect(evalHub.Status.MCP).NotTo(BeNil())
 			Expect(evalHub.Status.MCP.Phase).To(Equal("Ready"))
 			Expect(evalHub.Status.MCP.Ready).To(BeTrue())
@@ -161,7 +161,7 @@ var _ = Describe("EvalHub MCP reconciliation", func() {
 				return errors.IsNotFound(err)
 			}, timeout, interval).Should(BeTrue())
 
-			reconciler.updateMCPStatus(ctx, evalHub)
+			reconciler.updateMCPStatus(ctx, evalHub, true)
 			Expect(evalHub.Status.MCP.Phase).To(Equal("Disabled"))
 			Expect(evalHub.Status.MCP.Ready).To(BeFalse())
 		})
@@ -172,7 +172,7 @@ var _ = Describe("EvalHub MCP reconciliation", func() {
 			evalHubNoMCP := createEvalHubInstanceWithSQLite("no-mcp", testNamespace)
 			Expect(k8sClient.Create(ctx, evalHubNoMCP)).Should(Succeed())
 
-			reconciler.updateMCPStatus(ctx, evalHubNoMCP)
+			reconciler.updateMCPStatus(ctx, evalHubNoMCP, true)
 			Expect(evalHubNoMCP.Status.MCP).NotTo(BeNil())
 			Expect(evalHubNoMCP.Status.MCP.Phase).To(Equal("Disabled"))
 		})
