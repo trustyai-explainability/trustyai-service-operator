@@ -92,14 +92,6 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			Value: fmt.Sprintf("%d", evalHubAppPort),
 		},
 		{
-			Name:  "TLS_CERT_FILE",
-			Value: tlsSecretMountPath + "/" + tlsCertFile,
-		},
-		{
-			Name:  "TLS_KEY_FILE",
-			Value: tlsSecretMountPath + "/" + tlsKeyFile,
-		},
-		{
 			Name:  "LOG_LEVEL",
 			Value: "INFO",
 		},

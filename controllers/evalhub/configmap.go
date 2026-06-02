@@ -304,7 +304,8 @@ func generateAuthConfigData() string {
                 apiGroup: mlflow.kubeflow.org
                 resource: experiments
                 verb: get
-        - resources:
+        - methods: [get, delete, put, patch]
+          resources:
             - rewrites:
                 byHttpHeader:
                   name: X-Tenant
@@ -315,7 +316,8 @@ func generateAuthConfigData() string {
                 verb: "{{.FromMethod}}"
     - path: /api/v1/evaluations/collections
       mappings:
-        - resources:
+        - methods: [get, post, delete, put, patch]
+          resources:
             - rewrites:
                 byHttpHeader:
                   name: X-Tenant
@@ -326,7 +328,8 @@ func generateAuthConfigData() string {
                 verb: "{{.FromMethod}}"
     - path: /api/v1/evaluations/providers
       mappings:
-        - resources:
+        - methods: [get, post, delete, put, patch]
+          resources:
             - rewrites:
                 byHttpHeader:
                   name: X-Tenant
