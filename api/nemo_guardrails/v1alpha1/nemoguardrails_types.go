@@ -52,6 +52,29 @@ type NemoGuardrailsSpec struct {
 	// Define Env information for the main container
 	// +optional
 	Env []corev1.EnvVar `json:"env,omitempty"`
+	// Template describes the pod template used by the deployment
+	// +optional
+	Template *NemoGuardrailsTemplate `json:"template,omitempty"`
+}
+
+// NemoGuardrailsTemplate defines the template for the NemoGuardrails deployment
+type NemoGuardrailsTemplate struct {
+	// Pod defines pod-level scheduling constraints
+	// +optional
+	Pod *NemoGuardrailsPodTemplate `json:"pod,omitempty"`
+}
+
+// NemoGuardrailsPodTemplate defines pod-level overrides
+type NemoGuardrailsPodTemplate struct {
+	// If specified, the pod's scheduling constraints
+	// +optional
+	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+	// If specified, the pod's tolerations
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+	// NodeSelector is a map of key-value pairs for node scheduling
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 }
 
 type CAStatus struct {
