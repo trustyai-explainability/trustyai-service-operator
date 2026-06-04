@@ -196,6 +196,10 @@ var _ = Describe("Kueue failed workload reconciler helpers", func() {
 			Expect(kueueConditionMentionsGPU("insufficient quota for amd.com/gpu in cluster queue")).To(BeTrue())
 		})
 
+		It("returns true when GPU resource name is quoted", func() {
+			Expect(kueueConditionMentionsGPU(`insufficient quota for "nvidia.com/gpu"`)).To(BeTrue())
+		})
+
 		It("returns false when message has no GPU reference", func() {
 			Expect(kueueConditionMentionsGPU("ClusterQueue foo is stopped")).To(BeFalse())
 		})
