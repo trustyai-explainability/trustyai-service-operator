@@ -125,8 +125,8 @@ var _ = Describe("buildDeploymentSpec", func() {
 		}
 		Expect(envVarMap["API_HOST"]).To(Equal("127.0.0.1"))
 		Expect(envVarMap["PORT"]).To(Equal(fmt.Sprintf("%d", evalHubAppPort)))
-		Expect(envVarMap["TLS_CERT_FILE"]).To(Equal("/etc/tls/private/tls.crt"))
-		Expect(envVarMap["TLS_KEY_FILE"]).To(Equal("/etc/tls/private/tls.key"))
+		Expect(envVarMap).NotTo(HaveKey("TLS_CERT_FILE"))
+		Expect(envVarMap).NotTo(HaveKey("TLS_KEY_FILE"))
 		Expect(envVarMap["LOG_LEVEL"]).To(Equal("INFO"))
 		Expect(envVarMap["MAX_CONCURRENT_EVALUATIONS"]).To(Equal("10"))
 		Expect(envVarMap["DEFAULT_TIMEOUT_MINUTES"]).To(Equal("60"))
@@ -154,15 +154,17 @@ var _ = Describe("buildDeploymentSpec", func() {
 		Expect(krp.Image).To(Equal("quay.io/test/kube-rbac-proxy:v1"))
 		Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 		Expect(krp.ReadinessProbe).NotTo(BeNil())
+		Expect(krp.StartupProbe).NotTo(BeNil())
+		Expect(krp.StartupProbe.HTTPGet.Path).To(Equal(evalHubHealthPath))
+		Expect(krp.StartupProbe.HTTPGet.Port).To(Equal(intstr.FromInt(servicePort)))
 		Expect(krp.ReadinessProbe.HTTPGet.Path).To(Equal(evalHubHealthPath))
 		Expect(krp.ReadinessProbe.HTTPGet.Port).To(Equal(intstr.FromInt(servicePort)))
 		Expect(krp.ReadinessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
-		Expect(krp.ReadinessProbe.InitialDelaySeconds).To(Equal(int32(10)))
-		Expect(krp.ReadinessProbe.PeriodSeconds).To(Equal(int32(5)))
+		Expect(krp.ReadinessProbe.PeriodSeconds).To(Equal(int32(10)))
 		Expect(krp.ReadinessProbe.TimeoutSeconds).To(Equal(int32(5)))
 		Expect(krp.LivenessProbe).NotTo(BeNil())
-		Expect(krp.LivenessProbe.HTTPGet.Path).To(Equal(evalHubHealthPath))
-		Expect(krp.LivenessProbe.HTTPGet.Port).To(Equal(intstr.FromInt(servicePort)))
+		Expect(krp.LivenessProbe.HTTPGet.Path).To(Equal(kubeRBACProxyHealthPath))
+		Expect(krp.LivenessProbe.HTTPGet.Port).To(Equal(intstr.FromInt(kubeRBACProxyHealthPort)))
 		Expect(krp.LivenessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
 		Expect(krp.LivenessProbe.InitialDelaySeconds).To(Equal(int32(30)))
 		Expect(krp.LivenessProbe.PeriodSeconds).To(Equal(int32(10)))
@@ -384,7 +386,7 @@ var _ = Describe("buildServiceSpec", func() {
 	})
 })
 
-var _ = Describe("getEvalHubImage", func() {
+var _ = Describe("getImageFromConfigMap", func() {
 	It("returns the image from the operator ConfigMap", func() {
 		nsName := fmt.Sprintf("evalhub-getimage-%d", time.Now().UnixNano())
 		ns := createNamespace(nsName)
@@ -406,12 +408,12 @@ var _ = Describe("getEvalHubImage", func() {
 			Client:    k8sClient,
 			Namespace: nsName,
 		}
-		image, err := r.getEvalHubImage(ctx)
+		image, err := r.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(image).To(Equal("quay.io/test/eval-hub:custom"))
 	})
 
-	It("returns the fallback image and an error when the ConfigMap is not found", func() {
+	It("returns an error when the ConfigMap is not found", func() {
 		emptyNS := fmt.Sprintf("evalhub-getimage-empty-%d", time.Now().UnixNano())
 		empty := createNamespace(emptyNS)
 		Expect(k8sClient.Create(ctx, empty)).To(Succeed())
@@ -421,34 +423,18 @@ var _ = Describe("getEvalHubImage", func() {
 			Client:    k8sClient,
 			Namespace: emptyNS,
 		}
-		image, err := r.getEvalHubImage(ctx)
+		_, err := r.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
 		Expect(err).To(HaveOccurred())
-		Expect(image).To(Equal(defaultEvalHubImage))
+		Expect(err.Error()).To(ContainSubstring("not found"))
 	})
 
-	It("resolves the operator namespace when reconciler.Namespace is empty", func() {
-		const systemNS = "trustyai-service-operator-system"
-		sys := createNamespace(systemNS)
-		Expect(k8sClient.Create(ctx, sys)).To(Succeed())
-		defer deleteNamespace(sys)
-
-		cm := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      configMapName,
-				Namespace: systemNS,
-			},
-			Data: map[string]string{
-				configMapEvalHubImageKey: "quay.io/test/eval-hub:default-ns",
-			},
-		}
-		Expect(k8sClient.Create(ctx, cm)).To(Succeed())
-
+	It("returns an error when reconciler.Namespace is empty", func() {
 		r := &EvalHubReconciler{
 			Client:    k8sClient,
 			Namespace: "",
 		}
-		image, err := r.getEvalHubImage(ctx)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(image).To(Equal("quay.io/test/eval-hub:default-ns"))
+		_, err := r.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("operator namespace not set"))
 	})
 })

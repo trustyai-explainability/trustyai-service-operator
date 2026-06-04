@@ -66,7 +66,7 @@ var _ = Describe("NemoGuardrails Controller", func() {
 			},
 			Data: map[string]string{
 				nemoGuardrailsImageKey: "quay.io/trustyai/nemo-guardrails-server:latest",
-				tas.KubeRBACProxyName:  "quay.io/openshift/origin-kube-rbac-proxy:4.19",
+				tas.KubeRBACProxyName:  "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable",
 			},
 		}
 		err = k8sClient.Create(ctx, operatorConfigMap)

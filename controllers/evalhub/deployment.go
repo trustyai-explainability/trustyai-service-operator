@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -68,13 +67,13 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	}
 
 	// Get image from ConfigMap with fallback
-	evalHubImage, err := r.getEvalHubImage(ctx)
+	evalHubImage, err := r.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error getting EvalHub image from ConfigMap. Using the default image value of "+defaultEvalHubImage)
 		evalHubImage = defaultEvalHubImage
 	}
 
-	kubeRBACProxyImage, err := r.getKubeRBACProxyImage(ctx)
+	kubeRBACProxyImage, err := r.getImageFromConfigMap(ctx, configMapKubeRBACProxyImageKey)
 	if err != nil {
 		return appsv1.DeploymentSpec{}, fmt.Errorf("getting kube-rbac-proxy image: %w", err)
 	}
@@ -91,14 +90,6 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		{
 			Name:  "PORT",
 			Value: fmt.Sprintf("%d", evalHubAppPort),
-		},
-		{
-			Name:  "TLS_CERT_FILE",
-			Value: tlsSecretMountPath + "/" + tlsCertFile,
-		},
-		{
-			Name:  "TLS_KEY_FILE",
-			Value: tlsSecretMountPath + "/" + tlsKeyFile,
 		},
 		{
 			Name:  "LOG_LEVEL",
@@ -143,8 +134,8 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	}
 
 	// Merge environment variables with CR values taking precedence.
-	// API_HOST and PORT are fixed for the loopback listener and kube-rbac-proxy upstream; CR cannot override them.
-	env := mergeEnvVars(defaultEnvVars, instance.Spec.Env, "API_HOST", "PORT")
+	// API_HOST and PORT are fixed for the loopback HTTP listener; TLS is terminated by kube-rbac-proxy only.
+	env := mergeEnvVars(defaultEnvVars, instance.Spec.Env, "API_HOST", "PORT", "TLS_CERT_FILE", "TLS_KEY_FILE")
 
 	// Build volume mounts for the evalhub container
 	volumeMounts := []corev1.VolumeMount{
@@ -164,12 +155,6 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			ReadOnly:  true,
 		},
 	}
-	// TLS volume mount for OpenShift service serving certificates
-	volumeMounts = append(volumeMounts, corev1.VolumeMount{
-		Name:      instance.Name + "-tls",
-		MountPath: tlsSecretMountPath,
-		ReadOnly:  true,
-	})
 	if len(providerCMNames) > 0 {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      providersVolumeName,
@@ -259,6 +244,18 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 				ReadOnly:  true,
 			},
 		},
+		StartupProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   evalHubHealthPath,
+					Port:   intstr.FromInt(servicePort),
+					Scheme: corev1.URISchemeHTTPS,
+				},
+			},
+			PeriodSeconds:    10,
+			TimeoutSeconds:   5,
+			FailureThreshold: 30,
+		},
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
@@ -267,16 +264,15 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
-			InitialDelaySeconds: 10,
-			PeriodSeconds:       5,
-			TimeoutSeconds:      5,
-			FailureThreshold:    3,
+			PeriodSeconds:    10,
+			TimeoutSeconds:   5,
+			FailureThreshold: 3,
 		},
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   evalHubHealthPath,
-					Port:   intstr.FromInt(servicePort),
+					Path:   kubeRBACProxyHealthPath,
+					Port:   intstr.FromInt(kubeRBACProxyHealthPort),
 					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
@@ -403,27 +399,6 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			},
 		},
 	}, nil
-}
-
-// getKubeRBACProxyImage retrieves the kube-rbac-proxy image from the operator ConfigMap.
-func (r *EvalHubReconciler) getKubeRBACProxyImage(ctx context.Context) (string, error) {
-	namespace := r.Namespace
-	if namespace == "" {
-		return "", fmt.Errorf("operator namespace not set")
-	}
-	return utils.GetImageFromConfigMap(ctx, r.Client, configMapKubeRBACProxyImageKey, r.effectiveOperatorConfigMapName(), namespace)
-}
-
-// getEvalHubImage retrieves the EvalHub image from ConfigMap with fallback to default
-func (r *EvalHubReconciler) getEvalHubImage(ctx context.Context) (string, error) {
-	// Get the namespace where the operator is deployed (where the ConfigMap should be)
-	namespace := r.Namespace
-	if namespace == "" {
-		// Fallback to default namespace if not set
-		namespace = "trustyai-service-operator-system"
-	}
-
-	return utils.GetImageFromConfigMapWithFallback(ctx, r.Client, configMapEvalHubImageKey, r.effectiveOperatorConfigMapName(), namespace, defaultEvalHubImage)
 }
 
 // mergeEnvVars merges default environment variables with CR-specified ones,

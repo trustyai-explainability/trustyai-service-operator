@@ -38,7 +38,7 @@ const (
 	KubeRBACProxyServicePort     = 8443
 	KubeRBACProxyName            = "kube-rbac-proxy"
 	KubeRBACProxyServicePortName = "https"
-	defaultKubeRBACProxyImage    = "quay.io/openshift/origin-kube-rbac-proxy:4.19"
+	defaultKubeRBACProxyImage    = "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable"
 )
 
 // Status types
