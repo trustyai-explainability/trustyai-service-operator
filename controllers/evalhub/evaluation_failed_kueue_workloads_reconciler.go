@@ -201,7 +201,7 @@ func isGPUResource(name string) bool {
 // failures from other admission failures without parsing structured data out of free-form text.
 func kueueConditionMentionsGPU(msg string) bool {
 	for _, field := range strings.Fields(msg) {
-		token := strings.Trim(field, ",.;:()[]{}")
+		token := strings.Trim(field, `",.;:()[]{}`)
 		// K8s extended resources are qualified names containing "/".
 		if strings.Contains(token, "/") && isGPUResource(token) {
 			return true
