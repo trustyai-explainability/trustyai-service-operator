@@ -276,8 +276,30 @@ func generateAuthConfigData() string {
                 apiGroup: trustyai.opendatahub.io
                 resource: status-events
                 verb: create
+    - path: /api/v1/evaluations/jobs/*
+      mappings:
+        - methods: [get, delete, put, patch]
+          resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: evaluations
+                verb: "{{.FromMethod}}"
     - path: /api/v1/evaluations/jobs
       mappings:
+        - methods: [get]
+          resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: evaluations
+                verb: list
         - methods: [post]
           resources:
             - rewrites:
@@ -304,19 +326,9 @@ func generateAuthConfigData() string {
                 apiGroup: mlflow.kubeflow.org
                 resource: experiments
                 verb: get
-        - methods: [get, delete, put, patch]
-          resources:
-            - rewrites:
-                byHttpHeader:
-                  name: X-Tenant
-              resourceAttributes:
-                namespace: "{{.FromHeader}}"
-                apiGroup: trustyai.opendatahub.io
-                resource: evaluations
-                verb: "{{.FromMethod}}"
-    - path: /api/v1/evaluations/collections
+    - path: /api/v1/evaluations/collections/*
       mappings:
-        - methods: [get, post, delete, put, patch]
+        - methods: [get, delete, put, patch]
           resources:
             - rewrites:
                 byHttpHeader:
@@ -326,9 +338,31 @@ func generateAuthConfigData() string {
                 apiGroup: trustyai.opendatahub.io
                 resource: collections
                 verb: "{{.FromMethod}}"
-    - path: /api/v1/evaluations/providers
+    - path: /api/v1/evaluations/collections
       mappings:
-        - methods: [get, post, delete, put, patch]
+        - methods: [get]
+          resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: collections
+                verb: list
+        - methods: [post]
+          resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: collections
+                verb: create
+    - path: /api/v1/evaluations/providers/*
+      mappings:
+        - methods: [get, delete, put, patch]
           resources:
             - rewrites:
                 byHttpHeader:
@@ -338,6 +372,28 @@ func generateAuthConfigData() string {
                 apiGroup: trustyai.opendatahub.io
                 resource: providers
                 verb: "{{.FromMethod}}"
+    - path: /api/v1/evaluations/providers
+      mappings:
+        - methods: [get]
+          resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: providers
+                verb: list
+        - methods: [post]
+          resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: providers
+                verb: create
 `
 }
 
