@@ -86,10 +86,8 @@ const (
 	sidecarBaseURL = "http://localhost:8080"
 
 	// MCP server configuration
-	defaultMCPImage      = "quay.io/evalhub/evalhub:latest"
-	configMapMCPImageKey = "evalHubMCPImage"
-	mcpBinaryPath        = "/app/evalhub-mcp"
-	mcpContainerName     = "evalhub-mcp"
+	mcpBinaryPath    = "/app/evalhub-mcp"
+	mcpContainerName = "evalhub-mcp"
 	// mcpAppPort is the evalhub-mcp listen port on loopback; kube-rbac-proxy terminates TLS on mcpServicePort.
 	mcpAppPort             = 8445
 	mcpServicePort         = 8443

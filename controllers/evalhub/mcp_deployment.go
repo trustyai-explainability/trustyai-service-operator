@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -82,10 +81,10 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 	image := mcpSpec.Image
 	if image == "" {
 		var err error
-		image, err = r.getMCPImage(ctx)
+		image, err = r.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
 		if err != nil {
-			log.FromContext(ctx).Error(err, "Error getting MCP image from ConfigMap, using default "+defaultMCPImage)
-			image = defaultMCPImage
+			log.FromContext(ctx).Error(err, "Error getting EvalHub image for MCP from ConfigMap, using default "+defaultEvalHubImage)
+			image = defaultEvalHubImage
 		}
 	}
 
@@ -315,14 +314,6 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 			},
 		},
 	}, nil
-}
-
-func (r *EvalHubReconciler) getMCPImage(ctx context.Context) (string, error) {
-	namespace := r.Namespace
-	if namespace == "" {
-		namespace = "trustyai-service-operator-system"
-	}
-	return utils.GetImageFromConfigMapWithFallback(ctx, r.Client, configMapMCPImageKey, configMapName, namespace, defaultMCPImage)
 }
 
 // deleteMCPResource deletes a namespaced resource if it exists.
