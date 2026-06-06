@@ -131,7 +131,6 @@ func createConfigMap(name, namespace string) *corev1.ConfigMap {
 		},
 		Data: map[string]string{
 			"evalHubImage":    "quay.io/ruimvieira/eval-hub:test",
-			"evalHubMCPImage": "quay.io/evalhub/evalhub-mcp:test",
 			"kube-rbac-proxy": "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable",
 		},
 	}
@@ -205,7 +204,6 @@ func setupReconciler(namespace string) (*EvalHubReconciler, context.Context) {
 		},
 		Data: map[string]string{
 			configMapEvalHubImageKey:       "quay.io/evalhub/evalhub:test",
-			configMapMCPImageKey:           "quay.io/evalhub/evalhub:test",
 			configMapKubeRBACProxyImageKey: "quay.io/openshift/origin-kube-rbac-proxy:4.19",
 		},
 	}
