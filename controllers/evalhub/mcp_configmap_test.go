@@ -41,7 +41,10 @@ var _ = Describe("generateMCPConfigData", func() {
 			Expect(cfg.Port).To(Equal(mcpAppPort))
 
 			Expect(data).To(HaveKey(evalHubAuthConfigMapKey))
-			Expect(data[evalHubAuthConfigMapKey]).To(ContainSubstring("evalhubs"))
+			auth := data[evalHubAuthConfigMapKey]
+			Expect(auth).To(ContainSubstring("evalhubs"))
+			Expect(auth).To(ContainSubstring("methods: [get]"))
+			Expect(auth).To(ContainSubstring("methods: [post]"))
 		})
 	})
 

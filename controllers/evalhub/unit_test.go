@@ -2099,3 +2099,21 @@ func TestEvalHubReconciler_reconcileServiceMonitor_NoOpUpdate(t *testing.T) {
 	assert.Equal(t, 0, smUpdateCount,
 		"reconcileServiceMonitor should not update when spec is unchanged")
 }
+
+func TestGenerateMCPAuthConfigData_MethodsPresent(t *testing.T) {
+	instance := &evalhubv1alpha1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{Name: "eh", Namespace: "team-a"},
+	}
+	out := generateMCPAuthConfigData(instance)
+
+	// kube-rbac-proxy rejects mappings without an explicit methods list.
+	assert.Contains(t, out, "methods: [get]", "GET mapping must declare methods")
+	assert.Contains(t, out, "methods: [post]", "POST mapping must declare methods")
+	assert.Contains(t, out, "evalhubs")
+	assert.Contains(t, out, "team-a")
+	assert.Contains(t, out, "eh")
+
+	// Validate the generated YAML is parseable.
+	var parsed map[string]interface{}
+	require.NoError(t, yaml.Unmarshal([]byte(out), &parsed), "auth.yaml must be valid YAML")
+}
