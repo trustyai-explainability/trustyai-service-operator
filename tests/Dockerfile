@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi8:8.10-1020
+FROM registry.access.redhat.com/ubi9/ubi:latest
 ARG OC_CLI_URL=https://mirror.openshift.com/pub/openshift-v4/amd64/clients/ocp/4.14.33/openshift-client-linux.tar.gz
 ARG TRUSTYAI_TESTS_ORG=trustyai-explainability
 ARG TRUSTYAI_TESTS_REPO=trustyai-tests
@@ -33,7 +33,7 @@ RUN wget -O installandtest.sh "https://raw.githubusercontent.com/trustyai-explai
     cp installandtest.sh $HOME/peak
 
 # Install poetry to support the exeuction of trustyai-tests
-RUN curl -sSL https://install.python-poetry.org | python3 -
+RUN curl -sSL https://install.python-poetry.org | python3.11 -
 ENV PATH="${PATH}:$HOME/.local/bin"
 
 # break cache if the repo has changed
@@ -41,6 +41,7 @@ ADD https://api.github.com/repos/${TRUSTYAI_TESTS_ORG}/${TRUSTYAI_TESTS_REPO}/gi
 RUN cd $HOME/peak && \
     git clone -b ${TRUSTYAI_TESTS_BRANCH} https://github.com/${TRUSTYAI_TESTS_ORG}/${TRUSTYAI_TESTS_REPO}.git && \
     cd trustyai-tests && \
+    poetry env use python3.11 && \
     poetry install
 
 
