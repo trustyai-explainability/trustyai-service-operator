@@ -23,14 +23,13 @@ import (
 	workloadv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	"sigs.k8s.io/kueue/pkg/controller/jobframework"
 	"sigs.k8s.io/kueue/pkg/podset"
 )
@@ -53,12 +52,17 @@ func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.
 		return fmt.Errorf("workload indexer: %w", err)
 	}
 	lmes.JobMgrEnabled = true
-	return jobframework.NewGenericReconcilerFactory(
+	factory := jobframework.NewGenericReconcilerFactory(
 		func() jobframework.GenericJob { return &LMEvalJob{} },
 		func(b *builder.Builder, c client.Client) *builder.Builder {
 			return b.Named("LMEvalJobWorkload")
 		},
-	)(mgr.GetClient(), mgr.GetEventRecorderFor("kueue")).SetupWithManager(mgr)
+	)
+	reconciler, err := factory(ctx, mgr.GetClient(), mgr.GetFieldIndexer(), mgr.GetEventRecorderFor("kueue"))
+	if err != nil {
+		return fmt.Errorf("job manager reconciler: %w", err)
+	}
+	return reconciler.SetupWithManager(mgr)
 
 }
 
@@ -77,7 +81,7 @@ func (job *LMEvalJob) Suspend() {
 }
 
 // RunWithPodSetsInfo will inject the node affinity and podSet counts extracting from workload to job and unsuspend it.
-func (job *LMEvalJob) RunWithPodSetsInfo(podSetsInfo []podset.PodSetInfo) error {
+func (job *LMEvalJob) RunWithPodSetsInfo(_ context.Context, podSetsInfo []podset.PodSetInfo) error {
 	job.Spec.Pod.Affinity = convertToAffinity(podSetsInfo)
 	job.Spec.Suspend = false
 	return nil
@@ -93,27 +97,16 @@ func (job *LMEvalJob) RestorePodSetsInfo(podSetsInfo []podset.PodSetInfo) bool {
 // Finished means whether the job is completed/failed or not,
 // condition represents the workload finished condition.
 
-func (job *LMEvalJob) Finished() (condition metav1.Condition, finished bool) {
-	// ToDos: What should be in the condition and how will it be used?
-	condition = metav1.Condition{
-		Type:    "Finished",
-		Status:  "False",
-		Reason:  string(job.Status.Reason),
-		Message: job.Status.Message,
-	}
-	finished = false
-
+func (job *LMEvalJob) Finished(_ context.Context) (message string, success, finished bool) {
 	if job.Status.State == workloadv1alpha1.CompleteJobState {
-		condition.Status = "True"
-		finished = true
-		return
+		return job.Status.Message, true, true
 	}
-	return
+	return job.Status.Message, false, false
 }
 
 // PodSets will build workload podSets corresponding to the job.
-func (job *LMEvalJob) PodSets() []kueue.PodSet {
-	log := log.FromContext(context.TODO())
+func (job *LMEvalJob) PodSets(ctx context.Context) ([]kueue.PodSet, error) {
+	log := log.FromContext(ctx)
 	// Use global Options permissions for job manager.
 	// This will be updated before every job deployment.
 	permConfig := &lmes.PermissionConfig{
@@ -122,13 +115,11 @@ func (job *LMEvalJob) PodSets() []kueue.PodSet {
 	}
 	pod := lmes.CreatePod(lmes.Options, &job.LMEvalJob, permConfig, nil, "", log)
 	podSet := kueue.PodSet{
-		Name:     job.GetPodName(),
+		Name:     kueue.PodSetReference(job.GetPodName()),
 		Count:    1,
 		Template: corev1.PodTemplateSpec{Spec: pod.Spec},
 	}
-	podSets := []kueue.PodSet{}
-	podSets = append(podSets, podSet)
-	return podSets
+	return []kueue.PodSet{podSet}, nil
 }
 
 // IsActive returns true if there are any running pods.
@@ -141,12 +132,8 @@ func (job *LMEvalJob) IsActive() bool {
 }
 
 // PodsReady instructs whether job derived pods are all ready now.
-func (job *LMEvalJob) PodsReady() bool {
-	if job.Status.State == workloadv1alpha1.ScheduledJobState {
-		return true
-	} else {
-		return false
-	}
+func (job *LMEvalJob) PodsReady(_ context.Context) bool {
+	return job.Status.State == workloadv1alpha1.ScheduledJobState
 }
 
 // GVK returns GVK (Group Version Kind) for the job.

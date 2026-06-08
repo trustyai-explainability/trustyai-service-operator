@@ -128,15 +128,15 @@ type tenantNamespaceSync struct {
 	t *evalHubTenantNamespaces
 }
 
-var _ handler.EventHandler = (*tenantNamespaceSync)(nil)
+var _ handler.TypedEventHandler[client.Object, reconcile.Request] = (*tenantNamespaceSync)(nil)
 
-func (h *tenantNamespaceSync) Create(ctx context.Context, e event.CreateEvent, _ workqueue.RateLimitingInterface) {
+func (h *tenantNamespaceSync) Create(ctx context.Context, e event.CreateEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	if ns, ok := e.Object.(*corev1.Namespace); ok && namespaceCarriesTenantLabel(ns) {
 		h.t.Add(ns.Name)
 	}
 }
 
-func (h *tenantNamespaceSync) Update(ctx context.Context, e event.UpdateEvent, _ workqueue.RateLimitingInterface) {
+func (h *tenantNamespaceSync) Update(ctx context.Context, e event.UpdateEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	oldNs, okOld := e.ObjectOld.(*corev1.Namespace)
 	newNs, okNew := e.ObjectNew.(*corev1.Namespace)
 	if !okOld || !okNew {
@@ -150,13 +150,13 @@ func (h *tenantNamespaceSync) Update(ctx context.Context, e event.UpdateEvent, _
 	}
 }
 
-func (h *tenantNamespaceSync) Delete(ctx context.Context, e event.DeleteEvent, _ workqueue.RateLimitingInterface) {
+func (h *tenantNamespaceSync) Delete(ctx context.Context, e event.DeleteEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	if e.Object != nil {
 		h.t.Remove(e.Object.GetName())
 	}
 }
 
-func (h *tenantNamespaceSync) Generic(ctx context.Context, e event.GenericEvent, _ workqueue.RateLimitingInterface) {
+func (h *tenantNamespaceSync) Generic(ctx context.Context, e event.GenericEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 }
 
 // registerEvalHubEvaluationJobFailureController registers the batch Job–centric failure sync reconciler.
