@@ -13,7 +13,8 @@ const (
 	defaultEvalHubImage = "quay.io/evalhub/evalhub:latest"
 
 	// Container configuration
-	containerName = "evalhub"
+	containerName            = "evalhub"
+	evalHubAuthTypeRBACProxy = "rbac-proxy"
 	// evalHubAppPort is the eval-hub container listen port on loopback (API_HOST=127.0.0.1, PORT in deployment env).
 	// kube-rbac-proxy upstream is http://127.0.0.1:<evalHubAppPort>/ on the pod network (TLS is terminated on servicePort).
 	evalHubAppPort = 8444

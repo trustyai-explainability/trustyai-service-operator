@@ -113,6 +113,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 		Expect(container.Name).To(Equal(containerName))
 		Expect(container.Image).To(Equal("quay.io/test/eval-hub:v1.2.3"))
 		Expect(container.ImagePullPolicy).To(Equal(corev1.PullAlways))
+		Expect(container.Args).To(Equal([]string{"--auth-type", evalHubAuthTypeRBACProxy}))
 
 		Expect(container.Ports).To(HaveLen(1))
 		Expect(container.Ports[0].Name).To(Equal("evalhub"))

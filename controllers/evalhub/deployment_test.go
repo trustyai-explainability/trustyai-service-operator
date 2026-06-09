@@ -128,6 +128,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			By("Checking evalhub container configuration")
 			Expect(evalHubContainer.Image).To(Equal("quay.io/ruimvieira/eval-hub:test")) // From test configmap
 			Expect(evalHubContainer.ImagePullPolicy).To(Equal(corev1.PullAlways))
+			Expect(evalHubContainer.Args).To(Equal([]string{"--auth-type", evalHubAuthTypeRBACProxy}))
 
 			// Check ports (loopback app port; Service targets kube-rbac-proxy on 8443)
 			Expect(evalHubContainer.Ports).To(HaveLen(1))
@@ -619,6 +620,7 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 
 		Expect(evalHubC.Image).To(Equal("quay.io/test/eval-hub:latest"))
 		Expect(evalHubC.ImagePullPolicy).To(Equal(corev1.PullAlways))
+		Expect(evalHubC.Args).To(Equal([]string{"--auth-type", evalHubAuthTypeRBACProxy}))
 		Expect(evalHubC.Ports).To(HaveLen(1))
 		Expect(evalHubC.Ports[0].Name).To(Equal("evalhub"))
 		Expect(evalHubC.Ports[0].ContainerPort).To(Equal(int32(evalHubAppPort)))

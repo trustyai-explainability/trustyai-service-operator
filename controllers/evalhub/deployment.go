@@ -181,6 +181,9 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		Name:            containerName,
 		Image:           evalHubImage,
 		ImagePullPolicy: corev1.PullAlways,
+		Args: []string{
+			"--auth-type", evalHubAuthTypeRBACProxy,
+		},
 		Ports: []corev1.ContainerPort{
 			{
 				Name:          "evalhub",
