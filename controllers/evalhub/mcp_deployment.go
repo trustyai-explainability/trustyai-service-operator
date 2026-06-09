@@ -157,6 +157,7 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 			"--transport", clientTransport,
 			"--host", "127.0.0.1",
 			"--port", strconv.Itoa(mcpAppPort),
+			"--auth-type", "rbac-proxy", // when running here we are always behind the kube-rbac-proxy
 		},
 		Ports: []corev1.ContainerPort{
 			{
