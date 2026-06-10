@@ -1,4 +1,4 @@
-name: Tier 2 - Operator Chaos
+name: Tier 2 - Shift-left Upgrade Validation
 
 on:
   pull_request:
@@ -18,7 +18,7 @@ env:
 
 jobs:
   operator-chaos:
-    name: Tier 2 - Operator Chaos
+    name: Operator Chaos
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
