@@ -13,7 +13,7 @@ spec:
     webhook:
       clientConfig:
         service:
-          name: trustyai-service-operator-webhook-service
+          name: webhook-service
           namespace: system
           path: /convert
       conversionReviewVersions:
