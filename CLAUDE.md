@@ -197,4 +197,18 @@ GitHub Actions in `.github/workflows/`:
 - `lint-yaml.yaml` — yamllint on `config/**/*.yaml`
 - `gosec.yaml` — security scanning (SARIF output)
 - `smoke.yaml` — smoke tests
+- `operator-chaos.yml` — shift-left upgrade validation (L1: knowledge model + CRD diff)
 - `.dependabot.yml` — auto-updates Go deps
+
+## Shift-left Upgrade Validation (operator-chaos)
+
+L1 integration using [operator-chaos](https://github.com/opendatahub-io/operator-chaos). Catches breaking CRD schema changes and knowledge model regressions at PR time without a cluster.
+
+```text
+chaos/knowledge/trustyai.yaml   # Knowledge model (operator control plane topology)
+.github/workflows/operator-chaos.yml  # GHA workflow
+```
+
+The knowledge model covers the **operator control plane only** — the Deployment, RBAC, ServiceAccount, leader election, and ServiceMonitor. Per-CR workloads (TrustyAIService instances, EvalHub instances, etc.) are dynamic user-created resources and are not modelled.
+
+When modifying CRDs (`api/` types → `make manifests`) or RBAC/manager resources, the workflow automatically validates that no breaking changes are introduced. Update `chaos/knowledge/trustyai.yaml` whenever the operator's own managed resources change (new RBAC roles, renamed resources, etc.).
