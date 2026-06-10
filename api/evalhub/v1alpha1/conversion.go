@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
 	v1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/conversion"
 )
@@ -15,9 +16,9 @@ func (src *EvalHub) ConvertTo(dstRaw conversion.Hub) error {
 
 	// Spec
 	dst.Spec.Replicas = src.Spec.Replicas
-	dst.Spec.Env = src.Spec.Env
-	dst.Spec.Providers = src.Spec.Providers
-	dst.Spec.Collections = src.Spec.Collections
+	dst.Spec.Env = deepCopyEnvVars(src.Spec.Env)
+	dst.Spec.Providers = copyStrings(src.Spec.Providers)
+	dst.Spec.Collections = copyStrings(src.Spec.Collections)
 
 	if src.Spec.Database != nil {
 		dst.Spec.Database = &v1.DatabaseSpec{
@@ -42,12 +43,12 @@ func (src *EvalHub) ConvertTo(dstRaw conversion.Hub) error {
 
 	if src.Spec.MCP != nil {
 		dst.Spec.MCP = &v1.EvalHubMCPSpec{
-			Enabled:          src.Spec.MCP.Enabled,
-			Replicas:         src.Spec.MCP.Replicas,
+			Enabled:          copyBoolPtr(src.Spec.MCP.Enabled),
+			Replicas:         copyInt32Ptr(src.Spec.MCP.Replicas),
 			Transport:        src.Spec.MCP.Transport,
 			EvalHubTransport: src.Spec.MCP.EvalHubTransport,
-			Env:              src.Spec.MCP.Env,
-			Resources:        src.Spec.MCP.Resources,
+			Env:              deepCopyEnvVars(src.Spec.MCP.Env),
+			Resources:        *src.Spec.MCP.Resources.DeepCopy(),
 			Image:            src.Spec.MCP.Image,
 			AuthSecret:       src.Spec.MCP.AuthSecret,
 		}
@@ -59,8 +60,8 @@ func (src *EvalHub) ConvertTo(dstRaw conversion.Hub) error {
 	dst.Status.ReadyReplicas = src.Status.ReadyReplicas
 	dst.Status.Ready = src.Status.Ready
 	dst.Status.URL = src.Status.URL
-	dst.Status.ActiveProviders = src.Status.ActiveProviders
-	dst.Status.ActiveCollections = src.Status.ActiveCollections
+	dst.Status.ActiveProviders = copyStrings(src.Status.ActiveProviders)
+	dst.Status.ActiveCollections = copyStrings(src.Status.ActiveCollections)
 	dst.Status.LastUpdateTime = src.Status.LastUpdateTime.DeepCopy()
 
 	dst.Status.Conditions = make([]common.Condition, len(src.Status.Conditions))
@@ -95,9 +96,9 @@ func (dst *EvalHub) ConvertFrom(srcRaw conversion.Hub) error {
 
 	// Spec
 	dst.Spec.Replicas = src.Spec.Replicas
-	dst.Spec.Env = src.Spec.Env
-	dst.Spec.Providers = src.Spec.Providers
-	dst.Spec.Collections = src.Spec.Collections
+	dst.Spec.Env = deepCopyEnvVars(src.Spec.Env)
+	dst.Spec.Providers = copyStrings(src.Spec.Providers)
+	dst.Spec.Collections = copyStrings(src.Spec.Collections)
 
 	if src.Spec.Database != nil {
 		dst.Spec.Database = &DatabaseSpec{
@@ -122,12 +123,12 @@ func (dst *EvalHub) ConvertFrom(srcRaw conversion.Hub) error {
 
 	if src.Spec.MCP != nil {
 		dst.Spec.MCP = &EvalHubMCPSpec{
-			Enabled:          src.Spec.MCP.Enabled,
-			Replicas:         src.Spec.MCP.Replicas,
+			Enabled:          copyBoolPtr(src.Spec.MCP.Enabled),
+			Replicas:         copyInt32Ptr(src.Spec.MCP.Replicas),
 			Transport:        src.Spec.MCP.Transport,
 			EvalHubTransport: src.Spec.MCP.EvalHubTransport,
-			Env:              src.Spec.MCP.Env,
-			Resources:        src.Spec.MCP.Resources,
+			Env:              deepCopyEnvVars(src.Spec.MCP.Env),
+			Resources:        *src.Spec.MCP.Resources.DeepCopy(),
 			Image:            src.Spec.MCP.Image,
 			AuthSecret:       src.Spec.MCP.AuthSecret,
 		}
@@ -139,8 +140,8 @@ func (dst *EvalHub) ConvertFrom(srcRaw conversion.Hub) error {
 	dst.Status.ReadyReplicas = src.Status.ReadyReplicas
 	dst.Status.Ready = src.Status.Ready
 	dst.Status.URL = src.Status.URL
-	dst.Status.ActiveProviders = src.Status.ActiveProviders
-	dst.Status.ActiveCollections = src.Status.ActiveCollections
+	dst.Status.ActiveProviders = copyStrings(src.Status.ActiveProviders)
+	dst.Status.ActiveCollections = copyStrings(src.Status.ActiveCollections)
 	dst.Status.LastUpdateTime = src.Status.LastUpdateTime.DeepCopy()
 
 	dst.Status.Conditions = make([]common.Condition, len(src.Status.Conditions))
@@ -165,4 +166,40 @@ func (dst *EvalHub) ConvertFrom(srcRaw conversion.Hub) error {
 	}
 
 	return nil
+}
+
+func copyStrings(s []string) []string {
+	if s == nil {
+		return nil
+	}
+	out := make([]string, len(s))
+	copy(out, s)
+	return out
+}
+
+func deepCopyEnvVars(envs []corev1.EnvVar) []corev1.EnvVar {
+	if envs == nil {
+		return nil
+	}
+	out := make([]corev1.EnvVar, len(envs))
+	for i := range envs {
+		out[i] = *envs[i].DeepCopy()
+	}
+	return out
+}
+
+func copyBoolPtr(p *bool) *bool {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
+func copyInt32Ptr(p *int32) *int32 {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
 }
