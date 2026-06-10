@@ -8,7 +8,9 @@ The TrustyAI Service Operator is a Kubernetes operator that manages the lifecycl
 
 Built with kubebuilder v4 and controller-runtime v0.17.0 in Go 1.24, the operator uses a plugin-based architecture where controllers are selectively enabled via a startup flag (`--enable-services`). Each controller watches its own CRD and reconciles the desired state by creating Deployments, Services, Routes, ConfigMaps, RBAC resources, and monitoring infrastructure.
 
-The operator integrates with KServe (optional) for inference service patching, Kueue for job queuing, Prometheus for monitoring, and OpenShift for route/TLS management. It is deployed via Kustomize with environment-specific overlays (ODH, RHOAI, single-service modes).
+The operator supports a **modular architecture** where the ODH platform orchestrator deploys the operator, creates a cluster-scoped `TrustyAI` module CR (`components.platform.opendatahub.io/v1alpha1`), and aggregates its health status. The module CR is separate from the workload CRDs — it represents the operator's lifecycle, not individual workloads. Image references are resolved from `RELATED_IMAGE_*` env vars (injected by the platform) with fallback to the operator ConfigMap.
+
+The operator integrates with KServe (optional) for inference service patching, Kueue for job queuing, Prometheus for monitoring, and OpenShift for route/TLS management. It is deployed via Kustomize with environment-specific overlays (ODH, RHOAI, single-service modes) or via a Helm chart in modular mode.
 
 ## Context Diagram
 
@@ -23,7 +25,11 @@ flowchart TB
     cicd -->|"submits LMEvalJobs"| operator
 
     subgraph ocp["OpenShift / Kubernetes Cluster"]
+        odh["ODH Platform Operator\n(orchestrator)"]
+        odh -->|"deploys operator,\ncreates TrustyAI module CR,\ninjects RELATED_IMAGE_* env vars"| operator
+
         operator["TrustyAI Service Operator"]
+        operator -->|"reports status on\nmodule CR"| odh
 
         operator -->|"watches/creates"| k8s["Kubernetes API Server"]
         operator -->|"patches InferenceServices"| kserve["KServe (optional)"]
@@ -101,6 +107,10 @@ flowchart LR
     subgraph controllers["controllers/"]
         registry["controllers.go\n(service registry,\nSetupControllers)"]
 
+        subgraph module_ctrl["module/"]
+            module_rec["Reconciler\n(module CR lifecycle,\nstatus aggregation)"]
+        end
+
         subgraph tas_ctrl["tas/"]
             tas_rec["TrustyAIServiceReconciler"]
             tas_isvc["inference_services.go\n(KServe patching)"]
@@ -135,6 +145,7 @@ flowchart LR
             job_mgr_rec["JobManagerReconciler\n(Kueue integration)"]
         end
 
+        images_pkg["images/\n(RELATED_IMAGE resolver)"]
         utils["utils/\n(shared helpers)"]
         constants["constants/"]
         metrics["metrics/\n(Prometheus counters)"]
@@ -142,6 +153,7 @@ flowchart LR
     end
 
     subgraph api["api/"]
+        module_types["module/v1alpha1\nTrustyAI (module CR)"]
         tas_types["tas/v1, v1alpha1\nTrustyAIService"]
         lmes_types["lmes/v1alpha1\nLMEvalJob"]
         evalhub_types["evalhub/v1alpha1\nEvalHub"]
@@ -151,6 +163,7 @@ flowchart LR
     end
 
     main --> registry
+    main --> module_rec
     registry --> tas_rec
     registry --> lmes_rec
     registry --> evalhub_rec
@@ -374,10 +387,11 @@ sequenceDiagram
 - **Dynamic controller registration via `init()`**: Each service registers its setup function at import time. The `--enable-services` flag selects which controllers to start. This allows a single binary to serve multiple deployment profiles without conditional compilation.
 - **Component-based Kustomize**: Services are modelled as Kustomize Components, enabling mix-and-match RBAC and CRD inclusion per overlay without duplication.
 - **Cache disabled for high-churn resources**: ConfigMaps, Secrets, Pods, and Services bypass the informer cache to prevent OOM in large clusters. The ~50ms direct-read latency is acceptable for these infrequent lookups.
-- **ConfigMap-driven operator configuration**: All image references and runtime parameters live in a ConfigMap (`trustyai-service-operator-config`), not hardcoded. Overlays swap the ConfigMap contents per environment.
+- **Dual-source image resolution**: Image references are resolved via `RELATED_IMAGE_*` environment variables first (injected by the ODH platform in modular mode), falling back to the operator ConfigMap (`trustyai-service-operator-config`). The `controllers/images/` package provides `Resolve()` and `ResolveWithFallback()` for this. Runtime parameters (non-image settings) remain ConfigMap-only.
 - **Finalizer-based cleanup**: Every controller uses finalizers to ensure child resources (PVCs, ConfigMaps, Routes, RBAC bindings) are properly cleaned up on CR deletion.
 - **Pod-based evaluation (LMES)**: LMEvalJobs run as Pods (not Jobs) with a driver sidecar for status reporting. This gives the controller direct exec access for progress monitoring and supports Kueue's suspend/resume semantics.
 - **Tenant namespace model (EvalHub)**: EvalHub creates job ServiceAccounts in labeled tenant namespaces, allowing multi-tenant evaluation workloads with scoped RBAC.
+- **Modular architecture support**: The operator can run as a standalone module operator managed by the ODH platform orchestrator. A cluster-scoped singleton module CR (`components.platform.opendatahub.io/v1alpha1 TrustyAI`, name `default`) represents the operator's lifecycle and health. The platform creates this CR and reads its status; the operator reconciles it and reports aggregated health via standard conditions (Ready, ProvisioningSucceeded, Degraded). Namespace detection checks the `APPLICATIONS_NAMESPACE` env var (set by the platform) before the in-cluster service account file.
 
 ## Deployment
 
@@ -441,6 +455,7 @@ trustyai-service-operator/
 │   └── lmes_driver/               # Driver binary for LMES pod execution
 ├── api/
 │   ├── common/                    # Shared types (Condition)
+│   ├── module/v1alpha1/           # TrustyAI module CR (components.platform.opendatahub.io)
 │   ├── tas/v1/                    # TrustyAIService v1 (storage version)
 │   ├── tas/v1alpha1/              # TrustyAIService v1alpha1 (deprecated)
 │   ├── lmes/v1alpha1/             # LMEvalJob types
@@ -449,6 +464,8 @@ trustyai-service-operator/
 │   └── nemo_guardrails/v1alpha1/  # NemoGuardrails types
 ├── controllers/
 │   ├── controllers.go             # Service registry (init-based registration)
+│   ├── images/                    # Image resolution (RELATED_IMAGE env vars + ConfigMap fallback)
+│   ├── module/                    # Module CR reconciler (status aggregation, finalizer)
 │   ├── tas/                       # TAS reconciler (KServe, TLS, storage)
 │   ├── lmes/                      # LMES reconciler (pod lifecycle, state machine)
 │   ├── evalhub/                   # EvalHub reconciler (providers, tenants, DB)

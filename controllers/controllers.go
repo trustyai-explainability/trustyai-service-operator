@@ -19,10 +19,13 @@ package controllers
 import (
 	"errors"
 	"fmt"
-	"k8s.io/client-go/tools/record"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"slices"
 	"strings"
+
+	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+
+	modulecontroller "github.com/trustyai-explainability/trustyai-service-operator/controllers/module"
 )
 
 // to set up a controller. may include webhook or not
@@ -44,12 +47,24 @@ func registerService(name string, setupf ControllerSetupFunc) {
 	AllTasServices = append(AllTasServices, name)
 }
 
-func SetupControllers(enabledServices []string, mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) error {
+// SetupControllers initialises all enabled service controllers and returns
+// health checkers that track whether each one started successfully.
+func SetupControllers(enabledServices []string, mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) ([]*modulecontroller.RunningServiceChecker, error) {
 	var errs []error
+	var checkers []*modulecontroller.RunningServiceChecker
+
 	for _, service := range enabledServices {
-		errs = append(errs, TasServices[service](mgr, ns, configmap, recorder))
+		hc := modulecontroller.NewRunningServiceChecker(service)
+		if err := TasServices[service](mgr, ns, configmap, recorder); err != nil {
+			hc.SetFailed(err.Error())
+			errs = append(errs, err)
+		} else {
+			hc.SetRunning()
+		}
+		checkers = append(checkers, hc)
 	}
-	return errors.Join(errs...)
+
+	return checkers, errors.Join(errs...)
 }
 
 func (es *EnabledServices) Set(services string) error {

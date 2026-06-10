@@ -9,6 +9,7 @@ import (
 
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/nemo_guardrails/templates"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
@@ -39,7 +40,7 @@ func GetRBACConfigName(nemoGuardrails nemoguardrailsv1alpha1.NemoGuardrails) str
 // setAuthConfig will create a KubeRBACProxyConfig inside the DeploymentConfig for use in template parsing
 func (r *NemoGuardrailsReconciler) setAuthConfig(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, deploymentConfig *DeploymentConfig) error {
 	// ==== get kube-rbac-proxy image from trustyai configmap ===========================================================
-	authImage, err := utils.GetImageFromConfigMap(ctx, r.Client, configMapKubeRBACProxyImageKey, constants.ConfigMap, r.Namespace)
+	authImage, err := images.Resolve(ctx, r.Client, configMapKubeRBACProxyImageKey, constants.ConfigMap, r.Namespace)
 	if err != nil {
 		utils.LogErrorRetrieving(ctx, err, "oauth image from configmap", constants.ConfigMap, r.Namespace)
 		return err
@@ -150,7 +151,7 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 	var containerImages ContainerImages
 
 	// ==== get nemo guardrails image from trustyai configmap ===========================================================
-	nemoGuardrailsImage, err := utils.GetImageFromConfigMap(ctx, r.Client, nemoGuardrailsImageKey, constants.ConfigMap, r.Namespace)
+	nemoGuardrailsImage, err := images.Resolve(ctx, r.Client, nemoGuardrailsImageKey, constants.ConfigMap, r.Namespace)
 	if err != nil {
 		utils.LogErrorRetrieving(ctx, err, "nemo-guardrails image from configmap", constants.ConfigMap, r.Namespace)
 		return nil, err

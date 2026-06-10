@@ -49,8 +49,13 @@ func AllTrue(array []bool) bool {
 	return true
 }
 
-// GetNamespace returns the namespace of the pod.
+// GetNamespace returns the operator's namespace. It checks (in order):
+//  1. APPLICATIONS_NAMESPACE env var (set by the platform in modular mode)
+//  2. The in-cluster service account namespace file
 func GetNamespace() (string, error) {
+	if ns := os.Getenv("APPLICATIONS_NAMESPACE"); ns != "" {
+		return ns, nil
+	}
 	ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 	if err != nil {
 		return "", err

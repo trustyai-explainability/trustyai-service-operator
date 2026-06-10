@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trustyai-service-operator-config
+  namespace: {{ .Values.operatorNamespace }}
+  labels:
+    {{- include "trustyai.labels" . | nindent 4 }}
+data:
+  kServeServerless: {{ .Values.config.kServeServerless | quote }}
+  lmes-pod-checking-interval: {{ .Values.config.lmesPodCheckingInterval | quote }}
+  lmes-image-pull-policy: {{ .Values.config.lmesImagePullPolicy | quote }}
+  lmes-max-batch-size: {{ .Values.config.lmesMaxBatchSize | quote }}
+  lmes-default-batch-size: {{ .Values.config.lmesDefaultBatchSize | quote }}
+  lmes-detect-device: {{ .Values.config.lmesDetectDevice | quote }}
+  lmes-allow-online: {{ .Values.config.lmesAllowOnline | quote }}
+  lmes-allow-code-execution: {{ .Values.config.lmesAllowCodeExecution | quote }}

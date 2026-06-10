@@ -1,0 +1,6 @@
+apiVersion: v2
+name: trustyai
+description: TrustyAI module operator for ODH/RHOAI modular architecture
+type: application
+version: 0.1.0
+appVersion: "1.39.0"
