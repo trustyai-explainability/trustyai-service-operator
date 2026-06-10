@@ -62,6 +62,7 @@ func TestBuildMCPDeploymentSpec_envAndArgs(t *testing.T) {
 		"--transport", "http",
 		"--host", "127.0.0.1",
 		"--port", "8445",
+		"--auth-type", "rbac-proxy",
 	}, mcpC.Args)
 	assert.Nil(t, mcpC.LivenessProbe)
 	assert.Nil(t, mcpC.ReadinessProbe)
