@@ -1,4 +1,4 @@
-name: Operator Chaos
+name: Tier 2 - Operator Chaos
 
 on:
   pull_request:
@@ -18,7 +18,7 @@ env:
 
 jobs:
   operator-chaos:
-    name: Operator Chaos
+    name: Tier 2 - Operator Chaos
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
