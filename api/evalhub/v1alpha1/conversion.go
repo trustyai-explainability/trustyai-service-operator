@@ -62,7 +62,9 @@ func (src *EvalHub) ConvertTo(dstRaw conversion.Hub) error {
 	dst.Status.URL = src.Status.URL
 	dst.Status.ActiveProviders = copyStrings(src.Status.ActiveProviders)
 	dst.Status.ActiveCollections = copyStrings(src.Status.ActiveCollections)
-	dst.Status.LastUpdateTime = src.Status.LastUpdateTime.DeepCopy()
+	if src.Status.LastUpdateTime != nil {
+		dst.Status.LastUpdateTime = src.Status.LastUpdateTime.DeepCopy()
+	}
 
 	dst.Status.Conditions = make([]common.Condition, len(src.Status.Conditions))
 	for i, c := range src.Status.Conditions {
@@ -142,7 +144,9 @@ func (dst *EvalHub) ConvertFrom(srcRaw conversion.Hub) error {
 	dst.Status.URL = src.Status.URL
 	dst.Status.ActiveProviders = copyStrings(src.Status.ActiveProviders)
 	dst.Status.ActiveCollections = copyStrings(src.Status.ActiveCollections)
-	dst.Status.LastUpdateTime = src.Status.LastUpdateTime.DeepCopy()
+	if src.Status.LastUpdateTime != nil {
+		dst.Status.LastUpdateTime = src.Status.LastUpdateTime.DeepCopy()
+	}
 
 	dst.Status.Conditions = make([]common.Condition, len(src.Status.Conditions))
 	for i, c := range src.Status.Conditions {
