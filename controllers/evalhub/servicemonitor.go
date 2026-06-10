@@ -4,7 +4,7 @@ import (
 	"context"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,11 +32,11 @@ func (r *EvalHubReconciler) isServiceMonitorSupported() bool {
 	return err == nil
 }
 
-func serviceMonitorName(instance *evalhubv1alpha1.EvalHub) string {
+func serviceMonitorName(instance *evalhubv1.EvalHub) string {
 	return instance.Name + "-metrics"
 }
 
-func (r *EvalHubReconciler) buildServiceMonitor(instance *evalhubv1alpha1.EvalHub) *monitoringv1.ServiceMonitor {
+func (r *EvalHubReconciler) buildServiceMonitor(instance *evalhubv1.EvalHub) *monitoringv1.ServiceMonitor {
 	labels := map[string]string{
 		"app":       "eval-hub",
 		"component": "api",
@@ -88,7 +88,7 @@ func (r *EvalHubReconciler) buildServiceMonitor(instance *evalhubv1alpha1.EvalHu
 // The ServiceMonitor spec is fully derived from immutable CR fields (name, namespace),
 // so it is created once and never updated in place. If the CR is deleted, the
 // ServiceMonitor is garbage-collected via its owner reference.
-func (r *EvalHubReconciler) reconcileServiceMonitor(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+func (r *EvalHubReconciler) reconcileServiceMonitor(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
 	log.Info("Reconciling ServiceMonitor", "name", serviceMonitorName(instance))
 

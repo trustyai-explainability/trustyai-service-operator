@@ -3,7 +3,7 @@ package evalhub
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 )
@@ -16,12 +16,12 @@ var _ = Describe("GenerateMCPConfigData", func() {
 	})
 
 	It("defaults MCP transport to http in flat config", func() {
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-evalhub",
 				Namespace: "test-namespace",
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{},
+			Spec: evalhubv1.EvalHubSpec{},
 		}
 		data, err := r.generateMCPConfigData(evalHub)
 		Expect(err).NotTo(HaveOccurred())
@@ -33,13 +33,13 @@ var _ = Describe("GenerateMCPConfigData", func() {
 	})
 
 	It("uses explicit transport from MCP spec", func() {
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-evalhub",
 				Namespace: "test-namespace",
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{
-				MCP: &evalhubv1alpha1.EvalHubMCPSpec{Transport: "http-sse"},
+			Spec: evalhubv1.EvalHubSpec{
+				MCP: &evalhubv1.EvalHubMCPSpec{Transport: "http-sse"},
 			},
 		}
 		data, err := r.generateMCPConfigData(evalHub)

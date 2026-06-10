@@ -7,7 +7,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -28,7 +28,7 @@ var _ = Describe("EvalHub Deployment", func() {
 		testNamespace string
 		namespace     *corev1.Namespace
 		configMap     *corev1.ConfigMap
-		evalHub       *evalhubv1alpha1.EvalHub
+		evalHub       *evalhubv1.EvalHub
 		reconciler    *EvalHubReconciler
 	)
 
@@ -431,7 +431,7 @@ var _ = Describe("EvalHub Deployment", func() {
 	Context("When handling deployment errors", func() {
 		It("should handle missing EvalHub instance", func() {
 			By("Creating deployment spec for non-existent EvalHub")
-			nonExistentEvalHub := &evalhubv1alpha1.EvalHub{
+			nonExistentEvalHub := &evalhubv1.EvalHub{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "non-existent",
 					Namespace: testNamespace,
@@ -535,7 +535,7 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 	var (
 		testNamespace string
 		namespace     *corev1.Namespace
-		evalHubInst   *evalhubv1alpha1.EvalHub
+		evalHubInst   *evalhubv1.EvalHub
 		operatorCM    *corev1.ConfigMap
 		reconciler    *EvalHubReconciler
 	)
@@ -558,16 +558,16 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 		Expect(k8sClient.Create(ctx, operatorCM)).To(Succeed())
 
 		replicas := int32(2)
-		evalHubInst = &evalhubv1alpha1.EvalHub{
+		evalHubInst = &evalhubv1.EvalHub{
 			TypeMeta: metav1.TypeMeta{
-				APIVersion: evalhubv1alpha1.GroupVersion.String(),
+				APIVersion: evalhubv1.GroupVersion.String(),
 				Kind:       "EvalHub",
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      parityEvalHubName,
 				Namespace: testNamespace,
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{
+			Spec: evalhubv1.EvalHubSpec{
 				Replicas:  &replicas,
 				Providers: []string{},
 				Env: []corev1.EnvVar{
@@ -666,16 +666,16 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 		defer deleteNamespace(ns)
 
 		r1 := int32(1)
-		fh := &evalhubv1alpha1.EvalHub{
+		fh := &evalhubv1.EvalHub{
 			TypeMeta: metav1.TypeMeta{
-				APIVersion: evalhubv1alpha1.GroupVersion.String(),
+				APIVersion: evalhubv1.GroupVersion.String(),
 				Kind:       "EvalHub",
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "fallback-evalhub",
 				Namespace: fallbackNS,
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{
+			Spec: evalhubv1.EvalHubSpec{
 				Replicas:  &r1,
 				Providers: []string{},
 			},

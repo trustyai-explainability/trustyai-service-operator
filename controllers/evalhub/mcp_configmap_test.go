@@ -3,7 +3,7 @@ package evalhub
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -14,7 +14,7 @@ import (
 var _ = Describe("generateMCPConfigData", func() {
 	var (
 		reconciler *EvalHubReconciler
-		evalHub    *evalhubv1alpha1.EvalHub
+		evalHub    *evalhubv1.EvalHub
 	)
 
 	BeforeEach(func() {
@@ -23,9 +23,9 @@ var _ = Describe("generateMCPConfigData", func() {
 
 	Context("with default MCP settings", func() {
 		BeforeEach(func() {
-			evalHub = &evalhubv1alpha1.EvalHub{
+			evalHub = &evalhubv1.EvalHub{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-evalhub", Namespace: "team-a"},
-				Spec:       evalhubv1alpha1.EvalHubSpec{},
+				Spec:       evalhubv1.EvalHubSpec{},
 			}
 		})
 
@@ -51,10 +51,10 @@ var _ = Describe("generateMCPConfigData", func() {
 	Context("with explicit MCP transport", func() {
 		BeforeEach(func() {
 			enabled := true
-			evalHub = &evalhubv1alpha1.EvalHub{
+			evalHub = &evalhubv1.EvalHub{
 				ObjectMeta: metav1.ObjectMeta{Name: "eh", Namespace: "ns"},
-				Spec: evalhubv1alpha1.EvalHubSpec{
-					MCP: &evalhubv1alpha1.EvalHubMCPSpec{
+				Spec: evalhubv1.EvalHubSpec{
+					MCP: &evalhubv1.EvalHubMCPSpec{
 						Enabled:   &enabled,
 						Transport: "http-sse",
 					},
@@ -76,14 +76,14 @@ var _ = Describe("generateMCPConfigData", func() {
 var _ = Describe("mcpConfigMapMatchesDesired", func() {
 	It("returns true when data, labels, and controller owner match", func() {
 		enabled := true
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "eh",
 				Namespace: "team-a",
 				UID:       "uid-1",
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{
-				MCP: &evalhubv1alpha1.EvalHubMCPSpec{Enabled: &enabled},
+			Spec: evalhubv1.EvalHubSpec{
+				MCP: &evalhubv1.EvalHubMCPSpec{Enabled: &enabled},
 			},
 		}
 		data, err := (&EvalHubReconciler{}).generateMCPConfigData(evalHub)
@@ -103,7 +103,7 @@ var _ = Describe("mcpConfigMapMatchesDesired", func() {
 	})
 
 	It("returns false when data differs", func() {
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{Name: "eh", Namespace: "team-a", UID: "uid-1"},
 		}
 		cm := &corev1.ConfigMap{

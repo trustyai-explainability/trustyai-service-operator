@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -16,11 +16,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func mcpDeploymentName(instance *evalhubv1alpha1.EvalHub) string {
+func mcpDeploymentName(instance *evalhubv1.EvalHub) string {
 	return instance.Name + "-mcp"
 }
 
-func mcpLabels(instance *evalhubv1alpha1.EvalHub) map[string]string {
+func mcpLabels(instance *evalhubv1.EvalHub) map[string]string {
 	return map[string]string{
 		"app":       "eval-hub",
 		"instance":  instance.Name,
@@ -30,7 +30,7 @@ func mcpLabels(instance *evalhubv1alpha1.EvalHub) map[string]string {
 
 // reconcileMCPDeployment creates or updates the Deployment for the MCP server.
 // If MCP is disabled, any existing MCP deployment is deleted.
-func (r *EvalHubReconciler) reconcileMCPDeployment(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+func (r *EvalHubReconciler) reconcileMCPDeployment(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
 	name := mcpDeploymentName(instance)
 
@@ -74,7 +74,7 @@ func (r *EvalHubReconciler) reconcileMCPDeployment(ctx context.Context, instance
 	return r.Update(ctx, deployment)
 }
 
-func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance *evalhubv1alpha1.EvalHub) (appsv1.DeploymentSpec, error) {
+func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance *evalhubv1.EvalHub) (appsv1.DeploymentSpec, error) {
 	labels := mcpLabels(instance)
 	mcpSpec := instance.Spec.MCP
 
@@ -318,7 +318,7 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 }
 
 // deleteMCPResource deletes a namespaced resource if it exists.
-func (r *EvalHubReconciler) deleteMCPResource(ctx context.Context, instance *evalhubv1alpha1.EvalHub, obj client.Object, name string) error {
+func (r *EvalHubReconciler) deleteMCPResource(ctx context.Context, instance *evalhubv1.EvalHub, obj client.Object, name string) error {
 	obj.SetName(name)
 	obj.SetNamespace(instance.Namespace)
 	err := r.Get(ctx, client.ObjectKeyFromObject(obj), obj)

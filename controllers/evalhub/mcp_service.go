@@ -3,7 +3,7 @@ package evalhub
 import (
 	"context"
 
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func mcpServiceName(instance *evalhubv1alpha1.EvalHub) string {
+func mcpServiceName(instance *evalhubv1.EvalHub) string {
 	if instance == nil {
 		return ""
 	}
@@ -22,7 +22,7 @@ func mcpServiceName(instance *evalhubv1alpha1.EvalHub) string {
 
 // reconcileMCPService creates or updates the Service for the MCP server.
 // If MCP is disabled, any existing MCP service is deleted.
-func (r *EvalHubReconciler) reconcileMCPService(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+func (r *EvalHubReconciler) reconcileMCPService(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
 	name := mcpServiceName(instance)
 
@@ -71,7 +71,7 @@ func (r *EvalHubReconciler) reconcileMCPService(ctx context.Context, instance *e
 	return r.Update(ctx, service)
 }
 
-func (r *EvalHubReconciler) buildMCPServiceSpec(instance *evalhubv1alpha1.EvalHub) corev1.ServiceSpec {
+func (r *EvalHubReconciler) buildMCPServiceSpec(instance *evalhubv1.EvalHub) corev1.ServiceSpec {
 	return corev1.ServiceSpec{
 		Selector: mcpLabels(instance),
 		Type:     corev1.ServiceTypeClusterIP,

@@ -6,7 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -26,7 +26,7 @@ var _ = Describe("EvalHub Controller", func() {
 		testNamespace string
 		namespace     *corev1.Namespace
 		configMap     *corev1.ConfigMap
-		evalHub       *evalhubv1alpha1.EvalHub
+		evalHub       *evalhubv1.EvalHub
 		reconciler    *EvalHubReconciler
 	)
 
@@ -81,7 +81,7 @@ var _ = Describe("EvalHub Controller", func() {
 			Expect(result.RequeueAfter).To(Equal(time.Second * 5))
 
 			By("Checking initial status")
-			updatedEvalHub := &evalhubv1alpha1.EvalHub{}
+			updatedEvalHub := &evalhubv1.EvalHub{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName,
 				Namespace: testNamespace,
@@ -101,18 +101,18 @@ var _ = Describe("EvalHub Controller", func() {
 			Expect(result.RequeueAfter).To(Equal(time.Second * 5))
 
 			By("Checking finalizer is added")
-			updatedEvalHub := &evalhubv1alpha1.EvalHub{}
+			updatedEvalHub := &evalhubv1.EvalHub{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName,
 				Namespace: testNamespace,
 			}, updatedEvalHub)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedEvalHub.GetFinalizers()).To(ContainElement(evalhubv1alpha1.FinalizerName))
+			Expect(updatedEvalHub.GetFinalizers()).To(ContainElement(evalhubv1.FinalizerName))
 		})
 
 		It("should handle EvalHub deletion", func() {
 			By("Setting up finalizer first")
-			evalHub.SetFinalizers([]string{evalhubv1alpha1.FinalizerName})
+			evalHub.SetFinalizers([]string{evalhubv1.FinalizerName})
 			err := k8sClient.Update(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -130,7 +130,7 @@ var _ = Describe("EvalHub Controller", func() {
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      evalHubName,
 					Namespace: testNamespace,
-				}, &evalhubv1alpha1.EvalHub{})
+				}, &evalhubv1.EvalHub{})
 				return errors.IsNotFound(err)
 			}, timeout, interval).Should(BeTrue())
 		})
@@ -153,7 +153,7 @@ var _ = Describe("EvalHub Controller", func() {
 			Expect(err.Error()).To(ContainSubstring("spec.database is required"))
 
 			By("Checking status is set to Error with correct reason")
-			updatedEvalHub := &evalhubv1alpha1.EvalHub{}
+			updatedEvalHub := &evalhubv1.EvalHub{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName,
 				Namespace: testNamespace,
@@ -194,7 +194,7 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		testNamespace string
 		namespace     *corev1.Namespace
 		configMap     *corev1.ConfigMap
-		evalHub       *evalhubv1alpha1.EvalHub
+		evalHub       *evalhubv1.EvalHub
 		reconciler    *EvalHubReconciler
 	)
 
@@ -330,7 +330,7 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		waitForEvalHubStatus(evalHubName, testNamespace, "Ready")
 
 		// Verify full status
-		updatedEvalHub := &evalhubv1alpha1.EvalHub{}
+		updatedEvalHub := &evalhubv1.EvalHub{}
 		err = k8sClient.Get(ctx, types.NamespacedName{
 			Name:      evalHubName,
 			Namespace: testNamespace,

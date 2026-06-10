@@ -5,7 +5,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,13 +14,13 @@ import (
 var _ = Describe("MCP status helpers", func() {
 	It("records reconcile errors on status.mcp without touching top-level Ready", func() {
 		enabled := true
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{Name: "eh", Namespace: "ns", Generation: 2},
-			Spec: evalhubv1alpha1.EvalHubSpec{
-				MCP:      &evalhubv1alpha1.EvalHubMCPSpec{Enabled: &enabled},
+			Spec: evalhubv1.EvalHubSpec{
+				MCP:      &evalhubv1.EvalHubMCPSpec{Enabled: &enabled},
 				Replicas: func() *int32 { r := int32(1); return &r }(),
 			},
-			Status: evalhubv1alpha1.EvalHubStatus{
+			Status: evalhubv1.EvalHubStatus{
 				Ready: corev1.ConditionTrue,
 				Phase: "Ready",
 			},
@@ -44,10 +44,10 @@ var _ = Describe("MCP status helpers", func() {
 })
 
 func TestSetMCPRouteSuccess(t *testing.T) {
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "eh", Namespace: "ns", Generation: 3},
-		Status: evalhubv1alpha1.EvalHubStatus{
-			MCP: &evalhubv1alpha1.EvalHubMCPStatus{
+		Status: evalhubv1.EvalHubStatus{
+			MCP: &evalhubv1.EvalHubMCPStatus{
 				Conditions: []metav1.Condition{{
 					Type:   mcpConditionRouteReady,
 					Status: metav1.ConditionFalse,

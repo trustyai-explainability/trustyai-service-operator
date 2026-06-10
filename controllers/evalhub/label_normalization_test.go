@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,7 +32,7 @@ func TestAuthReviewerCRB_AppNameLabelIsNormalizedWhenBindingNameTooLong(t *testi
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, rbacv1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
 
@@ -41,7 +41,7 @@ func TestAuthReviewerCRB_AppNameLabelIsNormalizedWhenBindingNameTooLong(t *testi
 	instanceName := strings.Repeat("a", 30)
 	ns := strings.Repeat("b", 30)
 
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instanceName,
 			Namespace: ns,

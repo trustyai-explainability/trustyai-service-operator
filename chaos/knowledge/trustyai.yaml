@@ -51,10 +51,16 @@ components:
         kind: Lease
         name: b7e9931f.trustyai.opendatahub.io
         namespace: redhat-ods-applications
+      - apiVersion: v1
+        kind: Service
+        name: trustyai-service-operator-webhook-service
+        namespace: redhat-ods-applications
       - apiVersion: monitoring.coreos.com/v1
         kind: ServiceMonitor
         name: trustyai-service-operator-controller-manager-metrics-monitor
         namespace: redhat-ods-applications
+    finalizers:
+      - trustyai.opendatahub.io/evalhub-finalizer
     steadyState:
       checks:
         - type: conditionTrue

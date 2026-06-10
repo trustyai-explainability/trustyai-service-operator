@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -104,7 +104,7 @@ type EvalHubConfig struct {
 }
 
 // reconcileConfigMap creates or updates the ConfigMap for EvalHub configuration
-func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
 	log.Info("Reconciling ConfigMap", "name", instance.Name)
 
@@ -146,7 +146,7 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 }
 
 // generateConfigData generates the configuration data for the ConfigMap
-func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *evalhubv1alpha1.EvalHub) (map[string]string, error) {
+func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *evalhubv1.EvalHub) (map[string]string, error) {
 	evalHubImage, err := r.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get EvalHub image: %w", err)
@@ -480,7 +480,7 @@ func (r *EvalHubReconciler) validateImageConfiguration(ctx context.Context, imag
 //   - trustyai.opendatahub.io/evalhub-provider-name=<name>
 //
 // Returns the list of created ConfigMap names (for building projected volumes).
-func (r *EvalHubReconciler) reconcileProviderConfigMaps(ctx context.Context, instance *evalhubv1alpha1.EvalHub) ([]string, error) {
+func (r *EvalHubReconciler) reconcileProviderConfigMaps(ctx context.Context, instance *evalhubv1.EvalHub) ([]string, error) {
 	if len(instance.Spec.Providers) == 0 {
 		return nil, nil
 	}
@@ -553,7 +553,7 @@ func (r *EvalHubReconciler) reconcileProviderConfigMaps(ctx context.Context, ins
 //   - trustyai.opendatahub.io/evalhub-collection-name=<name>
 //
 // Returns the list of created ConfigMap names (for building projected volumes).
-func (r *EvalHubReconciler) reconcileCollectionConfigMaps(ctx context.Context, instance *evalhubv1alpha1.EvalHub) ([]string, error) {
+func (r *EvalHubReconciler) reconcileCollectionConfigMaps(ctx context.Context, instance *evalhubv1.EvalHub) ([]string, error) {
 	if len(instance.Spec.Collections) == 0 {
 		return nil, nil
 	}
@@ -653,7 +653,7 @@ func providerVolumeProjections(cmNames []string) []corev1.VolumeProjection {
 
 // reconcileServiceCAConfigMap creates or updates the ConfigMap for service CA certificate injection
 // This ConfigMap is used by jobs to mount the service CA certificate for TLS verification
-func (r *EvalHubReconciler) reconcileServiceCAConfigMap(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+func (r *EvalHubReconciler) reconcileServiceCAConfigMap(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
 	log.Info("Reconciling Service CA ConfigMap", "name", instance.Name)
 

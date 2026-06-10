@@ -6,7 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -22,7 +22,7 @@ var _ = Describe("EvalHub Service", func() {
 	var (
 		testNamespace string
 		namespace     *corev1.Namespace
-		evalHub       *evalhubv1alpha1.EvalHub
+		evalHub       *evalhubv1.EvalHub
 		reconciler    *EvalHubReconciler
 	)
 
@@ -236,7 +236,7 @@ var _ = Describe("EvalHub Service", func() {
 	Context("When handling service errors", func() {
 		It("should handle missing EvalHub instance", func() {
 			By("Creating service for non-existent EvalHub")
-			nonExistentEvalHub := &evalhubv1alpha1.EvalHub{
+			nonExistentEvalHub := &evalhubv1.EvalHub{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "non-existent",
 					Namespace: testNamespace,

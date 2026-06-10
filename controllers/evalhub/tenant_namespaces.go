@@ -3,7 +3,7 @@ package evalhub
 import (
 	"context"
 
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -22,7 +22,7 @@ const (
 // reconcileTenantNamespaces lists all namespaces with the tenant label and ensures
 // the job ServiceAccount and API SA RoleBindings exist in each one. It also
 // removes stale resources from namespaces that no longer carry the tenant label.
-func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
 
 	// List namespaces with the tenant label
@@ -98,7 +98,7 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 
 // cleanupStaleTenantResources removes job ServiceAccounts, RoleBindings, Roles,
 // and ConfigMaps from namespaces that no longer carry the tenant label.
-func (r *EvalHubReconciler) cleanupStaleTenantResources(ctx context.Context, instance *evalhubv1alpha1.EvalHub, activeTenants map[string]bool) error {
+func (r *EvalHubReconciler) cleanupStaleTenantResources(ctx context.Context, instance *evalhubv1.EvalHub, activeTenants map[string]bool) error {
 	log := log.FromContext(ctx)
 	selector := client.MatchingLabels{
 		"eval-hub.trustyai.opendatahub.io": jobResourceInstanceID(instance),
@@ -175,7 +175,7 @@ func (r *EvalHubReconciler) cleanupStaleTenantResources(ctx context.Context, ins
 // createTenantServiceCAConfigMap ensures a service CA ConfigMap exists in the
 // tenant namespace. The ConfigMap is annotated so that OpenShift's service CA
 // operator automatically injects the cluster CA bundle.
-func (r *EvalHubReconciler) createTenantServiceCAConfigMap(ctx context.Context, instance *evalhubv1alpha1.EvalHub, namespace string) error {
+func (r *EvalHubReconciler) createTenantServiceCAConfigMap(ctx context.Context, instance *evalhubv1.EvalHub, namespace string) error {
 	log := log.FromContext(ctx)
 	cmName := instance.Name + "-service-ca"
 

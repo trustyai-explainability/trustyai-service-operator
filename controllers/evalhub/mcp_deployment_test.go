@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -17,13 +17,13 @@ import (
 func TestBuildMCPDeploymentSpec_envAndArgs(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	enabled := true
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "eh", Namespace: "team-a"},
-		Spec: evalhubv1alpha1.EvalHubSpec{
-			MCP: &evalhubv1alpha1.EvalHubMCPSpec{
+		Spec: evalhubv1.EvalHubSpec{
+			MCP: &evalhubv1.EvalHubMCPSpec{
 				Enabled:          &enabled,
 				Transport:        "http",
 				EvalHubTransport: "http-sse",
