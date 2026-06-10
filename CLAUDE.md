@@ -204,7 +204,7 @@ GitHub Actions in `.github/workflows/`:
 
 L1 integration using [operator-chaos](https://github.com/opendatahub-io/operator-chaos). Catches breaking CRD schema changes and knowledge model regressions at PR time without a cluster.
 
-```
+```text
 chaos/knowledge/trustyai.yaml   # Knowledge model (operator control plane topology)
 .github/workflows/operator-chaos.yml  # GHA workflow
 ```
