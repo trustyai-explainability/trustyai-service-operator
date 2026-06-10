@@ -235,6 +235,9 @@ func (e *EvalHub) SetStatus(condType, reason, message string, status corev1.Cond
 	if !found {
 		e.Status.Conditions = append(e.Status.Conditions, condition)
 	}
+	if condType == "Ready" {
+		e.Status.Ready = status
+	}
 	e.Status.LastUpdateTime = &now
 }
 
