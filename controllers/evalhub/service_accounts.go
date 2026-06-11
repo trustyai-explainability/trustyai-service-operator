@@ -239,6 +239,10 @@ const (
 	collectionsAccessClusterRoleName = "trustyai-service-operator-evalhub-collections-access"
 )
 
+// modelSecretClusterRoleName is the ClusterRole that grants the eval-hub service SA
+// get/create/delete on Secrets in tenant namespaces, enabling internalModelRef secret (ref-token) lifecycle.
+const modelSecretClusterRoleName = "trustyai-service-operator-evalhub-model-secret"
+
 // MLFlow access uses custom ClusterRoles scoped to the "mlflow.kubeflow.org" API group.
 // MLFlow's kubernetes-workspace-provider checks permissions via SelfSubjectAccessReview
 // against this group (not core Kubernetes resources). The ClusterRoles are pre-created
@@ -870,6 +874,19 @@ func (r *EvalHubReconciler) createJobsServiceAccount(ctx context.Context, instan
 	err = r.createJobRoleBinding(ctx, instance, mlflowSvcRBName, svcSAName, targetNamespace, rbacv1.RoleRef{
 		Kind:     "ClusterRole",
 		Name:     mlflowAccessClusterRoleName,
+		APIGroup: rbacv1.GroupName,
+	}, instance.Namespace)
+	if err != nil {
+		return err
+	}
+
+	// Create model-secret RoleBinding for the service SA in the target (tenant) namespace.
+	// The eval-hub service SA reads the real credential secret (model credential secret) and creates/deletes
+	// the ephemeral ref-token secret (internalModelRef secret) in the tenant namespace during job submission.
+	modelSecretRBName := normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-model-secret-rb")
+	err = r.createJobRoleBinding(ctx, instance, modelSecretRBName, svcSAName, targetNamespace, rbacv1.RoleRef{
+		Kind:     "ClusterRole",
+		Name:     modelSecretClusterRoleName,
 		APIGroup: rbacv1.GroupName,
 	}, instance.Namespace)
 	if err != nil {
