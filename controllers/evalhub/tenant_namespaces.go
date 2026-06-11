@@ -2,6 +2,7 @@ package evalhub
 
 import (
 	"context"
+	"fmt"
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -83,6 +84,13 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 			log.Error(err, "Failed to create service CA ConfigMap in tenant namespace", "namespace", ns)
 			return err
 		}
+
+		// Inject this instance's service URL into the shared discovery ConfigMap so clients
+		// can resolve it from within the tenant namespace without cross-namespace lookups.
+		if err := r.reconcileDiscoveryConfigMap(ctx, instance, ns); err != nil {
+			log.Error(err, "Failed to reconcile discovery ConfigMap in tenant namespace", "namespace", ns)
+			return err
+		}
 	}
 
 	// Clean up resources from namespaces that lost the tenant label.
@@ -90,6 +98,13 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 	// and remove those that are no longer active tenants.
 	if err := r.cleanupStaleTenantResources(ctx, instance, activeTenants); err != nil {
 		log.Error(err, "Failed to clean up stale tenant resources")
+		return err
+	}
+
+	// Remove this instance's URL key from discovery ConfigMaps in namespaces that
+	// are no longer active tenants. Deletes the CM if it becomes empty.
+	if err := r.cleanupDiscoveryConfigMaps(ctx, instance, activeTenants); err != nil {
+		log.Error(err, "Failed to clean up discovery ConfigMaps")
 		return err
 	}
 
@@ -210,4 +225,76 @@ func (r *EvalHubReconciler) createTenantServiceCAConfigMap(ctx context.Context, 
 	}
 	log.Info("Creating service CA ConfigMap in tenant namespace", "namespace", namespace, "name", cmName)
 	return r.Create(ctx, cm)
+}
+
+// reconcileDiscoveryConfigMap upserts the well-known "evalhub-discovery" ConfigMap in
+// namespace, setting a key "{instance.Name}.url" to the service URL of this instance.
+// Multiple EvalHub instances share the same ConfigMap; each owns exactly one key.
+func (r *EvalHubReconciler) reconcileDiscoveryConfigMap(ctx context.Context, instance *evalhubv1.EvalHub, namespace string) error {
+	log := log.FromContext(ctx)
+	serviceURL := fmt.Sprintf("https://%s.%s.svc.cluster.local:%d",
+		instance.Name, instance.Namespace, servicePort)
+	urlKey := instance.Name + ".url"
+
+	cm := &corev1.ConfigMap{}
+	err := r.Get(ctx, client.ObjectKey{Name: discoveryConfigMapName, Namespace: namespace}, cm)
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+	if errors.IsNotFound(err) {
+		cm = &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      discoveryConfigMapName,
+				Namespace: namespace,
+				Labels:    map[string]string{discoveryConfigMapLabel: "true"},
+			},
+			Data: map[string]string{urlKey: serviceURL},
+		}
+		log.Info("Creating discovery ConfigMap in tenant namespace", "namespace", namespace)
+		return r.Create(ctx, cm)
+	}
+	if cm.Data == nil {
+		cm.Data = make(map[string]string)
+	}
+	if cm.Data[urlKey] != serviceURL {
+		cm.Data[urlKey] = serviceURL
+		return r.Update(ctx, cm)
+	}
+	return nil
+}
+
+// cleanupDiscoveryConfigMaps removes the "{instance.Name}.url" key from the discovery
+// ConfigMap in any namespace that is no longer an active tenant. If the removal empties
+// the ConfigMap it is deleted entirely.
+func (r *EvalHubReconciler) cleanupDiscoveryConfigMaps(ctx context.Context, instance *evalhubv1.EvalHub, activeTenants map[string]bool) error {
+	log := log.FromContext(ctx)
+	urlKey := instance.Name + ".url"
+
+	cmList := &corev1.ConfigMapList{}
+	if err := r.List(ctx, cmList, client.MatchingLabels{discoveryConfigMapLabel: "true"}); err != nil {
+		return err
+	}
+	for i := range cmList.Items {
+		cm := &cmList.Items[i]
+		ns := cm.Namespace
+		if ns == instance.Namespace || activeTenants[ns] {
+			continue
+		}
+		if _, hasKey := cm.Data[urlKey]; !hasKey {
+			continue
+		}
+		delete(cm.Data, urlKey)
+		if len(cm.Data) == 0 {
+			log.Info("Deleting empty discovery ConfigMap", "namespace", ns)
+			if err := r.Delete(ctx, cm); err != nil && !errors.IsNotFound(err) {
+				return err
+			}
+		} else {
+			log.Info("Removing stale URL key from discovery ConfigMap", "namespace", ns, "key", urlKey)
+			if err := r.Update(ctx, cm); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

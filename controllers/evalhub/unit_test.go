@@ -2100,6 +2100,194 @@ func TestEvalHubReconciler_reconcileServiceMonitor_NoOpUpdate(t *testing.T) {
 		"reconcileServiceMonitor should not update when spec is unchanged")
 }
 
+func TestEvalHubReconciler_reconcileDiscoveryConfigMap(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	instanceNamespace := "opendatahub"
+	tenantNamespace := "team-a"
+	evalHubName := "evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: instanceNamespace,
+			UID:       "test-uid-789",
+		},
+	}
+
+	expectedURL := "https://evalhub.opendatahub.svc.cluster.local:8443"
+	urlKey := evalHubName + ".url"
+
+	t.Run("should create discovery ConfigMap in tenant namespace", func(t *testing.T) {
+		tenantNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: tenantNamespace}}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, tenantNS).Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		err := reconciler.reconcileDiscoveryConfigMap(ctx, evalHub, tenantNamespace)
+		require.NoError(t, err)
+
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{Name: discoveryConfigMapName, Namespace: tenantNamespace}, cm)
+		require.NoError(t, err)
+
+		assert.Equal(t, discoveryConfigMapName, cm.Name)
+		assert.Equal(t, tenantNamespace, cm.Namespace)
+		assert.Equal(t, expectedURL, cm.Data[urlKey])
+		assert.Equal(t, "true", cm.Labels[discoveryConfigMapLabel])
+	})
+
+	t.Run("should update URL key when service URL drifts", func(t *testing.T) {
+		// Pre-existing CM with stale URL
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      discoveryConfigMapName,
+				Namespace: tenantNamespace,
+				Labels:    map[string]string{discoveryConfigMapLabel: "true"},
+			},
+			Data: map[string]string{urlKey: "https://old-url.example.com:9999"},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, existingCM).Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		err := reconciler.reconcileDiscoveryConfigMap(ctx, evalHub, tenantNamespace)
+		require.NoError(t, err)
+
+		cm := &corev1.ConfigMap{}
+		require.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: discoveryConfigMapName, Namespace: tenantNamespace}, cm))
+		assert.Equal(t, expectedURL, cm.Data[urlKey])
+	})
+
+	t.Run("should add key to existing CM without removing other instance keys", func(t *testing.T) {
+		otherKey := "other-evalhub.url"
+		otherURL := "https://other-evalhub.other-ns.svc.cluster.local:8443"
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      discoveryConfigMapName,
+				Namespace: tenantNamespace,
+				Labels:    map[string]string{discoveryConfigMapLabel: "true"},
+			},
+			Data: map[string]string{otherKey: otherURL},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, existingCM).Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		err := reconciler.reconcileDiscoveryConfigMap(ctx, evalHub, tenantNamespace)
+		require.NoError(t, err)
+
+		cm := &corev1.ConfigMap{}
+		require.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: discoveryConfigMapName, Namespace: tenantNamespace}, cm))
+		assert.Equal(t, expectedURL, cm.Data[urlKey], "own key must be present")
+		assert.Equal(t, otherURL, cm.Data[otherKey], "other instance key must be preserved")
+	})
+
+	t.Run("should be idempotent when URL is unchanged", func(t *testing.T) {
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            discoveryConfigMapName,
+				Namespace:       tenantNamespace,
+				Labels:          map[string]string{discoveryConfigMapLabel: "true"},
+				ResourceVersion: "1",
+			},
+			Data: map[string]string{urlKey: expectedURL},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, existingCM).Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		// Call twice — second call must not trigger an Update
+		require.NoError(t, reconciler.reconcileDiscoveryConfigMap(ctx, evalHub, tenantNamespace))
+		require.NoError(t, reconciler.reconcileDiscoveryConfigMap(ctx, evalHub, tenantNamespace))
+
+		cm := &corev1.ConfigMap{}
+		require.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: discoveryConfigMapName, Namespace: tenantNamespace}, cm))
+		assert.Equal(t, expectedURL, cm.Data[urlKey])
+	})
+}
+
+func TestEvalHubReconciler_cleanupDiscoveryConfigMaps(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	instanceNamespace := "opendatahub"
+	evalHubName := "evalhub"
+	urlKey := evalHubName + ".url"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{Name: evalHubName, Namespace: instanceNamespace},
+	}
+
+	t.Run("should delete discovery CM when it becomes empty", func(t *testing.T) {
+		// namespace "former-tenant" is NOT in activeTenants
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      discoveryConfigMapName,
+				Namespace: "former-tenant",
+				Labels:    map[string]string{discoveryConfigMapLabel: "true"},
+			},
+			Data: map[string]string{urlKey: "https://evalhub.opendatahub.svc.cluster.local:8443"},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, cm).Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		err := reconciler.cleanupDiscoveryConfigMaps(ctx, evalHub, map[string]bool{})
+		require.NoError(t, err)
+
+		deleted := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{Name: discoveryConfigMapName, Namespace: "former-tenant"}, deleted)
+		assert.True(t, errors.IsNotFound(err), "CM should be deleted when it becomes empty")
+	})
+
+	t.Run("should remove only own key when other instance keys exist", func(t *testing.T) {
+		otherKey := "other-evalhub.url"
+		otherURL := "https://other-evalhub.other-ns.svc.cluster.local:8443"
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      discoveryConfigMapName,
+				Namespace: "former-tenant",
+				Labels:    map[string]string{discoveryConfigMapLabel: "true"},
+			},
+			Data: map[string]string{
+				urlKey:   "https://evalhub.opendatahub.svc.cluster.local:8443",
+				otherKey: otherURL,
+			},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, cm).Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		err := reconciler.cleanupDiscoveryConfigMaps(ctx, evalHub, map[string]bool{})
+		require.NoError(t, err)
+
+		remaining := &corev1.ConfigMap{}
+		require.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: discoveryConfigMapName, Namespace: "former-tenant"}, remaining))
+		assert.NotContains(t, remaining.Data, urlKey, "own key must be removed")
+		assert.Equal(t, otherURL, remaining.Data[otherKey], "other instance key must survive")
+	})
+
+	t.Run("should not touch CM in active tenant namespaces", func(t *testing.T) {
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      discoveryConfigMapName,
+				Namespace: "active-tenant",
+				Labels:    map[string]string{discoveryConfigMapLabel: "true"},
+			},
+			Data: map[string]string{urlKey: "https://evalhub.opendatahub.svc.cluster.local:8443"},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, cm).Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		err := reconciler.cleanupDiscoveryConfigMaps(ctx, evalHub, map[string]bool{"active-tenant": true})
+		require.NoError(t, err)
+
+		still := &corev1.ConfigMap{}
+		require.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: discoveryConfigMapName, Namespace: "active-tenant"}, still))
+		assert.Equal(t, "https://evalhub.opendatahub.svc.cluster.local:8443", still.Data[urlKey])
+	})
+}
+
 func TestGenerateMCPAuthConfigData_MethodsPresent(t *testing.T) {
 	instance := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "eh", Namespace: "team-a"},
