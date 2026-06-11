@@ -225,3 +225,11 @@ rules:
   - evalhubs
   verbs:
   - get
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - create
+  - delete
