@@ -421,6 +421,129 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		Expect(deployment.ResourceVersion).To(Equal(initialResourceVersion))
 	})
 
+	It("should apply affinity to the deployment", func() {
+		By("Updating the NemoGuardrails resource with pod anti-affinity")
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
+		nemo.Spec.Template = &nemoguardrailsv1alpha1.NemoGuardrailsTemplate{
+			Pod: &nemoguardrailsv1alpha1.NemoGuardrailsPodTemplate{
+				Affinity: &corev1.Affinity{
+					PodAntiAffinity: &corev1.PodAntiAffinity{
+						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+							{
+								Weight: 100,
+								PodAffinityTerm: corev1.PodAffinityTerm{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{"app": resourceName},
+									},
+									TopologyKey: "kubernetes.io/hostname",
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Update(ctx, nemo)).To(Succeed())
+
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Checking if the Deployment has the pod anti-affinity")
+		Eventually(func() bool {
+			deployment := &appsv1.Deployment{}
+			err := k8sClient.Get(ctx, typeNamespacedName, deployment)
+			if err != nil {
+				return false
+			}
+			return deployment.Spec.Template.Spec.Affinity != nil &&
+				deployment.Spec.Template.Spec.Affinity.PodAntiAffinity != nil &&
+				len(deployment.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution) == 1
+		}, time.Second*10, time.Millisecond*100).Should(BeTrue())
+	})
+
+	It("should apply tolerations to the deployment", func() {
+		By("Updating the NemoGuardrails resource with tolerations")
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
+		nemo.Spec.Template = &nemoguardrailsv1alpha1.NemoGuardrailsTemplate{
+			Pod: &nemoguardrailsv1alpha1.NemoGuardrailsPodTemplate{
+				Tolerations: []corev1.Toleration{
+					{
+						Key:      "nvidia.com/gpu",
+						Operator: corev1.TolerationOpExists,
+						Effect:   corev1.TaintEffectNoSchedule,
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Update(ctx, nemo)).To(Succeed())
+
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Checking if the Deployment has the toleration")
+		Eventually(func() bool {
+			deployment := &appsv1.Deployment{}
+			err := k8sClient.Get(ctx, typeNamespacedName, deployment)
+			if err != nil {
+				return false
+			}
+			for _, t := range deployment.Spec.Template.Spec.Tolerations {
+				if t.Key == "nvidia.com/gpu" && t.Effect == corev1.TaintEffectNoSchedule {
+					return true
+				}
+			}
+			return false
+		}, time.Second*10, time.Millisecond*100).Should(BeTrue())
+	})
+
+	It("should apply nodeSelector to the deployment", func() {
+		By("Updating the NemoGuardrails resource with nodeSelector")
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
+		nemo.Spec.Template = &nemoguardrailsv1alpha1.NemoGuardrailsTemplate{
+			Pod: &nemoguardrailsv1alpha1.NemoGuardrailsPodTemplate{
+				NodeSelector: map[string]string{"node-type": "guardrails"},
+			},
+		}
+		Expect(k8sClient.Update(ctx, nemo)).To(Succeed())
+
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Checking if the Deployment has the nodeSelector")
+		Eventually(func() map[string]string {
+			deployment := &appsv1.Deployment{}
+			err := k8sClient.Get(ctx, typeNamespacedName, deployment)
+			if err != nil {
+				return nil
+			}
+			return deployment.Spec.Template.Spec.NodeSelector
+		}, time.Second*10, time.Millisecond*100).Should(HaveKeyWithValue("node-type", "guardrails"))
+	})
+
 	It("should create a ServiceAccount and ClusterRoleBinding and delete them when the instance is deleted", func() {
 		controllerReconciler := &NemoGuardrailsReconciler{
 			Client:    k8sClient,
