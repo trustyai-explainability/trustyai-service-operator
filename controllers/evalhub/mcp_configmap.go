@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"maps"
 
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func mcpConfigMapName(instance *evalhubv1alpha1.EvalHub) string {
+func mcpConfigMapName(instance *evalhubv1.EvalHub) string {
 	return instance.Name + "-mcp-config"
 }
 
@@ -36,7 +36,7 @@ type MCPConfig struct {
 
 // reconcileMCPConfigMap creates or updates the ConfigMap for the MCP server.
 // If MCP is disabled, any existing MCP ConfigMap is deleted.
-func (r *EvalHubReconciler) reconcileMCPConfigMap(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+func (r *EvalHubReconciler) reconcileMCPConfigMap(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
 	name := mcpConfigMapName(instance)
 
@@ -89,7 +89,7 @@ func (r *EvalHubReconciler) reconcileMCPConfigMap(ctx context.Context, instance 
 }
 
 // mcpConfigMapMatchesDesired reports whether the live ConfigMap already matches desired data, labels, and controller ownership.
-func mcpConfigMapMatchesDesired(cm *corev1.ConfigMap, data map[string]string, labels map[string]string, instance *evalhubv1alpha1.EvalHub) bool {
+func mcpConfigMapMatchesDesired(cm *corev1.ConfigMap, data map[string]string, labels map[string]string, instance *evalhubv1.EvalHub) bool {
 	if !maps.Equal(cm.Data, data) {
 		return false
 	}
@@ -99,7 +99,7 @@ func mcpConfigMapMatchesDesired(cm *corev1.ConfigMap, data map[string]string, la
 	return metav1.IsControlledBy(cm, instance)
 }
 
-func (r *EvalHubReconciler) generateMCPConfigData(instance *evalhubv1alpha1.EvalHub) (map[string]string, error) {
+func (r *EvalHubReconciler) generateMCPConfigData(instance *evalhubv1.EvalHub) (map[string]string, error) {
 	mcp := instance.Spec.MCP
 	transport := mcpClientTransport(mcp)
 
@@ -129,7 +129,7 @@ func (r *EvalHubReconciler) generateMCPConfigData(instance *evalhubv1alpha1.Eval
 // Clients must hold get/create on evalhubs/proxy for this EvalHub instance (see createAPIAccessRole).
 // Each mapping must declare an explicit methods list — kube-rbac-proxy rejects mappings without one.
 // GET maps to verb:get (SSE stream establishment); POST maps to verb:create (MCP message send).
-func generateMCPAuthConfigData(instance *evalhubv1alpha1.EvalHub) string {
+func generateMCPAuthConfigData(instance *evalhubv1.EvalHub) string {
 	return fmt.Sprintf(`authorization:
   endpoints:
     - path: /*

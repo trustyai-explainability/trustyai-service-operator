@@ -4,7 +4,7 @@ import (
 	"context"
 
 	routev1 "github.com/openshift/api/route/v1"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -13,13 +13,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func mcpRouteName(instance *evalhubv1alpha1.EvalHub) string {
+func mcpRouteName(instance *evalhubv1.EvalHub) string {
 	return instance.Name + "-mcp"
 }
 
 // reconcileMCPRoute creates or updates the Route for the MCP server (OpenShift only).
 // If MCP is disabled or routes are not supported, existing MCP routes are cleaned up.
-func (r *EvalHubReconciler) reconcileMCPRoute(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+func (r *EvalHubReconciler) reconcileMCPRoute(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
 
 	if !r.isRouteSupported() {
@@ -66,7 +66,7 @@ func (r *EvalHubReconciler) reconcileMCPRoute(ctx context.Context, instance *eva
 	return r.Update(ctx, route)
 }
 
-func (r *EvalHubReconciler) buildMCPRouteSpec(instance *evalhubv1alpha1.EvalHub) routev1.RouteSpec {
+func (r *EvalHubReconciler) buildMCPRouteSpec(instance *evalhubv1.EvalHub) routev1.RouteSpec {
 	return routev1.RouteSpec{
 		To: routev1.RouteTargetReference{
 			Kind:   "Service",

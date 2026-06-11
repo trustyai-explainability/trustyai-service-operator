@@ -6,7 +6,7 @@ import (
 	"time"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -72,7 +72,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	log := log.FromContext(ctx)
 
 	// Fetch the EvalHub instance
-	instance := &evalhubv1alpha1.EvalHub{}
+	instance := &evalhubv1.EvalHub{}
 	err := r.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -105,8 +105,8 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Add finalizer if not present
-	if !controllerutil.ContainsFinalizer(instance, evalhubv1alpha1.FinalizerName) {
-		controllerutil.AddFinalizer(instance, evalhubv1alpha1.FinalizerName)
+	if !controllerutil.ContainsFinalizer(instance, evalhubv1.FinalizerName) {
+		controllerutil.AddFinalizer(instance, evalhubv1.FinalizerName)
 		if err := r.Update(ctx, instance); err != nil {
 			log.Error(err, "Failed to add finalizer")
 			return RequeueWithError(err)
@@ -273,7 +273,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
 		Named("evalhub").
-		For(&evalhubv1alpha1.EvalHub{}).
+		For(&evalhubv1.EvalHub{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}, builder.OnlyMetadata).
 		Owns(&corev1.ConfigMap{}, builder.OnlyMetadata).
@@ -333,7 +333,7 @@ func tenantLabelPredicate() predicate.Predicate {
 // instances. The tenantLabelPredicate ensures this is only called when the tenant label
 // is added to or removed from a namespace, so we enqueue unconditionally here.
 func (r *EvalHubReconciler) mapNamespaceToEvalHubs(ctx context.Context, _ client.Object) []ctrl.Request {
-	evalHubList := &evalhubv1alpha1.EvalHubList{}
+	evalHubList := &evalhubv1.EvalHubList{}
 	if err := r.List(ctx, evalHubList); err != nil {
 		log.FromContext(ctx).Error(err, "Failed to list EvalHub instances for namespace watch")
 		return nil
@@ -369,7 +369,7 @@ func Requeue() (ctrl.Result, error) {
 }
 
 // handleDeletion handles the deletion of EvalHub resources
-func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhubv1alpha1.EvalHub) (ctrl.Result, error) {
+func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhubv1.EvalHub) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 	log.Info("Handling EvalHub deletion", "name", instance.Name)
 
@@ -386,7 +386,7 @@ func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhu
 	}
 
 	// Remove finalizer
-	controllerutil.RemoveFinalizer(instance, evalhubv1alpha1.FinalizerName)
+	controllerutil.RemoveFinalizer(instance, evalhubv1.FinalizerName)
 	if err := r.Update(ctx, instance); err != nil {
 		log.Error(err, "Failed to remove finalizer")
 		return RequeueWithError(err)
@@ -396,7 +396,7 @@ func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhu
 }
 
 // cleanupClusterRoleBinding deletes EvalHub cluster-scoped RBAC resources upon instance deletion.
-func (r *EvalHubReconciler) cleanupClusterRoleBinding(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+func (r *EvalHubReconciler) cleanupClusterRoleBinding(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	// Delete auth reviewer ClusterRoleBinding (cannot be owner-ref'd to a namespaced resource)
 	authCRBName := generateAuthReviewerClusterRoleBindingName(instance)
 	if err := r.deleteClusterRoleBinding(ctx, authCRBName); err != nil {
@@ -409,7 +409,7 @@ func (r *EvalHubReconciler) cleanupClusterRoleBinding(ctx context.Context, insta
 // cleanupJobResources deletes job-related resources (ServiceAccounts, Roles, RoleBindings)
 // that are identified by the eval-hub.trustyai.opendatahub.io label. These resources do not
 // use owner references because they may reside in a different namespace from the EvalHub CR.
-func (r *EvalHubReconciler) cleanupJobResources(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+func (r *EvalHubReconciler) cleanupJobResources(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
 	selector := client.MatchingLabels{
 		"eval-hub.trustyai.opendatahub.io": jobResourceInstanceID(instance),
@@ -477,7 +477,7 @@ func (r *EvalHubReconciler) deleteClusterRoleBinding(ctx context.Context, crbNam
 }
 
 // updateStatus updates the EvalHub status based on the deployment status
-func (r *EvalHubReconciler) updateStatus(ctx context.Context, instance *evalhubv1alpha1.EvalHub, mcpReconcileOK bool) error {
+func (r *EvalHubReconciler) updateStatus(ctx context.Context, instance *evalhubv1.EvalHub, mcpReconcileOK bool) error {
 	log := log.FromContext(ctx)
 
 	// Get the deployment
@@ -529,9 +529,9 @@ func (r *EvalHubReconciler) updateStatus(ctx context.Context, instance *evalhubv
 }
 
 // updateMCPStatus sets the MCP sub-status based on reconcile outcome and MCP deployment readiness.
-func (r *EvalHubReconciler) updateMCPStatus(ctx context.Context, instance *evalhubv1alpha1.EvalHub, mcpReconcileOK bool) {
+func (r *EvalHubReconciler) updateMCPStatus(ctx context.Context, instance *evalhubv1.EvalHub, mcpReconcileOK bool) {
 	if !instance.Spec.IsMCPEnabled() {
-		instance.Status.MCP = &evalhubv1alpha1.EvalHubMCPStatus{
+		instance.Status.MCP = &evalhubv1.EvalHubMCPStatus{
 			Phase: "Disabled",
 			Ready: false,
 		}
@@ -541,7 +541,7 @@ func (r *EvalHubReconciler) updateMCPStatus(ctx context.Context, instance *evalh
 	if !mcpReconcileOK {
 		// reconcileMCPServer already set status.mcp phase/conditions
 		if instance.Status.MCP == nil {
-			instance.Status.MCP = &evalhubv1alpha1.EvalHubMCPStatus{
+			instance.Status.MCP = &evalhubv1.EvalHubMCPStatus{
 				Phase: "Error",
 				Ready: false,
 			}
@@ -549,7 +549,7 @@ func (r *EvalHubReconciler) updateMCPStatus(ctx context.Context, instance *evalh
 		return
 	}
 
-	mcpStatus := &evalhubv1alpha1.EvalHubMCPStatus{
+	mcpStatus := &evalhubv1.EvalHubMCPStatus{
 		Phase: "Pending",
 		Ready: false,
 	}

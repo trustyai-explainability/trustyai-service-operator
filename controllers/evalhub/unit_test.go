@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -27,13 +27,13 @@ import (
 func TestEvalHubReconciler_reconcileService(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
 	testNamespace := "test-namespace"
 	evalHubName := "test-evalhub"
 
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evalHubName,
 			Namespace: testNamespace,
@@ -87,13 +87,13 @@ func TestEvalHubReconciler_reconcileService(t *testing.T) {
 func TestEvalHubReconciler_reconcileConfigMap(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
 	testNamespace := "test-namespace"
 	evalHubName := "test-evalhub"
 
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evalHubName,
 			Namespace: testNamespace,
@@ -153,13 +153,13 @@ func TestEvalHubReconciler_updateStatus(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
 	testNamespace := "test-namespace"
 	evalHubName := "test-evalhub"
 
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evalHubName,
 			Namespace: testNamespace,
@@ -180,7 +180,7 @@ func TestEvalHubReconciler_updateStatus(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(evalHub, deployment).
-		WithStatusSubresource(&evalhubv1alpha1.EvalHub{}).
+		WithStatusSubresource(&evalhubv1.EvalHub{}).
 		Build()
 
 	reconciler := &EvalHubReconciler{
@@ -195,7 +195,7 @@ func TestEvalHubReconciler_updateStatus(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify status was updated
-		updatedEvalHub := &evalhubv1alpha1.EvalHub{}
+		updatedEvalHub := &evalhubv1.EvalHub{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      evalHubName,
 			Namespace: testNamespace,
@@ -234,7 +234,7 @@ func TestEvalHubReconciler_updateStatus(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify status was updated
-		updatedEvalHub := &evalhubv1alpha1.EvalHub{}
+		updatedEvalHub := &evalhubv1.EvalHub{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      evalHubName,
 			Namespace: testNamespace,
@@ -263,9 +263,9 @@ func TestEvalHubReconciler_updateStatus(t *testing.T) {
 func TestGenerateConfigData(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-evalhub",
 			Namespace: "test-namespace",
@@ -300,7 +300,7 @@ func TestGenerateConfigData(t *testing.T) {
 
 func TestEvalHubHelperMethods(t *testing.T) {
 	t.Run("EvalHub IsReady method", func(t *testing.T) {
-		evalHub := &evalhubv1alpha1.EvalHub{}
+		evalHub := &evalhubv1.EvalHub{}
 
 		// Test not ready
 		evalHub.Status.Ready = corev1.ConditionFalse
@@ -312,7 +312,7 @@ func TestEvalHubHelperMethods(t *testing.T) {
 	})
 
 	t.Run("EvalHub SetStatus method", func(t *testing.T) {
-		evalHub := &evalhubv1alpha1.EvalHub{}
+		evalHub := &evalhubv1.EvalHub{}
 
 		// Set initial status
 		evalHub.SetStatus("Ready", "TestReason", "Test message", corev1.ConditionTrue)
@@ -327,7 +327,7 @@ func TestEvalHubHelperMethods(t *testing.T) {
 	})
 
 	t.Run("EvalHubSpec GetReplicas method", func(t *testing.T) {
-		spec := &evalhubv1alpha1.EvalHubSpec{}
+		spec := &evalhubv1.EvalHubSpec{}
 
 		// Test default value
 		assert.Equal(t, int32(1), spec.GetReplicas())
@@ -339,13 +339,13 @@ func TestEvalHubHelperMethods(t *testing.T) {
 	})
 
 	t.Run("EvalHubSpec GetMCPReplicas method", func(t *testing.T) {
-		var nilSpec *evalhubv1alpha1.EvalHubSpec
+		var nilSpec *evalhubv1.EvalHubSpec
 		assert.Equal(t, int32(1), nilSpec.GetMCPReplicas())
 
-		spec := &evalhubv1alpha1.EvalHubSpec{}
+		spec := &evalhubv1.EvalHubSpec{}
 		assert.Equal(t, int32(1), spec.GetMCPReplicas())
 
-		spec.MCP = &evalhubv1alpha1.EvalHubMCPSpec{}
+		spec.MCP = &evalhubv1.EvalHubMCPSpec{}
 		assert.Equal(t, int32(1), spec.GetMCPReplicas())
 
 		three := int32(3)
@@ -360,13 +360,13 @@ func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, rbacv1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
 	testNamespace := "test-namespace"
 	evalHubName := "test-evalhub"
 
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evalHubName,
 			Namespace: testNamespace,
@@ -464,13 +464,13 @@ func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
 func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, rbacv1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
 	testNamespace := "test-namespace"
 	evalHubName := "test-evalhub"
 
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evalHubName,
 			Namespace: testNamespace,
@@ -563,13 +563,13 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 func TestEvalHubReconciler_createAPIAccessRole(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, rbacv1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
 	testNamespace := "test-namespace"
 	evalHubName := "test-evalhub"
 
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evalHubName,
 			Namespace: testNamespace,
@@ -645,13 +645,13 @@ func TestEvalHubReconciler_createAPIAccessRole(t *testing.T) {
 func TestEvalHubReconciler_createAPIAccessRoleBinding_RefersToRole(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, rbacv1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
 	testNamespace := "test-namespace"
 	evalHubName := "test-evalhub"
 
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evalHubName,
 			Namespace: testNamespace,
@@ -693,13 +693,13 @@ func TestEvalHubReconciler_createAPIAccessRoleBinding_RefersToRole(t *testing.T)
 func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, rbacv1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
 	testNamespace := "test-namespace"
 	evalHubName := "test-evalhub"
 
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evalHubName,
 			Namespace: testNamespace,
@@ -807,13 +807,13 @@ func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) 
 func TestEvalHubReconciler_cleanupClusterRoleBinding(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, rbacv1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
 	testNamespace := "test-namespace"
 	evalHubName := "test-evalhub"
 
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evalHubName,
 			Namespace: testNamespace,
@@ -869,13 +869,13 @@ func TestEvalHubReconciler_cleanupClusterRoleBinding(t *testing.T) {
 func TestEvalHubReconciler_reconcileServiceCAConfigMap(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
 	testNamespace := "test-namespace"
 	evalHubName := "test-evalhub"
 
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evalHubName,
 			Namespace: testNamespace,
@@ -1016,16 +1016,16 @@ func TestEvalHubReconciler_reconcileServiceCAConfigMap(t *testing.T) {
 func TestGenerateConfigData_WithDatabase(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	t.Run("should include database and secrets sections when DB configured", func(t *testing.T) {
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-evalhub",
 				Namespace: "test-namespace",
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{
-				Database: &evalhubv1alpha1.DatabaseSpec{
+			Spec: evalhubv1.EvalHubSpec{
+				Database: &evalhubv1.DatabaseSpec{
 					Type:   "postgresql",
 					Secret: "my-db-secret",
 				},
@@ -1062,13 +1062,13 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 	})
 
 	t.Run("should use custom pool sizes when specified", func(t *testing.T) {
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-evalhub",
 				Namespace: "test-namespace",
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{
-				Database: &evalhubv1alpha1.DatabaseSpec{
+			Spec: evalhubv1.EvalHubSpec{
+				Database: &evalhubv1.DatabaseSpec{
 					Type:         "postgresql",
 					Secret:       "my-db-secret",
 					MaxOpenConns: 50,
@@ -1100,7 +1100,7 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 	})
 
 	t.Run("should not include database section when DB not configured", func(t *testing.T) {
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-evalhub",
 				Namespace: "test-namespace",
@@ -1129,13 +1129,13 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 	})
 
 	t.Run("should configure sqlite when type is sqlite", func(t *testing.T) {
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-evalhub",
 				Namespace: "test-namespace",
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{
-				Database: &evalhubv1alpha1.DatabaseSpec{
+			Spec: evalhubv1.EvalHubSpec{
+				Database: &evalhubv1.DatabaseSpec{
 					Type: "sqlite",
 				},
 			},
@@ -1168,16 +1168,16 @@ func TestGenerateConfigData_WithDatabase(t *testing.T) {
 func TestGenerateConfigData_WithOTEL(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	t.Run("should include otel section when configured", func(t *testing.T) {
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-evalhub",
 				Namespace: "test-namespace",
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{
-				Otel: &evalhubv1alpha1.OTELSpec{
+			Spec: evalhubv1.EvalHubSpec{
+				Otel: &evalhubv1.OTELSpec{
 					ExporterType:     "otlp-grpc",
 					ExporterEndpoint: "otel-collector:4317",
 					ExporterInsecure: true,
@@ -1219,13 +1219,13 @@ func TestGenerateConfigData_WithOTEL(t *testing.T) {
 	})
 
 	t.Run("should use custom values", func(t *testing.T) {
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-evalhub",
 				Namespace: "test-namespace",
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{
-				Otel: &evalhubv1alpha1.OTELSpec{
+			Spec: evalhubv1.EvalHubSpec{
+				Otel: &evalhubv1.OTELSpec{
 					ExporterType:     "otlp-http",
 					ExporterEndpoint: "https://tempo.example.com:4318",
 					ExporterInsecure: false,
@@ -1266,7 +1266,7 @@ func TestGenerateConfigData_WithOTEL(t *testing.T) {
 	})
 
 	t.Run("should omit otel section when not configured", func(t *testing.T) {
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-evalhub",
 				Namespace: "test-namespace",
@@ -1298,20 +1298,20 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
 	testNamespace := "test-namespace"
 	evalHubName := "test-evalhub"
 	dbSecretName := "evalhub-db-credentials"
 
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evalHubName,
 			Namespace: testNamespace,
 		},
-		Spec: evalhubv1alpha1.EvalHubSpec{
-			Database: &evalhubv1alpha1.DatabaseSpec{
+		Spec: evalhubv1.EvalHubSpec{
+			Database: &evalhubv1.DatabaseSpec{
 				Type:   "postgresql",
 				Secret: dbSecretName,
 			},
@@ -1396,20 +1396,20 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 
 func TestEvalHubHelperMethods_IsDatabaseConfigured(t *testing.T) {
 	t.Run("should return false when Database is nil", func(t *testing.T) {
-		spec := &evalhubv1alpha1.EvalHubSpec{}
+		spec := &evalhubv1.EvalHubSpec{}
 		assert.False(t, spec.IsDatabaseConfigured())
 	})
 
 	t.Run("should return false when Database.Type is empty", func(t *testing.T) {
-		spec := &evalhubv1alpha1.EvalHubSpec{
-			Database: &evalhubv1alpha1.DatabaseSpec{},
+		spec := &evalhubv1.EvalHubSpec{
+			Database: &evalhubv1.DatabaseSpec{},
 		}
 		assert.False(t, spec.IsDatabaseConfigured())
 	})
 
 	t.Run("should return true when Database.Type is postgresql", func(t *testing.T) {
-		spec := &evalhubv1alpha1.EvalHubSpec{
-			Database: &evalhubv1alpha1.DatabaseSpec{
+		spec := &evalhubv1.EvalHubSpec{
+			Database: &evalhubv1.DatabaseSpec{
 				Type:   "postgresql",
 				Secret: "my-secret",
 			},
@@ -1420,8 +1420,8 @@ func TestEvalHubHelperMethods_IsDatabaseConfigured(t *testing.T) {
 	})
 
 	t.Run("should return true when Database.Type is sqlite", func(t *testing.T) {
-		spec := &evalhubv1alpha1.EvalHubSpec{
-			Database: &evalhubv1alpha1.DatabaseSpec{
+		spec := &evalhubv1.EvalHubSpec{
+			Database: &evalhubv1.DatabaseSpec{
 				Type: "sqlite",
 			},
 		}
@@ -1435,7 +1435,7 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
 	operatorNamespace := "operator-ns"
@@ -1458,12 +1458,12 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 	}
 
 	t.Run("should copy provider ConfigMap to instance namespace", func(t *testing.T) {
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      evalHubName,
 				Namespace: instanceNamespace,
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{
+			Spec: evalhubv1.EvalHubSpec{
 				Providers: []string{"testprovider"},
 			},
 		}
@@ -1498,12 +1498,12 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 	})
 
 	t.Run("should return nil when no providers specified", func(t *testing.T) {
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      evalHubName,
 				Namespace: instanceNamespace,
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{},
+			Spec: evalhubv1.EvalHubSpec{},
 		}
 
 		fakeClient := fake.NewClientBuilder().
@@ -1524,12 +1524,12 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 	})
 
 	t.Run("should error when provider not found", func(t *testing.T) {
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      evalHubName,
 				Namespace: instanceNamespace,
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{
+			Spec: evalhubv1.EvalHubSpec{
 				Providers: []string{"nonexistent"},
 			},
 		}
@@ -1553,12 +1553,12 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 	})
 
 	t.Run("should mount providers as projected volume in deployment", func(t *testing.T) {
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      evalHubName,
 				Namespace: instanceNamespace,
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{
+			Spec: evalhubv1.EvalHubSpec{
 				Providers: []string{"testprovider"},
 			},
 		}
@@ -1646,14 +1646,14 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 func TestEvalHubReconciler_createTenantServiceCAConfigMap(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
 	instanceNamespace := "opendatahub"
 	tenantNamespace := "team-a"
 	evalHubName := "evalhub"
 
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evalHubName,
 			Namespace: instanceNamespace,
@@ -1785,14 +1785,14 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, rbacv1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
 	instanceNamespace := "opendatahub"
 	tenantNamespace := "team-b"
 	evalHubName := "evalhub"
 
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evalHubName,
 			Namespace: instanceNamespace,
@@ -2061,11 +2061,11 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 func TestEvalHubReconciler_reconcileServiceMonitor_NoOpUpdate(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
-	require.NoError(t, evalhubv1alpha1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
 	require.NoError(t, monitoringv1.AddToScheme(scheme))
 
 	ctx := context.Background()
-	evalHub := &evalhubv1alpha1.EvalHub{
+	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
 	}
 
@@ -2101,7 +2101,7 @@ func TestEvalHubReconciler_reconcileServiceMonitor_NoOpUpdate(t *testing.T) {
 }
 
 func TestGenerateMCPAuthConfigData_MethodsPresent(t *testing.T) {
-	instance := &evalhubv1alpha1.EvalHub{
+	instance := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "eh", Namespace: "team-a"},
 	}
 	out := generateMCPAuthConfigData(instance)

@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"strings"
 
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -42,7 +42,7 @@ func evalHubBaseURLFromJob(ctx context.Context, c client.Client, job *batchv1.Jo
 }
 
 func evalHubBaseURLFromCR(ctx context.Context, c client.Client, name, namespace string) (string, error) {
-	var eh evalhubv1alpha1.EvalHub
+	var eh evalhubv1.EvalHub
 	key := client.ObjectKey{Namespace: namespace, Name: name}
 	if err := c.Get(ctx, key, &eh); err != nil {
 		return "", fmt.Errorf("get EvalHub %s/%s: %w", namespace, name, err)

@@ -40,7 +40,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	ctrlwebhook "sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
@@ -64,6 +66,7 @@ func init() {
 	utilruntime.Must(tasv1.AddToScheme(scheme))
 	utilruntime.Must(lmesv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(evalhubv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(evalhubv1.AddToScheme(scheme))
 	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 	utilruntime.Must(kservev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(kservev1beta1.AddToScheme(scheme))
@@ -123,10 +126,18 @@ func main() {
 				},
 			},
 		},
+		WebhookServer: ctrlwebhook.NewServer(ctrlwebhook.Options{
+			Port: 9443,
+		}),
 		// LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+
+	if err := ctrl.NewWebhookManagedBy(mgr).For(&evalhubv1.EvalHub{}).Complete(); err != nil {
+		setupLog.Error(err, "unable to create EvalHub conversion webhook")
 		os.Exit(1)
 	}
 

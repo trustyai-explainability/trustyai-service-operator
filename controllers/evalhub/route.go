@@ -4,7 +4,7 @@ import (
 	"context"
 
 	routev1 "github.com/openshift/api/route/v1"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,7 +16,7 @@ import (
 )
 
 // reconcileRoute creates or updates the Route for EvalHub (OpenShift only)
-func (r *EvalHubReconciler) reconcileRoute(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+func (r *EvalHubReconciler) reconcileRoute(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
 
 	// Check if routes are supported (OpenShift)
@@ -69,7 +69,7 @@ func (r *EvalHubReconciler) reconcileRoute(ctx context.Context, instance *evalhu
 }
 
 // buildRouteSpec builds the route specification for EvalHub.
-func (r *EvalHubReconciler) buildRouteSpec(instance *evalhubv1alpha1.EvalHub) routev1.RouteSpec {
+func (r *EvalHubReconciler) buildRouteSpec(instance *evalhubv1.EvalHub) routev1.RouteSpec {
 	return routev1.RouteSpec{
 		To: routev1.RouteTargetReference{
 			Kind:   "Service",

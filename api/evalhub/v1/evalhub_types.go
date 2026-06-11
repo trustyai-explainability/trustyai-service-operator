@@ -1,4 +1,4 @@
-package v1alpha1
+package v1
 
 import (
 	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
@@ -8,6 +8,7 @@ import (
 
 // EvalHub is the Schema for the evalhubs API
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.ready`
@@ -19,6 +20,9 @@ type EvalHub struct {
 	Spec   EvalHubSpec   `json:"spec,omitempty"`
 	Status EvalHubStatus `json:"status,omitempty"`
 }
+
+// Hub marks this version as the conversion hub.
+func (*EvalHub) Hub() {}
 
 // DatabaseSpec defines database configuration for EvalHub
 type DatabaseSpec struct {
@@ -220,7 +224,6 @@ func (e *EvalHub) SetStatus(condType, reason, message string, status corev1.Cond
 		Message:            message,
 		LastTransitionTime: now,
 	}
-	// Replace or append condition
 	found := false
 	for i, cond := range e.Status.Conditions {
 		if cond.Type == condType {

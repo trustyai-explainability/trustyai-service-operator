@@ -3,7 +3,7 @@ package evalhub
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 )
 
 // Runs under the EvalHub Controller Suite envtest lifecycle in suite_test.go (BeforeSuite/AfterSuite).
@@ -15,7 +15,7 @@ var _ = Describe("MCP transport helpers", func() {
 		})
 
 		It("returns spec.transport when set", func() {
-			spec := &evalhubv1alpha1.EvalHubMCPSpec{Transport: "http-sse"}
+			spec := &evalhubv1.EvalHubMCPSpec{Transport: "http-sse"}
 			Expect(mcpClientTransport(spec)).To(Equal("http-sse"))
 		})
 	})
@@ -26,12 +26,12 @@ var _ = Describe("MCP transport helpers", func() {
 		})
 
 		It("uses evalHubTransport when set", func() {
-			spec := &evalhubv1alpha1.EvalHubMCPSpec{Transport: "http", EvalHubTransport: "http-sse"}
+			spec := &evalhubv1.EvalHubMCPSpec{Transport: "http", EvalHubTransport: "http-sse"}
 			Expect(mcpTransportEnv(spec)).To(Equal("http-sse"))
 		})
 
 		It("falls back to transport when evalHubTransport is unset", func() {
-			spec := &evalhubv1alpha1.EvalHubMCPSpec{Transport: "http-sse"}
+			spec := &evalhubv1.EvalHubMCPSpec{Transport: "http-sse"}
 			Expect(mcpTransportEnv(spec)).To(Equal("http-sse"))
 		})
 	})

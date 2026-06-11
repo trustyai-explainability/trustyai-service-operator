@@ -6,7 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -22,7 +22,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 	var (
 		testNamespace string
 		namespace     *corev1.Namespace
-		evalHub       *evalhubv1alpha1.EvalHub
+		evalHub       *evalhubv1.EvalHub
 		reconciler    *EvalHubReconciler
 	)
 
@@ -145,7 +145,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 	Context("When handling edge cases and errors", func() {
 		It("should create configmap even when EvalHub instance is not persisted", func() {
 			By("Creating configmap for non-persisted EvalHub")
-			nonPersistedEvalHub := &evalhubv1alpha1.EvalHub{
+			nonPersistedEvalHub := &evalhubv1.EvalHub{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "non-persisted",
 					Namespace: testNamespace,
@@ -271,7 +271,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 		It("should include otel section in config.yaml", func() {
 			By("Creating EvalHub with OTEL config")
 			otelEvalHub := createEvalHubInstance("otel-configmap-evalhub", testNamespace)
-			otelEvalHub.Spec.Otel = &evalhubv1alpha1.OTELSpec{
+			otelEvalHub.Spec.Otel = &evalhubv1.OTELSpec{
 				ExporterType:     "otlp-grpc",
 				ExporterEndpoint: "otel-collector:4317",
 				ExporterInsecure: true,

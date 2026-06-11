@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -16,7 +16,7 @@ import (
 )
 
 // reconcileDeployment creates or updates the Deployment for EvalHub
-func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *evalhubv1alpha1.EvalHub, providerCMNames []string, collectionCMNames []string) error {
+func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *evalhubv1.EvalHub, providerCMNames []string, collectionCMNames []string) error {
 	log := log.FromContext(ctx)
 	log.Info("Reconciling Deployment", "name", instance.Name)
 
@@ -59,7 +59,7 @@ func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *e
 }
 
 // buildDeploymentSpec builds the deployment specification for EvalHub
-func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *evalhubv1alpha1.EvalHub, providerCMNames []string, collectionCMNames []string) (appsv1.DeploymentSpec, error) {
+func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *evalhubv1.EvalHub, providerCMNames []string, collectionCMNames []string) (appsv1.DeploymentSpec, error) {
 	labels := map[string]string{
 		"app":       "eval-hub",
 		"instance":  instance.Name,

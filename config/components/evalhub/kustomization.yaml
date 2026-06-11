@@ -4,6 +4,7 @@ kind: Component
 
 resources:
   - crd/trustyai.opendatahub.io_evalhubs.yaml
+  - webhook-service.yaml
   - rbac/evalhub_auth_reviewer_role.yaml
   - rbac/evalhub_collections_access_binding.yaml
   - rbac/evalhub_collections_access_role.yaml
