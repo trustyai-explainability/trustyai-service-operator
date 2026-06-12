@@ -5,19 +5,8 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.0
-    service.beta.openshift.io/inject-cabundle: "true"
   name: evalhubs.trustyai.opendatahub.io
 spec:
-  conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: webhook-service
-          namespace: system
-          path: /convert
-      conversionReviewVersions:
-      - v1
   group: trustyai.opendatahub.io
   names:
     kind: EvalHub
