@@ -1188,6 +1188,21 @@ spec:
                                 x-kubernetes-list-type: atomic
                             type: object
                         type: object
+                      mcpGateway:
+                        description: MCPGateway is the name and namespace of the MCPGatewayExtension
+                          resource
+                        properties:
+                          name:
+                            description: MCPGatewayName is the name of the MCPGatewayExtension
+                              resource
+                            pattern: ^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$
+                            type: string
+                          namespace:
+                            description: MCPGatewayNamespace is the namespace of the
+                              MCPGatewayExtension resource
+                            pattern: ^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$
+                            type: string
+                        type: object
                       nodeSelector:
                         additionalProperties:
                           type: string
@@ -1241,6 +1256,16 @@ spec:
           status:
             description: NemoGuardrailStatus defines the observed state of NemoGuardrails
             properties:
+              bbrPlugin:
+                description: BBRPlugin describes the status of the BBR plugin
+                properties:
+                  bbrPluginError:
+                    type: string
+                  bbrPluginFound:
+                    type: boolean
+                required:
+                - bbrPluginFound
+                type: object
               ca:
                 description: CA describes the status of the CA configmaps
                 properties:
@@ -1281,6 +1306,16 @@ spec:
                   - type
                   type: object
                 type: array
+              mcpGateway:
+                description: MCP describes the status of the MCP-related resources
+                properties:
+                  mcpGatewayError:
+                    type: string
+                  mcpGatewayFound:
+                    type: boolean
+                required:
+                - mcpGatewayFound
+                type: object
               phase:
                 type: string
             type: object
