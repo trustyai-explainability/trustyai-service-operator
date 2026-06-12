@@ -129,11 +129,14 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(evalHubContainer.Image).To(Equal("quay.io/ruimvieira/eval-hub:test")) // From test configmap
 			Expect(evalHubContainer.ImagePullPolicy).To(Equal(corev1.PullAlways))
 
-			// Check ports (loopback app port; Service targets kube-rbac-proxy on 8443)
-			Expect(evalHubContainer.Ports).To(HaveLen(1))
+			// Check ports (loopback app port + metrics port; Service targets kube-rbac-proxy on 8443)
+			Expect(evalHubContainer.Ports).To(HaveLen(2))
 			Expect(evalHubContainer.Ports[0].Name).To(Equal("evalhub"))
 			Expect(evalHubContainer.Ports[0].ContainerPort).To(Equal(int32(evalHubAppPort)))
 			Expect(evalHubContainer.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
+			Expect(evalHubContainer.Ports[1].Name).To(Equal("metrics"))
+			Expect(evalHubContainer.Ports[1].ContainerPort).To(Equal(int32(metricsPort)))
+			Expect(evalHubContainer.Ports[1].Protocol).To(Equal(corev1.ProtocolTCP))
 
 			var krp *corev1.Container
 			for i := range deployment.Spec.Template.Spec.Containers {
@@ -619,9 +622,11 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 
 		Expect(evalHubC.Image).To(Equal("quay.io/test/eval-hub:latest"))
 		Expect(evalHubC.ImagePullPolicy).To(Equal(corev1.PullAlways))
-		Expect(evalHubC.Ports).To(HaveLen(1))
+		Expect(evalHubC.Ports).To(HaveLen(2))
 		Expect(evalHubC.Ports[0].Name).To(Equal("evalhub"))
 		Expect(evalHubC.Ports[0].ContainerPort).To(Equal(int32(evalHubAppPort)))
+		Expect(evalHubC.Ports[1].Name).To(Equal("metrics"))
+		Expect(evalHubC.Ports[1].ContainerPort).To(Equal(int32(metricsPort)))
 
 		envs := map[string]string{}
 		for _, e := range evalHubC.Env {

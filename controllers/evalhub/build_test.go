@@ -114,10 +114,13 @@ var _ = Describe("buildDeploymentSpec", func() {
 		Expect(container.Image).To(Equal("quay.io/test/eval-hub:v1.2.3"))
 		Expect(container.ImagePullPolicy).To(Equal(corev1.PullAlways))
 
-		Expect(container.Ports).To(HaveLen(1))
+		Expect(container.Ports).To(HaveLen(2))
 		Expect(container.Ports[0].Name).To(Equal("evalhub"))
 		Expect(container.Ports[0].ContainerPort).To(Equal(int32(evalHubAppPort)))
 		Expect(container.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
+		Expect(container.Ports[1].Name).To(Equal("metrics"))
+		Expect(container.Ports[1].ContainerPort).To(Equal(int32(metricsPort)))
+		Expect(container.Ports[1].Protocol).To(Equal(corev1.ProtocolTCP))
 
 		envVarMap := make(map[string]string)
 		for _, env := range container.Env {
