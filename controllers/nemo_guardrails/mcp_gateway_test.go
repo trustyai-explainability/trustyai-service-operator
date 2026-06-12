@@ -81,9 +81,13 @@ func setupTestReconciler(ns string, mcpGatewayExtension client.Object, mcpGatewa
 			Namespace: ns,
 		},
 		Spec: nemoguardrailsv1alpha1.NemoGuardrailsSpec{
-			MCPGateway: &nemoguardrailsv1alpha1.MCPGatewayConfig{
-				Name:      "test-mcp-gateway",
-				Namespace: ns,
+			Template: &nemoguardrailsv1alpha1.NemoGuardrailsTemplate{
+				Pod: &nemoguardrailsv1alpha1.NemoGuardrailsPodTemplate{
+					MCPGateway: &nemoguardrailsv1alpha1.MCPGatewayConfig{
+						Name:      "test-mcp-gateway",
+						Namespace: ns,
+					},
+				},
 			},
 		},
 	}
@@ -118,8 +122,8 @@ func TestDiscoverMCPGateway(t *testing.T) {
 	ns := "test-ns"
 
 	mcpGatewayExtension, mcpGateway := setupTestObjects(ns, "test-mcp-gateway", ns)
-	reconciler, nemoGuardrails := setupTestReconciler(ns, mcpGatewayExtension, mcpGateway)
-	mcpGatewayRef, mcpGatewayStatus := reconciler.discoverMCPGateway(ctx, ns, "", nemoGuardrails)
+	reconciler, _ := setupTestReconciler(ns, mcpGatewayExtension, mcpGateway)
+	mcpGatewayRef, mcpGatewayStatus := reconciler.discoverMCPGateway(ctx, ns, "")
 	assert.NotNil(t, mcpGatewayRef)
 	assert.True(t, mcpGatewayStatus.MCPGatewayFound)
 	assert.Equal(t, mcpGatewayRef.Name, "test-mcp-gateway")
@@ -133,8 +137,8 @@ func TestDiscoverMCPGatewayWithGatewayNotFound(t *testing.T) {
 
 	gatewayNameOverride := "test-mcp-gateway-not-found"
 	mcpGatewayExtension, mcpGateway := setupTestObjects(ns, name, ns)
-	reconciler, nemoGuardrails := setupTestReconciler(ns, mcpGatewayExtension, mcpGateway)
-	mcpGatewayRef, mcpGatewayStatus := reconciler.discoverMCPGateway(ctx, ns, gatewayNameOverride, nemoGuardrails)
+	reconciler, _ := setupTestReconciler(ns, mcpGatewayExtension, mcpGateway)
+	mcpGatewayRef, mcpGatewayStatus := reconciler.discoverMCPGateway(ctx, ns, gatewayNameOverride)
 	assert.Nil(t, mcpGatewayRef)
 	assert.False(t, mcpGatewayStatus.MCPGatewayFound)
 	assert.Equal(t, mcpGatewayStatus.MCPGatewayError, fmt.Sprintf("MCP gateway not found: %s", gatewayNameOverride))

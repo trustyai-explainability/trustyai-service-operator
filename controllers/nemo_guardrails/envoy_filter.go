@@ -107,38 +107,53 @@ func (r *NemoGuardrailsReconciler) ensureEnvoyFilter(ctx context.Context, instan
 	existing.SetAPIVersion("networking.istio.io/v1alpha3")
 
 	err := r.Get(ctx, types.NamespacedName{Name: envoyFilterName, Namespace: mcpGatewayNamespace}, existing)
-	if err == nil {
-		return nil
-	}
-	if !errors.IsNotFound(err) {
-		return fmt.Errorf("failed to check for existing EnvoyFilter: %v", err)
-	}
-
-	config := EnvoyFilterConfig{
-		Name:            envoyFilterName,
-		TargetName:      mcpGatewayName,
-		TargetNamespace: mcpGatewayNamespace,
-	}
-
-	envoyFilter, err := templateParser.ParseResource[*unstructured.Unstructured](envoyFilterTemplatePath, config, reflect.TypeOf(&unstructured.Unstructured{}))
-	if err != nil {
-		logger.Error(err, "could not parse the EnvoyFilter template")
-		return err
-	}
-
-	if instance.Namespace == mcpGatewayNamespace {
-		if err := ctrl.SetControllerReference(instance, envoyFilter, r.Scheme); err != nil {
+	if errors.IsNotFound(err) {
+		config := EnvoyFilterConfig{
+			Name:            envoyFilterName,
+			TargetName:      mcpGatewayName,
+			TargetNamespace: mcpGatewayNamespace,
+		}
+		desired, err := templateParser.ParseResource[*unstructured.Unstructured](envoyFilterTemplatePath, config, reflect.TypeOf(&unstructured.Unstructured{}))
+		if err != nil {
+			logger.Error(err, "could not parse the EnvoyFilter template")
 			return err
 		}
-	} else {
-		logger.Info("Skipping ownerReference for cross-namespace EnvoyFilter",
-			"crNamespace", instance.Namespace, "envoyFilterNamespace", mcpGatewayNamespace)
+		if instance.Namespace == mcpGatewayNamespace {
+			if err := ctrl.SetControllerReference(instance, desired, r.Scheme); err != nil {
+				return err
+			}
+		} else {
+			logger.Info("Skipping ownerReference for cross-namespace EnvoyFilter",
+				"crNamespace", instance.Namespace, "envoyFilterNamespace", mcpGatewayNamespace)
+		}
+		logger.Info("Creating EnvoyFilter", "name", envoyFilterName, "namespace", mcpGatewayNamespace)
+		if err := r.Create(ctx, desired); err != nil {
+			return fmt.Errorf("failed to create EnvoyFilter: %w", err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check for existing EnvoyFilter: %w", err)
 	}
 
-	logger.Info("Creating EnvoyFilter", "name", envoyFilterName, "namespace", mcpGatewayNamespace)
-	if err := r.Create(ctx, envoyFilter); err != nil {
-		return fmt.Errorf("failed to create EnvoyFilter: %v", err)
+	// EnvoyFilter exists — patch the workloadSelector if the gateway name changed.
+	existingGateway, _, _ := unstructured.NestedString(
+		existing.Object, "spec", "workloadSelector", "labels", "gateway.networking.k8s.io/gateway-name",
+	)
+	if existingGateway == mcpGatewayName {
+		return nil
 	}
 
+	logger.Info("Gateway name changed, patching EnvoyFilter workloadSelector",
+		"old", existingGateway, "new", mcpGatewayName)
+	patch := client.MergeFrom(existing.DeepCopy())
+	if err := unstructured.SetNestedField(existing.Object,
+		mcpGatewayName, "spec", "workloadSelector", "labels", "gateway.networking.k8s.io/gateway-name",
+	); err != nil {
+		return fmt.Errorf("failed to build EnvoyFilter patch: %w", err)
+	}
+	if err := r.Patch(ctx, existing, patch); err != nil {
+		return fmt.Errorf("failed to patch EnvoyFilter: %w", err)
+	}
 	return nil
 }

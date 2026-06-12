@@ -30,7 +30,7 @@ type MCPGatewayRef struct {
 // namespace to find the gateway they target. If gatewayNameOverride is
 // non-empty, only extensions whose spec.targetRef.name matches are considered;
 // otherwise the first extension found is used.
-func (r *NemoGuardrailsReconciler) discoverMCPGateway(ctx context.Context, namespace string, gatewayNameOverride string, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails) (*MCPGatewayRef, *nemoguardrailsv1alpha1.MCPGatewayStatus) {
+func (r *NemoGuardrailsReconciler) discoverMCPGateway(ctx context.Context, namespace string, gatewayNameOverride string) (*MCPGatewayRef, *nemoguardrailsv1alpha1.MCPGatewayStatus) {
 	logger := log.FromContext(ctx)
 
 	mcpGatewayStatus := &nemoguardrailsv1alpha1.MCPGatewayStatus{
