@@ -5,7 +5,6 @@ import (
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -37,13 +36,7 @@ func serviceMonitorName(instance *evalhubv1.EvalHub) string {
 }
 
 func (r *EvalHubReconciler) buildServiceMonitor(instance *evalhubv1.EvalHub) *monitoringv1.ServiceMonitor {
-	labels := map[string]string{
-		"app":       "eval-hub",
-		"component": "api",
-		"instance":  instance.Name,
-	}
-
-	serverName := instance.Name + "." + instance.Namespace + ".svc"
+	labels := metricsServiceLabels(instance)
 
 	return &monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
@@ -57,21 +50,8 @@ func (r *EvalHubReconciler) buildServiceMonitor(instance *evalhubv1.EvalHub) *mo
 					HonorLabels: true,
 					Interval:    scrapeInterval,
 					Path:        metricsPath,
-					Scheme:      "https",
-					Port:        "https",
-					TLSConfig: &monitoringv1.TLSConfig{
-						SafeTLSConfig: monitoringv1.SafeTLSConfig{
-							ServerName: serverName,
-							CA: monitoringv1.SecretOrConfigMap{
-								ConfigMap: &corev1.ConfigMapKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: instance.Name + "-service-ca",
-									},
-									Key: serviceCACertFile,
-								},
-							},
-						},
-					},
+					Scheme:      "http",
+					Port:        "metrics",
 				},
 			},
 			Selector: metav1.LabelSelector{

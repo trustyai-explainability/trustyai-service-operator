@@ -25,6 +25,9 @@ const (
 
 	// Service configuration (public HTTPS targets kube-rbac-proxy on this port)
 	servicePort = 8443
+	// metricsPort is the dedicated Prometheus metrics port on the EvalHub container.
+	// Bound to 0.0.0.0, serves /metrics over plain HTTP with no auth (cluster-internal only).
+	metricsPort = 9090
 
 	// kube-rbac-proxy sidecar
 	kubeRBACProxyContainerName       = "kube-rbac-proxy"

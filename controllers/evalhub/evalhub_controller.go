@@ -220,6 +220,14 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return RequeueWithError(err)
 	}
 
+	// Reconcile metrics Service (dedicated ClusterIP for Prometheus scraping on metricsPort)
+	if err := r.reconcileMetricsService(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile metrics Service")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile metrics Service: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
 	// Reconcile monitoring resources (ServiceMonitor).
 	// Monitoring failures are non-fatal: log, set a degraded condition, and continue.
 	// The condition is set in memory only — updateStatus() at the end of the loop

@@ -149,6 +149,15 @@ All controllers follow the standard loop:
 - Events via `recorder.Event(instance, EventType, reason, message)`
 - Sub-reconcilers (TAS pattern): separate functions with signature `func(ctx, req, instance) (*Result, error)`
 
+### EvalHub Metrics Architecture
+
+EvalHub exposes Prometheus metrics on a **dedicated port (9090)** bound to `0.0.0.0`, separate from the API (port 8444, loopback only, behind kube-rbac-proxy on 8443). The operator creates:
+
+- A **metrics Service** (`<name>-metrics`, ClusterIP, port 9090, no TLS) — `metrics_service.go`
+- A **ServiceMonitor** targeting the metrics Service over plain HTTP — `servicemonitor.go`
+
+The metrics port requires no authentication, is cluster-internal only (no Route), and is reachable by Prometheus via existing namespace NetworkPolicies. The `METRICS_PORT` and `METRICS_HOST` env vars are set on the EvalHub container and protected from CR overrides.
+
 ### Scheme Registration (cmd/main.go init())
 
 Registers all API groups in order:
