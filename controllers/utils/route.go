@@ -20,6 +20,7 @@ type RouteConfig struct {
 	Owner       *metav1.Object
 	PortName    string
 	Termination *string
+	Annotations map[string]string // Fix for RHOAIENG-33054: HAProxy timeout annotations
 }
 
 const (
