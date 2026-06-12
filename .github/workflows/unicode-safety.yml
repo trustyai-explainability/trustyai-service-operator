@@ -1,0 +1,32 @@
+name: Unicode Safety Check
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+  schedule:
+    - cron: '0 3 * * 0'  # Weekly full scan (Sundays 3 AM)
+
+permissions:
+  contents: read
+  security-events: write  # For SARIF upload
+
+jobs:
+  unicode-safety:
+    name: Detect hidden unicode characters
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: ${{ github.event_name == 'schedule' && 0 || 2 }}
+
+      - name: Unicode Safety Check
+        uses: dcondrey/unicode-safety-check@v3.0.0
+        with:
+          scan-mode: ${{ github.event_name == 'schedule' && 'all' || 'changed' }}
+          sarif-file: unicode-safety.sarif
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: unicode-safety.sarif
