@@ -67,7 +67,6 @@ const (
 // +kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments/finalizers,verbs=update
 // +kubebuilder:rbac:groups=networking.istio.io,resources=envoyfilters,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list
 // +kubebuilder:rbac:groups=mcp.kuadrant.io,resources=mcpgatewayextensions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gateways,verbs=get;list;watch
 
@@ -205,19 +204,25 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// ====== Conditionally reconcile EnvoyFilter ========================================================================
-	// Auto-discover an MCPGatewayExtension in the CR's namespace. If the user
-	// set spec.mcpGateway, only extensions targeting that gateway match;
-	// otherwise the first extension found is used (zero-config path).
+	// Auto-discover an MCPGatewayExtension. If the user set
+	// spec.template.pod.mcpGateway, only extensions targeting that gateway
+	// match; otherwise the first extension found is used (zero-config path).
 	// When prerequisites are absent, any previously-created EnvoyFilter is removed.
-	if nemoGuardrails.Spec.MCPGateway == nil {
+	var mcpGatewayCfg *nemoguardrailsv1alpha1.MCPGatewayConfig
+	if nemoGuardrails.Spec.Template != nil &&
+		nemoGuardrails.Spec.Template.Pod != nil {
+		mcpGatewayCfg = nemoGuardrails.Spec.Template.Pod.MCPGateway
+	}
+
+	if mcpGatewayCfg == nil {
 		if err := r.deleteEnvoyFilter(ctx, nemoGuardrails.Namespace); err != nil {
 			logger.Error(err, "failed to clean up EnvoyFilter")
 		}
 	} else {
-		mcpGatewayRef, mcpGatewayStatus := r.discoverMCPGateway(ctx, nemoGuardrails.Spec.MCPGateway.Namespace, nemoGuardrails.Spec.MCPGateway.Name, nemoGuardrails)
+		mcpGatewayRef, mcpGatewayStatus := r.discoverMCPGateway(ctx, mcpGatewayCfg.Namespace, mcpGatewayCfg.Name)
 		nemoGuardrails.Status.MCP = mcpGatewayStatus
 		if !mcpGatewayStatus.MCPGatewayFound {
-			if err := r.deleteEnvoyFilter(ctx, nemoGuardrails.Spec.MCPGateway.Namespace); err != nil {
+			if err := r.deleteEnvoyFilter(ctx, mcpGatewayCfg.Namespace); err != nil {
 				logger.Error(err, "failed to clean up EnvoyFilter")
 			}
 			r.flushMCPStatus(ctx, nemoGuardrails)

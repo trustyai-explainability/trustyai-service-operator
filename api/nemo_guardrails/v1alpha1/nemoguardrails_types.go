@@ -39,11 +39,11 @@ type NemoConfig struct {
 // MCPGatewayConfig holds the name and namespace of the MCPGatewayExtension resource
 type MCPGatewayConfig struct {
 	// MCPGatewayName is the name of the MCPGatewayExtension resource
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`
+	// +kubebuilder:validation:Pattern=`^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$`
 	// +optional
 	Name string `json:"name,omitempty"`
 	// MCPGatewayNamespace is the namespace of the MCPGatewayExtension resource
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`
+	// +kubebuilder:validation:Pattern=`^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$`
 	// +optional
 	Namespace string `json:"namespace,omitempty"`
 }

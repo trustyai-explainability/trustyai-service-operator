@@ -1195,12 +1195,12 @@ spec:
                           name:
                             description: MCPGatewayName is the name of the MCPGatewayExtension
                               resource
-                            pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                            pattern: ^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$
                             type: string
                           namespace:
                             description: MCPGatewayNamespace is the namespace of the
                               MCPGatewayExtension resource
-                            pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                            pattern: ^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$
                             type: string
                         type: object
                       nodeSelector:
