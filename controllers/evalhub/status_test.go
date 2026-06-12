@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -24,7 +24,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 	var (
 		testNamespace string
 		namespace     *corev1.Namespace
-		evalHub       *evalhubv1alpha1.EvalHub
+		evalHub       *evalhubv1.EvalHub
 		deployment    *appsv1.Deployment
 		reconciler    *EvalHubReconciler
 	)
@@ -111,11 +111,11 @@ var _ = Describe("EvalHub Status Updates", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Updating EvalHub status")
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking updated status")
-			updatedEvalHub := &evalhubv1alpha1.EvalHub{}
+			updatedEvalHub := &evalhubv1.EvalHub{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName,
 				Namespace: testNamespace,
@@ -136,11 +136,11 @@ var _ = Describe("EvalHub Status Updates", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Updating EvalHub status")
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking updated status")
-			updatedEvalHub := &evalhubv1alpha1.EvalHub{}
+			updatedEvalHub := &evalhubv1.EvalHub{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName,
 				Namespace: testNamespace,
@@ -169,11 +169,11 @@ var _ = Describe("EvalHub Status Updates", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Updating EvalHub status")
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking updated status")
-			updatedEvalHub := &evalhubv1alpha1.EvalHub{}
+			updatedEvalHub := &evalhubv1.EvalHub{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName,
 				Namespace: testNamespace,
@@ -193,11 +193,11 @@ var _ = Describe("EvalHub Status Updates", func() {
 			err := k8sClient.Status().Update(ctx, deployment)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Verifying initial status is Pending")
-			updatedEvalHub := &evalhubv1alpha1.EvalHub{}
+			updatedEvalHub := &evalhubv1.EvalHub{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName,
 				Namespace: testNamespace,
@@ -210,7 +210,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			err = k8sClient.Status().Update(ctx, deployment)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Verifying status is now Ready")
@@ -238,11 +238,11 @@ var _ = Describe("EvalHub Status Updates", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			By("Updating EvalHub status")
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking status reflects missing deployment")
-			updatedEvalHub := &evalhubv1alpha1.EvalHub{}
+			updatedEvalHub := &evalhubv1.EvalHub{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName,
 				Namespace: testNamespace,
@@ -261,11 +261,11 @@ var _ = Describe("EvalHub Status Updates", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Updating EvalHub status")
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking URL is set correctly")
-			updatedEvalHub := &evalhubv1alpha1.EvalHub{}
+			updatedEvalHub := &evalhubv1.EvalHub{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName,
 				Namespace: testNamespace,
@@ -280,7 +280,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 	Context("When handling status update errors", func() {
 		It("should return error when EvalHub doesn't exist", func() {
 			By("Creating EvalHub that doesn't exist in cluster")
-			nonExistentEvalHub := &evalhubv1alpha1.EvalHub{
+			nonExistentEvalHub := &evalhubv1.EvalHub{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "non-existent",
 					Namespace: testNamespace,
@@ -288,7 +288,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			}
 
 			By("Attempting to update status")
-			err := reconciler.updateStatus(ctx, nonExistentEvalHub)
+			err := reconciler.updateStatus(ctx, nonExistentEvalHub, true)
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -297,7 +297,7 @@ var _ = Describe("EvalHub Status Updates", func() {
 			badEvalHub := createEvalHubInstance("bad-status-evalhub", "non-existent-namespace")
 			badReconciler, _ := setupReconciler("non-existent-namespace")
 
-			err := badReconciler.updateStatus(ctx, badEvalHub)
+			err := badReconciler.updateStatus(ctx, badEvalHub, true)
 			Expect(err).To(HaveOccurred())
 		})
 	})
@@ -310,10 +310,10 @@ var _ = Describe("EvalHub Status Updates", func() {
 			err := k8sClient.Status().Update(ctx, deployment)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
-			updatedEvalHub := &evalhubv1alpha1.EvalHub{}
+			updatedEvalHub := &evalhubv1.EvalHub{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName,
 				Namespace: testNamespace,
@@ -344,10 +344,10 @@ var _ = Describe("EvalHub Status Updates", func() {
 			err := k8sClient.Status().Update(ctx, deployment)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = reconciler.updateStatus(ctx, evalHub)
+			err = reconciler.updateStatus(ctx, evalHub, true)
 			Expect(err).NotTo(HaveOccurred())
 
-			updatedEvalHub := &evalhubv1alpha1.EvalHub{}
+			updatedEvalHub := &evalhubv1.EvalHub{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      evalHubName,
 				Namespace: testNamespace,

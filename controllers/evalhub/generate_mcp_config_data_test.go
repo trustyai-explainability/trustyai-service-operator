@@ -1,0 +1,51 @@
+package evalhub
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/yaml"
+)
+
+var _ = Describe("GenerateMCPConfigData", func() {
+	var r *EvalHubReconciler
+
+	BeforeEach(func() {
+		r = &EvalHubReconciler{}
+	})
+
+	It("defaults MCP transport to http in flat config", func() {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{},
+		}
+		data, err := r.generateMCPConfigData(evalHub)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(data).To(HaveKey(mcpConfigFileName))
+		var cfg MCPConfig
+		Expect(yaml.Unmarshal([]byte(data[mcpConfigFileName]), &cfg)).To(Succeed())
+		Expect(cfg.Transport).To(Equal("http"))
+		Expect(cfg.BaseURL).To(Equal("https://test-evalhub.test-namespace.svc.cluster.local:8443"))
+	})
+
+	It("uses explicit transport from MCP spec", func() {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				MCP: &evalhubv1.EvalHubMCPSpec{Transport: "http-sse"},
+			},
+		}
+		data, err := r.generateMCPConfigData(evalHub)
+		Expect(err).NotTo(HaveOccurred())
+		var cfg MCPConfig
+		Expect(yaml.Unmarshal([]byte(data[mcpConfigFileName]), &cfg)).To(Succeed())
+		Expect(cfg.Transport).To(Equal("http-sse"))
+	})
+})

@@ -7,7 +7,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -28,7 +28,7 @@ var _ = Describe("EvalHub Deployment", func() {
 		testNamespace string
 		namespace     *corev1.Namespace
 		configMap     *corev1.ConfigMap
-		evalHub       *evalhubv1alpha1.EvalHub
+		evalHub       *evalhubv1.EvalHub
 		reconciler    *EvalHubReconciler
 	)
 
@@ -48,7 +48,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			},
 			Data: map[string]string{
 				"evalHubImage":    "quay.io/ruimvieira/eval-hub:test",
-				"kube-rbac-proxy": "quay.io/openshift/origin-kube-rbac-proxy:4.19",
+				"kube-rbac-proxy": "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable",
 			},
 		}
 		Expect(k8sClient.Create(ctx, configMap)).Should(Succeed())
@@ -129,11 +129,14 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(evalHubContainer.Image).To(Equal("quay.io/ruimvieira/eval-hub:test")) // From test configmap
 			Expect(evalHubContainer.ImagePullPolicy).To(Equal(corev1.PullAlways))
 
-			// Check ports (loopback app port; Service targets kube-rbac-proxy on 8443)
-			Expect(evalHubContainer.Ports).To(HaveLen(1))
+			// Check ports (loopback app port + metrics port; Service targets kube-rbac-proxy on 8443)
+			Expect(evalHubContainer.Ports).To(HaveLen(2))
 			Expect(evalHubContainer.Ports[0].Name).To(Equal("evalhub"))
 			Expect(evalHubContainer.Ports[0].ContainerPort).To(Equal(int32(evalHubAppPort)))
 			Expect(evalHubContainer.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
+			Expect(evalHubContainer.Ports[1].Name).To(Equal("metrics"))
+			Expect(evalHubContainer.Ports[1].ContainerPort).To(Equal(int32(metricsPort)))
+			Expect(evalHubContainer.Ports[1].Protocol).To(Equal(corev1.ProtocolTCP))
 
 			var krp *corev1.Container
 			for i := range deployment.Spec.Template.Spec.Containers {
@@ -143,7 +146,7 @@ var _ = Describe("EvalHub Deployment", func() {
 				}
 			}
 			Expect(krp).NotTo(BeNil())
-			Expect(krp.Image).To(Equal("quay.io/openshift/origin-kube-rbac-proxy:4.19"))
+			Expect(krp.Image).To(Equal("quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable"))
 			Expect(krp.Args).To(ContainElement("--config-file=" + kubeRBACProxyConfigMountPath))
 			Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 			var hasAuthMount bool
@@ -179,11 +182,11 @@ var _ = Describe("EvalHub Deployment", func() {
 				envVars[env.Name] = env.Value
 			}
 
-			// EvalHub serves TLS on loopback; kube-rbac-proxy fronts the Service on 8443
+			// EvalHub listens HTTP on loopback; kube-rbac-proxy terminates TLS on servicePort
 			Expect(envVars["API_HOST"]).To(Equal("127.0.0.1"))
 			Expect(envVars["PORT"]).To(Equal(fmt.Sprintf("%d", evalHubAppPort)))
-			Expect(envVars["TLS_CERT_FILE"]).To(Equal("/etc/tls/private/tls.crt"))
-			Expect(envVars["TLS_KEY_FILE"]).To(Equal("/etc/tls/private/tls.key"))
+			Expect(envVars).NotTo(HaveKey("TLS_CERT_FILE"))
+			Expect(envVars).NotTo(HaveKey("TLS_KEY_FILE"))
 			Expect(envVars["LOG_LEVEL"]).To(Equal("INFO"))
 			Expect(envVars["MAX_CONCURRENT_EVALUATIONS"]).To(Equal("10"))
 			Expect(envVars["DEFAULT_TIMEOUT_MINUTES"]).To(Equal("60"))
@@ -382,8 +385,8 @@ var _ = Describe("EvalHub Deployment", func() {
 			}
 			Expect(evalHubContainer).NotTo(BeNil())
 
-			By("Checking evalhub container has 5 volume mounts (config + service-ca + mlflow-token + TLS + DB secret)")
-			Expect(evalHubContainer.VolumeMounts).To(HaveLen(5))
+			By("Checking evalhub container has 4 volume mounts (config + service-ca + mlflow-token + DB secret)")
+			Expect(evalHubContainer.VolumeMounts).To(HaveLen(4))
 
 			var dbMount *corev1.VolumeMount
 			for i, mount := range evalHubContainer.VolumeMounts {
@@ -422,8 +425,8 @@ var _ = Describe("EvalHub Deployment", func() {
 			}
 			Expect(evalHubContainer).NotTo(BeNil())
 
-			By("Checking evalhub container has 4 base volume mounts (config + service-ca + mlflow-token + TLS)")
-			Expect(evalHubContainer.VolumeMounts).To(HaveLen(4))
+			By("Checking evalhub container has 3 base volume mounts (config + service-ca + mlflow-token)")
+			Expect(evalHubContainer.VolumeMounts).To(HaveLen(3))
 			Expect(evalHubContainer.VolumeMounts[0].Name).To(Equal("evalhub-config"))
 		})
 	})
@@ -431,7 +434,7 @@ var _ = Describe("EvalHub Deployment", func() {
 	Context("When handling deployment errors", func() {
 		It("should handle missing EvalHub instance", func() {
 			By("Creating deployment spec for non-existent EvalHub")
-			nonExistentEvalHub := &evalhubv1alpha1.EvalHub{
+			nonExistentEvalHub := &evalhubv1.EvalHub{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "non-existent",
 					Namespace: testNamespace,
@@ -451,7 +454,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(k8sClient.Create(ctx, evalHub)).Should(Succeed())
 		})
 
-		It("should mount TLS secret on evalhub container", func() {
+		It("should mount TLS secret on kube-rbac-proxy container", func() {
 			By("Reconciling deployment")
 			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
@@ -459,19 +462,19 @@ var _ = Describe("EvalHub Deployment", func() {
 			By("Getting deployment")
 			deployment := waitForDeployment(evalHubName, testNamespace)
 
-			By("Finding evalhub container")
-			var evalHubContainer *corev1.Container
+			By("Finding kube-rbac-proxy container")
+			var krpContainer *corev1.Container
 			for _, container := range deployment.Spec.Template.Spec.Containers {
-				if container.Name == "evalhub" {
-					evalHubContainer = &container
+				if container.Name == kubeRBACProxyContainerName {
+					krpContainer = &container
 					break
 				}
 			}
-			Expect(evalHubContainer).NotTo(BeNil())
+			Expect(krpContainer).NotTo(BeNil())
 
-			By("Checking TLS volume mount on evalhub container")
+			By("Checking TLS volume mount on kube-rbac-proxy container")
 			var tlsMount *corev1.VolumeMount
-			for _, mount := range evalHubContainer.VolumeMounts {
+			for _, mount := range krpContainer.VolumeMounts {
 				if mount.Name == evalHubName+"-tls" {
 					tlsMount = &mount
 				}
@@ -494,9 +497,10 @@ var _ = Describe("EvalHub Deployment", func() {
 
 			var evalHubConfigVolume, tlsVolume *corev1.Volume
 			for _, volume := range deployment.Spec.Template.Spec.Volumes {
-				if volume.Name == "evalhub-config" {
+				switch volume.Name {
+				case "evalhub-config":
 					evalHubConfigVolume = &volume
-				} else if volume.Name == evalHubName+"-tls" {
+				case evalHubName + "-tls":
 					tlsVolume = &volume
 				}
 			}
@@ -534,7 +538,7 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 	var (
 		testNamespace string
 		namespace     *corev1.Namespace
-		evalHubInst   *evalhubv1alpha1.EvalHub
+		evalHubInst   *evalhubv1.EvalHub
 		operatorCM    *corev1.ConfigMap
 		reconciler    *EvalHubReconciler
 	)
@@ -557,16 +561,16 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 		Expect(k8sClient.Create(ctx, operatorCM)).To(Succeed())
 
 		replicas := int32(2)
-		evalHubInst = &evalhubv1alpha1.EvalHub{
+		evalHubInst = &evalhubv1.EvalHub{
 			TypeMeta: metav1.TypeMeta{
-				APIVersion: evalhubv1alpha1.GroupVersion.String(),
+				APIVersion: evalhubv1.GroupVersion.String(),
 				Kind:       "EvalHub",
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      parityEvalHubName,
 				Namespace: testNamespace,
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{
+			Spec: evalhubv1.EvalHubSpec{
 				Replicas:  &replicas,
 				Providers: []string{},
 				Env: []corev1.EnvVar{
@@ -618,9 +622,11 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 
 		Expect(evalHubC.Image).To(Equal("quay.io/test/eval-hub:latest"))
 		Expect(evalHubC.ImagePullPolicy).To(Equal(corev1.PullAlways))
-		Expect(evalHubC.Ports).To(HaveLen(1))
+		Expect(evalHubC.Ports).To(HaveLen(2))
 		Expect(evalHubC.Ports[0].Name).To(Equal("evalhub"))
 		Expect(evalHubC.Ports[0].ContainerPort).To(Equal(int32(evalHubAppPort)))
+		Expect(evalHubC.Ports[1].Name).To(Equal("metrics"))
+		Expect(evalHubC.Ports[1].ContainerPort).To(Equal(int32(metricsPort)))
 
 		envs := map[string]string{}
 		for _, e := range evalHubC.Env {
@@ -642,24 +648,20 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 		Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 		Expect(krp.Args).To(ContainElement("--config-file=" + kubeRBACProxyConfigMountPath))
 
-		By("kube-rbac-proxy: kubelet probes hit HTTPS on servicePort (same path as clients; --ignore-paths on eval-hub)")
+		By("kube-rbac-proxy: startup/readiness probe app health via HTTPS on servicePort; liveness uses proxy /healthz")
+		Expect(krp.StartupProbe).NotTo(BeNil())
+		Expect(krp.StartupProbe.HTTPGet.Path).To(Equal(evalHubHealthPath))
+		Expect(krp.StartupProbe.HTTPGet.Port.IntVal).To(Equal(int32(servicePort)))
 		Expect(krp.ReadinessProbe).NotTo(BeNil())
-		Expect(krp.ReadinessProbe.HTTPGet).NotTo(BeNil())
 		Expect(krp.ReadinessProbe.HTTPGet.Path).To(Equal(evalHubHealthPath))
 		Expect(krp.ReadinessProbe.HTTPGet.Port.IntVal).To(Equal(int32(servicePort)))
 		Expect(krp.ReadinessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
-		Expect(krp.ReadinessProbe.InitialDelaySeconds).To(Equal(int32(10)))
-		Expect(krp.ReadinessProbe.PeriodSeconds).To(Equal(int32(5)))
-		Expect(krp.ReadinessProbe.TimeoutSeconds).To(Equal(int32(5)))
-
+		Expect(krp.ReadinessProbe.PeriodSeconds).To(Equal(int32(10)))
 		Expect(krp.LivenessProbe).NotTo(BeNil())
-		Expect(krp.LivenessProbe.HTTPGet).NotTo(BeNil())
-		Expect(krp.LivenessProbe.HTTPGet.Path).To(Equal(evalHubHealthPath))
-		Expect(krp.LivenessProbe.HTTPGet.Port.IntVal).To(Equal(int32(servicePort)))
+		Expect(krp.LivenessProbe.HTTPGet.Path).To(Equal(kubeRBACProxyHealthPath))
+		Expect(krp.LivenessProbe.HTTPGet.Port.IntVal).To(Equal(int32(kubeRBACProxyHealthPort)))
 		Expect(krp.LivenessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
 		Expect(krp.LivenessProbe.InitialDelaySeconds).To(Equal(int32(30)))
-		Expect(krp.LivenessProbe.PeriodSeconds).To(Equal(int32(10)))
-		Expect(krp.LivenessProbe.TimeoutSeconds).To(Equal(int32(5)))
 	})
 
 	It("fails reconcileDeployment when operator ConfigMap is absent", func() {
@@ -669,16 +671,16 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 		defer deleteNamespace(ns)
 
 		r1 := int32(1)
-		fh := &evalhubv1alpha1.EvalHub{
+		fh := &evalhubv1.EvalHub{
 			TypeMeta: metav1.TypeMeta{
-				APIVersion: evalhubv1alpha1.GroupVersion.String(),
+				APIVersion: evalhubv1.GroupVersion.String(),
 				Kind:       "EvalHub",
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "fallback-evalhub",
 				Namespace: fallbackNS,
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{
+			Spec: evalhubv1.EvalHubSpec{
 				Replicas:  &r1,
 				Providers: []string{},
 			},

@@ -51,6 +51,13 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.evalHubImage
+  - name: evalHubMCPImage
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalHubMCPImage
   - name: garak-provider-image
     objref:
       kind: ConfigMap

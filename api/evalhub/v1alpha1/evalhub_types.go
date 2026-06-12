@@ -61,6 +61,66 @@ type OTELSpec struct {
 	EnableLogs bool `json:"enableLogs,omitempty"`
 }
 
+// EvalHubMCPSpec defines the optional MCP server deployment configuration.
+type EvalHubMCPSpec struct {
+	// Enabled controls whether the MCP server is deployed. Defaults to false.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// Replicas is the number of MCP server replicas. Defaults to 1.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	Replicas *int32 `json:"replicas,omitempty"`
+
+	// Transport is the MCP client transport mode exposed by the MCP server: "http" (default) or "http-sse".
+	// +kubebuilder:default:="http"
+	// +kubebuilder:validation:Enum="http-sse";"http"
+	// +optional
+	Transport string `json:"transport,omitempty"`
+
+	// EvalHubTransport overrides EVALHUB_TRANSPORT when set (MCP server transport: "http" or "http-sse").
+	// When omitted, the value of transport is used for both --transport and EVALHUB_TRANSPORT.
+	// +kubebuilder:validation:Enum="http-sse";"http"
+	// +optional
+	EvalHubTransport string `json:"evalHubTransport,omitempty"`
+
+	// Env provides additional/override environment variables for the MCP server container.
+	// +optional
+	Env []corev1.EnvVar `json:"env,omitempty"`
+
+	// Resources defines container resource requests/limits for the MCP server.
+	// +optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// Image overrides the default MCP server container image.
+	// +optional
+	Image string `json:"image,omitempty"`
+
+	// AuthSecret is the name of a Secret containing a "token" key used by evalhub-mcp to call the EvalHub API
+	// (fronted by kube-rbac-proxy). External MCP clients reach the MCP Service through a separate kube-rbac-proxy
+	// sidecar and must have RBAC get/create on evalhubs/proxy for this instance.
+	// +optional
+	AuthSecret string `json:"authSecret,omitempty"`
+}
+
+// EvalHubMCPStatus contains status information for the optional MCP server.
+type EvalHubMCPStatus struct {
+	// Phase is the current lifecycle phase of the MCP server.
+	// +kubebuilder:validation:Enum=Pending;Ready;Error;Disabled
+	Phase string `json:"phase,omitempty"`
+
+	// Ready indicates whether the MCP server deployment is available.
+	Ready bool `json:"ready"`
+
+	// URL is the externally accessible endpoint (Route or Service URL).
+	// +optional
+	URL string `json:"url,omitempty"`
+
+	// Conditions contains detailed status conditions for the MCP server.
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
 // EvalHubSpec defines the desired state of EvalHub
 type EvalHubSpec struct {
 	// Number of replicas for the eval-hub deployment
@@ -97,6 +157,10 @@ type EvalHubSpec struct {
 	// When omitted, the service uses its defaults (OTEL disabled).
 	// +optional
 	Otel *OTELSpec `json:"otel,omitempty"`
+
+	// MCP optionally enables an MCP server deployment connected to this EvalHub instance.
+	// +optional
+	MCP *EvalHubMCPSpec `json:"mcp,omitempty"`
 }
 
 // EvalHubStatus defines the observed state of EvalHub
@@ -128,6 +192,10 @@ type EvalHubStatus struct {
 
 	// Last time the status was updated
 	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`
+
+	// MCP contains status information for the optional MCP server.
+	// +optional
+	MCP *EvalHubMCPStatus `json:"mcp,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -164,6 +232,9 @@ func (e *EvalHub) SetStatus(condType, reason, message string, status corev1.Cond
 	if !found {
 		e.Status.Conditions = append(e.Status.Conditions, condition)
 	}
+	if condType == "Ready" {
+		e.Status.Ready = status
+	}
 	e.Status.LastUpdateTime = &now
 }
 
@@ -198,4 +269,26 @@ func (e *EvalHubSpec) IsSQLite() bool {
 // IsOTELConfigured returns true if the OTEL spec is set
 func (e *EvalHubSpec) IsOTELConfigured() bool {
 	return e.Otel != nil
+}
+
+// IsMCPEnabled returns true if the MCP server is explicitly enabled
+func (e *EvalHubSpec) IsMCPEnabled() bool {
+	return e.MCP != nil && e.MCP.Enabled != nil && *e.MCP.Enabled
+}
+
+// GetMCPReplicas returns the number of MCP server replicas, defaulting to 1 when the spec,
+// MCP block, or replicas pointer is unset.
+func (e *EvalHubSpec) GetMCPReplicas() int32 {
+	if e == nil || e.MCP == nil {
+		return 1
+	}
+	return e.MCP.getMCPReplicas()
+}
+
+// getMCPReplicas returns MCP replica count; the receiver must be non-nil — use EvalHubSpec.GetMCPReplicas otherwise.
+func (e *EvalHubMCPSpec) getMCPReplicas() int32 {
+	if e.Replicas == nil {
+		return 1
+	}
+	return *e.Replicas
 }

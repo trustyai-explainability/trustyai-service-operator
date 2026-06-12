@@ -17,14 +17,17 @@ const (
 	// evalHubAppPort is the eval-hub container listen port on loopback (API_HOST=127.0.0.1, PORT in deployment env).
 	// kube-rbac-proxy upstream is http://127.0.0.1:<evalHubAppPort>/ on the pod network (TLS is terminated on servicePort).
 	evalHubAppPort = 8444
-	// evalHubHealthPath is the application health check path. kube-rbac-proxy serves HTTPS on servicePort and forwards
-	// this path to the upstream; the proxy is started with --ignore-paths so kubelet HTTPS probes against the proxy
-	// can use this path without going through normal authn/z on every request.
+	// evalHubHealthPath is the application health check path on the loopback listener. kube-rbac-proxy forwards
+	// this path from HTTPS servicePort; --ignore-paths allows unauthenticated access for probes and health checks.
 	evalHubHealthPath = "/api/v1/health"
+	// kubeRBACProxyHealthPath is served by kube-rbac-proxy on kubeRBACProxyHealthPort (see --proxy-endpoints-port).
+	kubeRBACProxyHealthPath = "/healthz"
 
 	// Service configuration (public HTTPS targets kube-rbac-proxy on this port)
-	serviceName = "evalhub"
 	servicePort = 8443
+	// metricsPort is the dedicated Prometheus metrics port on the EvalHub container.
+	// Bound to 0.0.0.0, serves /metrics over plain HTTP with no auth (cluster-internal only).
+	metricsPort = 9090
 
 	// kube-rbac-proxy sidecar
 	kubeRBACProxyContainerName       = "kube-rbac-proxy"
@@ -53,9 +56,6 @@ const (
 	tlsSecretMountPath = "/etc/tls/private"
 	tlsCertFile        = "tls.crt"
 	tlsKeyFile         = "tls.key"
-
-	// Route configuration
-	routeName = "evalhub"
 
 	// Database configuration
 	dbSecretVolumeName = "evalhub-db-secret"
@@ -88,6 +88,25 @@ const (
 	// Sidecar configuration
 	sidecarBaseURL = "http://localhost:8080"
 
+	// MCP server configuration
+	mcpBinaryPath    = "/app/evalhub-mcp"
+	mcpContainerName = "evalhub-mcp"
+	// mcpAppPort is the evalhub-mcp listen port on loopback; kube-rbac-proxy terminates TLS on mcpServicePort.
+	mcpAppPort             = 8445
+	mcpServicePort         = 8443
+	mcpHealthPath          = "/health"
+	mcpConfigVolumeName    = "evalhub-mcp-config"
+	mcpConfigMountPath     = "/etc/evalhub-mcp"
+	mcpConfigFileName      = "config.yaml"
+	mcpServiceCAVolumeName = "mcp-service-ca"
+	mcpServiceCAMountPath  = "/etc/evalhub-mcp/ca"
+
+	// Discovery ConfigMap injected into every tenant namespace for EvalHub service URL resolution.
+	// A single well-known CM is shared across all EvalHub instances; each instance owns one
+	// key of the form "{instanceName}.url" so multiple EvalHub instances can coexist.
+	discoveryConfigMapName  = "evalhub-discovery"
+	discoveryConfigMapLabel = "evalhub.trustyai.opendatahub.io/discovery"
+
 	// Collection ConfigMap configuration
 	collectionLabel       = "trustyai.opendatahub.io/evalhub-collection-type"
 	collectionNameLabel   = "trustyai.opendatahub.io/evalhub-collection-name"
@@ -117,6 +136,18 @@ var (
 		Limits: corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("500m"),
 			corev1.ResourceMemory: resource.MustParse("512Mi"),
+		},
+	}
+
+	// Default MCP resource requirements
+	defaultMCPResourceRequirements = corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("128Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("500m"),
+			corev1.ResourceMemory: resource.MustParse("256Mi"),
 		},
 	}
 

@@ -1,0 +1,76 @@
+operator:
+  name: trustyai-service-operator
+  namespace: redhat-ods-applications
+  repository: https://github.com/trustyai-explainability/trustyai-service-operator
+
+components:
+  - name: trustyai-service-operator-controller-manager
+    controller: TrustyAIServiceReconciler
+    managedResources:
+      - apiVersion: apps/v1
+        kind: Deployment
+        name: trustyai-service-operator-controller-manager
+        namespace: redhat-ods-applications
+        labels:
+          control-plane: trustyai-service-operator
+          app.kubernetes.io/part-of: trustyai
+        expectedSpec:
+          replicas: 1
+      - apiVersion: v1
+        kind: ServiceAccount
+        name: trustyai-service-operator-controller-manager
+        namespace: redhat-ods-applications
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        name: trustyai-service-operator-manager-role
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        name: trustyai-service-operator-manager-rolebinding
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        name: trustyai-service-operator-metrics-reader
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        name: trustyai-service-operator-proxy-role
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        name: trustyai-service-operator-proxy-rolebinding
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: Role
+        name: trustyai-service-operator-leader-election-role
+        namespace: redhat-ods-applications
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        name: trustyai-service-operator-leader-election-rolebinding
+        namespace: redhat-ods-applications
+      - apiVersion: v1
+        kind: Service
+        name: trustyai-service-operator-controller-manager-metrics-service
+        namespace: redhat-ods-applications
+      - apiVersion: coordination.k8s.io/v1
+        kind: Lease
+        name: b7e9931f.trustyai.opendatahub.io
+        namespace: redhat-ods-applications
+      - apiVersion: v1
+        kind: Service
+        name: trustyai-service-operator-webhook-service
+        namespace: redhat-ods-applications
+      - apiVersion: monitoring.coreos.com/v1
+        kind: ServiceMonitor
+        name: trustyai-service-operator-controller-manager-metrics-monitor
+        namespace: redhat-ods-applications
+    finalizers:
+      - trustyai.opendatahub.io/evalhub-finalizer
+    steadyState:
+      checks:
+        - type: conditionTrue
+          apiVersion: apps/v1
+          kind: Deployment
+          name: trustyai-service-operator-controller-manager
+          namespace: redhat-ods-applications
+          conditionType: Available
+      timeout: "60s"
+
+recovery:
+  reconcileTimeout: "300s"
+  maxReconcileCycles: 10

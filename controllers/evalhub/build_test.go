@@ -7,7 +7,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -33,7 +33,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 	var (
 		testNamespace string
 		namespace     *corev1.Namespace
-		evalHub       *evalhubv1alpha1.EvalHub
+		evalHub       *evalhubv1.EvalHub
 		operatorCM    *corev1.ConfigMap
 		reconciler    *EvalHubReconciler
 		replicas      int32
@@ -45,12 +45,12 @@ var _ = Describe("buildDeploymentSpec", func() {
 		Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
 
 		replicas = 3
-		evalHub = &evalhubv1alpha1.EvalHub{
+		evalHub = &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      evalHubName,
 				Namespace: testNamespace,
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{
+			Spec: evalhubv1.EvalHubSpec{
 				Replicas: &replicas,
 				Env: []corev1.EnvVar{
 					// Operator-managed bind address; must not override defaults
@@ -114,10 +114,13 @@ var _ = Describe("buildDeploymentSpec", func() {
 		Expect(container.Image).To(Equal("quay.io/test/eval-hub:v1.2.3"))
 		Expect(container.ImagePullPolicy).To(Equal(corev1.PullAlways))
 
-		Expect(container.Ports).To(HaveLen(1))
+		Expect(container.Ports).To(HaveLen(2))
 		Expect(container.Ports[0].Name).To(Equal("evalhub"))
 		Expect(container.Ports[0].ContainerPort).To(Equal(int32(evalHubAppPort)))
 		Expect(container.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
+		Expect(container.Ports[1].Name).To(Equal("metrics"))
+		Expect(container.Ports[1].ContainerPort).To(Equal(int32(metricsPort)))
+		Expect(container.Ports[1].Protocol).To(Equal(corev1.ProtocolTCP))
 
 		envVarMap := make(map[string]string)
 		for _, env := range container.Env {
@@ -125,8 +128,8 @@ var _ = Describe("buildDeploymentSpec", func() {
 		}
 		Expect(envVarMap["API_HOST"]).To(Equal("127.0.0.1"))
 		Expect(envVarMap["PORT"]).To(Equal(fmt.Sprintf("%d", evalHubAppPort)))
-		Expect(envVarMap["TLS_CERT_FILE"]).To(Equal("/etc/tls/private/tls.crt"))
-		Expect(envVarMap["TLS_KEY_FILE"]).To(Equal("/etc/tls/private/tls.key"))
+		Expect(envVarMap).NotTo(HaveKey("TLS_CERT_FILE"))
+		Expect(envVarMap).NotTo(HaveKey("TLS_KEY_FILE"))
 		Expect(envVarMap["LOG_LEVEL"]).To(Equal("INFO"))
 		Expect(envVarMap["MAX_CONCURRENT_EVALUATIONS"]).To(Equal("10"))
 		Expect(envVarMap["DEFAULT_TIMEOUT_MINUTES"]).To(Equal("60"))
@@ -154,15 +157,17 @@ var _ = Describe("buildDeploymentSpec", func() {
 		Expect(krp.Image).To(Equal("quay.io/test/kube-rbac-proxy:v1"))
 		Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 		Expect(krp.ReadinessProbe).NotTo(BeNil())
+		Expect(krp.StartupProbe).NotTo(BeNil())
+		Expect(krp.StartupProbe.HTTPGet.Path).To(Equal(evalHubHealthPath))
+		Expect(krp.StartupProbe.HTTPGet.Port).To(Equal(intstr.FromInt(servicePort)))
 		Expect(krp.ReadinessProbe.HTTPGet.Path).To(Equal(evalHubHealthPath))
 		Expect(krp.ReadinessProbe.HTTPGet.Port).To(Equal(intstr.FromInt(servicePort)))
 		Expect(krp.ReadinessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
-		Expect(krp.ReadinessProbe.InitialDelaySeconds).To(Equal(int32(10)))
-		Expect(krp.ReadinessProbe.PeriodSeconds).To(Equal(int32(5)))
+		Expect(krp.ReadinessProbe.PeriodSeconds).To(Equal(int32(10)))
 		Expect(krp.ReadinessProbe.TimeoutSeconds).To(Equal(int32(5)))
 		Expect(krp.LivenessProbe).NotTo(BeNil())
-		Expect(krp.LivenessProbe.HTTPGet.Path).To(Equal(evalHubHealthPath))
-		Expect(krp.LivenessProbe.HTTPGet.Port).To(Equal(intstr.FromInt(servicePort)))
+		Expect(krp.LivenessProbe.HTTPGet.Path).To(Equal(kubeRBACProxyHealthPath))
+		Expect(krp.LivenessProbe.HTTPGet.Port).To(Equal(intstr.FromInt(kubeRBACProxyHealthPort)))
 		Expect(krp.LivenessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
 		Expect(krp.LivenessProbe.InitialDelaySeconds).To(Equal(int32(30)))
 		Expect(krp.LivenessProbe.PeriodSeconds).To(Equal(int32(10)))
@@ -339,12 +344,12 @@ var _ = Describe("buildDeploymentSpec", func() {
 	})
 
 	It("defaults replicas to 1 when EvalHub spec does not set replicas", func() {
-		evalHubNoReplicas := &evalhubv1alpha1.EvalHub{
+		evalHubNoReplicas := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      evalHubName,
 				Namespace: testNamespace,
 			},
-			Spec: evalhubv1alpha1.EvalHubSpec{},
+			Spec: evalhubv1.EvalHubSpec{},
 		}
 
 		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHubNoReplicas, nil, nil)
@@ -358,7 +363,7 @@ var _ = Describe("buildServiceSpec", func() {
 	const testNamespace = "test-namespace"
 
 	It("builds the expected Service spec", func() {
-		evalHub := &evalhubv1alpha1.EvalHub{
+		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      evalHubName,
 				Namespace: testNamespace,

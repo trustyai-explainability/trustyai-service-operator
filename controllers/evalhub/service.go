@@ -3,7 +3,7 @@ package evalhub
 import (
 	"context"
 
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,7 +14,7 @@ import (
 )
 
 // reconcileService creates or updates the Service for EvalHub
-func (r *EvalHubReconciler) reconcileService(ctx context.Context, instance *evalhubv1alpha1.EvalHub) error {
+func (r *EvalHubReconciler) reconcileService(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
 	log.Info("Reconciling Service", "name", instance.Name)
 
@@ -68,7 +68,7 @@ func (r *EvalHubReconciler) reconcileService(ctx context.Context, instance *eval
 }
 
 // buildServiceSpec builds the service specification for EvalHub
-func (r *EvalHubReconciler) buildServiceSpec(instance *evalhubv1alpha1.EvalHub) corev1.ServiceSpec {
+func (r *EvalHubReconciler) buildServiceSpec(instance *evalhubv1.EvalHub) corev1.ServiceSpec {
 	labels := map[string]string{
 		"app":       "eval-hub",
 		"instance":  instance.Name,

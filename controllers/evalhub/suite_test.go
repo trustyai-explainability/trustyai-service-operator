@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -65,7 +65,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
-	err = evalhubv1alpha1.AddToScheme(scheme.Scheme)
+	err = evalhubv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = monitoringv1.AddToScheme(scheme.Scheme)
@@ -89,18 +89,18 @@ var _ = AfterSuite(func() {
 // Helper functions for tests
 
 // createEvalHubInstance creates a basic EvalHub instance for testing
-func createEvalHubInstance(name, namespace string) *evalhubv1alpha1.EvalHub {
+func createEvalHubInstance(name, namespace string) *evalhubv1.EvalHub {
 	replicas := int32(1)
-	return &evalhubv1alpha1.EvalHub{
+	return &evalhubv1.EvalHub{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: evalhubv1alpha1.GroupVersion.String(),
+			APIVersion: evalhubv1.GroupVersion.String(),
 			Kind:       "EvalHub",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
-		Spec: evalhubv1alpha1.EvalHubSpec{
+		Spec: evalhubv1.EvalHubSpec{
 			Replicas:  &replicas,
 			Providers: []string{},
 			Env: []corev1.EnvVar{
@@ -131,7 +131,7 @@ func createConfigMap(name, namespace string) *corev1.ConfigMap {
 		},
 		Data: map[string]string{
 			"evalHubImage":    "quay.io/ruimvieira/eval-hub:test",
-			"kube-rbac-proxy": "quay.io/openshift/origin-kube-rbac-proxy:4.19",
+			"kube-rbac-proxy": "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable",
 		},
 	}
 }
@@ -203,7 +203,8 @@ func setupReconciler(namespace string) (*EvalHubReconciler, context.Context) {
 			Namespace: namespace,
 		},
 		Data: map[string]string{
-			configMapEvalHubImageKey: "quay.io/evalhub/evalhub:test",
+			configMapEvalHubImageKey:       "quay.io/evalhub/evalhub:test",
+			configMapKubeRBACProxyImageKey: "quay.io/openshift/origin-kube-rbac-proxy:4.19",
 		},
 	}
 	if err := k8sClient.Create(ctx, operatorCM); err != nil {
@@ -258,7 +259,7 @@ func waitForConfigMap(name, namespace string) *corev1.ConfigMap {
 
 // waitForEvalHubStatus waits for EvalHub status to be updated
 func waitForEvalHubStatus(name, namespace, expectedPhase string) {
-	evalHub := &evalhubv1alpha1.EvalHub{}
+	evalHub := &evalhubv1.EvalHub{}
 	Eventually(func() string {
 		err := k8sClient.Get(ctx, types.NamespacedName{
 			Name:      name,
@@ -297,26 +298,43 @@ func deleteNamespace(namespace *corev1.Namespace) {
 }
 
 // createEvalHubInstanceWithDB creates an EvalHub instance with PostgreSQL database configuration for testing
-func createEvalHubInstanceWithDB(name, namespace, secretName string) *evalhubv1alpha1.EvalHub {
+func createEvalHubInstanceWithDB(name, namespace, secretName string) *evalhubv1.EvalHub {
 	instance := createEvalHubInstance(name, namespace)
-	instance.Spec.Database = &evalhubv1alpha1.DatabaseSpec{
+	instance.Spec.Database = &evalhubv1.DatabaseSpec{
 		Type:   "postgresql",
 		Secret: secretName,
 	}
 	return instance
 }
 
+// createEvalHubWithMCP creates an EvalHub instance with optional MCP server enabled.
+func createEvalHubWithMCP(name, namespace string, enabled bool) *evalhubv1.EvalHub {
+	instance := createEvalHubInstanceWithSQLite(name, namespace)
+	instance.Spec.MCP = &evalhubv1.EvalHubMCPSpec{Enabled: &enabled}
+	return instance
+}
+
+// createServiceCAConfigMap creates the service CA ConfigMap required by the MCP deployment volume.
+func createServiceCAConfigMap(evalHubName, namespace string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName + "-service-ca",
+			Namespace: namespace,
+		},
+	}
+}
+
 // createEvalHubInstanceWithSQLite creates an EvalHub instance with SQLite database configuration for testing
-func createEvalHubInstanceWithSQLite(name, namespace string) *evalhubv1alpha1.EvalHub {
+func createEvalHubInstanceWithSQLite(name, namespace string) *evalhubv1.EvalHub {
 	instance := createEvalHubInstance(name, namespace)
-	instance.Spec.Database = &evalhubv1alpha1.DatabaseSpec{
+	instance.Spec.Database = &evalhubv1.DatabaseSpec{
 		Type: "sqlite",
 	}
 	return instance
 }
 
 // cleanupResourcesInNamespace deletes all test resources in a namespace
-func cleanupResourcesInNamespace(namespace string, evalHub *evalhubv1alpha1.EvalHub, configMap *corev1.ConfigMap) {
+func cleanupResourcesInNamespace(_ string, evalHub *evalhubv1.EvalHub, configMap *corev1.ConfigMap) {
 	if evalHub != nil {
 		k8sClient.Delete(ctx, evalHub)
 	}

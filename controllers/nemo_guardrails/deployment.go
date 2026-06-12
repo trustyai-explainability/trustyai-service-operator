@@ -210,5 +210,19 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, nemoGuardrails.Spec.Env...)
 	}
 
+	// apply pod scheduling constraints
+	if nemoGuardrails.Spec.Template != nil && nemoGuardrails.Spec.Template.Pod != nil {
+		pod := nemoGuardrails.Spec.Template.Pod
+		if pod.Affinity != nil {
+			deployment.Spec.Template.Spec.Affinity = pod.Affinity
+		}
+		if len(pod.Tolerations) > 0 {
+			deployment.Spec.Template.Spec.Tolerations = pod.Tolerations
+		}
+		if len(pod.NodeSelector) > 0 {
+			deployment.Spec.Template.Spec.NodeSelector = pod.NodeSelector
+		}
+	}
+
 	return deployment, nil
 }

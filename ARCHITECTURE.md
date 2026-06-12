@@ -58,6 +58,7 @@ flowchart TB
 
     subgraph evalhub_pod["EvalHub Pod(s)"]
         evalhub_svc["EvalHub Service\n(REST API, job management)"]
+        evalhub_metrics["Metrics server\n(port 9090, plain HTTP)"]
     end
 
     subgraph gorch_pod["Guardrails Orchestrator Pod(s)"]
@@ -314,7 +315,13 @@ sequenceDiagram
     EH->>InstanceNS: Copy matched ConfigMaps
 
     EH->>K8sAPI: Create Deployment (mount providers + collections)
-    EH->>K8sAPI: Create Service + Route
+    EH->>K8sAPI: Create API Service (port 8443, HTTPS via kube-rbac-proxy)
+    EH->>K8sAPI: Create metrics Service (port 9090, plain HTTP, cluster-internal)
+    EH->>K8sAPI: Create Route
+
+    opt ServiceMonitor CRD available
+        EH->>K8sAPI: Create ServiceMonitor (targets metrics Service, HTTP, no TLS)
+    end
 
     EHPod->>EHPod: Load providers from /providers/
     EHPod->>EHPod: Load collections from /collections/
