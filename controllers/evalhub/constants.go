@@ -101,6 +101,12 @@ const (
 	mcpServiceCAVolumeName = "mcp-service-ca"
 	mcpServiceCAMountPath  = "/etc/evalhub-mcp/ca"
 
+	// Discovery ConfigMap injected into every tenant namespace for EvalHub service URL resolution.
+	// A single well-known CM is shared across all EvalHub instances; each instance owns one
+	// key of the form "{instanceName}.url" so multiple EvalHub instances can coexist.
+	discoveryConfigMapName  = "evalhub-discovery"
+	discoveryConfigMapLabel = "evalhub.trustyai.opendatahub.io/discovery"
+
 	// Collection ConfigMap configuration
 	collectionLabel       = "trustyai.opendatahub.io/evalhub-collection-type"
 	collectionNameLabel   = "trustyai.opendatahub.io/evalhub-collection-name"
