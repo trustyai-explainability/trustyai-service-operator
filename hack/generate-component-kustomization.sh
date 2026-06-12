@@ -38,3 +38,35 @@ for RESOURCE_DIR in crd rbac configmaps; do
         done < <(find "${COMPONENT_DIR}/${RESOURCE_DIR}" -maxdepth 1 -name "*.yaml" -print0 2>/dev/null | sort -z)
     fi
 done
+
+# Add root-level YAML files (e.g. webhook-service.yaml)
+while IFS= read -r -d '' file; do
+    filename=$(basename "$file")
+    if [[ "${filename}" != "kustomization.yaml" ]]; then
+        echo "  - ${filename}"
+    fi
+done < <(find "${COMPONENT_DIR}" -maxdepth 1 -name "*.yaml" -print0 2>/dev/null | sort -z)
+
+# Add patches section if patches directory exists
+PATCHES_DIR="${COMPONENT_DIR}/patches"
+if [[ -d "${PATCHES_DIR}" ]]; then
+    HAS_PATCHES=false
+    while IFS= read -r -d '' file; do
+        filename=$(basename "$file")
+        if [[ "${filename}" == "kustomizeconfig.yaml" ]]; then
+            continue
+        fi
+        if [[ "${HAS_PATCHES}" == "false" ]]; then
+            echo ""
+            echo "patches:"
+            HAS_PATCHES=true
+        fi
+        echo "  - path: patches/${filename}"
+    done < <(find "${PATCHES_DIR}" -maxdepth 1 -name "*.yaml" -print0 2>/dev/null | sort -z)
+
+    if [[ -f "${PATCHES_DIR}/kustomizeconfig.yaml" ]]; then
+        echo ""
+        echo "configurations:"
+        echo "  - patches/kustomizeconfig.yaml"
+    fi
+fi

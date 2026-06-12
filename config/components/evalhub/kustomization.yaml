@@ -4,7 +4,6 @@ kind: Component
 
 resources:
   - crd/trustyai.opendatahub.io_evalhubs.yaml
-  - webhook-service.yaml
   - rbac/evalhub_auth_reviewer_role.yaml
   - rbac/evalhub_collections_access_binding.yaml
   - rbac/evalhub_collections_access_role.yaml
@@ -20,3 +19,11 @@ resources:
   - rbac/evalhub_providers_access_role.yaml
   - rbac/manager-rbac.yaml
   - rbac/manager-rolebinding.yaml
+  - webhook-service.yaml
+
+patches:
+  - path: patches/cainjection_in_evalhubs.yaml
+  - path: patches/webhook_in_evalhubs.yaml
+
+configurations:
+  - patches/kustomizeconfig.yaml
