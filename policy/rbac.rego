@@ -1,5 +1,7 @@
 package rbac
 
+import rego.v1
+
 # Closed allowlist of every legitimate ClusterRoleBinding across all
 # kustomize overlays (base, odh, rhoai, lmes, odh-kueue, testing, dev,
 # evalhub-only, mcp-guardrails).

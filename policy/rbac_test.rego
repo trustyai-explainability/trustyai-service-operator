@@ -1,5 +1,7 @@
 package rbac
 
+import rego.v1
+
 test_base_auth_delegator_passes if {
 	count(deny) == 0 with input as {
 		"kind": "ClusterRoleBinding",
