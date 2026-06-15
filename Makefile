@@ -137,7 +137,7 @@ test: manifests generate fmt vet envtest ## Run tests.
 ##@ Policy
 
 CONFTEST ?= $(LOCALBIN)/conftest
-CONFTEST_VERSION ?= 0.46.0
+CONFTEST_VERSION ?= 0.68.2
 
 .PHONY: conftest
 conftest: $(CONFTEST)

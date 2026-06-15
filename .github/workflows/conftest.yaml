@@ -15,7 +15,7 @@ jobs:
 
       - name: Install conftest
         run: |
-          CONFTEST_VERSION=0.46.0
+          CONFTEST_VERSION=0.68.2
           curl -sSL "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" \
             | tar -xz -C /usr/local/bin conftest
 
