@@ -141,10 +141,15 @@ CONFTEST_VERSION ?= 0.68.2
 
 .PHONY: conftest
 conftest: $(CONFTEST)
+CONFTEST_CHECKSUM ?= e8144c6d6d2ae0260b869caa60c7c262a1f95ac63ec1e5d2fb19be452d606347
 $(CONFTEST): $(LOCALBIN)
-	test -s $(LOCALBIN)/conftest || curl -sSL \
-	  "https://github.com/open-policy-agent/conftest/releases/download/v$(CONFTEST_VERSION)/conftest_$(CONFTEST_VERSION)_Linux_x86_64.tar.gz" \
-	  | tar -xz -C $(LOCALBIN) conftest
+	@test -s $(LOCALBIN)/conftest || { \
+	  curl -sSL -o $(LOCALBIN)/conftest.tar.gz \
+	    "https://github.com/open-policy-agent/conftest/releases/download/v$(CONFTEST_VERSION)/conftest_$(CONFTEST_VERSION)_Linux_x86_64.tar.gz" && \
+	  echo "$(CONFTEST_CHECKSUM)  $(LOCALBIN)/conftest.tar.gz" | sha256sum -c --quiet && \
+	  tar -xz -C $(LOCALBIN) -f $(LOCALBIN)/conftest.tar.gz conftest && \
+	  rm -f $(LOCALBIN)/conftest.tar.gz; \
+	}
 
 .PHONY: policy-test
 policy-test: conftest ## Run OPA policy unit tests.
