@@ -190,6 +190,11 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
+	err = r.createHardwareProfilesReaderRoleBinding(ctx, instance, serviceAccountName)
+	if err != nil {
+		return err
+	}
+
 	// Create MLFlow access RoleBinding for service SA only.
 	// The job SA MLFlow binding is created alongside the job SA in createJobsServiceAccount.
 	err = r.createMLFlowAccessRoleBinding(ctx, instance, serviceAccountName, "service", mlflowAccessClusterRoleName)
@@ -228,8 +233,9 @@ const authReviewerClusterRoleName = "trustyai-service-operator-evalhub-auth-revi
 // Split resource-manager ClusterRole names.
 // These replace the monolithic evalhub-resource-manager with function-specific roles.
 const (
-	jobsWriterClusterRoleName = "trustyai-service-operator-evalhub-jobs-writer"
-	jobConfigClusterRoleName  = "trustyai-service-operator-evalhub-job-config"
+	jobsWriterClusterRoleName            = "trustyai-service-operator-evalhub-jobs-writer"
+	jobConfigClusterRoleName             = "trustyai-service-operator-evalhub-job-config"
+	hardwareProfilesReaderClusterRoleName = "trustyai-service-operator-evalhub-hardware-profiles-reader"
 )
 
 // EvalHub API access ClusterRoles for SAR-protected endpoints.
@@ -526,6 +532,17 @@ func (r *EvalHubReconciler) createJobConfigRoleBinding(ctx context.Context, inst
 	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-job-config-rb", serviceAccountName, rbacv1.RoleRef{
 		Kind:     "ClusterRole",
 		Name:     jobConfigClusterRoleName,
+		APIGroup: rbacv1.GroupName,
+	})
+}
+
+// createHardwareProfilesReaderRoleBinding creates a RoleBinding for the API SA to
+// the hardware-profiles-reader ClusterRole (hardwareprofiles get,list) in the
+// instance namespace. Tenant namespaces receive a separate binding via reconcileTenantNamespaces.
+func (r *EvalHubReconciler) createHardwareProfilesReaderRoleBinding(ctx context.Context, instance *evalhubv1.EvalHub, serviceAccountName string) error {
+	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-hardware-profiles-reader-rb", serviceAccountName, rbacv1.RoleRef{
+		Kind:     "ClusterRole",
+		Name:     hardwareProfilesReaderClusterRoleName,
 		APIGroup: rbacv1.GroupName,
 	})
 }
