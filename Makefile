@@ -134,6 +134,36 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out -v
 
+##@ Policy
+
+CONFTEST ?= $(LOCALBIN)/conftest
+CONFTEST_VERSION ?= 0.68.2
+
+.PHONY: conftest
+conftest: $(CONFTEST)
+CONFTEST_CHECKSUM ?= e8144c6d6d2ae0260b869caa60c7c262a1f95ac63ec1e5d2fb19be452d606347
+$(CONFTEST): $(LOCALBIN)
+	@test -s $(LOCALBIN)/conftest || { \
+	  curl -sSL -o $(LOCALBIN)/conftest.tar.gz \
+	    "https://github.com/open-policy-agent/conftest/releases/download/v$(CONFTEST_VERSION)/conftest_$(CONFTEST_VERSION)_Linux_x86_64.tar.gz" && \
+	  echo "$(CONFTEST_CHECKSUM)  $(LOCALBIN)/conftest.tar.gz" | sha256sum -c --quiet && \
+	  tar -xz -C $(LOCALBIN) -f $(LOCALBIN)/conftest.tar.gz conftest && \
+	  rm -f $(LOCALBIN)/conftest.tar.gz; \
+	}
+
+.PHONY: policy-test
+policy-test: conftest ## Run OPA policy unit tests.
+	$(CONFTEST) verify --policy policy/
+
+.PHONY: policy-check
+policy-check: kustomize conftest ## Check rendered manifests against RBAC policies.
+	@failed=0; \
+	for target in config/base config/overlays/odh config/overlays/rhoai config/overlays/lmes config/overlays/odh-kueue config/overlays/testing config/overlays/dev config/overlays/evalhub-only config/overlays/mcp-guardrails; do \
+	  echo "=== Testing $$target ==="; \
+	  $(KUSTOMIZE) build "$$target" | $(CONFTEST) test --policy policy/ --namespace rbac - || failed=1; \
+	done; \
+	exit $$failed
+
 ##@ Build
 
 .PHONY: build
