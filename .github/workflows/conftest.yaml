@@ -1,0 +1,43 @@
+name: Tier 1 - Manifest policy check
+
+on: [push, pull_request]
+
+jobs:
+  conftest-rbac:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@v2
+        with:
+          kustomize-version: "5.7.0"
+
+      - name: Install conftest
+        run: |
+          CONFTEST_VERSION=0.46.0
+          curl -sSL "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" \
+            | tar -xz -C /usr/local/bin conftest
+
+      - name: Run OPA unit tests
+        run: conftest verify --policy policy/
+
+      - name: Check RBAC policy (all kustomize targets)
+        run: |
+          failed=0
+          for target in \
+            config/base \
+            config/overlays/odh \
+            config/overlays/rhoai \
+            config/overlays/lmes \
+            config/overlays/odh-kueue \
+            config/overlays/testing \
+            config/overlays/dev \
+            config/overlays/evalhub-only \
+            config/overlays/mcp-guardrails; do
+            echo "=== Testing $target ==="
+            if ! kustomize build "$target" | conftest test --policy policy/ --namespace rbac -; then
+              failed=1
+            fi
+          done
+          exit $failed
