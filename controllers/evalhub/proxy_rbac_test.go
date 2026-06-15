@@ -292,6 +292,18 @@ var _ = Describe("EvalHub API RBAC", func() {
 			Expect(jcRB.Subjects).To(HaveLen(1))
 			Expect(jcRB.Subjects[0].Name).To(Equal(evalHubName + "-service"))
 
+			By("Verifying hardware-profiles-reader RoleBinding exists")
+			hpRB := &rbacv1.RoleBinding{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      evalHubName + "-hardware-profiles-reader-rb",
+				Namespace: testNamespace,
+			}, hpRB)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(hpRB.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(hpRB.RoleRef.Name).To(Equal(hardwareProfilesReaderClusterRoleName))
+			Expect(hpRB.Subjects).To(HaveLen(1))
+			Expect(hpRB.Subjects[0].Name).To(Equal(evalHubName + "-service"))
+
 			By("Verifying providers-access RoleBinding exists")
 			pRB := &rbacv1.RoleBinding{}
 			err = k8sClient.Get(ctx, types.NamespacedName{

@@ -1972,6 +1972,47 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 		assert.True(t, errors.IsNotFound(err), "stale ConfigMap should be deleted")
 	})
 
+	t.Run("should create hardware-profiles-reader RoleBinding in tenant namespace", func(t *testing.T) {
+		tenantNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   tenantNamespace,
+				Labels: map[string]string{tenantLabel: ""},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, tenantNS).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileTenantNamespaces(ctx, evalHub)
+		require.NoError(t, err)
+
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + tenantNamespace + "-hardware-profiles-reader-rb")
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: tenantNamespace,
+		}, rb)
+		require.NoError(t, err, "hardware-profiles-reader RoleBinding should exist in tenant namespace")
+
+		assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
+		assert.Equal(t, hardwareProfilesReaderClusterRoleName, rb.RoleRef.Name)
+		assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
+
+		svcSAName := generateServiceAccountName(evalHub)
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
+		assert.Equal(t, svcSAName, rb.Subjects[0].Name)
+		assert.Equal(t, instanceNamespace, rb.Subjects[0].Namespace)
+	})
+
 	t.Run("should create MLFlow service SA RoleBinding in tenant namespace", func(t *testing.T) {
 		// This is the cross-namespace case: EvalHub runs in instanceNamespace but jobs
 		// run in tenantNamespace. The service SA must be able to create MLFlow experiments

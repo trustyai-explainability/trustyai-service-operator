@@ -78,6 +78,18 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 			return err
 		}
 
+		// Create hardware-profiles-reader RoleBinding for the API SA in the tenant
+		// namespace so the EvalHub service can list and read HardwareProfile CRs there.
+		hardwareProfilesRBName := normalizeDNS1123LabelValue(instance.Name + "-" + ns + "-hardware-profiles-reader-rb")
+		if err := r.createJobRoleBinding(ctx, instance, hardwareProfilesRBName, serviceAccountName, ns, rbacv1.RoleRef{
+			Kind:     "ClusterRole",
+			Name:     hardwareProfilesReaderClusterRoleName,
+			APIGroup: rbacv1.GroupName,
+		}, instance.Namespace); err != nil {
+			log.Error(err, "Failed to create hardware-profiles-reader RoleBinding in tenant namespace", "namespace", ns)
+			return err
+		}
+
 		// Create service CA ConfigMap in the tenant namespace so job pods can
 		// mount the cluster service CA for TLS callbacks to EvalHub.
 		if err := r.createTenantServiceCAConfigMap(ctx, instance, ns); err != nil {
