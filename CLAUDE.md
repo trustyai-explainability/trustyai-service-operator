@@ -151,9 +151,9 @@ All controllers follow the standard loop:
 
 ### EvalHub Metrics Architecture
 
-EvalHub exposes Prometheus metrics on a **dedicated port (9090)** bound to `0.0.0.0`, separate from the API (port 8444, loopback only, behind kube-rbac-proxy on 8443). The operator creates:
+EvalHub exposes Prometheus metrics on a **dedicated port (8081)** bound to `0.0.0.0`, separate from the API (port 8444, loopback only, behind kube-rbac-proxy on 8443). The operator creates:
 
-- A **metrics Service** (`<name>-metrics`, ClusterIP, port 9090, no TLS) — `metrics_service.go`
+- A **metrics Service** (`<name>-metrics`, ClusterIP, port 8081, no TLS) — `metrics_service.go`
 - A **ServiceMonitor** targeting the metrics Service over plain HTTP — `servicemonitor.go`
 
 The metrics port requires no authentication, is cluster-internal only (no Route), and is reachable by Prometheus via existing namespace NetworkPolicies. The `METRICS_PORT` and `METRICS_HOST` env vars are set on the EvalHub container and protected from CR overrides.
