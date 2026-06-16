@@ -156,11 +156,14 @@ policy-test: conftest ## Run OPA policy unit tests.
 	$(CONFTEST) verify --policy policy/
 
 .PHONY: policy-check
-policy-check: kustomize conftest ## Check rendered manifests against RBAC policies.
+policy-check: kustomize conftest ## Check rendered manifests against all policies.
 	@failed=0; \
 	for target in config/base config/overlays/odh config/overlays/rhoai config/overlays/lmes config/overlays/odh-kueue config/overlays/testing config/overlays/dev config/overlays/evalhub-only config/overlays/mcp-guardrails; do \
 	  echo "=== Testing $$target ==="; \
-	  $(KUSTOMIZE) build "$$target" | $(CONFTEST) test --policy policy/ --namespace rbac - || failed=1; \
+	  rendered=$$($(KUSTOMIZE) build "$$target"); \
+	  for ns in rbac selector; do \
+	    echo "$$rendered" | $(CONFTEST) test --policy policy/ --namespace "$$ns" - || failed=1; \
+	  done; \
 	done; \
 	exit $$failed
 

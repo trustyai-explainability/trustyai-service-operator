@@ -24,7 +24,7 @@ jobs:
       - name: Run OPA unit tests
         run: conftest verify --policy policy/
 
-      - name: Check RBAC policy (all kustomize targets)
+      - name: Check manifest policies (all kustomize targets)
         run: |
           failed=0
           for target in \
@@ -38,8 +38,11 @@ jobs:
             config/overlays/evalhub-only \
             config/overlays/mcp-guardrails; do
             echo "=== Testing $target ==="
-            if ! kustomize build "$target" | conftest test --policy policy/ --namespace rbac -; then
-              failed=1
-            fi
+            rendered=$(kustomize build "$target")
+            for ns in rbac selector; do
+              if ! echo "$rendered" | conftest test --policy policy/ --namespace "$ns" -; then
+                failed=1
+              fi
+            done
           done
           exit $failed
