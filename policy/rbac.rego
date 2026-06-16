@@ -3,13 +3,13 @@ package rbac
 import rego.v1
 
 # Closed allowlist of every legitimate ClusterRoleBinding across all
-# kustomize overlays (base, odh, rhoai, lmes, odh-kueue, testing, dev,
-# evalhub-only, mcp-guardrails).
+# kustomize overlays (base, odh, rhoai, lmes, odh-kueue, testing,
+# mcp-guardrails).
 #
 # The map key is the post-kustomize CRB name, the value is the
 # ClusterRole it must reference.  Overlays that do not apply the
-# namePrefix (base, evalhub-only) produce un-prefixed names; those
-# are listed separately.
+# namePrefix (base) produce un-prefixed names; those are listed
+# separately.
 #
 # To add a new legitimate CRB, add it here and explain why in the PR.
 
