@@ -15,6 +15,25 @@ Prevents accidental cluster-wide privilege escalation by maintaining a closed al
 
 **Tested overlays:** `base`, `odh`, `rhoai`, `lmes`, `odh-kueue`, `testing`, `dev`, `evalhub-only`, `mcp-guardrails`.
 
+### `clusterrole.rego` — ClusterRole content inspection
+
+Validates the **contents** of every `ClusterRole` in the rendered manifests using two layers:
+
+1. **Allowlist.** A closed set of `(apiGroup, resource)` pairs. Any rule that references an `(apiGroup, resource)` pair not in `allowed_api_resources` is denied. This catches cases where a developer adds permissions to a new API group without review.
+2. **Denylist.** Blocks dangerous patterns regardless of allowlist status:
+   - Wildcard `"*"` in apiGroups, resources, or verbs
+   - Write verbs (`create`, `update`, `patch`, `delete`, `deletecollection`) on `secrets`
+   - Write verbs on `clusterroles` or `clusterrolebindings` (privilege escalation)
+   - Escalation verbs: `escalate`, `bind`, `impersonate`
+
+## Adding a new ClusterRole permission
+
+If your change adds a new `(apiGroup, resource)` pair to any ClusterRole:
+
+1. Add the `[apiGroup, resource]` tuple to `allowed_api_resources` in `policy/clusterrole.rego`.
+2. Run `make policy-check` locally to verify.
+3. Explain in the PR description why the new permission is needed.
+
 ## Adding a new ClusterRoleBinding
 
 If your change legitimately introduces a new `ClusterRoleBinding`:
