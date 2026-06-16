@@ -26,6 +26,10 @@ Validates the **contents** of every `ClusterRole` in the rendered manifests usin
    - Write verbs on `clusterroles` or `clusterrolebindings` (privilege escalation)
    - Escalation verbs: `escalate`, `bind`, `impersonate`
 
+   **Exemptions** (matched by role name suffix):
+   - *Secrets write:* `tas-manager-role`, `gorch-manager-role`, `nemo-guardrails-manager-role` — these managers create/manage TLS certificates and service credentials for their workloads.
+   - *ClusterRoleBindings write:* `tas-manager-role`, `evalhub-manager-role`, `nemo-guardrails-manager-role` — these managers create CRBs to bind service accounts to component-specific roles.
+
 ## Adding a new ClusterRole permission
 
 If your change adds a new `(apiGroup, resource)` pair to any ClusterRole:
