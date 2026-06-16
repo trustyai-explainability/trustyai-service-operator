@@ -234,7 +234,7 @@ make policy-check   # Full check against all overlays
 
 **Current policies:**
 - `policy/rbac.rego` — closed allowlist of expected `ClusterRoleBinding` resources. Any CRB not in `expected_crbs` or binding the wrong `ClusterRole` is denied.
-- `policy/clusterrole.rego` — inspects ClusterRole **contents**: (1) closed allowlist of permitted `(apiGroup, resource)` pairs, (2) denylist blocking wildcards, secrets write, privilege escalation verbs.
+- `policy/clusterrole.rego` — inspects ClusterRole **contents**: (1) closed allowlist of permitted `(apiGroup, resource)` pairs, (2) denylist blocking wildcards, secrets write, privilege escalation verbs. Manager roles that legitimately need secrets or CRB write (TAS, GORCH, nemo-guardrails, evalhub) are exempt by name suffix — see `policy/README.md` for the full exemption list.
 
 **When adding RBAC resources:**
 - If you add a new `ClusterRoleBinding` (e.g. in a component's `rbac/` directory), you must add its post-kustomize name and expected `ClusterRole` to `expected_crbs` in `policy/rbac.rego`.
