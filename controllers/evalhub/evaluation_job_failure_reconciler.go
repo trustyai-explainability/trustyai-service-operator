@@ -614,9 +614,11 @@ func condenseImagePullError(message string) string {
 // Applies pattern matching regardless of message length to provide concise, actionable errors.
 // This function is designed to be extended with new patterns as verbose errors are discovered.
 func sanitizeErrorMessage(message string) string {
+	messageLower := strings.ToLower(message)
+
 	// Try known patterns first (regardless of message length)
 	for _, pattern := range knownErrorPatterns {
-		if strings.Contains(message, pattern.matchSubstring) {
+		if strings.Contains(messageLower, pattern.matchSubstring) {
 			condensed := pattern.condenseFunc(message)
 			// Always return the condensed version if pattern matched
 			return condensed

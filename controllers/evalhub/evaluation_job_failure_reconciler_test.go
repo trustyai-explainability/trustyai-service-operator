@@ -165,6 +165,13 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 			Expect(result).To(Equal("OCI artifact pull failed. Check artifact reference, registry credentials, and network connectivity."))
 		})
 
+		It("matches known patterns regardless of message casing", func() {
+			msg := `Unable to pull image or OCI artifact: Pull image err: unauthorized: access to the requested resource is not authorized`
+
+			result := sanitizeErrorMessage(msg)
+			Expect(result).To(Equal("OCI artifact pull failed: unauthorized access to registry. Verify image pull secrets and registry credentials."))
+		})
+
 		It("truncates non-matching long messages", func() {
 			// Create a message longer than maxErrorMessageLength (500) that doesn't match any pattern
 			longMsg := "Some completely different error: " + string(make([]byte, 500))
