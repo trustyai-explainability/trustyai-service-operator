@@ -30,6 +30,32 @@ Validates the **contents** of every `ClusterRole` in the rendered manifests usin
    - *Secrets write:* `tas-manager-role`, `gorch-manager-role`, `nemo-guardrails-manager-role` — these managers create/manage TLS certificates and service credentials for their workloads.
    - *ClusterRoleBindings write:* `tas-manager-role`, `evalhub-manager-role`, `nemo-guardrails-manager-role` — these managers create CRBs to bind service accounts to component-specific roles.
 
+### `selector.rego` — Deployment selector pinning
+
+Guards against accidental changes to the operator Deployment's `spec.selector.matchLabels`. Kubernetes Deployments have an immutable selector — changing it between releases breaks upgrades because the existing Deployment cannot be patched with the new selector values.
+
+**Rules:**
+
+1. **No missing selector labels.** Every label in the pinned set must be present in the rendered Deployment's selector.
+2. **No wrong selector values.** Every pinned label must have its expected value.
+3. **No extra selector labels.** Any label not in the pinned set is denied.
+
+**Pinned selectors (by post-kustomize Deployment name):**
+
+| Deployment name | Expected `matchLabels` |
+|----------------|----------------------|
+| `controller-manager` (base) | `control-plane: trustyai-service-operator` |
+| `trustyai-service-operator-controller-manager` (overlays) | `control-plane: trustyai-service-operator`, `app.kubernetes.io/part-of: trustyai` |
+
+## Changing the Deployment selector
+
+If you legitimately need to change the operator Deployment's selector labels (this is rare and breaks upgrades — a migration hook in the downstream operator repos will be required):
+
+1. Update `expected_selectors` in `policy/selector.rego`.
+2. Update `policy/selector_test.rego` to match.
+3. Run `make policy-check` locally to verify.
+4. Coordinate a migration hook in the downstream operator repos (rhods-operator / opendatahub-operator) that deletes the existing Deployment so it can be recreated with the new selector.
+
 ## Adding a new ClusterRole permission
 
 If your change adds a new `(apiGroup, resource)` pair to any ClusterRole:
