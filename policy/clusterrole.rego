@@ -66,6 +66,9 @@ allowed_api_resources := {
 	["kueue.x-k8s.io", "workloads/status"],
 	["kueue.x-k8s.io", "workloadpriorityclasses"],
 
+	# --- infrastructure ---
+	["infrastructure.opendatahub.io", "hardwareprofiles"],
+
 	# --- mlflow ---
 	["mlflow.kubeflow.org", "experiments"],
 

@@ -16,7 +16,7 @@ test_unknown_api_resource_denied if {
 	count(deny) > 0 with input as {
 		"kind": "ClusterRole",
 		"metadata": {"name": "test-role"},
-		"rules": [{"apiGroups": ["infrastructure.opendatahub.io"], "resources": ["hardwareprofiles"], "verbs": ["get", "list"]}],
+		"rules": [{"apiGroups": ["example.io"], "resources": ["foos"], "verbs": ["get", "list"]}],
 	}
 }
 
