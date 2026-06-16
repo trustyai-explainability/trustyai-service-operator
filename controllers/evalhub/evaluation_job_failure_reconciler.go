@@ -611,21 +611,21 @@ func condenseImagePullError(message string) string {
 }
 
 // sanitizeErrorMessage condenses verbose error messages using known patterns or truncation.
-// Returns the original message if it's under maxErrorMessageLength.
+// Applies pattern matching regardless of message length to provide concise, actionable errors.
 // This function is designed to be extended with new patterns as verbose errors are discovered.
 func sanitizeErrorMessage(message string) string {
-	if len(message) <= maxErrorMessageLength {
-		return message
-	}
-
-	// Try known patterns first
+	// Try known patterns first (regardless of message length)
 	for _, pattern := range knownErrorPatterns {
 		if strings.Contains(message, pattern.matchSubstring) {
 			condensed := pattern.condenseFunc(message)
-			// Always return the condensed version if pattern matched, even if still long
-			// (the pattern-specific logic is better than blind truncation)
+			// Always return the condensed version if pattern matched
 			return condensed
 		}
+	}
+
+	// If no pattern matched and message is short enough, return as-is
+	if len(message) <= maxErrorMessageLength {
+		return message
 	}
 
 	// Fallback: truncate with ellipsis indicating there's more detail in pod logs
