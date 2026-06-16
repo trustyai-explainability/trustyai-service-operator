@@ -13,7 +13,7 @@ Prevents accidental cluster-wide privilege escalation by maintaining a closed al
 1. **No unexpected ClusterRoleBindings.** Any CRB whose post-kustomize name is not in `expected_crbs` is denied. This catches cases where a developer accidentally changes a `RoleBinding` to a `ClusterRoleBinding`, or adds a new CRB without review.
 2. **No role-reference mismatches.** An allowlisted CRB that references a different `ClusterRole` than expected is denied. This catches copy-paste mistakes or rename errors.
 
-**Tested overlays:** `base`, `odh`, `rhoai`, `lmes`, `odh-kueue`, `testing`, `dev`, `evalhub-only`, `mcp-guardrails`.
+**Tested overlays:** `base`, `odh`, `rhoai`, `lmes`, `odh-kueue`, `testing`, `mcp-guardrails`.
 
 ### `clusterrole.rego` — ClusterRole content inspection
 

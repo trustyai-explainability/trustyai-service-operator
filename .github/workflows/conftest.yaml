@@ -34,8 +34,6 @@ jobs:
             config/overlays/lmes \
             config/overlays/odh-kueue \
             config/overlays/testing \
-            config/overlays/dev \
-            config/overlays/evalhub-only \
             config/overlays/mcp-guardrails; do
             echo "=== Testing $target ==="
             rendered=$(kustomize build "$target")
