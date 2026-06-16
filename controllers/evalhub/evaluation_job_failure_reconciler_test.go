@@ -122,4 +122,56 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 			Expect(ok).To(BeTrue(), "expected operator-only failure for sidecar CrashLoopBackOff")
 		})
 	})
+
+	Describe("sanitizeErrorMessage", func() {
+		It("returns short messages unchanged", func() {
+			msg := "Image not found"
+			Expect(sanitizeErrorMessage(msg)).To(Equal(msg))
+		})
+
+		It("condenses OCI artifact pull unauthorized errors", func() {
+			msg := `[unable to pull image or OCI artifact: pull image err: copying system image from manifest list: writing blob: storing blob to file "/var/tmp/container_images_storage2488073217/1": happened during read: unexpected EOF (while reconnecting: Get "https://cdn01.quay.io/quayio-production-s3/sha256/c4/c4d19f59e080ea5baf32f8368164510de7465fc76d39c87c0d009e287a9ab65d?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIATAAF2YHTGR23ZTE6%2F20260616%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260616T091507Z&X-Amz-Expires=600&X-Amz-SignedHeaders=host&X-Amz-Signature=3cdc9793295e07c792d7c31b501f391a21ffd6182f980187dccbc74d30f70a76&region=us-east-1&namespace=rhoai&username=rhoai+devops_rhoai_readonly_bot&repo_name=odh-ta-lmes-job-rhel9&akamai_signature=exp=1781602207~hmac=cf338885c900223b86adbb2ca8e14dea3067bbe85e7ffd14faae64275e89f896": EOF); artifact err: provided artifact is a container image, unable to pull image or OCI artifact: pull image err: initializing source docker://quay.io/rhoai/odh-ta-lmes-job-rhel9@sha256:1acfc26eb6cca49e318bcdee30f0ce4ea2ceb81f4bbaa68efe3025a664a7a1fb: reading manifest sha256:1acfc26eb6cca49e318bcdee30f0ce4ea2ceb81f4bbaa68efe3025a664a7a1fb in quay.io/rhoai/odh-ta-lmes-job-rhel9: unauthorized: access to the requested resource is not authorized; artifact err: get manifest: build image source: reading manifest sha256:1acfc26eb6cca49e318bcdee30f0ce4ea2ceb81f4bbaa68efe3025a664a7a1fb in quay.io/rhoai/odh-ta-lmes-job-rhel9: unauthorized: access to the requested resource is not authorized]`
+
+			result := sanitizeErrorMessage(msg)
+			Expect(result).To(Equal("OCI artifact pull failed: unauthorized access to registry. Verify image pull secrets and registry credentials."))
+			Expect(len(result)).To(BeNumerically("<", len(msg)), "condensed message should be shorter than original")
+		})
+
+		It("condenses OCI artifact pull network errors", func() {
+			msg := `unable to pull image or OCI artifact: pull image err: copying system image: reading blob: Get "https://registry.example.com/v2/repo/blobs/sha256:abc123...": EOF (while reconnecting after network timeout)`
+
+			result := sanitizeErrorMessage(msg)
+			Expect(result).To(Equal("OCI artifact pull failed: network connectivity issue. Check registry accessibility and network policies."))
+		})
+
+		It("condenses OCI artifact pull not found errors", func() {
+			msg := `unable to pull image or OCI artifact: pull image err: reading manifest latest in docker.io/library/nonexistent: manifest unknown: manifest unknown`
+
+			result := sanitizeErrorMessage(msg)
+			Expect(result).To(Equal("OCI artifact pull failed: artifact not found in registry. Verify the image/artifact reference and tag."))
+		})
+
+		It("condenses OCI artifact pull invalid name errors", func() {
+			msg := `unable to pull image or OCI artifact: pull image err: invalid reference format: repository name must be lowercase`
+
+			result := sanitizeErrorMessage(msg)
+			Expect(result).To(Equal("OCI artifact pull failed: invalid artifact name or reference format."))
+		})
+
+		It("provides generic message for unknown OCI artifact pull patterns", func() {
+			msg := `unable to pull image or OCI artifact: pull image err: some unknown error occurred during image download that we haven't seen before and is very specific to this case`
+
+			result := sanitizeErrorMessage(msg)
+			Expect(result).To(Equal("OCI artifact pull failed. Check artifact reference, registry credentials, and network connectivity."))
+		})
+
+		It("truncates non-matching long messages", func() {
+			// Create a message longer than maxErrorMessageLength (500) that doesn't match any pattern
+			longMsg := "Some completely different error: " + string(make([]byte, 500))
+
+			result := sanitizeErrorMessage(longMsg)
+			Expect(len(result)).To(Equal(maxErrorMessageLength))
+			Expect(result).To(HaveSuffix("..."))
+		})
+	})
 })
