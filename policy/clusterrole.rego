@@ -47,7 +47,10 @@ allowed_api_resources := {
 	["rbac.authorization.k8s.io", "rolebindings"],
 
 	# --- networking / routes ---
+	["gateway.networking.k8s.io", "gateways"],
+	["mcp.kuadrant.io", "mcpgatewayextensions"],
 	["networking.istio.io", "destinationrules"],
+	["networking.istio.io", "envoyfilters"],
 	["networking.istio.io", "virtualservices"],
 	["route.openshift.io", "routes"],
 
