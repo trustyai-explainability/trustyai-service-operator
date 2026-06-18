@@ -202,24 +202,8 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
-	// Create RoleBindings for EvalHub API endpoints protected by SAR.
-	// These bind the service SA to ClusterRoles that satisfy the kube-rbac-proxy
-	// SAR checks for providers and collections endpoints.
-	err = r.createGenericRoleBinding(ctx, instance, instance.Name+"-providers-access-rb", serviceAccountName, rbacv1.RoleRef{
-		Kind:     "ClusterRole",
-		Name:     providersAccessClusterRoleName,
-		APIGroup: rbacv1.GroupName,
-	})
-	if err != nil {
-		return err
-	}
-
-	err = r.createGenericRoleBinding(ctx, instance, instance.Name+"-collections-access-rb", serviceAccountName, rbacv1.RoleRef{
-		Kind:     "ClusterRole",
-		Name:     collectionsAccessClusterRoleName,
-		APIGroup: rbacv1.GroupName,
-	})
-	if err != nil {
+	// Remove legacy ClusterRole bindings superseded by the per-instance API access Role.
+	if err := r.deleteLegacyVirtualResourceClusterRoleBindings(ctx, instance); err != nil {
 		return err
 	}
 
@@ -238,12 +222,9 @@ const (
 	hardwareProfilesReaderClusterRoleName = "trustyai-service-operator-evalhub-hardware-profiles-reader"
 )
 
-// EvalHub API access ClusterRoles for SAR-protected endpoints.
-// The kube-rbac-proxy auth config checks these virtual resources via SubjectAccessReview.
-const (
-	providersAccessClusterRoleName   = "trustyai-service-operator-evalhub-providers-access"
-	collectionsAccessClusterRoleName = "trustyai-service-operator-evalhub-collections-access"
-)
+// evalHubVirtualAPIResourceVerbs are the SAR verbs checked by kube-rbac-proxy for
+// EvalHub REST endpoints (/api/v1/evaluations/{evaluations,providers,collections}).
+var evalHubVirtualAPIResourceVerbs = []string{"get", "list", "create", "update", "patch", "delete"}
 
 // MLFlow access uses custom ClusterRoles scoped to the "mlflow.kubeflow.org" API group.
 // MLFlow's kubernetes-workspace-provider checks permissions via SelfSubjectAccessReview
@@ -256,9 +237,43 @@ const mlflowAccessClusterRoleName = "trustyai-service-operator-evalhub-mlflow-ac
 // Jobs only need create, get, list -- not update or delete.
 const mlflowJobsAccessClusterRoleName = "trustyai-service-operator-evalhub-mlflow-jobs-access"
 
-// createAPIAccessRole creates a per-instance namespaced Role with resourceNames
-// scoped to this specific EvalHub instance. This ensures the SA can only access
-// its own instance's evalhubs/proxy subresource.
+// buildAPIAccessRoleRules returns RBAC rules for the per-instance API access Role.
+// Virtual resources (evaluations, providers, collections) satisfy kube-rbac-proxy SAR
+// checks for EvalHub REST endpoints. evalhubs/proxy is for MCP ingress auth.
+func buildAPIAccessRoleRules(instance *evalhubv1.EvalHub) []rbacv1.PolicyRule {
+	return []rbacv1.PolicyRule{
+		{
+			APIGroups:     []string{"trustyai.opendatahub.io"},
+			Resources:     []string{"evalhubs"},
+			ResourceNames: []string{instance.Name},
+			Verbs:         []string{"get"},
+		},
+		{
+			APIGroups:     []string{"trustyai.opendatahub.io"},
+			Resources:     []string{"evalhubs/proxy"},
+			ResourceNames: []string{instance.Name},
+			Verbs:         []string{"get", "create"},
+		},
+		{
+			APIGroups: []string{"trustyai.opendatahub.io"},
+			Resources: []string{"evaluations"},
+			Verbs:     evalHubVirtualAPIResourceVerbs,
+		},
+		{
+			APIGroups: []string{"trustyai.opendatahub.io"},
+			Resources: []string{"providers"},
+			Verbs:     evalHubVirtualAPIResourceVerbs,
+		},
+		{
+			APIGroups: []string{"trustyai.opendatahub.io"},
+			Resources: []string{"collections"},
+			Verbs:     evalHubVirtualAPIResourceVerbs,
+		},
+	}
+}
+
+// createAPIAccessRole creates a per-instance namespaced Role in the EvalHub instance
+// namespace for the API/MCP service account.
 func (r *EvalHubReconciler) createAPIAccessRole(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
 
@@ -275,20 +290,7 @@ func (r *EvalHubReconciler) createAPIAccessRole(ctx context.Context, instance *e
 				"app.kubernetes.io/version":  constants.Version,
 			},
 		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups:     []string{"trustyai.opendatahub.io"},
-				Resources:     []string{"evalhubs"},
-				ResourceNames: []string{instance.Name},
-				Verbs:         []string{"get"},
-			},
-			{
-				APIGroups:     []string{"trustyai.opendatahub.io"},
-				Resources:     []string{"evalhubs/proxy"},
-				ResourceNames: []string{instance.Name},
-				Verbs:         []string{"get", "create"},
-			},
-		},
+		Rules: buildAPIAccessRoleRules(instance),
 	}
 
 	if err := ctrl.SetControllerReference(instance, role, r.Scheme); err != nil {
@@ -501,6 +503,32 @@ func (r *EvalHubReconciler) createAPIAccessRoleBinding(ctx context.Context, inst
 		Name:     roleName,
 		APIGroup: rbacv1.GroupName,
 	})
+}
+
+// deleteLegacyVirtualResourceClusterRoleBindings removes per-instance RoleBindings that
+// previously referenced ClusterRoles for providers/collections SAR access.
+func (r *EvalHubReconciler) deleteLegacyVirtualResourceClusterRoleBindings(ctx context.Context, instance *evalhubv1.EvalHub) error {
+	log := log.FromContext(ctx)
+
+	for _, name := range []string{
+		instance.Name + "-providers-access-rb",
+		instance.Name + "-collections-access-rb",
+	} {
+		rb := &rbacv1.RoleBinding{}
+		err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: instance.Namespace}, rb)
+		if errors.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		log.Info("Deleting legacy virtual-resource ClusterRole RoleBinding", "name", name, "namespace", instance.Namespace)
+		if err := r.Delete(ctx, rb); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // createJobsAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the job

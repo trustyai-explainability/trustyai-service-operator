@@ -558,6 +558,17 @@ func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
 	})
 }
 
+func findPolicyRuleByResource(rules []rbacv1.PolicyRule, resource string) (rbacv1.PolicyRule, bool) {
+	for _, rule := range rules {
+		for _, res := range rule.Resources {
+			if res == resource {
+				return rule, true
+			}
+		}
+	}
+	return rbacv1.PolicyRule{}, false
+}
+
 // TestEvalHubReconciler_createAPIAccessRole verifies that the per-instance API access Role
 // is created with resourceNames scoped to the instance, with correct owner ref and idempotency.
 func TestEvalHubReconciler_createAPIAccessRole(t *testing.T) {
@@ -604,7 +615,7 @@ func TestEvalHubReconciler_createAPIAccessRole(t *testing.T) {
 		assert.Equal(t, evalHubName+"-service-access-role", role.Name)
 
 		// Check rules have resourceNames scoped to this instance
-		require.Len(t, role.Rules, 2)
+		require.Len(t, role.Rules, 5)
 
 		// First rule: evalhubs get
 		assert.Equal(t, []string{"trustyai.opendatahub.io"}, role.Rules[0].APIGroups)
@@ -617,6 +628,13 @@ func TestEvalHubReconciler_createAPIAccessRole(t *testing.T) {
 		assert.Equal(t, []string{"evalhubs/proxy"}, role.Rules[1].Resources)
 		assert.Equal(t, []string{evalHubName}, role.Rules[1].ResourceNames)
 		assert.Equal(t, []string{"get", "create"}, role.Rules[1].Verbs)
+
+		for _, resource := range []string{"evaluations", "providers", "collections"} {
+			rule, ok := findPolicyRuleByResource(role.Rules, resource)
+			require.True(t, ok, "expected rule for resource %q", resource)
+			assert.Equal(t, []string{"trustyai.opendatahub.io"}, rule.APIGroups)
+			assert.Equal(t, evalHubVirtualAPIResourceVerbs, rule.Verbs)
+		}
 
 		// Check owner reference
 		require.Len(t, role.OwnerReferences, 1)

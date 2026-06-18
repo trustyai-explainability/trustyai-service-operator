@@ -163,10 +163,16 @@ var _ = Describe("EvalHub API RBAC", func() {
 			}, role)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Checking Role has resourceNames set to instance name")
-			Expect(role.Rules).To(HaveLen(2))
+			By("Checking Role has resourceNames set to instance name and virtual API resources")
+			Expect(role.Rules).To(HaveLen(5))
 			Expect(role.Rules[0].ResourceNames).To(Equal([]string{evalHubName}))
 			Expect(role.Rules[1].ResourceNames).To(Equal([]string{evalHubName}))
+			for _, resource := range []string{"evaluations", "providers", "collections"} {
+				rule, ok := findPolicyRuleByResource(role.Rules, resource)
+				Expect(ok).To(BeTrue(), "expected rule for resource %q", resource)
+				Expect(rule.APIGroups).To(Equal([]string{"trustyai.opendatahub.io"}))
+				Expect(rule.Verbs).To(Equal(evalHubVirtualAPIResourceVerbs))
+			}
 		})
 
 		It("should create namespace-scoped API access RoleBinding referencing per-instance Role", func() {
@@ -303,30 +309,24 @@ var _ = Describe("EvalHub API RBAC", func() {
 			Expect(hpRB.RoleRef.Name).To(Equal(hardwareProfilesReaderClusterRoleName))
 			Expect(hpRB.Subjects).To(HaveLen(1))
 			Expect(hpRB.Subjects[0].Name).To(Equal(evalHubName + "-service"))
+		})
 
-			By("Verifying providers-access RoleBinding exists")
-			pRB := &rbacv1.RoleBinding{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-providers-access-rb",
-				Namespace: testNamespace,
-			}, pRB)
+		It("should not create legacy providers/collections ClusterRole RoleBindings", func() {
+			By("Creating service account (which creates all RoleBindings)")
+			err := reconciler.createServiceAccount(ctx, evalHub)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(pRB.RoleRef.Kind).To(Equal("ClusterRole"))
-			Expect(pRB.RoleRef.Name).To(Equal(providersAccessClusterRoleName))
-			Expect(pRB.Subjects).To(HaveLen(1))
-			Expect(pRB.Subjects[0].Name).To(Equal(evalHubName + "-service"))
 
-			By("Verifying collections-access RoleBinding exists")
-			cRB := &rbacv1.RoleBinding{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-collections-access-rb",
-				Namespace: testNamespace,
-			}, cRB)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cRB.RoleRef.Kind).To(Equal("ClusterRole"))
-			Expect(cRB.RoleRef.Name).To(Equal(collectionsAccessClusterRoleName))
-			Expect(cRB.Subjects).To(HaveLen(1))
-			Expect(cRB.Subjects[0].Name).To(Equal(evalHubName + "-service"))
+			for _, rbName := range []string{
+				evalHubName + "-providers-access-rb",
+				evalHubName + "-collections-access-rb",
+			} {
+				legacyRB := &rbacv1.RoleBinding{}
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      rbName,
+					Namespace: testNamespace,
+				}, legacyRB)
+				Expect(err).To(HaveOccurred(), "legacy RoleBinding %q should not exist", rbName)
+			}
 		})
 
 		It("should not bind jobs SA to resource-manager roles", func() {
