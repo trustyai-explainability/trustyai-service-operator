@@ -17,15 +17,18 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"os"
+
 	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	routev1 "github.com/openshift/api/route/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
+	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"os"
 	"slices"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -107,9 +110,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	cfg := ctrl.GetConfigOrDie()
+	tlsResult, err := pkgtls.Resolve(context.Background(), cfg)
+	if err != nil {
+		setupLog.Error(err, "unable to resolve TLS configuration")
+		os.Exit(1)
+	}
+	tlsOpts := tlsResult.TLSOpts
+
 	mgrOpts := ctrl.Options{
 		Scheme:                 scheme,
-		Metrics:                server.Options{BindAddress: metricsAddr},
+		Metrics:                server.Options{BindAddress: metricsAddr, TLSOpts: tlsOpts},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "b7e9931f.trustyai.opendatahub.io",
@@ -129,6 +140,10 @@ func main() {
 				},
 			},
 		},
+		WebhookServer: ctrlwebhook.NewServer(ctrlwebhook.Options{
+			Port:    9443,
+			TLSOpts: tlsOpts,
+		}),
 		// LeaderElectionReleaseOnCancel: true,
 	}
 
@@ -138,7 +153,7 @@ func main() {
 		})
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), mgrOpts)
+	mgr, err := ctrl.NewManager(cfg, mgrOpts)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)

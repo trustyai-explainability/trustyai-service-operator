@@ -47,6 +47,9 @@ allowed_api_resources := {
 	["rbac.authorization.k8s.io", "roles"],
 	["rbac.authorization.k8s.io", "rolebindings"],
 
+	# --- openshift config ---
+	["config.openshift.io", "apiservers"],
+
 	# --- networking / routes ---
 	["gateway.networking.k8s.io", "gateways"],
 	["mcp.kuadrant.io", "mcpgatewayextensions"],
