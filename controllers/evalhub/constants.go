@@ -1,16 +1,17 @@
 package evalhub
 
 import (
+	"os"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
+var defaultEvalHubImage = envOrDefault("RELATED_IMAGE_ODH_EVAL_HUB_IMAGE", "quay.io/evalhub/evalhub:latest")
+
 const (
 	// Service name for registration
 	ServiceName = "EVALHUB"
-
-	// Default image configuration
-	defaultEvalHubImage = "quay.io/evalhub/evalhub:latest"
 
 	// Container configuration
 	containerName = "evalhub"
@@ -110,3 +111,10 @@ var (
 		},
 	}
 )
+
+func envOrDefault(env, fallback string) string {
+	if v := os.Getenv(env); v != "" {
+		return v
+	}
+	return fallback
+}

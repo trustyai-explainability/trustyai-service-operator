@@ -86,3 +86,10 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.lmes-pod-image
+  - name: lmes-driver-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.lmes-driver-image

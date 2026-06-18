@@ -38,6 +38,16 @@ spec:
           env:
             - name: GOMEMLIMIT
               value: "630MiB"
+            - name: RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_IMAGE
+              value: $(trustyaiServiceImage)
+            - name: RELATED_IMAGE_ODH_KUBE_RBAC_PROXY_IMAGE
+              value: $(kube-rbac-proxy)
+            - name: RELATED_IMAGE_ODH_TA_LMES_JOB_IMAGE
+              value: $(lmes-pod-image)
+            - name: RELATED_IMAGE_ODH_TA_LMES_DRIVER_IMAGE
+              value: $(lmes-driver-image)
+            - name: RELATED_IMAGE_ODH_EVAL_HUB_IMAGE
+              value: $(evalHubImage)
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
