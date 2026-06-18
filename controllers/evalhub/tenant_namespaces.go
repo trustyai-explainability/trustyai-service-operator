@@ -39,8 +39,14 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 	}
 
 	for ns := range activeTenants {
-		// Skip the instance namespace (already handled by main reconcile)
+		// The instance namespace already has SA and RBAC from the main reconcile,
+		// but still needs the discovery ConfigMap so non-admin users (who lack
+		// CR-level RBAC) can resolve the service URL via the BFF.
 		if ns == instance.Namespace {
+			if err := r.reconcileDiscoveryConfigMap(ctx, instance, ns); err != nil {
+				log.Error(err, "Failed to reconcile discovery ConfigMap in instance namespace", "namespace", ns)
+				return err
+			}
 			continue
 		}
 

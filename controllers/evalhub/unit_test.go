@@ -1835,8 +1835,7 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
 	})
 
-	t.Run("should skip instance namespace", func(t *testing.T) {
-		// Label the instance namespace as a tenant — it should be skipped
+	t.Run("should skip SA and RBAC but create discovery ConfigMap in instance namespace", func(t *testing.T) {
 		instanceNS := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: instanceNamespace,
@@ -1869,6 +1868,17 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 			Namespace: instanceNamespace,
 		}, cm)
 		assert.True(t, errors.IsNotFound(err))
+
+		// Discovery ConfigMap SHOULD exist in instance namespace so
+		// non-admin users can resolve the service URL via the BFF
+		discoveryCM := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      discoveryConfigMapName,
+			Namespace: instanceNamespace,
+		}, discoveryCM)
+		require.NoError(t, err, "discovery ConfigMap must be created in instance namespace")
+		expectedURL := "https://evalhub.opendatahub.svc.cluster.local:8443"
+		assert.Equal(t, expectedURL, discoveryCM.Data[evalHubName+".url"])
 	})
 
 	t.Run("should not provision in unlabelled namespaces", func(t *testing.T) {
