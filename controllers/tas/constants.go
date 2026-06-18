@@ -1,10 +1,17 @@
 package tas
 
-import "time"
+import (
+	"os"
+	"time"
+)
+
+var (
+	defaultImage              = envOrDefault("RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_IMAGE", "quay.io/trustyai/trustyai-service:latest")
+	defaultKubeRBACProxyImage = envOrDefault("RELATED_IMAGE_ODH_KUBE_RBAC_PROXY_IMAGE", "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable")
+)
 
 const (
-	defaultImage         = string("quay.io/trustyai/trustyai-service:latest")
-	containerName        = "trustyai-service"
+	containerName = "trustyai-service"
 	componentName        = "trustyai"
 	serviceMonitorName   = "trustyai-metrics"
 	finalizerName        = "trustyai.opendatahub.io/finalizer"
@@ -38,7 +45,6 @@ const (
 	KubeRBACProxyServicePort     = 8443
 	KubeRBACProxyName            = "kube-rbac-proxy"
 	KubeRBACProxyServicePortName = "https"
-	defaultKubeRBACProxyImage    = "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable"
 )
 
 // Status types
@@ -84,3 +90,10 @@ const (
 )
 
 const migrationAnnotationKey = "trustyai.opendatahub.io/db-migration"
+
+func envOrDefault(env, fallback string) string {
+	if v := os.Getenv(env); v != "" {
+		return v
+	}
+	return fallback
+}

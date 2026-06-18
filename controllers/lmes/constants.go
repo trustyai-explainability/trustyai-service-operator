@@ -17,28 +17,33 @@ limitations under the License.
 package lmes
 
 import (
+	"os"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 )
 
+var (
+	DefaultPodImage    = envOrDefault("RELATED_IMAGE_ODH_TA_LMES_JOB_IMAGE", "quay.io/trustyai/ta-lmes-job:latest")
+	DefaultDriverImage = envOrDefault("RELATED_IMAGE_ODH_TA_LMES_DRIVER_IMAGE", "quay.io/trustyai/ta-lmes-driver:latest")
+)
+
 const (
-	DriverPath                 = "/bin/driver"
-	DestDriverPath             = "/opt/app-root/src/bin/driver"
-	OutputPath                 = "/opt/app-root/src/output"
-	HuggingFaceHomePath        = "/opt/app-root/src/hf_home"
-	PodImageKey                = "lmes-pod-image"
-	DriverImageKey             = "lmes-driver-image"
-	PodCheckingIntervalKey     = "lmes-pod-checking-interval"
-	ImagePullPolicyKey         = "lmes-image-pull-policy"
-	MaxBatchSizeKey            = "lmes-max-batch-size"
-	DefaultBatchSizeKey        = "lmes-default-batch-size"
-	DetectDeviceKey            = "lmes-detect-device"
-	AllowOnline                = "lmes-allow-online"
-	AllowCodeExecution         = "lmes-allow-code-execution"
-	DriverPort                 = "lmes-driver-port"
-	DefaultPodImage            = "quay.io/trustyai/ta-lmes-job:latest"
-	DefaultDriverImage         = "quay.io/trustyai/ta-lmes-driver:latest"
+	DriverPath             = "/bin/driver"
+	DestDriverPath         = "/opt/app-root/src/bin/driver"
+	OutputPath             = "/opt/app-root/src/output"
+	HuggingFaceHomePath    = "/opt/app-root/src/hf_home"
+	PodImageKey            = "lmes-pod-image"
+	DriverImageKey         = "lmes-driver-image"
+	PodCheckingIntervalKey = "lmes-pod-checking-interval"
+	ImagePullPolicyKey     = "lmes-image-pull-policy"
+	MaxBatchSizeKey        = "lmes-max-batch-size"
+	DefaultBatchSizeKey    = "lmes-default-batch-size"
+	DetectDeviceKey        = "lmes-detect-device"
+	AllowOnline            = "lmes-allow-online"
+	AllowCodeExecution     = "lmes-allow-code-execution"
+	DriverPort             = "lmes-driver-port"
+
 	DefaultPodCheckingInterval = time.Second * 10
 	DefaultImagePullPolicy     = corev1.PullAlways
 	DefaultMaxBatchSize        = 24
@@ -69,3 +74,10 @@ const (
 	// knows the spec changed and resets the job so it can be re-run with the updated configuration.
 	LastScheduledGenerationAnnotation = "trustyai.opendatahub.io/last-scheduled-generation"
 )
+
+func envOrDefault(env, fallback string) string {
+	if v := os.Getenv(env); v != "" {
+		return v
+	}
+	return fallback
+}
