@@ -20,3 +20,4 @@ spec:
         - name: webhook-certs
           secret:
             secretName: webhook-server-cert
+            optional: true
