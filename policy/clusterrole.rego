@@ -230,12 +230,17 @@ is_bind_exempt(name) if {
 	endswith(name, suffix)
 }
 
+is_exempt_bind(name, verb) if {
+	verb == "bind"
+	is_bind_exempt(name)
+}
+
 deny contains msg if {
 	input.kind == "ClusterRole"
 	rule := input.rules[_]
 	verb := rule.verbs[_]
 	escalation_verbs[verb]
-	not (verb == "bind" && is_bind_exempt(input.metadata.name))
+	not is_exempt_bind(input.metadata.name, verb)
 	msg := sprintf(
 		"RBAC VIOLATION: ClusterRole '%s' uses escalation verb '%s'.",
 		[input.metadata.name, verb],
