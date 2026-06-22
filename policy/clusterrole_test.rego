@@ -101,6 +101,22 @@ test_secrets_write_exempt_gorch_manager if {
 	}
 }
 
+test_secrets_write_exempt_evalhub_manager if {
+	count(deny) == 0 with input as {
+		"kind": "ClusterRole",
+		"metadata": {"name": "trustyai-service-operator-evalhub-manager-role"},
+		"rules": [{"apiGroups": [""], "resources": ["secrets"], "verbs": ["create", "delete"]}],
+	}
+}
+
+test_secrets_write_exempt_evalhub_model_secret if {
+	count(deny) == 0 with input as {
+		"kind": "ClusterRole",
+		"metadata": {"name": "trustyai-service-operator-trustyai-service-operator-evalhub-model-secret"},
+		"rules": [{"apiGroups": [""], "resources": ["secrets"], "verbs": ["create", "delete"]}],
+	}
+}
+
 test_secrets_write_not_exempt_unknown_role if {
 	count(deny) > 0 with input as {
 		"kind": "ClusterRole",

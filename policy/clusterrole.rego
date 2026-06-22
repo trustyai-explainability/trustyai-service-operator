@@ -160,6 +160,8 @@ secrets_write_exempt_suffixes := {
 	"tas-manager-role",
 	"gorch-manager-role",
 	"nemo-guardrails-manager-role",
+	"evalhub-manager-role",
+	"evalhub-model-secret",
 }
 
 is_secrets_write_exempt(name) if {
