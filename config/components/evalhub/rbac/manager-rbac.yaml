@@ -232,3 +232,11 @@ rules:
   verbs:
   - get
   - list
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterroles
+  resourceNames:
+  - trustyai-service-operator-evalhub-model-secret
+  verbs:
+  - bind

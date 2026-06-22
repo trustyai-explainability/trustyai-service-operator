@@ -42,6 +42,7 @@ allowed_api_resources := {
 	["authorization.k8s.io", "subjectaccessreviews"],
 
 	# --- RBAC ---
+	["rbac.authorization.k8s.io", "clusterroles"],
 	["rbac.authorization.k8s.io", "clusterrolebindings"],
 	["rbac.authorization.k8s.io", "roles"],
 	["rbac.authorization.k8s.io", "rolebindings"],
@@ -160,6 +161,7 @@ secrets_write_exempt_suffixes := {
 	"tas-manager-role",
 	"gorch-manager-role",
 	"nemo-guardrails-manager-role",
+	"evalhub-model-secret",
 }
 
 is_secrets_write_exempt(name) if {
@@ -214,14 +216,31 @@ deny contains msg if {
 }
 
 # Layer 2: deny escalation verbs.
+#
+# evalhub-manager-role is exempt for "bind" only: it uses bind on a specific
+# ClusterRole (resourceNames-scoped) to delegate secret access to the eval-hub
+# service SA without holding raw secret write verbs itself.
 
 escalation_verbs := {"escalate", "bind", "impersonate"}
+
+bind_exempt_suffixes := {"evalhub-manager-role"}
+
+is_bind_exempt(name) if {
+	some suffix in bind_exempt_suffixes
+	endswith(name, suffix)
+}
+
+is_exempt_bind(name, verb) if {
+	verb == "bind"
+	is_bind_exempt(name)
+}
 
 deny contains msg if {
 	input.kind == "ClusterRole"
 	rule := input.rules[_]
 	verb := rule.verbs[_]
 	escalation_verbs[verb]
+	not is_exempt_bind(input.metadata.name, verb)
 	msg := sprintf(
 		"RBAC VIOLATION: ClusterRole '%s' uses escalation verb '%s'.",
 		[input.metadata.name, verb],
