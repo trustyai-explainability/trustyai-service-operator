@@ -12,7 +12,7 @@ import (
 
 var _ = Describe("Image Resolver", func() {
 	var cleanupEnvVars = func() {
-		_ = os.Unsetenv(RelatedImageTrustyAIService)
+		Expect(os.Unsetenv(RelatedImageTrustyAIService)).To(Succeed())
 	}
 
 	AfterEach(func() {
