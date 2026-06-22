@@ -46,6 +46,26 @@ spec:
           env:
             - name: GOMEMLIMIT
               value: "630MiB"
+            - name: RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_IMAGE
+              value: $(trustyaiServiceImage)
+            - name: RELATED_IMAGE_ODH_EVAL_HUB_IMAGE
+              value: $(evalHubImage)
+            - name: RELATED_IMAGE_ODH_KUBE_RBAC_PROXY_IMAGE
+              value: $(kube-rbac-proxy)
+            - name: RELATED_IMAGE_ODH_TA_LMES_JOB_IMAGE
+              value: $(lmes-pod-image)
+            - name: RELATED_IMAGE_ODH_TA_LMES_DRIVER_IMAGE
+              value: $(lmes-driver-image)
+            - name: RELATED_IMAGE_ODH_FMS_GUARDRAILS_ORCHESTRATOR_IMAGE
+              value: $(guardrails-orchestrator-image)
+            - name: RELATED_IMAGE_ODH_BUILT_IN_DETECTOR_IMAGE
+              value: $(guardrails-built-in-detector-image)
+            - name: RELATED_IMAGE_ODH_TRUSTYAI_VLLM_ORCHESTRATOR_GATEWAY_IMAGE
+              value: $(guardrails-sidecar-gateway-image)
+            - name: RELATED_IMAGE_ODH_TRUSTYAI_GARAK_LLS_PROVIDER_DSP_IMAGE
+              value: $(garak-provider-image)
+            - name: RELATED_IMAGE_ODH_TRUSTYAI_NEMO_GUARDRAILS_SERVER_IMAGE
+              value: $(nemo-guardrails-image)
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

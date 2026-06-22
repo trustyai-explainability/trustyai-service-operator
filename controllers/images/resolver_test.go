@@ -1,308 +1,233 @@
 package images
 
 import (
-	"context"
 	"os"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-const (
-	testNamespace    = "test-namespace"
-	testConfigMap    = "test-configmap"
-	testImageFromCM  = "quay.io/trustyai/service:from-configmap"
-	testImageFromEnv = "quay.io/trustyai/service:from-env-var"
-	testFallback     = "quay.io/trustyai/service:fallback"
-)
-
-func TestResolveImage_EnvVarSet(t *testing.T) {
-	ctx := context.Background()
-
-	// Create a fake client with a ConfigMap containing an image
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      testConfigMap,
-			Namespace: testNamespace,
-		},
-		Data: map[string]string{
-			TrustyAIServiceImageKey: testImageFromCM,
-		},
+var _ = Describe("Image Resolver", func() {
+	var cleanupEnvVars = func() {
+		_ = os.Unsetenv(RelatedImageTrustyAIService)
 	}
 
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(configMap).Build()
+	AfterEach(func() {
+		cleanupEnvVars()
+	})
 
-	// Set the environment variable
-	os.Setenv(RelatedImageTrustyAIService, testImageFromEnv)
-	defer os.Unsetenv(RelatedImageTrustyAIService)
+	Describe("ResolveImage", func() {
+		Context("when environment variable is set", func() {
+			It("should use the environment variable value over ConfigMap", func() {
+				// Create a fake client with a ConfigMap containing an image
+				configMap := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testConfigMap,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						TrustyAIServiceImageKey: testImageFromCM,
+					},
+				}
 
-	// Resolve the image
-	image, err := ResolveImage(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace, "")
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(configMap).Build()
 
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
+				// Set the environment variable
+				Expect(os.Setenv(RelatedImageTrustyAIService, testImageFromEnv)).To(Succeed())
 
-	// Should use env var value, not ConfigMap value
-	if image != testImageFromEnv {
-		t.Errorf("Expected image from env var %q, got %q", testImageFromEnv, image)
-	}
-}
+				// Resolve the image
+				image, err := ResolveImage(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace, "")
 
-func TestResolveImage_EnvVarUnset_UsesConfigMap(t *testing.T) {
-	ctx := context.Background()
+				Expect(err).NotTo(HaveOccurred())
+				Expect(image).To(Equal(testImageFromEnv))
+			})
+		})
 
-	// Create a fake client with a ConfigMap
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      testConfigMap,
-			Namespace: testNamespace,
-		},
-		Data: map[string]string{
-			TrustyAIServiceImageKey: testImageFromCM,
-		},
-	}
+		Context("when environment variable is not set", func() {
+			It("should use ConfigMap value", func() {
+				// Create a fake client with a ConfigMap
+				configMap := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testConfigMap,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						TrustyAIServiceImageKey: testImageFromCM,
+					},
+				}
 
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(configMap).Build()
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(configMap).Build()
 
-	// Ensure env var is NOT set
-	os.Unsetenv(RelatedImageTrustyAIService)
+				// Ensure env var is NOT set
+				cleanupEnvVars()
 
-	// Resolve the image
-	image, err := ResolveImage(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace, "")
+				// Resolve the image
+				image, err := ResolveImage(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace, "")
 
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
+				Expect(err).NotTo(HaveOccurred())
+				Expect(image).To(Equal(testImageFromCM))
+			})
+		})
 
-	// Should use ConfigMap value
-	if image != testImageFromCM {
-		t.Errorf("Expected image from ConfigMap %q, got %q", testImageFromCM, image)
-	}
-}
+		Context("when environment variable is empty", func() {
+			It("should use ConfigMap value", func() {
+				// Create a fake client with a ConfigMap
+				configMap := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testConfigMap,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						TrustyAIServiceImageKey: testImageFromCM,
+					},
+				}
 
-func TestResolveImage_EnvVarEmpty_UsesConfigMap(t *testing.T) {
-	ctx := context.Background()
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(configMap).Build()
 
-	// Create a fake client with a ConfigMap
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      testConfigMap,
-			Namespace: testNamespace,
-		},
-		Data: map[string]string{
-			TrustyAIServiceImageKey: testImageFromCM,
-		},
-	}
+				// Set env var to empty string
+				Expect(os.Setenv(RelatedImageTrustyAIService, "")).To(Succeed())
 
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(configMap).Build()
+				// Resolve the image
+				image, err := ResolveImage(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace, "")
 
-	// Set env var to empty string
-	os.Setenv(RelatedImageTrustyAIService, "")
-	defer os.Unsetenv(RelatedImageTrustyAIService)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(image).To(Equal(testImageFromCM))
+			})
+		})
 
-	// Resolve the image
-	image, err := ResolveImage(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace, "")
+		Context("when neither env var nor ConfigMap are available", func() {
+			It("should use fallback value", func() {
+				// Create a fake client with NO ConfigMap
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
+				// Ensure env var is NOT set
+				cleanupEnvVars()
 
-	// Should use ConfigMap value when env var is empty
-	if image != testImageFromCM {
-		t.Errorf("Expected image from ConfigMap %q, got %q", testImageFromCM, image)
-	}
-}
+				// Resolve the image with fallback
+				image, err := ResolveImage(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace, testFallback)
 
-func TestResolveImage_NoEnvVar_NoConfigMap_UsesFallback(t *testing.T) {
-	ctx := context.Background()
+				Expect(err).NotTo(HaveOccurred())
+				Expect(image).To(Equal(testFallback))
+			})
 
-	// Create a fake client with NO ConfigMap
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			It("should return error when no fallback is provided", func() {
+				// Create a fake client with NO ConfigMap
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-	// Ensure env var is NOT set
-	os.Unsetenv(RelatedImageTrustyAIService)
+				// Ensure env var is NOT set
+				cleanupEnvVars()
 
-	// Resolve the image with fallback
-	image, err := ResolveImage(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace, testFallback)
+				// Resolve the image without fallback
+				_, err := ResolveImage(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace, "")
 
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
+				Expect(err).To(HaveOccurred())
+			})
+		})
 
-	// Should use fallback value
-	if image != testFallback {
-		t.Errorf("Expected fallback image %q, got %q", testFallback, image)
-	}
-}
+		Context("when ConfigMap exists but is missing the key", func() {
+			It("should use fallback value", func() {
+				// Create a ConfigMap without the expected key
+				configMap := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testConfigMap,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"some-other-key": "some-value",
+					},
+				}
 
-func TestResolveImage_NoEnvVar_NoConfigMap_NoFallback_ReturnsError(t *testing.T) {
-	ctx := context.Background()
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(configMap).Build()
 
-	// Create a fake client with NO ConfigMap
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+				// Ensure env var is NOT set
+				cleanupEnvVars()
 
-	// Ensure env var is NOT set
-	os.Unsetenv(RelatedImageTrustyAIService)
+				// Resolve the image with fallback
+				image, err := ResolveImage(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace, testFallback)
 
-	// Resolve the image without fallback
-	_, err := ResolveImage(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace, "")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(image).To(Equal(testFallback))
+			})
+		})
+	})
 
-	// Should return an error
-	if err == nil {
-		t.Fatal("Expected error when no env var, no ConfigMap, and no fallback, got nil")
-	}
-}
+	Describe("Image Mappings", func() {
+		It("should have all 10 expected image mappings", func() {
+			expectedMappings := map[string]string{
+				TrustyAIServiceImageKey:           RelatedImageTrustyAIService,
+				EvalHubImageKey:                   RelatedImageEvalHub,
+				KubeRBACProxyKey:                  RelatedImageKubeRBACProxy,
+				LMESPodImageKey:                   RelatedImageLMESJob,
+				LMESDriverImageKey:                RelatedImageLMESDriver,
+				GuardrailsOrchestratorImageKey:    RelatedImageGuardrailsOrchestrator,
+				GuardrailsBuiltInDetectorImageKey: RelatedImageBuiltInDetector,
+				GuardrailsSidecarGatewayImageKey:  RelatedImageVLLMOrchestratorGateway,
+				GarakProviderImageKey:             RelatedImageGarakLLSProviderDSP,
+				NemoGuardrailsImageKey:            RelatedImageNemoGuardrailsServer,
+			}
 
-func TestResolveImage_ConfigMapMissingKey_UsesFallback(t *testing.T) {
-	ctx := context.Background()
+			Expect(imageMapping).To(HaveLen(len(expectedMappings)))
 
-	// Create a ConfigMap without the expected key
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      testConfigMap,
-			Namespace: testNamespace,
-		},
-		Data: map[string]string{
-			"some-other-key": "some-value",
-		},
-	}
+			for key, expectedEnvVar := range expectedMappings {
+				Expect(imageMapping).To(HaveKeyWithValue(key, expectedEnvVar))
+			}
+		})
+	})
 
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(configMap).Build()
+	Describe("Legacy Functions", func() {
+		Describe("GetImageFromConfigMap", func() {
+			It("should maintain backward compatibility", func() {
+				// Create a ConfigMap
+				configMap := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testConfigMap,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						TrustyAIServiceImageKey: testImageFromCM,
+					},
+				}
 
-	// Ensure env var is NOT set
-	os.Unsetenv(RelatedImageTrustyAIService)
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(configMap).Build()
 
-	// Resolve the image with fallback
-	image, err := ResolveImage(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace, testFallback)
+				// Ensure env var is NOT set
+				cleanupEnvVars()
 
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
+				// Call the legacy function
+				image, err := GetImageFromConfigMap(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace)
 
-	// Should use fallback when key is missing
-	if image != testFallback {
-		t.Errorf("Expected fallback image %q, got %q", testFallback, image)
-	}
-}
+				Expect(err).NotTo(HaveOccurred())
+				Expect(image).To(Equal(testImageFromCM))
+			})
+		})
 
-func TestResolveImage_AllImageMappings(t *testing.T) {
-	// Test that all 10 image mappings are correctly defined
-	expectedMappings := map[string]string{
-		TrustyAIServiceImageKey:           RelatedImageTrustyAIService,
-		EvalHubImageKey:                   RelatedImageEvalHub,
-		KubeRBACProxyKey:                  RelatedImageKubeRBACProxy,
-		LMESPodImageKey:                   RelatedImageLMESJob,
-		LMESDriverImageKey:                RelatedImageLMESDriver,
-		GuardrailsOrchestratorImageKey:    RelatedImageGuardrailsOrchestrator,
-		GuardrailsBuiltInDetectorImageKey: RelatedImageBuiltInDetector,
-		GuardrailsSidecarGatewayImageKey:  RelatedImageVLLMOrchestratorGateway,
-		GarakProviderImageKey:             RelatedImageGarakLLSProviderDSP,
-		NemoGuardrailsImageKey:            RelatedImageNemoGuardrailsServer,
-	}
+		Describe("GetImageFromConfigMapWithFallback", func() {
+			It("should use fallback when ConfigMap is missing", func() {
+				// Create a fake client with NO ConfigMap
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-	if len(imageMapping) != len(expectedMappings) {
-		t.Errorf("Expected %d image mappings, got %d", len(expectedMappings), len(imageMapping))
-	}
+				// Ensure env var is NOT set
+				cleanupEnvVars()
 
-	for key, expectedEnvVar := range expectedMappings {
-		actualEnvVar, ok := imageMapping[key]
-		if !ok {
-			t.Errorf("Missing mapping for key %q", key)
-			continue
-		}
-		if actualEnvVar != expectedEnvVar {
-			t.Errorf("For key %q: expected env var %q, got %q", key, expectedEnvVar, actualEnvVar)
-		}
-	}
-}
+				// Call the legacy function with fallback
+				image, err := GetImageFromConfigMapWithFallback(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace, testFallback)
 
-func TestGetImageFromConfigMap_BackwardCompatibility(t *testing.T) {
-	ctx := context.Background()
+				Expect(err).NotTo(HaveOccurred())
+				Expect(image).To(Equal(testFallback))
+			})
 
-	// Create a ConfigMap
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      testConfigMap,
-			Namespace: testNamespace,
-		},
-		Data: map[string]string{
-			TrustyAIServiceImageKey: testImageFromCM,
-		},
-	}
+			It("should return fallback immediately when namespace is empty", func() {
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(configMap).Build()
+				// When namespace is empty, should return fallback immediately
+				image, err := GetImageFromConfigMapWithFallback(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, "", testFallback)
 
-	// Ensure env var is NOT set
-	os.Unsetenv(RelatedImageTrustyAIService)
-
-	// Call the legacy function
-	image, err := GetImageFromConfigMap(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace)
-
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
-
-	if image != testImageFromCM {
-		t.Errorf("Expected image %q, got %q", testImageFromCM, image)
-	}
-}
-
-func TestGetImageFromConfigMapWithFallback_BackwardCompatibility(t *testing.T) {
-	ctx := context.Background()
-
-	// Create a fake client with NO ConfigMap
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-
-	// Ensure env var is NOT set
-	os.Unsetenv(RelatedImageTrustyAIService)
-
-	// Call the legacy function with fallback
-	image, err := GetImageFromConfigMapWithFallback(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, testNamespace, testFallback)
-
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
-
-	if image != testFallback {
-		t.Errorf("Expected fallback image %q, got %q", testFallback, image)
-	}
-}
-
-func TestGetImageFromConfigMapWithFallback_EmptyNamespace(t *testing.T) {
-	ctx := context.Background()
-
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-
-	// When namespace is empty, should return fallback immediately
-	image, err := GetImageFromConfigMapWithFallback(ctx, fakeClient, TrustyAIServiceImageKey, testConfigMap, "", testFallback)
-
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
-
-	if image != testFallback {
-		t.Errorf("Expected fallback image %q, got %q", testFallback, image)
-	}
-}
+				Expect(err).NotTo(HaveOccurred())
+				Expect(image).To(Equal(testFallback))
+			})
+		})
+	})
+})

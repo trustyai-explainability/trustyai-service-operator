@@ -58,6 +58,7 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 		guardrailsGatewayImage, err := images.GetImageFromConfigMap(ctx, r.Client, gatewayImageKey, constants.ConfigMap, r.Namespace)
 		if guardrailsGatewayImage == "" || err != nil {
 			log.FromContext(ctx).Error(err, "Error resolving guardrails sidecar gateway image from env var or ConfigMap.")
+			return nil, err
 		}
 		log.FromContext(ctx).Info("Using sidecar gateway image " + guardrailsGatewayImage)
 		containerImages.GuardrailsGatewayImage = guardrailsGatewayImage
