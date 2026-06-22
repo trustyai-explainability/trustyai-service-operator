@@ -233,10 +233,10 @@ rules:
   - get
   - list
 - apiGroups:
-  - ""
+  - rbac.authorization.k8s.io
   resources:
-  - secrets
+  - clusterroles
+  resourceNames:
+  - trustyai-service-operator-evalhub-model-secret
   verbs:
-  - get
-  - create
-  - delete
+  - bind

@@ -101,18 +101,18 @@ test_secrets_write_exempt_gorch_manager if {
 	}
 }
 
-test_secrets_write_exempt_evalhub_manager if {
+test_secrets_write_exempt_evalhub_model_secret if {
 	count(deny) == 0 with input as {
 		"kind": "ClusterRole",
-		"metadata": {"name": "trustyai-service-operator-evalhub-manager-role"},
+		"metadata": {"name": "trustyai-service-operator-evalhub-model-secret"},
 		"rules": [{"apiGroups": [""], "resources": ["secrets"], "verbs": ["create", "delete"]}],
 	}
 }
 
-test_secrets_write_exempt_evalhub_model_secret if {
-	count(deny) == 0 with input as {
+test_secrets_write_not_exempt_evalhub_manager if {
+	count(deny) > 0 with input as {
 		"kind": "ClusterRole",
-		"metadata": {"name": "trustyai-service-operator-trustyai-service-operator-evalhub-model-secret"},
+		"metadata": {"name": "trustyai-service-operator-evalhub-manager-role"},
 		"rules": [{"apiGroups": [""], "resources": ["secrets"], "verbs": ["create", "delete"]}],
 	}
 }
@@ -174,6 +174,24 @@ test_clusterrolebindings_read_allowed if {
 		"kind": "ClusterRole",
 		"metadata": {"name": "test-role"},
 		"rules": [{"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["clusterrolebindings"], "verbs": ["get", "list"]}],
+	}
+}
+
+# --- Layer 2: bind exemption ---
+
+test_bind_exempt_evalhub_manager if {
+	count(deny) == 0 with input as {
+		"kind": "ClusterRole",
+		"metadata": {"name": "trustyai-service-operator-evalhub-manager-role"},
+		"rules": [{"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["clusterroles"], "verbs": ["bind"]}],
+	}
+}
+
+test_bind_not_exempt_unknown_role if {
+	count(deny) > 0 with input as {
+		"kind": "ClusterRole",
+		"metadata": {"name": "trustyai-service-operator-rogue-role"},
+		"rules": [{"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["clusterroles"], "verbs": ["bind"]}],
 	}
 }
 
