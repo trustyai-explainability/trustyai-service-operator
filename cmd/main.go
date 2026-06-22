@@ -26,6 +26,7 @@ import (
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"os"
+	"slices"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -54,6 +55,8 @@ import (
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	//+kubebuilder:scaffold:imports
 )
+
+const serviceEvalHub = "EVALHUB"
 
 var (
 	scheme   = runtime.NewScheme()
@@ -104,7 +107,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	mgrOpts := ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                server.Options{BindAddress: metricsAddr},
 		HealthProbeBindAddress: probeAddr,
@@ -126,19 +129,26 @@ func main() {
 				},
 			},
 		},
-		WebhookServer: ctrlwebhook.NewServer(ctrlwebhook.Options{
-			Port: 9443,
-		}),
 		// LeaderElectionReleaseOnCancel: true,
-	})
+	}
+
+	if slices.Contains(enabledServices, serviceEvalHub) {
+		mgrOpts.WebhookServer = ctrlwebhook.NewServer(ctrlwebhook.Options{
+			Port: 9443,
+		})
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), mgrOpts)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).For(&evalhubv1.EvalHub{}).Complete(); err != nil {
-		setupLog.Error(err, "unable to create EvalHub conversion webhook")
-		os.Exit(1)
+	if slices.Contains(enabledServices, serviceEvalHub) {
+		if err := ctrl.NewWebhookManagedBy(mgr).For(&evalhubv1.EvalHub{}).Complete(); err != nil {
+			setupLog.Error(err, "unable to create EvalHub conversion webhook")
+			os.Exit(1)
+		}
 	}
 
 	recorder := mgr.GetEventRecorderFor("trustyai-service-operator")

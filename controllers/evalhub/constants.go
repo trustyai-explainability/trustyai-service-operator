@@ -27,7 +27,9 @@ const (
 	servicePort = 8443
 	// metricsPort is the dedicated Prometheus metrics port on the EvalHub container.
 	// Bound to 0.0.0.0, serves /metrics over plain HTTP with no auth (cluster-internal only).
-	metricsPort = 9090
+	// Port 8081 is used (not 9090) because the redhat-ods-applications namespace NetworkPolicy
+	// allowlists 8081 but not 9090, avoiding the need for a component-level NetworkPolicy.
+	metricsPort = 8081
 
 	// kube-rbac-proxy sidecar
 	kubeRBACProxyContainerName       = "kube-rbac-proxy"
