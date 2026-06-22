@@ -619,19 +619,19 @@ func sanitizeErrorMessage(message string) string {
 	// Try known patterns first (regardless of message length)
 	for _, pattern := range knownErrorPatterns {
 		if strings.Contains(messageLower, pattern.matchSubstring) {
-			condensed := pattern.condenseFunc(message)
 			// Always return the condensed version if pattern matched
-			return condensed
+			return pattern.condenseFunc(message)
 		}
 	}
 
 	// If no pattern matched and message is short enough, return as-is
-	if len(message) <= maxErrorMessageLength {
+	runes := []rune(message)
+	if len(runes) <= maxErrorMessageLength {
 		return message
 	}
 
 	// Fallback: truncate with ellipsis indicating there's more detail in pod logs
-	return message[:maxErrorMessageLength-3] + "..."
+	return string(runes[:maxErrorMessageLength-3]) + "..."
 }
 
 // containerCannotReportToEvalHub detects fatal init/adapter/sidecar states before or without a successful callback.
