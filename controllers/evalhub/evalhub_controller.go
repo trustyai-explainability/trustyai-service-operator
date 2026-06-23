@@ -65,7 +65,7 @@ type EvalHubReconciler struct {
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,resourceNames=trustyai-service-operator-evalhub-model-secret,verbs=bind
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,resourceNames=trustyai-service-operator-evalhub-auth-reviewer-role;trustyai-service-operator-evalhub-jobs-writer;trustyai-service-operator-evalhub-job-config;trustyai-service-operator-evalhub-hardware-profiles-reader;trustyai-service-operator-evalhub-providers-access;trustyai-service-operator-evalhub-collections-access;trustyai-service-operator-evalhub-model-secret;trustyai-service-operator-evalhub-mlflow-access;trustyai-service-operator-evalhub-mlflow-jobs-access,verbs=bind
 //+kubebuilder:rbac:groups=infrastructure.opendatahub.io,resources=hardwareprofiles,verbs=get;list
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -189,6 +189,14 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.reconcileTenantNamespaces(ctx, instance); err != nil {
 		log.Error(err, "Failed to reconcile tenant namespaces")
 		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile tenant namespaces: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
+	// Reconcile single-tenancy Roles (tenant-admin, user) or clean them up in multi mode.
+	if err := r.reconcileSingleTenancyRoles(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile single-tenancy roles")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile single-tenancy roles: %v", err), corev1.ConditionFalse)
 		r.Status().Update(ctx, instance)
 		return RequeueWithError(err)
 	}
