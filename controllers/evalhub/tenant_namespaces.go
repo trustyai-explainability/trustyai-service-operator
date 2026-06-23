@@ -25,8 +25,15 @@ const (
 // removes stale resources from namespaces that no longer carry the tenant label.
 func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	if instance.Spec.IsSingleTenancy() {
-		// Single-tenant mode: the EvalHub instance serves only its own namespace.
-		// No cross-namespace tenant label discovery is performed.
+		// Single-tenant mode: no cross-namespace provisioning. Clean up any
+		// tenant resources that may remain from a previous multi-tenant config.
+		noTenants := map[string]bool{}
+		if err := r.cleanupStaleTenantResources(ctx, instance, noTenants); err != nil {
+			return err
+		}
+		if err := r.cleanupDiscoveryConfigMaps(ctx, instance, noTenants); err != nil {
+			return err
+		}
 		return nil
 	}
 
