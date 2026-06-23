@@ -229,6 +229,16 @@ rules:
   - rbac.authorization.k8s.io
   resources:
   - clusterroles
+  resourceNames:
+  - trustyai-service-operator-evalhub-auth-reviewer-role
+  - trustyai-service-operator-evalhub-jobs-writer
+  - trustyai-service-operator-evalhub-job-config
+  - trustyai-service-operator-evalhub-hardware-profiles-reader
+  - trustyai-service-operator-evalhub-providers-access
+  - trustyai-service-operator-evalhub-collections-access
+  - trustyai-service-operator-evalhub-model-secret
+  - trustyai-service-operator-evalhub-mlflow-access
+  - trustyai-service-operator-evalhub-mlflow-jobs-access
   verbs:
   - bind
 - apiGroups:
