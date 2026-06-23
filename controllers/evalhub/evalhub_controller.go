@@ -147,19 +147,22 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// namespace. Multi-tenant EH is control-plane; eval jobs are data-plane.
 	if !instance.Spec.IsSingleTenancy() {
 		ns := &corev1.Namespace{}
-		if err := r.Get(ctx, types.NamespacedName{Name: instance.Namespace}, ns); err == nil {
-			if _, isTenant := ns.Labels[tenantLabel]; isTenant {
-				log.Error(nil, "Multi-tenant EvalHub must not be deployed in a tenant namespace",
-					"namespace", instance.Namespace)
-				instance.SetStatus("Ready", "InvalidPlacement",
-					"A multi-tenant EvalHub instance must not be deployed in a tenant namespace. "+
-						"Remove the evalhub.trustyai.opendatahub.io/tenant label from this namespace "+
-						"or set spec.tenancy: single.",
-					corev1.ConditionFalse)
-				instance.Status.Phase = "Error"
-				r.Status().Update(ctx, instance)
-				return DoNotRequeue()
-			}
+		if err := r.Get(ctx, types.NamespacedName{Name: instance.Namespace}, ns); err != nil {
+			return RequeueWithError(fmt.Errorf("cannot verify namespace labels for placement guard: %w", err))
+		}
+		if _, isTenant := ns.Labels[tenantLabel]; isTenant {
+			log.Error(nil, "Multi-tenant EvalHub must not be deployed in a tenant namespace",
+				"namespace", instance.Namespace)
+			instance.SetStatus("Ready", "InvalidPlacement",
+				"A multi-tenant EvalHub instance must not be deployed in a tenant namespace. "+
+					"Remove the evalhub.trustyai.opendatahub.io/tenant label from this namespace "+
+					"or set spec.tenancy: single.",
+				corev1.ConditionFalse)
+			instance.Status.Phase = "Error"
+			r.Status().Update(ctx, instance)
+			r.EventRecorder.Event(instance, corev1.EventTypeWarning, "InvalidPlacement",
+				"Multi-tenant EvalHub must not be deployed in a tenant namespace")
+			return DoNotRequeue()
 		}
 	}
 
