@@ -560,6 +560,16 @@ spec:
                 format: int32
                 minimum: 1
                 type: integer
+              tenancy:
+                default: multi
+                description: |-
+                  Tenancy controls the deployment model for this EvalHub instance.
+                  "multi" (default) — shared control-plane instance; tenant namespaces opt in via label.
+                  "single" — self-service per-namespace instance; operator provisions namespace-scoped RBAC automatically.
+                enum:
+                - single
+                - multi
+                type: string
             type: object
           status:
             description: EvalHubStatus defines the observed state of EvalHub

@@ -125,8 +125,28 @@ type EvalHubMCPStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+const (
+	// TenancySingle deploys EvalHub in single-tenant (self-service) mode: the instance serves
+	// only its own namespace. No cross-namespace tenant label discovery is performed.
+	// The operator provisions evalhub-tenant-admin and evalhub-user Roles automatically.
+	TenancySingle = "single"
+
+	// TenancyMulti is the default mode: one EvalHub instance in the RHOAI control-plane namespace
+	// serves tenant namespaces that carry the evalhub.trustyai.opendatahub.io/tenant label.
+	// A multi-tenant EvalHub instance must never be deployed in a tenant namespace.
+	TenancyMulti = "multi"
+)
+
 // EvalHubSpec defines the desired state of EvalHub
 type EvalHubSpec struct {
+	// Tenancy controls the deployment model for this EvalHub instance.
+	// "multi" (default) — shared control-plane instance; tenant namespaces opt in via label.
+	// "single" — self-service per-namespace instance; operator provisions namespace-scoped RBAC automatically.
+	// +kubebuilder:validation:Enum=single;multi
+	// +kubebuilder:default:=multi
+	// +optional
+	Tenancy string `json:"tenancy,omitempty"`
+
 	// Number of replicas for the eval-hub deployment
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:default:=1
@@ -277,6 +297,11 @@ func (e *EvalHubSpec) IsOTELConfigured() bool {
 // IsMCPEnabled returns true if the MCP server is explicitly enabled
 func (e *EvalHubSpec) IsMCPEnabled() bool {
 	return e.MCP != nil && e.MCP.Enabled != nil && *e.MCP.Enabled
+}
+
+// IsSingleTenancy returns true when this instance runs in self-service single-tenant mode.
+func (e *EvalHubSpec) IsSingleTenancy() bool {
+	return e.Tenancy == TenancySingle
 }
 
 // GetMCPReplicas returns the number of MCP server replicas, defaulting to 1 when the spec,

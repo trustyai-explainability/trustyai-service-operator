@@ -15,8 +15,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// reconcileDeployment creates or updates the Deployment for EvalHub
-func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *evalhubv1.EvalHub, providerCMNames []string, collectionCMNames []string) error {
+// reconcileDeployment creates or updates the Deployment for EvalHub.
+// systemProviderCMNames and systemCollectionCMNames are ConfigMaps copied from the operator namespace.
+// tenantProviderCMNames and tenantCollectionCMNames are ConfigMaps discovered directly in the instance namespace.
+func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *evalhubv1.EvalHub, systemProviderCMNames, systemCollectionCMNames, tenantProviderCMNames, tenantCollectionCMNames []string) error {
 	log := log.FromContext(ctx)
 	log.Info("Reconciling Deployment", "name", instance.Name)
 
@@ -34,7 +36,7 @@ func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *e
 	}
 
 	// Define the desired deployment spec
-	desiredSpec, err := r.buildDeploymentSpec(ctx, instance, providerCMNames, collectionCMNames)
+	desiredSpec, err := r.buildDeploymentSpec(ctx, instance, systemProviderCMNames, systemCollectionCMNames, tenantProviderCMNames, tenantCollectionCMNames)
 	if err != nil {
 		return err
 	}
@@ -59,7 +61,7 @@ func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *e
 }
 
 // buildDeploymentSpec builds the deployment specification for EvalHub
-func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *evalhubv1.EvalHub, providerCMNames []string, collectionCMNames []string) (appsv1.DeploymentSpec, error) {
+func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *evalhubv1.EvalHub, systemProviderCMNames, systemCollectionCMNames, tenantProviderCMNames, tenantCollectionCMNames []string) (appsv1.DeploymentSpec, error) {
 	labels := map[string]string{
 		"app":       "eval-hub",
 		"instance":  instance.Name,
@@ -164,17 +166,31 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			ReadOnly:  true,
 		},
 	}
-	if len(providerCMNames) > 0 {
+	if len(systemProviderCMNames) > 0 {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      providersVolumeName,
 			MountPath: providersMountPath,
 			ReadOnly:  true,
 		})
 	}
-	if len(collectionCMNames) > 0 {
+	if len(systemCollectionCMNames) > 0 {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      collectionsVolumeName,
 			MountPath: collectionsMountPath,
+			ReadOnly:  true,
+		})
+	}
+	if len(tenantProviderCMNames) > 0 {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      providersVolumeName + "-tenant",
+			MountPath: tenantProvidersMountPath,
+			ReadOnly:  true,
+		})
+	}
+	if len(tenantCollectionCMNames) > 0 {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      collectionsVolumeName + "-tenant",
+			MountPath: tenantCollectionsMountPath,
 			ReadOnly:  true,
 		})
 	}
@@ -343,22 +359,42 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			},
 		},
 	}
-	if len(providerCMNames) > 0 {
+	if len(systemProviderCMNames) > 0 {
 		volumes = append(volumes, corev1.Volume{
 			Name: providersVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Projected: &corev1.ProjectedVolumeSource{
-					Sources: providerVolumeProjections(providerCMNames),
+					Sources: providerVolumeProjections(systemProviderCMNames),
 				},
 			},
 		})
 	}
-	if len(collectionCMNames) > 0 {
+	if len(systemCollectionCMNames) > 0 {
 		volumes = append(volumes, corev1.Volume{
 			Name: collectionsVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Projected: &corev1.ProjectedVolumeSource{
-					Sources: collectionVolumeProjections(collectionCMNames),
+					Sources: collectionVolumeProjections(systemCollectionCMNames),
+				},
+			},
+		})
+	}
+	if len(tenantProviderCMNames) > 0 {
+		volumes = append(volumes, corev1.Volume{
+			Name: providersVolumeName + "-tenant",
+			VolumeSource: corev1.VolumeSource{
+				Projected: &corev1.ProjectedVolumeSource{
+					Sources: providerVolumeProjections(tenantProviderCMNames),
+				},
+			},
+		})
+	}
+	if len(tenantCollectionCMNames) > 0 {
+		volumes = append(volumes, corev1.Volume{
+			Name: collectionsVolumeName + "-tenant",
+			VolumeSource: corev1.VolumeSource{
+				Projected: &corev1.ProjectedVolumeSource{
+					Sources: collectionVolumeProjections(tenantCollectionCMNames),
 				},
 			},
 		})

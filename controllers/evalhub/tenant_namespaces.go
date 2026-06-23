@@ -24,6 +24,12 @@ const (
 // the job ServiceAccount and API SA RoleBindings exist in each one. It also
 // removes stale resources from namespaces that no longer carry the tenant label.
 func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, instance *evalhubv1.EvalHub) error {
+	if instance.Spec.IsSingleTenancy() {
+		// Single-tenant mode: the EvalHub instance serves only its own namespace.
+		// No cross-namespace tenant label discovery is performed.
+		return nil
+	}
+
 	log := log.FromContext(ctx)
 
 	// List namespaces with the tenant label

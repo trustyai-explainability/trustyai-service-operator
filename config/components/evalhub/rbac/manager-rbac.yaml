@@ -226,17 +226,15 @@ rules:
   - patch
   - delete
 - apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterroles
+  verbs:
+  - bind
+- apiGroups:
   - infrastructure.opendatahub.io
   resources:
   - hardwareprofiles
   verbs:
   - get
   - list
-- apiGroups:
-  - rbac.authorization.k8s.io
-  resources:
-  - clusterroles
-  resourceNames:
-  - trustyai-service-operator-evalhub-model-secret
-  verbs:
-  - bind

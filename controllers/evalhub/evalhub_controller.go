@@ -143,6 +143,26 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return RequeueWithError(fmt.Errorf("spec.database.secret is required for postgresql"))
 	}
 
+	// Security invariant: a multi-tenant EvalHub instance must never be deployed in a tenant
+	// namespace. Multi-tenant EH is control-plane; eval jobs are data-plane.
+	if !instance.Spec.IsSingleTenancy() {
+		ns := &corev1.Namespace{}
+		if err := r.Get(ctx, types.NamespacedName{Name: instance.Namespace}, ns); err == nil {
+			if _, isTenant := ns.Labels[tenantLabel]; isTenant {
+				log.Error(nil, "Multi-tenant EvalHub must not be deployed in a tenant namespace",
+					"namespace", instance.Namespace)
+				instance.SetStatus("Ready", "InvalidPlacement",
+					"A multi-tenant EvalHub instance must not be deployed in a tenant namespace. "+
+						"Remove the evalhub.trustyai.opendatahub.io/tenant label from this namespace "+
+						"or set spec.tenancy: single.",
+					corev1.ConditionFalse)
+				instance.Status.Phase = "Error"
+				r.Status().Update(ctx, instance)
+				return DoNotRequeue()
+			}
+		}
+	}
+
 	// Create ServiceAccount for EvalHub
 	err = r.createServiceAccount(ctx, instance)
 	if err != nil {
@@ -186,8 +206,8 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return RequeueWithError(err)
 	}
 
-	// Reconcile Provider ConfigMaps (copy from operator namespace to instance namespace)
-	providerCMNames, err := r.reconcileProviderConfigMaps(ctx, instance)
+	// Reconcile Provider ConfigMaps (system from operator namespace + tenant from instance namespace)
+	systemProviderCMNames, tenantProviderCMNames, err := r.reconcileProviderConfigMaps(ctx, instance)
 	if err != nil {
 		log.Error(err, "Failed to reconcile Provider ConfigMaps")
 		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Provider ConfigMaps: %v", err), corev1.ConditionFalse)
@@ -196,8 +216,8 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 	instance.Status.ActiveProviders = instance.Spec.Providers
 
-	// Reconcile Collection ConfigMaps (copy from operator namespace to instance namespace)
-	collectionCMNames, err := r.reconcileCollectionConfigMaps(ctx, instance)
+	// Reconcile Collection ConfigMaps (system from operator namespace + tenant from instance namespace)
+	systemCollectionCMNames, tenantCollectionCMNames, err := r.reconcileCollectionConfigMaps(ctx, instance)
 	if err != nil {
 		log.Error(err, "Failed to reconcile Collection ConfigMaps")
 		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Collection ConfigMaps: %v", err), corev1.ConditionFalse)
@@ -207,7 +227,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	instance.Status.ActiveCollections = instance.Spec.Collections
 
 	// Reconcile Deployment
-	if err := r.reconcileDeployment(ctx, instance, providerCMNames, collectionCMNames); err != nil {
+	if err := r.reconcileDeployment(ctx, instance, systemProviderCMNames, systemCollectionCMNames, tenantProviderCMNames, tenantCollectionCMNames); err != nil {
 		log.Error(err, "Failed to reconcile Deployment")
 		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Deployment: %v", err), corev1.ConditionFalse)
 		r.Status().Update(ctx, instance)
@@ -287,7 +307,8 @@ func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}, builder.OnlyMetadata).
 		Owns(&corev1.ConfigMap{}, builder.OnlyMetadata).
-		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.mapNamespaceToEvalHubs), builder.OnlyMetadata, builder.WithPredicates(tenantLabelPredicate()))
+		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.mapNamespaceToEvalHubs), builder.OnlyMetadata, builder.WithPredicates(tenantLabelPredicate())).
+		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.mapTenantConfigMapToEvalHub), builder.WithPredicates(tenantConfigMapPredicate()))
 
 	if r.isServiceMonitorSupported() {
 		b = b.Owns(&monitoringv1.ServiceMonitor{}, builder.OnlyMetadata)
@@ -356,6 +377,39 @@ func (r *EvalHubReconciler) mapNamespaceToEvalHubs(ctx context.Context, _ client
 				Name:      eh.Name,
 				Namespace: eh.Namespace,
 			},
+		}
+	}
+	return requests
+}
+
+// tenantConfigMapPredicate returns a predicate that fires only for ConfigMaps
+// labeled as tenant providers or tenant collections. This avoids reconciling on
+// every ConfigMap change cluster-wide.
+func tenantConfigMapPredicate() predicate.Predicate {
+	hasTenantLabel := func(obj client.Object) bool {
+		labels := obj.GetLabels()
+		return labels[providerLabel] == providerTypeTenant || labels[collectionLabel] == collectionTypeTenant
+	}
+	return predicate.Funcs{
+		CreateFunc:  func(e event.CreateEvent) bool { return hasTenantLabel(e.Object) },
+		UpdateFunc:  func(e event.UpdateEvent) bool { return hasTenantLabel(e.ObjectNew) || hasTenantLabel(e.ObjectOld) },
+		DeleteFunc:  func(e event.DeleteEvent) bool { return hasTenantLabel(e.Object) },
+		GenericFunc: func(e event.GenericEvent) bool { return false },
+	}
+}
+
+// mapTenantConfigMapToEvalHub maps a tenant ConfigMap event to reconcile requests
+// for all EvalHub instances in the same namespace.
+func (r *EvalHubReconciler) mapTenantConfigMapToEvalHub(ctx context.Context, obj client.Object) []ctrl.Request {
+	evalHubList := &evalhubv1.EvalHubList{}
+	if err := r.List(ctx, evalHubList, client.InNamespace(obj.GetNamespace())); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to list EvalHub instances for ConfigMap watch")
+		return nil
+	}
+	requests := make([]ctrl.Request, len(evalHubList.Items))
+	for i, eh := range evalHubList.Items {
+		requests[i] = ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: eh.Name, Namespace: eh.Namespace},
 		}
 	}
 	return requests

@@ -82,10 +82,13 @@ const (
 	configDirPath = "/etc/evalhub/config"
 
 	// Provider ConfigMap configuration
-	providerLabel       = "trustyai.opendatahub.io/evalhub-provider-type"
-	providerNameLabel   = "trustyai.opendatahub.io/evalhub-provider-name"
-	providersVolumeName = "evalhub-providers"
-	providersMountPath  = configDirPath + "/providers"
+	providerLabel            = "trustyai.opendatahub.io/evalhub-provider-type"
+	providerNameLabel        = "trustyai.opendatahub.io/evalhub-provider-name"
+	providersVolumeName      = "evalhub-providers"
+	providersMountPath       = configDirPath + "/providers"
+	providerTypeSystem       = "system"
+	providerTypeTenant       = "tenant"
+	tenantProvidersMountPath = providersMountPath + "/tenant"
 
 	// Sidecar configuration
 	sidecarBaseURL = "http://localhost:8080"
@@ -110,10 +113,13 @@ const (
 	discoveryConfigMapLabel = "evalhub.trustyai.opendatahub.io/discovery"
 
 	// Collection ConfigMap configuration
-	collectionLabel       = "trustyai.opendatahub.io/evalhub-collection-type"
-	collectionNameLabel   = "trustyai.opendatahub.io/evalhub-collection-name"
-	collectionsVolumeName = "evalhub-collections"
-	collectionsMountPath  = configDirPath + "/collections"
+	collectionLabel            = "trustyai.opendatahub.io/evalhub-collection-type"
+	collectionNameLabel        = "trustyai.opendatahub.io/evalhub-collection-name"
+	collectionsVolumeName      = "evalhub-collections"
+	collectionsMountPath       = configDirPath + "/collections"
+	collectionTypeSystem       = "system"
+	collectionTypeTenant       = "tenant"
+	tenantCollectionsMountPath = collectionsMountPath + "/tenant"
 )
 
 var (

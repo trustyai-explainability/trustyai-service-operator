@@ -473,35 +473,32 @@ func (r *EvalHubReconciler) validateImageConfiguration(ctx context.Context, imag
 	return nil
 }
 
-// reconcileProviderConfigMaps copies provider ConfigMaps from the operator namespace to the
-// EvalHub CR's namespace. Only providers listed in instance.Spec.Providers are copied.
-// Each source ConfigMap is discovered by the labels:
-//   - trustyai.opendatahub.io/evalhub-provider-type=system
-//   - trustyai.opendatahub.io/evalhub-provider-name=<name>
+// reconcileProviderConfigMaps copies system provider ConfigMaps from the operator namespace to
+// the EvalHub CR's namespace, and discovers tenant-scoped provider ConfigMaps (labeled
+// evalhub-provider-type=tenant) already present in the instance namespace.
 //
-// Returns the list of created ConfigMap names (for building projected volumes).
-func (r *EvalHubReconciler) reconcileProviderConfigMaps(ctx context.Context, instance *evalhubv1.EvalHub) ([]string, error) {
-	if len(instance.Spec.Providers) == 0 {
-		return nil, nil
-	}
-
+// System ConfigMaps are mounted at /etc/evalhub/config/providers/ (existing behaviour, unchanged).
+// Tenant ConfigMaps are used directly from the instance namespace and returned separately so
+// the deployment can mount them at /etc/evalhub/config/providers/tenant/.
+//
+// Returns (systemCMNames, tenantCMNames, error).
+func (r *EvalHubReconciler) reconcileProviderConfigMaps(ctx context.Context, instance *evalhubv1.EvalHub) ([]string, []string, error) {
 	log := log.FromContext(ctx)
-	log.Info("Reconciling Provider ConfigMaps", "instance", instance.Name, "providers", instance.Spec.Providers)
 
-	var cmNames []string
+	// --- System providers (existing behaviour) ---
+	var systemCMNames []string
 	for _, providerName := range instance.Spec.Providers {
-		// Look up the source ConfigMap by both labels
 		var sourceList corev1.ConfigMapList
 		if err := r.List(ctx, &sourceList,
 			client.InNamespace(r.Namespace),
 			client.MatchingLabels{
-				providerLabel:     "system",
+				providerLabel:     providerTypeSystem,
 				providerNameLabel: providerName,
 			}); err != nil {
-			return nil, fmt.Errorf("failed to list provider ConfigMaps for %q in namespace %s: %w", providerName, r.Namespace, err)
+			return nil, nil, fmt.Errorf("failed to list provider ConfigMaps for %q in namespace %s: %w", providerName, r.Namespace, err)
 		}
 		if len(sourceList.Items) == 0 {
-			return nil, fmt.Errorf("provider %q not found: no ConfigMap with label %s=%s in namespace %s",
+			return nil, nil, fmt.Errorf("provider %q not found: no ConfigMap with label %s=%s in namespace %s",
 				providerName, providerNameLabel, providerName, r.Namespace)
 		}
 
@@ -515,66 +512,79 @@ func (r *EvalHubReconciler) reconcileProviderConfigMaps(ctx context.Context, ins
 			},
 		}
 
-		// Check if ConfigMap already exists
 		getErr := r.Get(ctx, client.ObjectKeyFromObject(configMap), configMap)
 		if getErr != nil && !errors.IsNotFound(getErr) {
-			return nil, getErr
+			return nil, nil, getErr
 		}
 
 		if errors.IsNotFound(getErr) {
 			configMap.Data = src.Data
 			if instance.UID != "" {
 				if err := controllerutil.SetControllerReference(instance, configMap, r.Scheme); err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			}
 			log.Info("Creating Provider ConfigMap", "name", targetName, "provider", providerName)
 			if err := r.Create(ctx, configMap); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		} else {
 			configMap.Data = src.Data
 			log.Info("Updating Provider ConfigMap", "name", targetName, "provider", providerName)
 			if err := r.Update(ctx, configMap); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 
-		cmNames = append(cmNames, targetName)
+		systemCMNames = append(systemCMNames, targetName)
 	}
 
-	return cmNames, nil
+	// --- Tenant providers (new) ---
+	// Discover ConfigMaps labeled evalhub-provider-type=tenant in the instance namespace.
+	// These are used directly — no copy required. They mount at a separate path so they
+	// cannot shadow system providers.
+	var tenantList corev1.ConfigMapList
+	if err := r.List(ctx, &tenantList,
+		client.InNamespace(instance.Namespace),
+		client.MatchingLabels{providerLabel: providerTypeTenant}); err != nil {
+		return nil, nil, fmt.Errorf("failed to list tenant provider ConfigMaps in namespace %s: %w", instance.Namespace, err)
+	}
+
+	var tenantCMNames []string
+	for i := range tenantList.Items {
+		tenantCMNames = append(tenantCMNames, tenantList.Items[i].Name)
+		log.V(1).Info("Found tenant Provider ConfigMap", "name", tenantList.Items[i].Name)
+	}
+
+	return systemCMNames, tenantCMNames, nil
 }
 
-// reconcileCollectionConfigMaps copies collection ConfigMaps from the operator namespace to the
-// EvalHub CR's namespace. Only collections listed in instance.Spec.Collections are copied.
-// Each source ConfigMap is discovered by the labels:
-//   - trustyai.opendatahub.io/evalhub-collection-type=system
-//   - trustyai.opendatahub.io/evalhub-collection-name=<name>
+// reconcileCollectionConfigMaps copies system collection ConfigMaps from the operator namespace
+// to the EvalHub CR's namespace, and discovers tenant-scoped collection ConfigMaps (labeled
+// evalhub-collection-type=tenant) already present in the instance namespace.
 //
-// Returns the list of created ConfigMap names (for building projected volumes).
-func (r *EvalHubReconciler) reconcileCollectionConfigMaps(ctx context.Context, instance *evalhubv1.EvalHub) ([]string, error) {
-	if len(instance.Spec.Collections) == 0 {
-		return nil, nil
-	}
-
+// System ConfigMaps are mounted at /etc/evalhub/config/collections/ (existing behaviour).
+// Tenant ConfigMaps are used directly and returned separately so the deployment can mount them
+// at /etc/evalhub/config/collections/tenant/.
+//
+// Returns (systemCMNames, tenantCMNames, error).
+func (r *EvalHubReconciler) reconcileCollectionConfigMaps(ctx context.Context, instance *evalhubv1.EvalHub) ([]string, []string, error) {
 	log := log.FromContext(ctx)
-	log.Info("Reconciling Collection ConfigMaps", "instance", instance.Name, "collections", instance.Spec.Collections)
 
-	var cmNames []string
+	// --- System collections (existing behaviour) ---
+	var systemCMNames []string
 	for _, collectionName := range instance.Spec.Collections {
-		// Look up the source ConfigMap by both labels
 		var sourceList corev1.ConfigMapList
 		if err := r.List(ctx, &sourceList,
 			client.InNamespace(r.Namespace),
 			client.MatchingLabels{
-				collectionLabel:     "system",
+				collectionLabel:     collectionTypeSystem,
 				collectionNameLabel: collectionName,
 			}); err != nil {
-			return nil, fmt.Errorf("failed to list collection ConfigMaps for %q in namespace %s: %w", collectionName, r.Namespace, err)
+			return nil, nil, fmt.Errorf("failed to list collection ConfigMaps for %q in namespace %s: %w", collectionName, r.Namespace, err)
 		}
 		if len(sourceList.Items) == 0 {
-			return nil, fmt.Errorf("collection %q not found: no ConfigMap with label %s=%s in namespace %s",
+			return nil, nil, fmt.Errorf("collection %q not found: no ConfigMap with label %s=%s in namespace %s",
 				collectionName, collectionNameLabel, collectionName, r.Namespace)
 		}
 
@@ -588,35 +598,49 @@ func (r *EvalHubReconciler) reconcileCollectionConfigMaps(ctx context.Context, i
 			},
 		}
 
-		// Check if ConfigMap already exists
 		getErr := r.Get(ctx, client.ObjectKeyFromObject(configMap), configMap)
 		if getErr != nil && !errors.IsNotFound(getErr) {
-			return nil, getErr
+			return nil, nil, getErr
 		}
 
 		if errors.IsNotFound(getErr) {
 			configMap.Data = src.Data
 			if instance.UID != "" {
 				if err := controllerutil.SetControllerReference(instance, configMap, r.Scheme); err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			}
 			log.Info("Creating Collection ConfigMap", "name", targetName, "collection", collectionName)
 			if err := r.Create(ctx, configMap); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		} else {
 			configMap.Data = src.Data
 			log.Info("Updating Collection ConfigMap", "name", targetName, "collection", collectionName)
 			if err := r.Update(ctx, configMap); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 
-		cmNames = append(cmNames, targetName)
+		systemCMNames = append(systemCMNames, targetName)
 	}
 
-	return cmNames, nil
+	// --- Tenant collections (new) ---
+	// Discover ConfigMaps labeled evalhub-collection-type=tenant in the instance namespace.
+	var tenantList corev1.ConfigMapList
+	if err := r.List(ctx, &tenantList,
+		client.InNamespace(instance.Namespace),
+		client.MatchingLabels{collectionLabel: collectionTypeTenant}); err != nil {
+		return nil, nil, fmt.Errorf("failed to list tenant collection ConfigMaps in namespace %s: %w", instance.Namespace, err)
+	}
+
+	var tenantCMNames []string
+	for i := range tenantList.Items {
+		tenantCMNames = append(tenantCMNames, tenantList.Items[i].Name)
+		log.V(1).Info("Found tenant Collection ConfigMap", "name", tenantList.Items[i].Name)
+	}
+
+	return systemCMNames, tenantCMNames, nil
 }
 
 // collectionVolumeProjections builds VolumeProjection entries for mounting collection ConfigMaps
