@@ -114,7 +114,8 @@ func ResolveImage(ctx context.Context, c client.Client, configMapKey, configMapN
 // This is used internally by ResolveImage to avoid circular logic.
 func getImageFromConfigMapDirect(ctx context.Context, c client.Client, configMapKey, configMapName, namespace string) (string, error) {
 	// Inline implementation to avoid circular import with controllers/utils.
-	// TODO: Refactor to shared pkg/configmap package to eliminate duplication (tracked separately)
+	// TODO: Refactor to shared pkg/configmap package to eliminate duplication.
+	// See https://github.com/trustyai-explainability/trustyai-service-operator/issues/783
 
 	configMap := &corev1.ConfigMap{}
 	err := c.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: namespace}, configMap)
