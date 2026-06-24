@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -66,16 +67,15 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		"component": "api",
 	}
 
-	// Get image from ConfigMap with fallback
-	evalHubImage, err := r.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
+	// Get image using the centralized resolver (env var → configmap → fallback)
+	evalHubImage, err := images.ResolveImage(ctx, r.Client, images.EvalHubImageKey, configMapName, r.Namespace, defaultEvalHubImage)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Error getting EvalHub image from ConfigMap. Using the default image value of "+defaultEvalHubImage)
-		evalHubImage = defaultEvalHubImage
+		return appsv1.DeploymentSpec{}, fmt.Errorf("resolving EvalHub image: %w", err)
 	}
 
-	kubeRBACProxyImage, err := r.getImageFromConfigMap(ctx, configMapKubeRBACProxyImageKey)
+	kubeRBACProxyImage, err := images.ResolveImage(ctx, r.Client, images.KubeRBACProxyKey, configMapName, r.Namespace, "")
 	if err != nil {
-		return appsv1.DeploymentSpec{}, fmt.Errorf("getting kube-rbac-proxy image: %w", err)
+		return appsv1.DeploymentSpec{}, fmt.Errorf("resolving kube-rbac-proxy image: %w", err)
 	}
 
 	settings := mergeEvalHubDeploymentOperatorSettings(ctx, r.readOperatorConfigMapData(ctx))

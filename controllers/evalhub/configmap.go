@@ -8,6 +8,7 @@ import (
 	"time"
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -147,9 +148,9 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 
 // generateConfigData generates the configuration data for the ConfigMap
 func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *evalhubv1.EvalHub) (map[string]string, error) {
-	evalHubImage, err := r.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
+	evalHubImage, err := images.ResolveImage(ctx, r.Client, images.EvalHubImageKey, configMapName, r.Namespace, defaultEvalHubImage)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get EvalHub image: %w", err)
+		return nil, fmt.Errorf("resolving EvalHub image: %w", err)
 	}
 
 	config := EvalHubConfig{

@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Image key constants matching ConfigMap keys
@@ -79,9 +80,12 @@ func GetImageFromConfigMapWithFallback(ctx context.Context, c client.Client, con
 //
 // Returns an error if none of the above sources provide a value.
 func ResolveImage(ctx context.Context, c client.Client, configMapKey, configMapName, namespace string, fallbackValue string) (string, error) {
+	logger := log.FromContext(ctx)
+
 	// Step 1: Check if there's a corresponding RELATED_IMAGE_* env var
 	if envVarName, ok := imageMapping[configMapKey]; ok {
 		if envValue := os.Getenv(envVarName); envValue != "" {
+			logger.Info("resolved image", "key", configMapKey, "source", "env", "var", envVarName, "value", envValue)
 			return envValue, nil
 		}
 	}
@@ -89,11 +93,13 @@ func ResolveImage(ctx context.Context, c client.Client, configMapKey, configMapN
 	// Step 2: Fall back to ConfigMap
 	image, err := getImageFromConfigMapDirect(ctx, c, configMapKey, configMapName, namespace)
 	if err == nil && image != "" {
+		logger.Info("resolved image", "key", configMapKey, "source", "configmap", "name", configMapName, "namespace", namespace, "value", image)
 		return image, nil
 	}
 
 	// Step 3: Use fallback value if provided
 	if fallbackValue != "" {
+		logger.Info("resolved image", "key", configMapKey, "source", "fallback", "value", fallbackValue)
 		return fallbackValue, nil
 	}
 
@@ -107,14 +113,8 @@ func ResolveImage(ctx context.Context, c client.Client, configMapKey, configMapN
 // getImageFromConfigMapDirect is an internal helper that directly reads from ConfigMap without env var check.
 // This is used internally by ResolveImage to avoid circular logic.
 func getImageFromConfigMapDirect(ctx context.Context, c client.Client, configMapKey, configMapName, namespace string) (string, error) {
-	// Import the existing ConfigMap helper from utils package
-	// Note: We can't import controllers/utils here due to circular dependency,
-	// so we need to either:
-	// 1. Move GetConfigMapByName to a shared package, or
-	// 2. Duplicate the ConfigMap lookup logic here
-	//
-	// For now, we'll use a simple inline implementation to avoid circular imports.
-	// In production, you might want to refactor utils.GetConfigMapByName to a common package.
+	// Inline implementation to avoid circular import with controllers/utils.
+	// TODO: Refactor to shared pkg/configmap package to eliminate duplication (tracked separately)
 
 	configMap := &corev1.ConfigMap{}
 	err := c.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: namespace}, configMap)

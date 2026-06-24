@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/dsc"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes/driver"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -116,6 +117,26 @@ func constructOptionsFromConfigMap(log *logr.Logger, configmap *corev1.ConfigMap
 	if len(msgs) > 0 && log != nil {
 		log.Error(fmt.Errorf("some settings in the configmap are invalid"), strings.Join(msgs, "\n"))
 	}
+
+	return nil
+}
+
+// resolveImageOptions resolves PodImage and DriverImage using the centralized image resolver
+// This checks RELATED_IMAGE_* env vars first, then falls back to ConfigMap values
+func resolveImageOptions(ctx context.Context, c client.Client, configMapName, namespace string) error {
+	// Resolve pod image (env var → configmap → default)
+	podImage, err := images.ResolveImage(ctx, c, images.LMESPodImageKey, configMapName, namespace, DefaultPodImage)
+	if err != nil {
+		return fmt.Errorf("resolving LMES pod image: %w", err)
+	}
+	Options.PodImage = podImage
+
+	// Resolve driver image (env var → configmap → default)
+	driverImage, err := images.ResolveImage(ctx, c, images.LMESDriverImageKey, configMapName, namespace, DefaultDriverImage)
+	if err != nil {
+		return fmt.Errorf("resolving LMES driver image: %w", err)
+	}
+	Options.DriverImage = driverImage
 
 	return nil
 }
