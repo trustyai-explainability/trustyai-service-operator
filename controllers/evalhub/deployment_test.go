@@ -319,7 +319,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 			err = reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("getting kube-rbac-proxy image"))
+			Expect(err.Error()).To(ContainSubstring("resolving kube-rbac-proxy image"))
 		})
 
 		It("should configure rolling update strategy", func() {
@@ -696,6 +696,6 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 		}
 		err := r.reconcileDeployment(ctx, fh, nil, nil)
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("getting kube-rbac-proxy image"))
+		Expect(err.Error()).To(ContainSubstring("resolving kube-rbac-proxy image"))
 	})
 })
