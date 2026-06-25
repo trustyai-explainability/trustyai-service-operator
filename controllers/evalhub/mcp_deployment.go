@@ -82,13 +82,13 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 	image := mcpSpec.Image
 	if image == "" {
 		var err error
-		image, err = images.ResolveImage(ctx, r.Client, images.EvalHubImageKey, configMapName, r.Namespace, defaultEvalHubImage)
+		image, err = images.ResolveImage(ctx, r.Client, images.EvalHubImageKey, r.effectiveOperatorConfigMapName(), r.Namespace, defaultEvalHubImage)
 		if err != nil {
 			return appsv1.DeploymentSpec{}, fmt.Errorf("resolving EvalHub image for MCP: %w", err)
 		}
 	}
 
-	kubeRBACProxyImage, err := images.ResolveImage(ctx, r.Client, images.KubeRBACProxyKey, configMapName, r.Namespace, "")
+	kubeRBACProxyImage, err := images.ResolveImage(ctx, r.Client, images.KubeRBACProxyKey, r.effectiveOperatorConfigMapName(), r.Namespace, "")
 	if err != nil {
 		return appsv1.DeploymentSpec{}, fmt.Errorf("resolving kube-rbac-proxy image for MCP: %w", err)
 	}

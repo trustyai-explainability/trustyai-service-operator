@@ -68,12 +68,12 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	}
 
 	// Get image using the centralized resolver (env var → configmap → fallback)
-	evalHubImage, err := images.ResolveImage(ctx, r.Client, images.EvalHubImageKey, configMapName, r.Namespace, defaultEvalHubImage)
+	evalHubImage, err := images.ResolveImage(ctx, r.Client, images.EvalHubImageKey, r.effectiveOperatorConfigMapName(), r.Namespace, defaultEvalHubImage)
 	if err != nil {
 		return appsv1.DeploymentSpec{}, fmt.Errorf("resolving EvalHub image: %w", err)
 	}
 
-	kubeRBACProxyImage, err := images.ResolveImage(ctx, r.Client, images.KubeRBACProxyKey, configMapName, r.Namespace, "")
+	kubeRBACProxyImage, err := images.ResolveImage(ctx, r.Client, images.KubeRBACProxyKey, r.effectiveOperatorConfigMapName(), r.Namespace, "")
 	if err != nil {
 		return appsv1.DeploymentSpec{}, fmt.Errorf("resolving kube-rbac-proxy image: %w", err)
 	}
