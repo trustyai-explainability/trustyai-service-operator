@@ -4,6 +4,7 @@ import (
 	"context"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/gorch/templates"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
@@ -33,32 +34,33 @@ type DeploymentConfig struct {
 func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (*appsv1.Deployment, error) {
 	var containerImages ContainerImages
 
-	orchestratorImage, err := utils.GetImageFromConfigMap(ctx, r.Client, orchestratorImageKey, constants.ConfigMap, r.Namespace)
+	orchestratorImage, err := images.GetImageFromConfigMap(ctx, r.Client, orchestratorImageKey, constants.ConfigMap, r.Namespace)
 	if orchestratorImage == "" || err != nil {
-		log.FromContext(ctx).Error(err, "Error getting container image from ConfigMap.")
+		log.FromContext(ctx).Error(err, "Error resolving orchestrator image from env var or ConfigMap.")
 		return nil, err
 	}
 	containerImages.OrchestratorImage = orchestratorImage
-	log.FromContext(ctx).Info("using OrchestratorImage " + orchestratorImage + " " + "from config map " + r.Namespace + ":" + constants.ConfigMap)
+	log.FromContext(ctx).Info("using OrchestratorImage " + orchestratorImage)
 
 	// Check if the regex detectors are enabled
 	if orchestrator.Spec.EnableBuiltInDetectors {
-		detectorImage, err := utils.GetImageFromConfigMap(ctx, r.Client, detectorImageKey, constants.ConfigMap, r.Namespace)
+		detectorImage, err := images.GetImageFromConfigMap(ctx, r.Client, detectorImageKey, constants.ConfigMap, r.Namespace)
 		if detectorImage == "" || err != nil {
-			log.FromContext(ctx).Error(err, "Error getting detectors image from ConfigMap.")
+			log.FromContext(ctx).Error(err, "Error resolving detector image from env var or ConfigMap.")
 			return nil, err
 		}
-		log.FromContext(ctx).Info("Using detector image " + detectorImage + " " + "from configmap " + r.Namespace + ":" + constants.ConfigMap)
+		log.FromContext(ctx).Info("Using detector image " + detectorImage)
 		containerImages.DetectorImage = detectorImage
 	}
 
 	// Check if the guardrails sidecar gateway is enabled
 	if orchestrator.Spec.EnableGuardrailsGateway {
-		guardrailsGatewayImage, err := utils.GetImageFromConfigMap(ctx, r.Client, gatewayImageKey, constants.ConfigMap, r.Namespace)
+		guardrailsGatewayImage, err := images.GetImageFromConfigMap(ctx, r.Client, gatewayImageKey, constants.ConfigMap, r.Namespace)
 		if guardrailsGatewayImage == "" || err != nil {
-			log.FromContext(ctx).Error(err, "Error getting guardrails sidecar gateway image from ConfigMap.")
+			log.FromContext(ctx).Error(err, "Error resolving guardrails sidecar gateway image from env var or ConfigMap.")
+			return nil, err
 		}
-		log.FromContext(ctx).Info("Using sidecar gateway image " + guardrailsGatewayImage + " " + "from configmap " + r.Namespace + ":" + constants.ConfigMap)
+		log.FromContext(ctx).Info("Using sidecar gateway image " + guardrailsGatewayImage)
 		containerImages.GuardrailsGatewayImage = guardrailsGatewayImage
 	}
 

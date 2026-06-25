@@ -216,7 +216,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 
 		_, err := r.buildDeploymentSpec(ctx, evalHub, nil, nil)
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("getting kube-rbac-proxy image"))
+		Expect(err.Error()).To(ContainSubstring("resolving kube-rbac-proxy image"))
 	})
 
 	It("adds provider volume and mount when providerCMNames is non-nil", func() {

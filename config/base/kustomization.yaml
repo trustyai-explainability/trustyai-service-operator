@@ -93,3 +93,38 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.lmes-pod-image
+  - name: lmes-driver-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.lmes-driver-image
+  - name: guardrails-orchestrator-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.guardrails-orchestrator-image
+  - name: guardrails-built-in-detector-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.guardrails-built-in-detector-image
+  - name: guardrails-sidecar-gateway-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.guardrails-sidecar-gateway-image
+  - name: nemo-guardrails-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.nemo-guardrails-image
