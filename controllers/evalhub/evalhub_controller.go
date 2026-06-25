@@ -65,6 +65,7 @@ type EvalHubReconciler struct {
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,resourceNames=trustyai-service-operator-evalhub-model-secret,verbs=bind
 //+kubebuilder:rbac:groups=infrastructure.opendatahub.io,resources=hardwareprofiles,verbs=get;list
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
