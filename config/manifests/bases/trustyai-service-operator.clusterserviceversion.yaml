@@ -1,0 +1,79 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+    containerImage: quay.io/trustyai/trustyai-service-operator:latest
+    createdAt: "2020-01-01T00:00:00Z"
+    description: The TrustyAI Operator manages TrustyAI deployments within a Kubernetes
+      cluster.
+    operatorframework.io/suggested-namespace: opendatahub
+    repository: https://github.com/trustyai-explainability/trustyai-service-operator
+    support: TrustyAI Explainability
+  name: trustyai-service-operator.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: GuardrailsOrchestrator is the Schema for the guardrailsorchestrators
+        API.
+      displayName: Guardrails Orchestrator
+      kind: GuardrailsOrchestrator
+      name: guardrailsorchestrators.trustyai.opendatahub.io
+      version: v1alpha1
+    - description: LMEvalJob is the Schema for the lmevaljobs API
+      displayName: LMEval Job
+      kind: LMEvalJob
+      name: lmevaljobs.trustyai.opendatahub.io
+      version: v1alpha1
+    - description: NemoGuardrails is the Schema for the nemoguardrails API
+      displayName: Nemo Guardrails
+      kind: NemoGuardrails
+      name: nemoguardrails.trustyai.opendatahub.io
+      version: v1alpha1
+    - description: TrustyAIService is the Schema for the trustyaiservices API
+      displayName: Trusty AIService
+      kind: TrustyAIService
+      name: trustyaiservices.trustyai.opendatahub.io
+      version: v1
+    - description: TrustyAIService is the Schema for the trustyaiservices API
+      displayName: Trusty AIService
+      kind: TrustyAIService
+      name: trustyaiservices.trustyai.opendatahub.io
+      version: v1alpha1
+  description: The TrustyAI Operator manages TrustyAI deployments within a Kubernetes
+    cluster.
+  displayName: TrustyAI Service Operator
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - trustyai
+  - opendatahub
+  - explainability
+  links:
+  - name: TrustyAI Service Operator
+    url: https://github.com/trustyai-explainability/trustyai-service-operator
+  maintainers:
+  - email: managed-open-data-hub@redhat.com
+    name: TrustyAI Explainability
+  maturity: alpha
+  provider:
+    name: TrustyAI Explainability
+    url: https://github.com/trustyai-explainability
+  version: 0.0.0

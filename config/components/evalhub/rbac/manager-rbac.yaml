@@ -26,40 +26,6 @@ rules:
   verbs:
   - get
 - apiGroups:
-  - batch
-  resources:
-  - jobs
-  verbs:
-  - get
-  - list
-  - watch
-  - patch
-  - delete
-- apiGroups:
-  - ""
-  resources:
-  - namespaces
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - pods
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - trustyai.opendatahub.io
-  resources:
-  - evalhubs
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
   - trustyai.opendatahub.io
   resources:
   - evalhubs
@@ -226,6 +192,12 @@ rules:
   - patch
   - delete
 - apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterroles
+  verbs:
+  - bind
+- apiGroups:
   - infrastructure.opendatahub.io
   resources:
   - hardwareprofiles
@@ -233,10 +205,36 @@ rules:
   - get
   - list
 - apiGroups:
-  - rbac.authorization.k8s.io
+  - batch
   resources:
-  - clusterroles
-  resourceNames:
-  - trustyai-service-operator-evalhub-model-secret
+  - jobs
   verbs:
-  - bind
+  - get
+  - list
+  - watch
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - evalhubs
+  verbs:
+  - get
+  - list
+  - watch

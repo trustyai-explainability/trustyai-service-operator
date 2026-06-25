@@ -1,0 +1,168 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+    containerImage: quay.io/trustyai/trustyai-service-operator:latest
+    createdAt: "2026-06-25T11:59:10Z"
+    description: The TrustyAI Operator manages TrustyAI deployments within a Kubernetes
+      cluster.
+    operatorframework.io/suggested-namespace: opendatahub
+    operators.operatorframework.io/builder: operator-sdk-v1.42.2
+    operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
+    repository: https://github.com/trustyai-explainability/trustyai-service-operator
+    support: TrustyAI Explainability
+  name: trustyai-service-operator.v1.39.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions: {}
+  description: The TrustyAI Operator manages TrustyAI deployments within a Kubernetes
+    cluster.
+  displayName: TrustyAI Service Operator
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      clusterPermissions:
+      - rules:
+        - apiGroups:
+          - authentication.k8s.io
+          resources:
+          - tokenreviews
+          verbs:
+          - create
+        - apiGroups:
+          - authorization.k8s.io
+          resources:
+          - subjectaccessreviews
+          verbs:
+          - create
+        serviceAccountName: controller-manager
+      deployments:
+      - label:
+          app.kubernetes.io/component: manager
+          app.kubernetes.io/created-by: trustyai-service-operator
+          app.kubernetes.io/instance: trustyai-service-operator-controller-manager
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/name: deployment
+          app.kubernetes.io/part-of: trustyai-service-operator
+          control-plane: trustyai-service-operator
+        name: controller-manager
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              control-plane: trustyai-service-operator
+          strategy: {}
+          template:
+            metadata:
+              annotations:
+                kubectl.kubernetes.io/default-container: manager
+              labels:
+                control-plane: trustyai-service-operator
+            spec:
+              containers:
+              - args:
+                - --leader-elect
+                command:
+                - /manager
+                env:
+                - name: GOMEMLIMIT
+                  value: 630MiB
+                image: quay.io/trustyai/trustyai-service-operator:latest
+                livenessProbe:
+                  httpGet:
+                    path: /healthz
+                    port: 8081
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                name: manager
+                readinessProbe:
+                  httpGet:
+                    path: /readyz
+                    port: 8081
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+                resources:
+                  limits:
+                    cpu: 900m
+                    memory: 700Mi
+                  requests:
+                    cpu: 10m
+                    memory: 64Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                    - ALL
+                  runAsNonRoot: true
+                  seccompProfile:
+                    type: RuntimeDefault
+              securityContext:
+                runAsNonRoot: true
+                seccompProfile:
+                  type: RuntimeDefault
+              serviceAccountName: controller-manager
+              terminationGracePeriodSeconds: 10
+      permissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - coordination.k8s.io
+          resources:
+          - leases
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        serviceAccountName: controller-manager
+    strategy: deployment
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - trustyai
+  - opendatahub
+  - explainability
+  links:
+  - name: TrustyAI Service Operator
+    url: https://github.com/trustyai-explainability/trustyai-service-operator
+  maintainers:
+  - email: managed-open-data-hub@redhat.com
+    name: TrustyAI Explainability
+  maturity: alpha
+  provider:
+    name: TrustyAI Explainability
+    url: https://github.com/trustyai-explainability
+  version: 1.39.0

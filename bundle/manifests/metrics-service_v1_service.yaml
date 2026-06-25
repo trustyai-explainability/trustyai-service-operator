@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    app.kubernetes.io/created-by: trustyai-service-operator
+    app.kubernetes.io/instance: metrics-service
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: trustyai
+    control-plane: trustyai-service-operator
+  name: metrics-service
+spec:
+  ports:
+  - name: metrics
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    control-plane: trustyai-service-operator
+status:
+  loadBalancer: {}

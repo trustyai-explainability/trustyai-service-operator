@@ -1,5 +1,5 @@
 resources:
   - bases/trustyai-service-operator.clusterserviceversion.yaml
-  - ../default
+  - ../base
   - ../samples
   - ../scorecard

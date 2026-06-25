@@ -1,0 +1,28 @@
+apiVersion: v1
+data:
+  evalHubImage: quay.io/evalhub/evalhub:latest
+  evalHubMCPImage: quay.io/evalhub/evalhub:latest
+  evalhub-provider-guidellm-image: quay.io/evalhub/community-guidellm:latest
+  evalhub-provider-ibm-clear-image: quay.io/evalhub/community-ibm-clear:latest
+  evalhub-provider-lighteval-image: quay.io/evalhub/community-lighteval:latest
+  garak-provider-image: quay.io/trustyai/llama-stack-provider-trustyai-garak:latest
+  guardrails-built-in-detector-image: quay.io/trustyai/guardrails-detector-built-in:latest
+  guardrails-orchestrator-image: quay.io/trustyai/ta-guardrails-orchestrator:latest
+  guardrails-sidecar-gateway-image: quay.io/trustyai/guardrails-sidecar-gateway:latest
+  kServeServerless: enabled
+  kube-rbac-proxy: quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable
+  lmes-allow-code-execution: "true"
+  lmes-allow-online: "true"
+  lmes-default-batch-size: "8"
+  lmes-detect-device: "true"
+  lmes-driver-image: quay.io/trustyai/ta-lmes-driver:latest
+  lmes-image-pull-policy: Always
+  lmes-max-batch-size: "24"
+  lmes-pod-checking-interval: 10s
+  lmes-pod-image: quay.io/opendatahub/ta-lmes-job:odh-3.4-final
+  nemo-guardrails-image: quay.io/trustyai/nemo-guardrails-server:latest
+  trustyaiOperatorImage: quay.io/trustyai/trustyai-service-operator:latest
+  trustyaiServiceImage: quay.io/trustyai/trustyai-service:latest
+kind: ConfigMap
+metadata:
+  name: config
