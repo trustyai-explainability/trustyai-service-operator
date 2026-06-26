@@ -5,7 +5,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,7 +29,7 @@ var _ = Describe("PVC Reconciliation", func() {
 	})
 
 	Context("when the PVC does not exist", func() {
-		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+		var instance *trustyaiopendatahubiov1.TrustyAIService
 		It("should create a new PVC and emit an event", func() {
 			namespace := "pvc-test-namespace-1"
 			instance = createDefaultPVCCustomResource(namespace)
@@ -52,7 +52,7 @@ var _ = Describe("PVC Reconciliation", func() {
 	})
 
 	Context("when the PVC already exists", func() {
-		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+		var instance *trustyaiopendatahubiov1.TrustyAIService
 		It("should not attempt to create the PVC", func() {
 			namespace := "pvc-test-namespace-2"
 			instance = createDefaultPVCCustomResource(namespace)
@@ -79,7 +79,7 @@ var _ = Describe("PVC Reconciliation", func() {
 	})
 
 	Context("when a migration CR is made", func() {
-		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+		var instance *trustyaiopendatahubiov1.TrustyAIService
 		It("Check all fields are correct", func() {
 			namespace := "pvc-test-namespace-3"
 			instance = createDefaultMigrationCustomResource(namespace)

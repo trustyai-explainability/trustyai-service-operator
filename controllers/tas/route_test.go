@@ -5,7 +5,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"k8s.io/apimachinery/pkg/types"
@@ -13,7 +13,7 @@ import (
 	"k8s.io/client-go/tools/record"
 )
 
-func setupAndTestRouteCreation(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, namespace string) {
+func setupAndTestRouteCreation(instance *trustyaiopendatahubiov1.TrustyAIService, namespace string) {
 	WaitFor(func() error {
 		return createNamespace(ctx, k8sClient, namespace)
 	}, "failed to create namespace")
@@ -29,7 +29,7 @@ func setupAndTestRouteCreation(instance *trustyaiopendatahubiov1alpha1.TrustyAIS
 
 }
 
-func setupAndTestSameRouteCreation(instance *trustyaiopendatahubiov1alpha1.TrustyAIService, namespace string) {
+func setupAndTestSameRouteCreation(instance *trustyaiopendatahubiov1.TrustyAIService, namespace string) {
 	WaitFor(func() error {
 		return createNamespace(ctx, k8sClient, namespace)
 	}, "failed to create namespace")
@@ -66,7 +66,7 @@ var _ = Describe("Route Reconciliation", func() {
 	})
 
 	Context("When Route does not exist", func() {
-		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+		var instance *trustyaiopendatahubiov1.TrustyAIService
 		It("Should create Route successfully in PVC-mode", func() {
 			namespace := "route-test-namespace-1-pvc"
 			instance = createDefaultPVCCustomResource(namespace)
@@ -86,7 +86,7 @@ var _ = Describe("Route Reconciliation", func() {
 	})
 
 	Context("When Route exists and is the same", func() {
-		var instance *trustyaiopendatahubiov1alpha1.TrustyAIService
+		var instance *trustyaiopendatahubiov1.TrustyAIService
 		It("Should not update Route in PVC-mode", func() {
 			namespace := "route-test-namespace-2-pvc"
 			instance = createDefaultPVCCustomResource(namespace)

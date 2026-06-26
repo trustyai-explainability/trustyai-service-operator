@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -14,7 +14,7 @@ import (
 // TestCreateKubeRBACProxyConfigMapObject tests the template parsing functionality
 func TestCreateKubeRBACProxyConfigMapObject(t *testing.T) {
 	// Setup
-	err := trustyaiopendatahubiov1alpha1.AddToScheme(scheme.Scheme)
+	err := trustyaiopendatahubiov1.AddToScheme(scheme.Scheme)
 	if err != nil {
 		t.Fatalf("Failed to add scheme: %v", err)
 	}
@@ -26,12 +26,12 @@ func TestCreateKubeRBACProxyConfigMapObject(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	instance := &trustyaiopendatahubiov1alpha1.TrustyAIService{
+	instance := &trustyaiopendatahubiov1.TrustyAIService{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-service",
 			Namespace: "test-namespace",
 		},
-		Spec: trustyaiopendatahubiov1alpha1.TrustyAIServiceSpec{},
+		Spec: trustyaiopendatahubiov1.TrustyAIServiceSpec{},
 	}
 
 	// Test
@@ -100,7 +100,7 @@ func TestCreateKubeRBACProxyConfigMapObject(t *testing.T) {
 // TestEnsureKubeRBACProxyConfigMap tests the ConfigMap creation logic
 func TestEnsureKubeRBACProxyConfigMap(t *testing.T) {
 	// Setup
-	err := trustyaiopendatahubiov1alpha1.AddToScheme(scheme.Scheme)
+	err := trustyaiopendatahubiov1.AddToScheme(scheme.Scheme)
 	if err != nil {
 		t.Fatalf("Failed to add scheme: %v", err)
 	}
@@ -112,12 +112,12 @@ func TestEnsureKubeRBACProxyConfigMap(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	instance := &trustyaiopendatahubiov1alpha1.TrustyAIService{
+	instance := &trustyaiopendatahubiov1.TrustyAIService{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-service",
 			Namespace: "test-namespace",
 		},
-		Spec: trustyaiopendatahubiov1alpha1.TrustyAIServiceSpec{},
+		Spec: trustyaiopendatahubiov1.TrustyAIServiceSpec{},
 	}
 
 	// Test first call - should create ConfigMap
