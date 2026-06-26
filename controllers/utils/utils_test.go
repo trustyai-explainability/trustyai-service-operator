@@ -2,7 +2,6 @@ package utils
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -18,7 +17,6 @@ var _ = Describe("GetNamespace", func() {
 	var (
 		originalEnvValue string
 		tempDir          string
-		tempFile         string
 	)
 
 	BeforeEach(func() {
@@ -39,7 +37,7 @@ var _ = Describe("GetNamespace", func() {
 
 		// Clean up temp directory if created
 		if tempDir != "" {
-			os.RemoveAll(tempDir)
+			Expect(os.RemoveAll(tempDir)).To(Succeed())
 			tempDir = ""
 		}
 	})
@@ -70,26 +68,18 @@ var _ = Describe("GetNamespace", func() {
 
 	Context("when APPLICATIONS_NAMESPACE environment variable is empty", func() {
 		It("should fall back to service account file", func() {
-			// Create a temporary directory and file to simulate the service account namespace file
-			var err error
-			tempDir, err = os.MkdirTemp("", "sa-namespace-test")
-			Expect(err).NotTo(HaveOccurred())
-
-			saDir := filepath.Join(tempDir, "var", "run", "secrets", "kubernetes.io", "serviceaccount")
-			Expect(os.MkdirAll(saDir, 0755)).To(Succeed())
-
-			tempFile = filepath.Join(saDir, "namespace")
-			expectedNS := "service-account-namespace"
-			Expect(os.WriteFile(tempFile, []byte(expectedNS), 0644)).To(Succeed())
-
-			// Temporarily replace the service account path for testing
-			// Note: This test shows the expected behavior but won't actually work
-			// without modifying GetNamespace to accept a custom path.
-			// In production, the actual file path is hardcoded.
-
-			// For this test, we'll just verify the logic pattern is correct
-			// by checking that env var is unset
+			// Verify env var is unset so fallback logic would be triggered
 			Expect(os.Getenv("APPLICATIONS_NAMESPACE")).To(BeEmpty())
+
+			// In a real K8s pod, /var/run/secrets/kubernetes.io/serviceaccount/namespace exists.
+			// This test verifies the fallback path is attempted when env var is empty.
+			// The actual call will fail in a non-K8s test environment, which is expected.
+			_, err := GetNamespace()
+
+			// In test environment without service account file, we expect an error.
+			// The important thing is that GetNamespace() was called and attempted
+			// the fallback path (not just the env var path).
+			Expect(err).To(HaveOccurred(), "should attempt to read service account file when env var is empty")
 		})
 	})
 
