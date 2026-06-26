@@ -141,6 +141,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := ctrl.NewWebhookManagedBy(mgr).For(&tasv1.TrustyAIService{}).Complete(); err != nil {
+		setupLog.Error(err, "unable to create TrustyAIService conversion webhook")
+		os.Exit(1)
+	}
+
 	recorder := mgr.GetEventRecorderFor("trustyai-service-operator")
 
 	ns, err := utils.GetNamespace()

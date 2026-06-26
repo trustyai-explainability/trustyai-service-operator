@@ -1,0 +1,9 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    # OpenShift service serving certificate CA injection
+    service.beta.openshift.io/inject-cabundle: "true"
+    # cert-manager CA injection (for upstream/non-OpenShift deployments)
+    cert-manager.io/inject-ca-from: $(CERTIFICATE_NAMESPACE)/$(CERTIFICATE_NAME)
+  name: trustyaiservices.trustyai.opendatahub.io
