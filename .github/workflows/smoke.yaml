@@ -59,7 +59,8 @@ jobs:
           kubectl create namespace system
           openssl req -x509 -nodes -newkey rsa:2048 \
             -keyout /tmp/tls.key -out /tmp/tls.crt -days 1 \
-            -subj '/CN=trustyai-service-operator-webhook-service.system.svc'
+            -subj '/CN=trustyai-service-operator-webhook-service.system.svc' \
+            -addext 'subjectAltName=DNS:trustyai-service-operator-webhook-service.system.svc,DNS:trustyai-service-operator-webhook-service.system.svc.cluster.local'
           kubectl create secret tls webhook-server-cert \
             --cert=/tmp/tls.crt --key=/tmp/tls.key -n system
           kustomize build config/overlays/testing | sed 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' | kubectl apply -n system -f -
