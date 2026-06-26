@@ -108,4 +108,20 @@ var _ = Describe("GetNamespace", func() {
 			Expect(ns).To(Equal(envNS), "should use APPLICATIONS_NAMESPACE env var, not service account file")
 		})
 	})
+
+	Context("error handling", func() {
+		It("should return an error when APPLICATIONS_NAMESPACE is empty and service account file does not exist", func() {
+			// Verify env var is unset
+			Expect(os.Getenv("APPLICATIONS_NAMESPACE")).To(BeEmpty())
+
+			// Point to a non-existent file
+			serviceAccountNamespaceFile = "/tmp/non-existent-file-that-should-never-exist-12345"
+
+			// Call GetNamespace and verify it returns an error
+			ns, err := GetNamespace()
+
+			Expect(err).To(HaveOccurred(), "should return an error when service account file does not exist")
+			Expect(ns).To(BeEmpty(), "namespace should be empty when error occurs")
+		})
+	})
 })
