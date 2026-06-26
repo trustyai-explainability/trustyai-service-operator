@@ -26,6 +26,8 @@ jobs:
           file: ./Dockerfile
           load: true
           tags: smoke/operator:pr-${{ github.event.pull_request.number || env.PR_NUMBER }}
+          build-args: |
+            CI_CONTAINER_VERSION=pr-${{ github.event.pull_request.number || env.PR_NUMBER }}
 
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1
