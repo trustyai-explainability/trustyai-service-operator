@@ -64,6 +64,16 @@ jobs:
             --cert=/tmp/tls.crt --key=/tmp/tls.key -n system
           kustomize build config/overlays/testing | sed 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' | kubectl apply -n system -f -
 
+      - name: Wait for operator to be ready
+        run: |
+          kubectl wait --for=condition=available --timeout=120s \
+            deployment/trustyai-service-operator-controller-manager -n system
+          echo "Operator deployment is ready"
+          kubectl get pods -n system
+          kubectl wait --for=condition=ready --timeout=60s \
+            pod -l control-plane=trustyai-service-operator -n system
+          echo "Operator pod is ready"
+
       - name: Run smoke tests
         run: ./tests/smoke/test_smoke.sh
 
