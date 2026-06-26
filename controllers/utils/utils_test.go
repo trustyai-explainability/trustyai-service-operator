@@ -2,6 +2,7 @@ package utils
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -15,13 +16,15 @@ func TestUtils(t *testing.T) {
 
 var _ = Describe("GetNamespace", func() {
 	var (
-		originalEnvValue string
-		tempDir          string
+		originalEnvValue   string
+		originalSAFilePath string
+		tempDir            string
 	)
 
 	BeforeEach(func() {
-		// Save original env var value
+		// Save original values
 		originalEnvValue = os.Getenv("APPLICATIONS_NAMESPACE")
+		originalSAFilePath = serviceAccountNamespaceFile
 
 		// Clean up env var
 		Expect(os.Unsetenv("APPLICATIONS_NAMESPACE")).To(Succeed())
@@ -34,6 +37,9 @@ var _ = Describe("GetNamespace", func() {
 		} else {
 			Expect(os.Unsetenv("APPLICATIONS_NAMESPACE")).To(Succeed())
 		}
+
+		// Restore original service account file path
+		serviceAccountNamespaceFile = originalSAFilePath
 
 		// Clean up temp directory if created
 		if tempDir != "" {
@@ -71,15 +77,23 @@ var _ = Describe("GetNamespace", func() {
 			// Verify env var is unset so fallback logic would be triggered
 			Expect(os.Getenv("APPLICATIONS_NAMESPACE")).To(BeEmpty())
 
-			// In a real K8s pod, /var/run/secrets/kubernetes.io/serviceaccount/namespace exists.
-			// This test verifies the fallback path is attempted when env var is empty.
-			// The actual call will fail in a non-K8s test environment, which is expected.
-			_, err := GetNamespace()
+			// Create a temporary service account namespace file
+			var err error
+			tempDir, err = os.MkdirTemp("", "sa-namespace-test")
+			Expect(err).NotTo(HaveOccurred())
 
-			// In test environment without service account file, we expect an error.
-			// The important thing is that GetNamespace() was called and attempted
-			// the fallback path (not just the env var path).
-			Expect(err).To(HaveOccurred(), "should attempt to read service account file when env var is empty")
+			tempFile := filepath.Join(tempDir, "namespace")
+			expectedNS := "service-account-namespace"
+			Expect(os.WriteFile(tempFile, []byte(expectedNS), 0644)).To(Succeed())
+
+			// Point GetNamespace to our test file
+			serviceAccountNamespaceFile = tempFile
+
+			// Call GetNamespace and verify it reads from the file
+			ns, err := GetNamespace()
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ns).To(Equal(expectedNS), "should read namespace from service account file when env var is empty")
 		})
 	})
 
