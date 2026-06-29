@@ -47,6 +47,7 @@ import (
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
+	modulev1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/module/v1alpha1"
 	tasv1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	tasv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers"
@@ -70,6 +71,7 @@ func init() {
 	utilruntime.Must(lmesv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(evalhubv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(evalhubv1.AddToScheme(scheme))
+	utilruntime.Must(modulev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 	utilruntime.Must(kservev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(kservev1beta1.AddToScheme(scheme))
