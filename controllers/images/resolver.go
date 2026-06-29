@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
+	"github.com/trustyai-explainability/trustyai-service-operator/pkg/configmap"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -113,20 +111,12 @@ func ResolveImage(ctx context.Context, c client.Client, configMapKey, configMapN
 // getImageFromConfigMapDirect is an internal helper that directly reads from ConfigMap without env var check.
 // This is used internally by ResolveImage to avoid circular logic.
 func getImageFromConfigMapDirect(ctx context.Context, c client.Client, configMapKey, configMapName, namespace string) (string, error) {
-	// Inline implementation to avoid circular import with controllers/utils.
-	// TODO: Refactor to shared pkg/configmap package to eliminate duplication.
-	// See https://github.com/trustyai-explainability/trustyai-service-operator/issues/783
-
-	configMap := &corev1.ConfigMap{}
-	err := c.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: namespace}, configMap)
+	cm, err := configmap.Get(ctx, c, configMapName, namespace)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return "", fmt.Errorf("configmap %s not found in namespace %s", configMapName, namespace)
-		}
-		return "", fmt.Errorf("error reading configmap %s in namespace %s: %w", configMapName, namespace, err)
+		return "", err
 	}
 
-	value, ok := configMap.Data[configMapKey]
+	value, ok := cm.Data[configMapKey]
 	if !ok {
 		return "", fmt.Errorf("configmap %s in namespace %s does not contain key %s", configMapName, namespace, configMapKey)
 	}
