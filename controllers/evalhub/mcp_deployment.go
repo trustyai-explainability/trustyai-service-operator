@@ -82,7 +82,7 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 	image := mcpSpec.Image
 	if image == "" {
 		var err error
-		image, err = images.ResolveImage(ctx, r.Client, images.EvalHubImageKey, r.effectiveOperatorConfigMapName(), r.Namespace, defaultEvalHubImage)
+		image, err = images.ResolveImage(ctx, r.Client, images.EvalHubImageKey, r.effectiveOperatorConfigMapName(), r.Namespace, "")
 		if err != nil {
 			return appsv1.DeploymentSpec{}, fmt.Errorf("resolving EvalHub image for MCP: %w", err)
 		}

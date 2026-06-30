@@ -68,7 +68,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	}
 
 	// Get image using the centralized resolver (env var → configmap → fallback)
-	evalHubImage, err := images.ResolveImage(ctx, r.Client, images.EvalHubImageKey, r.effectiveOperatorConfigMapName(), r.Namespace, defaultEvalHubImage)
+	evalHubImage, err := images.ResolveImage(ctx, r.Client, images.EvalHubImageKey, r.effectiveOperatorConfigMapName(), r.Namespace, "")
 	if err != nil {
 		return appsv1.DeploymentSpec{}, fmt.Errorf("resolving EvalHub image: %w", err)
 	}
