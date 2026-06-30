@@ -1,0 +1,33 @@
+name: Tier 1 - Disconnected readiness
+
+on: [push, pull_request]
+
+jobs:
+  disconnected-score:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@2ba527d4d055ab63514ba50a99456fc35684947f # v2
+        with:
+          kustomize-version: "5.7.0"
+
+      - name: Clone disconnected-readiness-scorer
+        run: git clone --depth 1 https://github.com/opendatahub-io/disconnected-readiness-scorer.git /tmp/scorer
+
+      - name: Install scorer dependencies
+        run: |
+          pip install pyyaml jinja2
+          make -C /tmp/scorer install-arch-analyzer
+
+      - name: Run disconnected readiness check
+        run: python3 /tmp/scorer/main.py . --arch-analyzer /tmp/scorer/bin/arch-analyzer
