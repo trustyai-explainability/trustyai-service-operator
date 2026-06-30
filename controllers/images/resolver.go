@@ -24,7 +24,7 @@ const (
 	NemoGuardrailsImageKey            = "nemo-guardrails-image"
 )
 
-// Environment variable names following RELATED_IMAGE_ODH_* convention
+// Operand image env vars injected by the ODH platform operator at deploy time
 const (
 	RelatedImageTrustyAIService         = "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_IMAGE"
 	RelatedImageEvalHub                 = "RELATED_IMAGE_ODH_EVAL_HUB_IMAGE"
@@ -72,7 +72,7 @@ func GetImageFromConfigMapWithFallback(ctx context.Context, c client.Client, con
 }
 
 // ResolveImage resolves an operand image URL by checking in this order:
-//  1. RELATED_IMAGE_ODH_* environment variable (if configMapKey is recognized)
+//  1. Injected env var for the image key (if configMapKey is recognized)
 //  2. ConfigMap value at configMapKey
 //  3. fallbackValue (if provided and non-empty)
 //
