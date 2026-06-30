@@ -23,7 +23,7 @@ import (
 	"time"
 
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -88,7 +88,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// Fetch the resource
 	// Kubernetes convert automatically between versions
 	// This is the controller for the storage version (v1) so we'll get the canonical representation
-	instance := &trustyaiopendatahubiov1alpha1.TrustyAIService{}
+	instance := &trustyaiopendatahubiov1.TrustyAIService{}
 	err := r.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -178,7 +178,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// Get database configuration
 		secret, err := r.findDatabaseSecret(ctx, instance)
 		if err != nil {
-			_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+			_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1.TrustyAIService) {
 				UpdateDBCredentialsNotFound(saved)
 				UpdateTrustyAIServiceNotAvailable(saved)
 				saved.Status.Phase = PhaseNotReady
@@ -191,7 +191,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 		err = r.validateDatabaseSecret(secret)
 		if err != nil {
-			_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1alpha1.TrustyAIService) {
+			_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1.TrustyAIService) {
 				UpdateDBCredentialsError(saved)
 				UpdateTrustyAIServiceNotAvailable(saved)
 				saved.Status.Phase = PhaseNotReady
@@ -274,9 +274,9 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// v1alpha1 as primary, but handle both versions
+	// Reconcile v1 (hub version); conversion webhook handles v1alpha1->v1
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&trustyaiopendatahubiov1alpha1.TrustyAIService{}).
+		For(&trustyaiopendatahubiov1.TrustyAIService{}).
 		Owns(&appsv1.Deployment{}).
 		Watches(&kservev1beta1.InferenceService{}, &handler.EnqueueRequestForObject{}).
 		Complete(r)

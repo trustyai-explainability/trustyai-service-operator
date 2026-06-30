@@ -5,6 +5,7 @@ resources:
   - ../../base
 
 components:
+  - ../../components/webhook
   - ../../components/tas
   - ../../components/lmes
   - ../../components/job-mgr

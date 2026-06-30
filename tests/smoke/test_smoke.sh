@@ -55,12 +55,26 @@ gen_cert() {
     rm tls.key tls.crt
 }
 
-# Apply the CRD
+# Apply the CR (note: this is a v1alpha1 CR that will be converted to v1 by the webhook)
 kubectl create namespace "$NAMESPACE"
 gen_cert
 kubectl apply -f "$CRD_PATH" -n "$NAMESPACE"
 
-sleep 10
+# Wait for TrustyAIService to be created (confirms webhook conversion worked)
+echo "Waiting for TrustyAIService to be created and reconciled..."
+for i in {1..30}; do
+    if kubectl get trustyaiservice trustyai-service -n "$NAMESPACE" &> /dev/null; then
+        echo "TrustyAIService resource found"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        log_failure "TrustyAIService was not created after 30 seconds"
+    fi
+    sleep 1
+done
+
+# Wait for reconciliation to complete (give controller time to create resources)
+sleep 15
 
 # Check for the creation of services
 check_resource service "$SERVICE_NAME_1" "$NAMESPACE"

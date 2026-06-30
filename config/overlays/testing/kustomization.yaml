@@ -2,6 +2,7 @@ resources:
   - ../../base
 
 components:
+  - ../../components/webhook
   - ../../components/tas
   - ../../components/evalhub
   - ../../components/lmes

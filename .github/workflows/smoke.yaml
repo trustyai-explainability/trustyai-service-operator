@@ -26,6 +26,8 @@ jobs:
           file: ./Dockerfile
           load: true
           tags: smoke/operator:pr-${{ github.event.pull_request.number || env.PR_NUMBER }}
+          build-args: |
+            CI_CONTAINER_VERSION=pr-${{ github.event.pull_request.number || env.PR_NUMBER }}
 
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1
@@ -57,10 +59,21 @@ jobs:
           kubectl create namespace system
           openssl req -x509 -nodes -newkey rsa:2048 \
             -keyout /tmp/tls.key -out /tmp/tls.crt -days 1 \
-            -subj '/CN=trustyai-service-operator-webhook-service.system.svc'
+            -subj '/CN=trustyai-service-operator-webhook-service.system.svc' \
+            -addext 'subjectAltName=DNS:trustyai-service-operator-webhook-service.system.svc,DNS:trustyai-service-operator-webhook-service.system.svc.cluster.local'
           kubectl create secret tls webhook-server-cert \
             --cert=/tmp/tls.crt --key=/tmp/tls.key -n system
           kustomize build config/overlays/testing | sed 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' | kubectl apply -n system -f -
+
+      - name: Wait for operator to be ready
+        run: |
+          kubectl wait --for=condition=available --timeout=120s \
+            deployment/trustyai-service-operator-controller-manager -n system
+          echo "Operator deployment is ready"
+          kubectl get pods -n system
+          kubectl wait --for=condition=ready --timeout=60s \
+            pod -l control-plane=trustyai-service-operator -n system
+          echo "Operator pod is ready"
 
       - name: Run smoke tests
         run: ./tests/smoke/test_smoke.sh

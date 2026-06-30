@@ -8,3 +8,10 @@ resources:
   - rbac/manager-rolebinding.yaml
   - rbac/trustyaiservice_editor_role.yaml
   - rbac/trustyaiservice_viewer_role.yaml
+
+patches:
+  - path: patches/cainjection_in_trustyaiservices.yaml
+  - path: patches/webhook_in_trustyaiservices.yaml
+
+configurations:
+  - patches/kustomizeconfig.yaml

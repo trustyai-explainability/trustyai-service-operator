@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"strconv"
 
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	appsv1 "k8s.io/api/apps/v1"
@@ -33,7 +33,7 @@ type CustomCertificatesBundle struct {
 }
 
 type DeploymentConfig struct {
-	Instance                 *trustyaiopendatahubiov1alpha1.TrustyAIService
+	Instance                 *trustyaiopendatahubiov1.TrustyAIService
 	ServiceImage             string
 	KubeRBACProxyImage       string
 	Schedule                 string
@@ -46,7 +46,7 @@ type DeploymentConfig struct {
 }
 
 // createDeploymentObject returns a Deployment for the TrustyAI Service instance
-func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, serviceImage string, caBunble CustomCertificatesBundle) (*appsv1.Deployment, error) {
+func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, serviceImage string, caBunble CustomCertificatesBundle) (*appsv1.Deployment, error) {
 
 	var batchSize int
 	// If no batch size is provided, assume the default one
@@ -100,7 +100,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 }
 
 // reconcileDeployment returns a Deployment object with the same name/namespace as the cr
-func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, imageName string, caBundle CustomCertificatesBundle) error {
+func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *trustyaiopendatahubiov1.TrustyAIService, imageName string, caBundle CustomCertificatesBundle) error {
 
 	if !cr.Spec.Storage.IsDatabaseConfigurationsSet() {
 
@@ -137,7 +137,7 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 }
 
 // updateDeployment returns a Deployment object with the same name/namespace as the cr
-func (r *TrustyAIServiceReconciler) updateDeployment(ctx context.Context, cr *trustyaiopendatahubiov1alpha1.TrustyAIService, imageName string, caBundle CustomCertificatesBundle) error {
+func (r *TrustyAIServiceReconciler) updateDeployment(ctx context.Context, cr *trustyaiopendatahubiov1.TrustyAIService, imageName string, caBundle CustomCertificatesBundle) error {
 
 	if !cr.Spec.Storage.IsDatabaseConfigurationsSet() {
 
@@ -173,7 +173,7 @@ func (r *TrustyAIServiceReconciler) updateDeployment(ctx context.Context, cr *tr
 
 }
 
-func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, caBundle CustomCertificatesBundle, migration bool) error {
+func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, caBundle CustomCertificatesBundle, migration bool) error {
 
 	// Get image from env var or ConfigMap
 	// If there's a ConfigMap with custom images, it is only applied when the operator is first deployed
@@ -206,7 +206,7 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 }
 
 // checkDeploymentReady verifies that a TrustyAI service deployment is ready
-func (r *TrustyAIServiceReconciler) checkDeploymentReady(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (bool, error) {
+func (r *TrustyAIServiceReconciler) checkDeploymentReady(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) (bool, error) {
 	deployment := &appsv1.Deployment{}
 
 	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deployment)

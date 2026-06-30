@@ -4,7 +4,7 @@ import (
 	"context"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -16,12 +16,12 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func generateServiceAccountName(instance *trustyaiopendatahubiov1alpha1.TrustyAIService) string {
+func generateServiceAccountName(instance *trustyaiopendatahubiov1.TrustyAIService) string {
 	return instance.Name + "-proxy"
 }
 
 // createServiceAccount creates a service account for this instance's kube-rbac-proxy
-func (r *TrustyAIServiceReconciler) createServiceAccount(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+func (r *TrustyAIServiceReconciler) createServiceAccount(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) error {
 	serviceAccountName := generateServiceAccountName(instance)
 
 	sa := &corev1.ServiceAccount{
@@ -65,7 +65,7 @@ func (r *TrustyAIServiceReconciler) createServiceAccount(ctx context.Context, in
 }
 
 // createClusterRoleBinding creates a binding between the service account and token review cluster role
-func (r *TrustyAIServiceReconciler) createClusterRoleBinding(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService, serviceAccountName string) error {
+func (r *TrustyAIServiceReconciler) createClusterRoleBinding(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, serviceAccountName string) error {
 	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name + "-" + instance.Namespace + "-proxy-rolebinding",

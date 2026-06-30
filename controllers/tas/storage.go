@@ -3,7 +3,7 @@ package tas
 import (
 	"context"
 
-	trustyaiopendatahubiov1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
+	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -13,11 +13,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func generatePVCName(instance *trustyaiopendatahubiov1alpha1.TrustyAIService) string {
+func generatePVCName(instance *trustyaiopendatahubiov1.TrustyAIService) string {
 	return instance.Name + "-pvc"
 }
 
-func (r *TrustyAIServiceReconciler) ensurePVC(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+func (r *TrustyAIServiceReconciler) ensurePVC(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) error {
 	pvcName := generatePVCName(instance)
 
 	pvc := &corev1.PersistentVolumeClaim{}
@@ -42,7 +42,7 @@ func (r *TrustyAIServiceReconciler) ensurePVC(ctx context.Context, instance *tru
 	return nil
 }
 
-func (r *TrustyAIServiceReconciler) createPVC(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) error {
+func (r *TrustyAIServiceReconciler) createPVC(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) error {
 	pvcName := generatePVCName(instance)
 
 	pvc := &corev1.PersistentVolumeClaim{
@@ -69,7 +69,7 @@ func (r *TrustyAIServiceReconciler) createPVC(ctx context.Context, instance *tru
 	return r.Create(ctx, pvc)
 }
 
-func (r *TrustyAIServiceReconciler) checkPVCReady(ctx context.Context, instance *trustyaiopendatahubiov1alpha1.TrustyAIService) (bool, error) {
+func (r *TrustyAIServiceReconciler) checkPVCReady(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) (bool, error) {
 	pvc := &corev1.PersistentVolumeClaim{}
 
 	err := r.Get(ctx, types.NamespacedName{Name: generatePVCName(instance), Namespace: instance.Namespace}, pvc)
