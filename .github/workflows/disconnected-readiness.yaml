@@ -31,7 +31,7 @@ jobs:
 
       - name: Install scorer dependencies
         run: |
-          pip install /tmp/scorer[report]
+          pip install pyyaml jsonschema jinja2
           make -C /tmp/scorer install-arch-analyzer
 
       - name: Run disconnected readiness check
