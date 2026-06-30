@@ -254,7 +254,7 @@ $(KUSTOMIZE): $(LOCALBIN)
 	@test -s $(LOCALBIN)/kustomize || { \
 		OPSYS=$$(uname -s | tr '[:upper:]' '[:lower:]') && \
 		ARCH=$$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') && \
-		curl -sL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F$(KUSTOMIZE_VERSION)/kustomize_$(KUSTOMIZE_VERSION)_$${OPSYS}_$${ARCH}.tar.gz" | \
+		curl -sfL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F$(KUSTOMIZE_VERSION)/kustomize_$(KUSTOMIZE_VERSION)_$${OPSYS}_$${ARCH}.tar.gz" | \
 		tar xz -C $(LOCALBIN); \
 	}
 
