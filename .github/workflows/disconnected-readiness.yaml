@@ -2,6 +2,9 @@ name: Tier 1 - Disconnected readiness
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   disconnected-score:
     runs-on: ubuntu-latest
@@ -22,7 +25,9 @@ jobs:
           kustomize-version: "5.7.0"
 
       - name: Clone disconnected-readiness-scorer
-        run: git clone --depth 1 https://github.com/opendatahub-io/disconnected-readiness-scorer.git /tmp/scorer
+        run: |
+          git clone https://github.com/opendatahub-io/disconnected-readiness-scorer.git /tmp/scorer
+          git -C /tmp/scorer checkout 64e6c53e17c7528fb41146fce9342d24a831517b # main
 
       - name: Install scorer dependencies
         run: |
