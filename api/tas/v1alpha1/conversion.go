@@ -12,7 +12,6 @@ func (src *TrustyAIService) ConvertTo(dstRaw conversion.Hub) error {
 
 	// Convert ObjectMeta
 	dst.ObjectMeta = src.ObjectMeta
-	dst.TypeMeta = src.TypeMeta
 
 	// Convert Spec
 	dst.Spec.Replicas = src.Spec.Replicas
@@ -51,7 +50,6 @@ func (dst *TrustyAIService) ConvertFrom(srcRaw conversion.Hub) error {
 
 	// Convert ObjectMeta
 	dst.ObjectMeta = src.ObjectMeta
-	dst.TypeMeta = src.TypeMeta
 
 	// Convert Spec
 	dst.Spec.Replicas = src.Spec.Replicas
