@@ -67,20 +67,14 @@ jobs:
 
       - name: Inject CA bundle into webhook configurations
         run: |
-          # Encode the CA bundle (the cert itself for self-signed)
-          CA_BUNDLE=$(cat /tmp/tls.crt | base64 -w 0)
-
-          # Patch TrustyAIService CRD if it has a conversion webhook
-          if kubectl get crd trustyaiservices.trustyai.opendatahub.io -o jsonpath='{.spec.conversion.strategy}' | grep -q "Webhook"; then
-            kubectl patch crd trustyaiservices.trustyai.opendatahub.io --type='json' -p="[{\"op\": \"add\", \"path\": \"/spec/conversion/webhook/clientConfig/caBundle\", \"value\":\"${CA_BUNDLE}\"}]"
-            echo "Patched TrustyAIService CRD with CA bundle"
-          fi
-
-          # Patch EvalHub CRD if it has a conversion webhook
-          if kubectl get crd evalhubs.trustyai.opendatahub.io -o jsonpath='{.spec.conversion.strategy}' 2>/dev/null | grep -q "Webhook"; then
-            kubectl patch crd evalhubs.trustyai.opendatahub.io --type='json' -p="[{\"op\": \"add\", \"path\": \"/spec/conversion/webhook/clientConfig/caBundle\", \"value\":\"${CA_BUNDLE}\"}]"
-            echo "Patched EvalHub CRD with CA bundle"
-          fi
+          CA_BUNDLE=$(base64 -w 0 /tmp/tls.crt)
+          for CRD in trustyaiservices.trustyai.opendatahub.io evalhubs.trustyai.opendatahub.io; do
+            if kubectl get crd "$CRD" -o jsonpath='{.spec.conversion.strategy}' 2>/dev/null | grep -q "Webhook"; then
+              kubectl patch crd "$CRD" --type='json' \
+                -p="[{\"op\":\"add\",\"path\":\"/spec/conversion/webhook/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}]"
+              echo "Patched $CRD with CA bundle"
+            fi
+          done
 
       - name: Wait for operator to be ready
         run: |
