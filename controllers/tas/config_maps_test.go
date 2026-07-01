@@ -64,13 +64,13 @@ var _ = Describe("ConfigMap tests", func() {
 
 			WaitFor(func() error {
 				var err error
-				actualKubeRBACProxyImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapKubeRBACProxyImageKey, constants.ConfigMap, operatorNamespace, defaultKubeRBACProxyImage)
+				actualKubeRBACProxyImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapKubeRBACProxyImageKey, constants.ConfigMap, operatorNamespace, "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable")
 				return err
 			}, "failed to get kube-rbac-proxy image from ConfigMap")
 
 			WaitFor(func() error {
 				var err error
-				actualServiceImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapServiceImageKey, constants.ConfigMap, operatorNamespace, defaultImage)
+				actualServiceImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapServiceImageKey, constants.ConfigMap, operatorNamespace, "quay.io/trustyai/trustyai-service:latest")
 				return err
 			}, "failed to get service image from ConfigMap")
 
@@ -88,7 +88,7 @@ var _ = Describe("ConfigMap tests", func() {
 
 			WaitFor(func() error {
 				var err error
-				actualKubeRBACProxyImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapKubeRBACProxyImageKey, constants.ConfigMap, operatorNamespace, defaultKubeRBACProxyImage)
+				actualKubeRBACProxyImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapKubeRBACProxyImageKey, constants.ConfigMap, operatorNamespace, "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable")
 				if err != nil {
 					Expect(err).To(MatchError(fmt.Sprintf("configmap %s not found in namespace %s", constants.ConfigMap, operatorNamespace)))
 					return nil
@@ -98,7 +98,7 @@ var _ = Describe("ConfigMap tests", func() {
 
 			WaitFor(func() error {
 				var err error
-				actualServiceImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapServiceImageKey, constants.ConfigMap, operatorNamespace, defaultImage)
+				actualServiceImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapServiceImageKey, constants.ConfigMap, operatorNamespace, "quay.io/trustyai/trustyai-service:latest")
 				if err != nil {
 					Expect(err).To(MatchError(fmt.Sprintf("configmap %s not found in namespace %s", constants.ConfigMap, operatorNamespace)))
 					return nil
@@ -106,8 +106,8 @@ var _ = Describe("ConfigMap tests", func() {
 				return nil
 			}, "failed to get service image from ConfigMap")
 
-			Expect(actualKubeRBACProxyImage).Should(Equal(defaultKubeRBACProxyImage))
-			Expect(actualServiceImage).Should(Equal(defaultImage))
+			Expect(actualKubeRBACProxyImage).Should(Equal("quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable"))
+			Expect(actualServiceImage).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
 		})
 	})
 
@@ -137,18 +137,18 @@ var _ = Describe("ConfigMap tests", func() {
 
 			Eventually(func() error {
 				var err error
-				actualKubeRBACProxyImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapKubeRBACProxyImageKey, constants.ConfigMap, operatorNamespace, defaultKubeRBACProxyImage)
+				actualKubeRBACProxyImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapKubeRBACProxyImageKey, constants.ConfigMap, operatorNamespace, "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable")
 				return err
 			}, defaultTimeout, defaultPolling).Should(MatchError(fmt.Sprintf("configmap %s in namespace %s does not contain key %s", constants.ConfigMap, operatorNamespace, configMapKubeRBACProxyImageKey)), "failed to get kube-rbac-proxy image from ConfigMap")
 
 			Eventually(func() error {
 				var err error
-				actualServiceImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapServiceImageKey, constants.ConfigMap, operatorNamespace, defaultImage)
+				actualServiceImage, err = utils.GetImageFromConfigMapWithFallback(ctx, k8sClient, configMapServiceImageKey, constants.ConfigMap, operatorNamespace, "quay.io/trustyai/trustyai-service:latest")
 				return err
 			}, defaultTimeout, defaultPolling).Should(MatchError(fmt.Sprintf("configmap %s in namespace %s does not contain key %s", constants.ConfigMap, operatorNamespace, configMapServiceImageKey)), "failed to get service image from ConfigMap")
 
-			Expect(actualKubeRBACProxyImage).Should(Equal(defaultKubeRBACProxyImage))
-			Expect(actualServiceImage).Should(Equal(defaultImage))
+			Expect(actualKubeRBACProxyImage).Should(Equal("quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable"))
+			Expect(actualServiceImage).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
 		})
 	})
 

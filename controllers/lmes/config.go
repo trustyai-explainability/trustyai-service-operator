@@ -36,8 +36,6 @@ import (
 // set by job_mgr controllerSetup func
 var JobMgrEnabled bool
 var Options *serviceOptions = &serviceOptions{
-	DriverImage:         DefaultDriverImage,
-	PodImage:            DefaultPodImage,
 	PodCheckingInterval: DefaultPodCheckingInterval,
 	ImagePullPolicy:     DefaultImagePullPolicy,
 	MaxBatchSize:        DefaultMaxBatchSize,
@@ -124,15 +122,15 @@ func constructOptionsFromConfigMap(log *logr.Logger, configmap *corev1.ConfigMap
 // resolveImageOptions resolves PodImage and DriverImage using the centralized image resolver
 // This checks RELATED_IMAGE_* env vars first, then falls back to ConfigMap values
 func resolveImageOptions(ctx context.Context, c client.Client, configMapName, namespace string) error {
-	// Resolve pod image (env var → configmap → default)
-	podImage, err := images.ResolveImage(ctx, c, images.LMESPodImageKey, configMapName, namespace, DefaultPodImage)
+	// Resolve pod image (env var → configmap)
+	podImage, err := images.ResolveImage(ctx, c, images.LMESPodImageKey, configMapName, namespace, "")
 	if err != nil {
 		return fmt.Errorf("resolving LMES pod image: %w", err)
 	}
 	Options.PodImage = podImage
 
-	// Resolve driver image (env var → configmap → default)
-	driverImage, err := images.ResolveImage(ctx, c, images.LMESDriverImageKey, configMapName, namespace, DefaultDriverImage)
+	// Resolve driver image (env var → configmap)
+	driverImage, err := images.ResolveImage(ctx, c, images.LMESDriverImageKey, configMapName, namespace, "")
 	if err != nil {
 		return fmt.Errorf("resolving LMES driver image: %w", err)
 	}

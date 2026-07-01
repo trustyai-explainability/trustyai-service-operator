@@ -24,18 +24,18 @@ const (
 	NemoGuardrailsImageKey            = "nemo-guardrails-image"
 )
 
-// Environment variable names following RELATED_IMAGE_ODH_* convention
+// Operand image env vars injected by the ODH platform operator at deploy time
 const (
-	RelatedImageTrustyAIService          = "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_IMAGE"
-	RelatedImageEvalHub                  = "RELATED_IMAGE_ODH_EVAL_HUB_IMAGE"
-	RelatedImageKubeRBACProxy            = "RELATED_IMAGE_ODH_KUBE_RBAC_PROXY_IMAGE"
-	RelatedImageLMESJob                  = "RELATED_IMAGE_ODH_TA_LMES_JOB_IMAGE"
-	RelatedImageLMESDriver               = "RELATED_IMAGE_ODH_TA_LMES_DRIVER_IMAGE"
-	RelatedImageGuardrailsOrchestrator   = "RELATED_IMAGE_ODH_FMS_GUARDRAILS_ORCHESTRATOR_IMAGE"
-	RelatedImageBuiltInDetector          = "RELATED_IMAGE_ODH_BUILT_IN_DETECTOR_IMAGE"
-	RelatedImageVLLMOrchestratorGateway  = "RELATED_IMAGE_ODH_TRUSTYAI_VLLM_ORCHESTRATOR_GATEWAY_IMAGE"
-	RelatedImageGarakLLSProviderDSP      = "RELATED_IMAGE_ODH_TRUSTYAI_GARAK_LLS_PROVIDER_DSP_IMAGE"
-	RelatedImageNemoGuardrailsServer     = "RELATED_IMAGE_ODH_TRUSTYAI_NEMO_GUARDRAILS_SERVER_IMAGE"
+	RelatedImageTrustyAIService         = "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_IMAGE"
+	RelatedImageEvalHub                 = "RELATED_IMAGE_ODH_EVAL_HUB_IMAGE"
+	RelatedImageKubeRBACProxy           = "RELATED_IMAGE_ODH_KUBE_RBAC_PROXY_IMAGE"
+	RelatedImageLMESJob                 = "RELATED_IMAGE_ODH_TA_LMES_JOB_IMAGE"
+	RelatedImageLMESDriver              = "RELATED_IMAGE_ODH_TA_LMES_DRIVER_IMAGE"
+	RelatedImageGuardrailsOrchestrator  = "RELATED_IMAGE_ODH_FMS_GUARDRAILS_ORCHESTRATOR_IMAGE"
+	RelatedImageBuiltInDetector         = "RELATED_IMAGE_ODH_BUILT_IN_DETECTOR_IMAGE"
+	RelatedImageVLLMOrchestratorGateway = "RELATED_IMAGE_ODH_TRUSTYAI_VLLM_ORCHESTRATOR_GATEWAY_IMAGE"
+	RelatedImageGarakLLSProviderDSP     = "RELATED_IMAGE_ODH_TRUSTYAI_GARAK_LLS_PROVIDER_DSP_IMAGE"
+	RelatedImageNemoGuardrailsServer    = "RELATED_IMAGE_ODH_TRUSTYAI_NEMO_GUARDRAILS_SERVER_IMAGE"
 )
 
 // imageMapping maps ConfigMap keys to their corresponding RELATED_IMAGE_* environment variable names
@@ -72,7 +72,7 @@ func GetImageFromConfigMapWithFallback(ctx context.Context, c client.Client, con
 }
 
 // ResolveImage resolves an operand image URL by checking in this order:
-//  1. RELATED_IMAGE_ODH_* environment variable (if configMapKey is recognized)
+//  1. Injected env var for the image key (if configMapKey is recognized)
 //  2. ConfigMap value at configMapKey
 //  3. fallbackValue (if provided and non-empty)
 //

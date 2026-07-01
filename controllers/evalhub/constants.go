@@ -9,9 +9,6 @@ const (
 	// Service name for registration
 	ServiceName = "EVALHUB"
 
-	// Default image configuration
-	defaultEvalHubImage = "quay.io/evalhub/evalhub:latest"
-
 	// Container configuration
 	containerName = "evalhub"
 	// evalHubAppPort is the eval-hub container listen port on loopback (API_HOST=127.0.0.1, PORT in deployment env).

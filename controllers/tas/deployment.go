@@ -2,6 +2,7 @@ package tas
 
 import (
 	"context"
+	"fmt"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"reflect"
@@ -58,9 +59,9 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 
 	pvcName := generatePVCName(instance)
 	// Get Kube-RBAC-proxy image (env var first, then ConfigMap)
-	kubeRBACProxyImage, err := images.ResolveImage(ctx, r.Client, configMapKubeRBACProxyImageKey, constants.ConfigMap, r.Namespace, defaultKubeRBACProxyImage)
+	kubeRBACProxyImage, err := images.ResolveImage(ctx, r.Client, configMapKubeRBACProxyImageKey, constants.ConfigMap, r.Namespace, "")
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Error resolving Kube-RBAC-Proxy image. Using the default image value of "+defaultKubeRBACProxyImage)
+		return nil, fmt.Errorf("resolving kube-rbac-proxy image: %w", err)
 	}
 
 	deploymentConfig := DeploymentConfig{
@@ -178,9 +179,9 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 	// Get image from env var or ConfigMap
 	// If there's a ConfigMap with custom images, it is only applied when the operator is first deployed
 	// Changing (or creating) the ConfigMap after the operator is deployed will not have any effect
-	image, err := images.ResolveImage(ctx, r.Client, configMapServiceImageKey, constants.ConfigMap, r.Namespace, defaultImage)
+	image, err := images.ResolveImage(ctx, r.Client, configMapServiceImageKey, constants.ConfigMap, r.Namespace, "")
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Error resolving TrustyAI Service image. Using the default image value of "+defaultImage)
+		return fmt.Errorf("resolving TrustyAI Service image: %w", err)
 	}
 
 	deploy := &appsv1.Deployment{}
