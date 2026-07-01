@@ -844,6 +844,7 @@ var _ = Describe("TrustyAI operator", func() {
 
 	BeforeEach(func() {
 		recorder = record.NewFakeRecorder(10)
+		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
 			Scheme:        scheme.Scheme,

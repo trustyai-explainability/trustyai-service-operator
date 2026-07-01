@@ -21,15 +21,13 @@ import (
 
 // ServiceConfig represents the service section in config.yaml
 type ServiceConfig struct {
-	Port             int    `json:"port"`
-	Host             string `json:"host,omitempty"`
-	DisableAuth      bool   `json:"disable_auth,omitempty"`
-	ReadyFile        string `json:"ready_file"`
-	TerminationFile  string `json:"termination_file"`
-	EvalInitImage    string `json:"eval_init_image,omitempty"`
-	EvalSidecarImage string `json:"eval_sidecar_image,omitempty"`
-	TLSCertFile      string `json:"tls_cert_file,omitempty"`
-	TLSKeyFile       string `json:"tls_key_file,omitempty"`
+	Port            int    `json:"port"`
+	Host            string `json:"host,omitempty"`
+	DisableAuth     bool   `json:"disable_auth,omitempty"`
+	TerminationFile string `json:"termination_file"`
+	EvalInitImage   string `json:"eval_init_image,omitempty"`
+	TLSCertFile     string `json:"tls_cert_file,omitempty"`
+	TLSKeyFile      string `json:"tls_key_file,omitempty"`
 }
 
 // DatabaseConfig represents the database configuration in config.yaml
@@ -155,12 +153,10 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 
 	config := EvalHubConfig{
 		Service: ServiceConfig{
-			Port:             evalHubAppPort,
-			DisableAuth:      true,
-			ReadyFile:        "/tmp/repo-ready",
-			TerminationFile:  "/tmp/termination-log",
-			EvalInitImage:    evalHubImage,
-			EvalSidecarImage: evalHubImage,
+			Port:            evalHubAppPort,
+			DisableAuth:     true,
+			TerminationFile: "/tmp/termination-log",
+			EvalInitImage:   evalHubImage,
 		},
 		EnvMappings: EnvMappings{
 			"PORT":                        "service.port",
