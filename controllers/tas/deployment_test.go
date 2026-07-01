@@ -261,6 +261,10 @@ func setupAndTestDeploymentInferenceService(instance *trustyaiopendatahubiov1.Tr
 	WaitFor(func() error {
 		return createNamespace(ctx, k8sClient, namespace)
 	}, "failed to create namespace")
+	cmErr := k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))
+	if cmErr != nil {
+		Expect(apierrors.IsAlreadyExists(cmErr)).To(BeTrue(), "unexpected error creating operator ConfigMap: %v", cmErr)
+	}
 
 	caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
@@ -864,6 +868,7 @@ var _ = Describe("TrustyAI operator", func() {
 					return createNamespace(ctx, k8sClient, namespace)
 				}, "failed to create namespace")
 			}
+			Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
 
 			for _, instance := range instances {
 				caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
