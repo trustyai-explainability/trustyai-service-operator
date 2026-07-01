@@ -68,8 +68,8 @@ var _ = Describe("buildDeploymentSpec", func() {
 				Namespace: testNamespace,
 			},
 			Data: map[string]string{
-				configMapEvalHubImageKey:       "quay.io/test/eval-hub:v1.2.3",
-				configMapKubeRBACProxyImageKey: "quay.io/test/kube-rbac-proxy:v1",
+				configMapEvalHubImageKey:       testBuildEvalHubImage,
+				configMapKubeRBACProxyImageKey: testBuildKubeRBACProxyImage,
 			},
 		}
 		Expect(k8sClient.Create(ctx, operatorCM)).To(Succeed())
@@ -111,7 +111,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 		Expect(container).NotTo(BeNil(), "evalhub container should be present")
 
 		Expect(container.Name).To(Equal(containerName))
-		Expect(container.Image).To(Equal("quay.io/test/eval-hub:v1.2.3"))
+		Expect(container.Image).To(Equal(testBuildEvalHubImage))
 		Expect(container.ImagePullPolicy).To(Equal(corev1.PullAlways))
 
 		Expect(container.Ports).To(HaveLen(2))
@@ -154,7 +154,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 
 		krp := findContainerByName(podSpec.Containers, kubeRBACProxyContainerName)
 		Expect(krp).NotTo(BeNil())
-		Expect(krp.Image).To(Equal("quay.io/test/kube-rbac-proxy:v1"))
+		Expect(krp.Image).To(Equal(testBuildKubeRBACProxyImage))
 		Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 		Expect(krp.ReadinessProbe).NotTo(BeNil())
 		Expect(krp.StartupProbe).NotTo(BeNil())
@@ -216,7 +216,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 
 		_, err := r.buildDeploymentSpec(ctx, evalHub, nil, nil)
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("resolving kube-rbac-proxy image"))
+		Expect(err.Error()).To(ContainSubstring("resolving EvalHub image"))
 	})
 
 	It("adds provider volume and mount when providerCMNames is non-nil", func() {
@@ -402,7 +402,7 @@ var _ = Describe("getImageFromConfigMap", func() {
 				Namespace: nsName,
 			},
 			Data: map[string]string{
-				configMapEvalHubImageKey: "quay.io/test/eval-hub:custom",
+				configMapEvalHubImageKey: testCustomEvalHubImage,
 			},
 		}
 		Expect(k8sClient.Create(ctx, cm)).To(Succeed())
@@ -413,7 +413,7 @@ var _ = Describe("getImageFromConfigMap", func() {
 		}
 		image, err := r.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(image).To(Equal("quay.io/test/eval-hub:custom"))
+		Expect(image).To(Equal(testCustomEvalHubImage))
 	})
 
 	It("returns an error when the ConfigMap is not found", func() {
