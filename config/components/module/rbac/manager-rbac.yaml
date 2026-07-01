@@ -1,0 +1,33 @@
+# Copyright 2024 The TrustyAI Authors
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: module-manager-role
+rules:
+- apiGroups:
+  - components.platform.opendatahub.io
+  resources:
+  - trustyais
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - components.platform.opendatahub.io
+  resources:
+  - trustyais/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
+  - components.platform.opendatahub.io
+  resources:
+  - trustyais/finalizers
+  verbs:
+  - update
