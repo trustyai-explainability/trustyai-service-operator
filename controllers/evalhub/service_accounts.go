@@ -233,8 +233,8 @@ const authReviewerClusterRoleName = "trustyai-service-operator-evalhub-auth-revi
 // Split resource-manager ClusterRole names.
 // These replace the monolithic evalhub-resource-manager with function-specific roles.
 const (
-	jobsWriterClusterRoleName            = "trustyai-service-operator-evalhub-jobs-writer"
-	jobConfigClusterRoleName             = "trustyai-service-operator-evalhub-job-config"
+	jobsWriterClusterRoleName             = "trustyai-service-operator-evalhub-jobs-writer"
+	jobConfigClusterRoleName              = "trustyai-service-operator-evalhub-job-config"
 	hardwareProfilesReaderClusterRoleName = "trustyai-service-operator-evalhub-hardware-profiles-reader"
 )
 

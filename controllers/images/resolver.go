@@ -26,16 +26,16 @@ const (
 
 // Environment variable names following RELATED_IMAGE_ODH_* convention
 const (
-	RelatedImageTrustyAIService          = "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_IMAGE"
-	RelatedImageEvalHub                  = "RELATED_IMAGE_ODH_EVAL_HUB_IMAGE"
-	RelatedImageKubeRBACProxy            = "RELATED_IMAGE_ODH_KUBE_RBAC_PROXY_IMAGE"
-	RelatedImageLMESJob                  = "RELATED_IMAGE_ODH_TA_LMES_JOB_IMAGE"
-	RelatedImageLMESDriver               = "RELATED_IMAGE_ODH_TA_LMES_DRIVER_IMAGE"
-	RelatedImageGuardrailsOrchestrator   = "RELATED_IMAGE_ODH_FMS_GUARDRAILS_ORCHESTRATOR_IMAGE"
-	RelatedImageBuiltInDetector          = "RELATED_IMAGE_ODH_BUILT_IN_DETECTOR_IMAGE"
-	RelatedImageVLLMOrchestratorGateway  = "RELATED_IMAGE_ODH_TRUSTYAI_VLLM_ORCHESTRATOR_GATEWAY_IMAGE"
-	RelatedImageGarakLLSProviderDSP      = "RELATED_IMAGE_ODH_TRUSTYAI_GARAK_LLS_PROVIDER_DSP_IMAGE"
-	RelatedImageNemoGuardrailsServer     = "RELATED_IMAGE_ODH_TRUSTYAI_NEMO_GUARDRAILS_SERVER_IMAGE"
+	RelatedImageTrustyAIService         = "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_IMAGE"
+	RelatedImageEvalHub                 = "RELATED_IMAGE_ODH_EVAL_HUB_IMAGE"
+	RelatedImageKubeRBACProxy           = "RELATED_IMAGE_ODH_KUBE_RBAC_PROXY_IMAGE"
+	RelatedImageLMESJob                 = "RELATED_IMAGE_ODH_TA_LMES_JOB_IMAGE"
+	RelatedImageLMESDriver              = "RELATED_IMAGE_ODH_TA_LMES_DRIVER_IMAGE"
+	RelatedImageGuardrailsOrchestrator  = "RELATED_IMAGE_ODH_FMS_GUARDRAILS_ORCHESTRATOR_IMAGE"
+	RelatedImageBuiltInDetector         = "RELATED_IMAGE_ODH_BUILT_IN_DETECTOR_IMAGE"
+	RelatedImageVLLMOrchestratorGateway = "RELATED_IMAGE_ODH_TRUSTYAI_VLLM_ORCHESTRATOR_GATEWAY_IMAGE"
+	RelatedImageGarakLLSProviderDSP     = "RELATED_IMAGE_ODH_TRUSTYAI_GARAK_LLS_PROVIDER_DSP_IMAGE"
+	RelatedImageNemoGuardrailsServer    = "RELATED_IMAGE_ODH_TRUSTYAI_NEMO_GUARDRAILS_SERVER_IMAGE"
 )
 
 // imageMapping maps ConfigMap keys to their corresponding RELATED_IMAGE_* environment variable names
