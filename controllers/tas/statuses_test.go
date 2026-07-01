@@ -53,15 +53,17 @@ func setupAndTestStatusNoComponent(instance *trustyaiopendatahubiov1.TrustyAISer
 var _ = Describe("Status and condition tests", func() {
 
 	BeforeEach(func() {
+		operatorCM := createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage)
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).WithStatusSubresource(
 			&routev1.Route{},
 			&trustyaiopendatahubiov1.TrustyAIService{},
-		).Build()
+		).WithObjects(operatorCM).Build()
 		recorder = record.NewFakeRecorder(10)
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
 			Scheme:        scheme.Scheme,
 			EventRecorder: recorder,
+			Namespace:     operatorNamespace,
 		}
 		ctx = context.Background()
 	})

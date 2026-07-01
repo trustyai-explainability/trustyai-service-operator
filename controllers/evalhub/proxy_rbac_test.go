@@ -48,7 +48,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 				Namespace: operatorNamespace,
 			},
 			Data: map[string]string{
-				"evalHubImage": "quay.io/ruimvieira/eval-hub:test",
+				"evalHubImage": testEvalHubImage,
 			},
 		}
 		Expect(k8sClient.Create(ctx, operatorCM)).Should(Succeed())
@@ -353,7 +353,7 @@ var _ = Describe("EvalHub API RBAC", func() {
 			By("Retrieving image from ConfigMap")
 			image, err := reconciler.getImageFromConfigMap(ctx, "evalHubImage")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(image).To(Equal("quay.io/ruimvieira/eval-hub:test"))
+			Expect(image).To(Equal(testEvalHubImage))
 		})
 
 		It("should fail when ConfigMap is not found", func() {
