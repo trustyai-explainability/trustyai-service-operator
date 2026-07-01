@@ -65,6 +65,17 @@ jobs:
             --cert=/tmp/tls.crt --key=/tmp/tls.key -n system
           kustomize build config/overlays/testing | sed 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' | kubectl apply -n system -f -
 
+      - name: Inject CA bundle into webhook configurations
+        run: |
+          CA_BUNDLE=$(base64 -w 0 /tmp/tls.crt)
+          for CRD in trustyaiservices.trustyai.opendatahub.io evalhubs.trustyai.opendatahub.io; do
+            if kubectl get crd "$CRD" -o jsonpath='{.spec.conversion.strategy}' 2>/dev/null | grep -q "Webhook"; then
+              kubectl patch crd "$CRD" --type='json' \
+                -p="[{\"op\":\"add\",\"path\":\"/spec/conversion/webhook/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}]"
+              echo "Patched $CRD with CA bundle"
+            fi
+          done
+
       - name: Wait for operator to be ready
         run: |
           kubectl wait --for=condition=available --timeout=120s \
