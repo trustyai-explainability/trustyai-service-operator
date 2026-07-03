@@ -1,6 +1,7 @@
 package module
 
 import (
+	"context"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -203,5 +204,108 @@ var _ = Describe("TrustyAI Module Controller", func() {
 			Expect(updated.Status.Releases).NotTo(BeEmpty())
 			Expect(updated.Status.Releases[0].Name).To(Equal("trustyai-service-operator"))
 		})
+
+		It("Should report all services healthy when health checkers pass", func() {
+			// Create mock health checkers that return healthy
+			healthyChecker1 := &mockHealthChecker{name: "TAS", healthy: true, reason: "deployment ready"}
+			healthyChecker2 := &mockHealthChecker{name: "LMES", healthy: true, reason: "deployment ready"}
+
+			reconciler.HealthCheckers = []ServiceHealthChecker{healthyChecker1, healthyChecker2}
+
+			module := createModuleInstance("default", modulev1alpha1.ManagementStateManaged)
+			Expect(k8sClient.Create(ctx, module)).To(Succeed())
+
+			// First reconcile - adds finalizer
+			_, err := performReconcile(reconciler, "default")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile - checks health
+			_, err = performReconcile(reconciler, "default")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify status
+			updated := &modulev1alpha1.TrustyAI{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(PhaseReady))
+
+			readyCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeReady)
+			Expect(readyCondition).NotTo(BeNil())
+			Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCondition.Reason).To(Equal("AllServicesHealthy"))
+
+			degradedCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeDegraded)
+			Expect(degradedCondition).NotTo(BeNil())
+			Expect(degradedCondition.Status).To(Equal(metav1.ConditionFalse))
+		})
+
+		It("Should report degraded when some services are unhealthy", func() {
+			// Create mock health checkers with mixed health
+			healthyChecker := &mockHealthChecker{name: "TAS", healthy: true, reason: "deployment ready"}
+			unhealthyChecker := &mockHealthChecker{name: "LMES", healthy: false, reason: "deployment not found"}
+
+			reconciler.HealthCheckers = []ServiceHealthChecker{healthyChecker, unhealthyChecker}
+
+			module := createModuleInstance("default", modulev1alpha1.ManagementStateManaged)
+			Expect(k8sClient.Create(ctx, module)).To(Succeed())
+
+			// First reconcile - adds finalizer
+			_, err := performReconcile(reconciler, "default")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile - checks health
+			_, err = performReconcile(reconciler, "default")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify status
+			updated := &modulev1alpha1.TrustyAI{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(PhaseNotReady))
+
+			readyCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeReady)
+			Expect(readyCondition).NotTo(BeNil())
+			Expect(readyCondition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCondition.Reason).To(Equal("ServicesUnhealthy"))
+			Expect(readyCondition.Message).To(ContainSubstring("LMES: deployment not found"))
+
+			degradedCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeDegraded)
+			Expect(degradedCondition).NotTo(BeNil())
+			Expect(degradedCondition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(degradedCondition.Reason).To(Equal("PartialFunctionality"))
+		})
+
+		It("Should handle no health checkers gracefully", func() {
+			reconciler.HealthCheckers = []ServiceHealthChecker{}
+
+			module := createModuleInstance("default", modulev1alpha1.ManagementStateManaged)
+			Expect(k8sClient.Create(ctx, module)).To(Succeed())
+
+			// First reconcile - adds finalizer
+			_, err := performReconcile(reconciler, "default")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile - with no health checkers
+			_, err = performReconcile(reconciler, "default")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify status (should be ready since no checkers means all pass)
+			updated := &modulev1alpha1.TrustyAI{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(PhaseReady))
+		})
 	})
 })
+
+// mockHealthChecker is a test implementation of ServiceHealthChecker
+type mockHealthChecker struct {
+	name    string
+	healthy bool
+	reason  string
+}
+
+func (m *mockHealthChecker) Name() string {
+	return m.name
+}
+
+func (m *mockHealthChecker) IsHealthy(ctx context.Context) (bool, string) {
+	return m.healthy, m.reason
+}
