@@ -314,6 +314,12 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		log.Info("Constructed options from configmap", "options", Options)
 
+		// Resolve images using centralized resolver (RELATED_IMAGE_* env vars → ConfigMap → defaults)
+		if err := resolveImageOptions(ctx, r.Client, r.ConfigMap, r.Namespace); err != nil {
+			return err
+		}
+		log.Info("Resolved images", "podImage", Options.PodImage, "driverImage", Options.DriverImage)
+
 		// Read DSC configuration if available
 		dscReader := dsc.NewDSCConfigReader(r.Client, r.Namespace)
 		if dscConfig, err := dscReader.ReadDSCConfig(ctx, &log); err != nil {

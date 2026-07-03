@@ -49,9 +49,20 @@ func AllTrue(array []bool) bool {
 	return true
 }
 
-// GetNamespace returns the namespace of the pod.
+// Default service account namespace file path (overridable for testing)
+var serviceAccountNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+// GetNamespace returns the namespace where operands should be deployed.
+// It checks APPLICATIONS_NAMESPACE environment variable first (injected by platform operator in modular deployments),
+// then falls back to reading the service account namespace file.
 func GetNamespace() (string, error) {
-	ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+	// Check APPLICATIONS_NAMESPACE env var first (modular architecture)
+	if ns := os.Getenv("APPLICATIONS_NAMESPACE"); ns != "" {
+		return ns, nil
+	}
+
+	// Fall back to service account namespace file
+	ns, err := os.ReadFile(serviceAccountNamespaceFile)
 	if err != nil {
 		return "", err
 	}

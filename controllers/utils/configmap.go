@@ -8,9 +8,8 @@ import (
 	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/trustyai-explainability/trustyai-service-operator/pkg/configmap"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -48,17 +47,10 @@ func ReconcileConfigMap(ctx context.Context, c client.Client, owner metav1.Objec
 }
 
 // === SPECIFIC CONFIGMAP FUNCTIONS ====================================================================================
-// GetConfigMapByName retrieves a configmap by name in the given namespace
+// GetConfigMapByName retrieves a configmap by name in the given namespace.
+// Deprecated: Use pkg/configmap.Get() directly for new code.
 func GetConfigMapByName(ctx context.Context, c client.Client, configMapName string, namespace string) (*corev1.ConfigMap, error) {
-	configMap := &corev1.ConfigMap{}
-	err := c.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: namespace}, configMap)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("configmap %s not found in namespace %s", configMapName, namespace)
-		}
-		return nil, fmt.Errorf("error reading configmap %s in namespace %s: %w", configMapName, namespace, err)
-	}
-	return configMap, nil
+	return configmap.Get(ctx, c, configMapName, namespace)
 }
 
 // GetImageFromConfigMapWithFallback retrieves a value from a ConfigMap by key, with a fallback value if no configmap is found or the key does not exist

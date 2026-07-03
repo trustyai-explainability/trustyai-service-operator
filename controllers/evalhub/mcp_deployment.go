@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -81,16 +82,15 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 	image := mcpSpec.Image
 	if image == "" {
 		var err error
-		image, err = r.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
+		image, err = images.ResolveImage(ctx, r.Client, images.EvalHubImageKey, r.effectiveOperatorConfigMapName(), r.Namespace, "")
 		if err != nil {
-			log.FromContext(ctx).Error(err, "Error getting EvalHub image for MCP from ConfigMap, using default "+defaultEvalHubImage)
-			image = defaultEvalHubImage
+			return appsv1.DeploymentSpec{}, fmt.Errorf("resolving EvalHub image for MCP: %w", err)
 		}
 	}
 
-	kubeRBACProxyImage, err := r.getImageFromConfigMap(ctx, configMapKubeRBACProxyImageKey)
+	kubeRBACProxyImage, err := images.ResolveImage(ctx, r.Client, images.KubeRBACProxyKey, r.effectiveOperatorConfigMapName(), r.Namespace, "")
 	if err != nil {
-		return appsv1.DeploymentSpec{}, fmt.Errorf("getting kube-rbac-proxy image for MCP: %w", err)
+		return appsv1.DeploymentSpec{}, fmt.Errorf("resolving kube-rbac-proxy image for MCP: %w", err)
 	}
 
 	settings := mergeEvalHubDeploymentOperatorSettings(ctx, r.readOperatorConfigMapData(ctx))

@@ -6,18 +6,19 @@ import (
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/gorch/templates"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // configureKubeRBACProxy creates the kube-rbac-proxy config structs to be used in the deployment template
 func (r *GuardrailsOrchestratorReconciler) configureKubeRBACProxy(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator, deploymentConfig *DeploymentConfig) error {
-	kubeRBACProxyImage, err := utils.GetImageFromConfigMap(ctx, r.Client, kubeRBACProxyImageKey, constants.ConfigMap, r.Namespace)
+	kubeRBACProxyImage, err := images.GetImageFromConfigMap(ctx, r.Client, kubeRBACProxyImageKey, constants.ConfigMap, r.Namespace)
 	if kubeRBACProxyImage == "" || err != nil {
-		log.FromContext(ctx).Error(err, "Error getting Kube-RBAC-Proxy image from ConfigMap.")
+		log.FromContext(ctx).Error(err, "Error resolving Kube-RBAC-Proxy image from env var or ConfigMap.")
 		return err
 	}
-	log.FromContext(ctx).Info("Using kube-rbac-proxy image " + kubeRBACProxyImage + " " + "from configmap " + r.Namespace + ":" + constants.ConfigMap)
+	log.FromContext(ctx).Info("Using kube-rbac-proxy image " + kubeRBACProxyImage)
 
 	deploymentConfig.OrchestratorKubeRBACProxy = &utils.KubeRBACProxyConfig{
 		Suffix:             "orchestrator",

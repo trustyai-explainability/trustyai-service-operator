@@ -130,8 +130,8 @@ func createConfigMap(name, namespace string) *corev1.ConfigMap {
 			Namespace: namespace,
 		},
 		Data: map[string]string{
-			"evalHubImage":    "quay.io/ruimvieira/eval-hub:test",
-			"kube-rbac-proxy": "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable",
+			"evalHubImage":    testEvalHubImage,
+			"kube-rbac-proxy": testKubeRBACProxyImage,
 		},
 	}
 }
@@ -203,8 +203,8 @@ func setupReconciler(namespace string) (*EvalHubReconciler, context.Context) {
 			Namespace: namespace,
 		},
 		Data: map[string]string{
-			configMapEvalHubImageKey:       "quay.io/evalhub/evalhub:test",
-			configMapKubeRBACProxyImageKey: "quay.io/openshift/origin-kube-rbac-proxy:4.19",
+			configMapEvalHubImageKey:       testReconcilerEvalHubImage,
+			configMapKubeRBACProxyImageKey: testReconcilerKubeRBACProxyImage,
 		},
 	}
 	if err := k8sClient.Create(ctx, operatorCM); err != nil {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,15 +21,13 @@ import (
 
 // ServiceConfig represents the service section in config.yaml
 type ServiceConfig struct {
-	Port             int    `json:"port"`
-	Host             string `json:"host,omitempty"`
-	DisableAuth      bool   `json:"disable_auth,omitempty"`
-	ReadyFile        string `json:"ready_file"`
-	TerminationFile  string `json:"termination_file"`
-	EvalInitImage    string `json:"eval_init_image,omitempty"`
-	EvalSidecarImage string `json:"eval_sidecar_image,omitempty"`
-	TLSCertFile      string `json:"tls_cert_file,omitempty"`
-	TLSKeyFile       string `json:"tls_key_file,omitempty"`
+	Port            int    `json:"port"`
+	Host            string `json:"host,omitempty"`
+	DisableAuth     bool   `json:"disable_auth,omitempty"`
+	TerminationFile string `json:"termination_file"`
+	EvalInitImage   string `json:"eval_init_image,omitempty"`
+	TLSCertFile     string `json:"tls_cert_file,omitempty"`
+	TLSKeyFile      string `json:"tls_key_file,omitempty"`
 }
 
 // DatabaseConfig represents the database configuration in config.yaml
@@ -147,19 +146,17 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 
 // generateConfigData generates the configuration data for the ConfigMap
 func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *evalhubv1.EvalHub) (map[string]string, error) {
-	evalHubImage, err := r.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
+	evalHubImage, err := images.ResolveImage(ctx, r.Client, images.EvalHubImageKey, r.effectiveOperatorConfigMapName(), r.Namespace, "")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get EvalHub image: %w", err)
+		return nil, fmt.Errorf("resolving EvalHub image: %w", err)
 	}
 
 	config := EvalHubConfig{
 		Service: ServiceConfig{
-			Port:             evalHubAppPort,
-			DisableAuth:      true,
-			ReadyFile:        "/tmp/repo-ready",
-			TerminationFile:  "/tmp/termination-log",
-			EvalInitImage:    evalHubImage,
-			EvalSidecarImage: evalHubImage,
+			Port:            evalHubAppPort,
+			DisableAuth:     true,
+			TerminationFile: "/tmp/termination-log",
+			EvalInitImage:   evalHubImage,
 		},
 		EnvMappings: EnvMappings{
 			"PORT":                        "service.port",
