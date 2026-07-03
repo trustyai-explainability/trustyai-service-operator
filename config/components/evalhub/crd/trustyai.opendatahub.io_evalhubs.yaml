@@ -556,6 +556,7 @@ spec:
                   metricExportInterval:
                     description: MetricExportInterval is the metrics export interval
                       (Go duration string, e.g. "60s").
+                    pattern: ^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$
                     type: string
                   samplingRatio:
                     default: "1.0"
@@ -570,10 +571,12 @@ spec:
                   tracerBatchInterval:
                     description: TracerBatchInterval is the trace batch flush interval
                       (Go duration string, e.g. "5s").
+                    pattern: ^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$
                     type: string
                   tracerTimeout:
                     description: TracerTimeout is the trace export timeout (Go duration
                       string, e.g. "30s").
+                    pattern: ^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$
                     type: string
                 type: object
               providers:

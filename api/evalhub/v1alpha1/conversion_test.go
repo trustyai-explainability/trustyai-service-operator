@@ -201,11 +201,11 @@ func TestConvertFromDropsV1OnlyOTELFields(t *testing.T) {
 		Spec: v1.EvalHubSpec{
 			Replicas: int32Ptr(1),
 			Otel: &v1.OTELSpec{
-				ExporterType:           "otlp-grpc",
-				ExporterEndpoint:       "otel-collector:4317",
-				TracerTimeout:          "30s",
-				ServiceName:            "evalhub-test",
-				MetricExportInterval:   "60s",
+				ExporterType:         "otlp-grpc",
+				ExporterEndpoint:     "otel-collector:4317",
+				TracerTimeout:        "30s",
+				ServiceName:          "evalhub-test",
+				MetricExportInterval: "60s",
 			},
 		},
 	}

@@ -1236,8 +1236,8 @@ func TestGenerateConfigData_WithOTEL(t *testing.T) {
 					EnableJobContainerLogs:     true,
 					ServiceName:                "my-evalhub",
 					EnableEcsResourceDetection: true,
-					DisableRedirectOtelLogs:   true,
-					DisableDatabaseOtelScans:  true,
+					DisableRedirectOtelLogs:    true,
+					DisableDatabaseOtelScans:   true,
 					MetricExportInterval:       "10s",
 				},
 			},
@@ -1272,6 +1272,45 @@ func TestGenerateConfigData_WithOTEL(t *testing.T) {
 	})
 
 	t.Run("should reject invalid otel duration fields", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			value string
+		}{
+			{name: "unparseable", value: "not-a-duration"},
+			{name: "zero", value: "0s"},
+			{name: "negative", value: "-5s"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				evalHub := &evalhubv1.EvalHub{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-evalhub",
+						Namespace: "test-namespace",
+					},
+					Spec: evalhubv1.EvalHubSpec{
+						Otel: &evalhubv1.OTELSpec{
+							TracerTimeout: tc.value,
+						},
+					},
+				}
+
+				configMap := createConfigMap(configMapName, evalHub.Namespace)
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(evalHub, configMap).
+					Build()
+				reconciler := &EvalHubReconciler{
+					Client:    fakeClient,
+					Scheme:    scheme,
+					Namespace: evalHub.Namespace,
+				}
+				_, err := reconciler.generateConfigData(context.Background(), evalHub)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "tracerTimeout")
+			})
+		}
+	})
+
+	t.Run("should reject enableJobContainerLogs without enableLogs", func(t *testing.T) {
 		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-evalhub",
@@ -1279,7 +1318,8 @@ func TestGenerateConfigData_WithOTEL(t *testing.T) {
 			},
 			Spec: evalhubv1.EvalHubSpec{
 				Otel: &evalhubv1.OTELSpec{
-					TracerTimeout: "not-a-duration",
+					EnableJobContainerLogs: true,
+					EnableLogs:             false,
 				},
 			},
 		}
@@ -1296,7 +1336,7 @@ func TestGenerateConfigData_WithOTEL(t *testing.T) {
 		}
 		_, err := reconciler.generateConfigData(context.Background(), evalHub)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "tracerTimeout")
+		assert.Contains(t, err.Error(), "enableJobContainerLogs")
 	})
 
 	t.Run("should use custom values", func(t *testing.T) {

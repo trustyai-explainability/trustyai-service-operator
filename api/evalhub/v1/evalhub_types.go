@@ -64,9 +64,11 @@ type OTELSpec struct {
 	// +optional
 	EnableLogs bool `json:"enableLogs,omitempty"`
 	// TracerTimeout is the trace export timeout (Go duration string, e.g. "30s").
+	// +kubebuilder:validation:Pattern=`^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$`
 	// +optional
 	TracerTimeout string `json:"tracerTimeout,omitempty"`
 	// TracerBatchInterval is the trace batch flush interval (Go duration string, e.g. "5s").
+	// +kubebuilder:validation:Pattern=`^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$`
 	// +optional
 	TracerBatchInterval string `json:"tracerBatchInterval,omitempty"`
 	// EnableJobContainerLogs exports adapter container logs at job terminal transition.
@@ -86,6 +88,7 @@ type OTELSpec struct {
 	// +optional
 	DisableDatabaseOtelScans bool `json:"disableDatabaseOtelScans,omitempty"`
 	// MetricExportInterval is the metrics export interval (Go duration string, e.g. "60s").
+	// +kubebuilder:validation:Pattern=`^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$`
 	// +optional
 	MetricExportInterval string `json:"metricExportInterval,omitempty"`
 }

@@ -41,22 +41,22 @@ type DatabaseConfig struct {
 // OTELConfig represents the OpenTelemetry configuration in config.yaml.
 // Field names match eval-hub internal/eval_hub/config/otel.go.
 type OTELConfig struct {
-	Enabled                    bool              `json:"enabled"`
-	ExporterType               string            `json:"exporter_type,omitempty"`
-	ExporterEndpoint           string            `json:"exporter_endpoint,omitempty"`
-	ExporterInsecure           bool              `json:"exporter_insecure,omitempty"`
-	SamplingRatio              *float64          `json:"sampling_ratio,omitempty"`
-	EnableTracing              bool              `json:"enable_tracing,omitempty"`
-	TracerTimeout              string            `json:"tracer_timeout,omitempty"`
-	TracerBatchInterval        string            `json:"tracer_batch_interval,omitempty"`
-	EnableMetrics              bool              `json:"enable_metrics,omitempty"`
-	EnableLogs                 bool              `json:"enable_logs,omitempty"`
-	EnableJobContainerLogs     bool              `json:"enable_job_container_logs,omitempty"`
-	ServiceName                string `json:"service_name,omitempty"`
-	EnableECSResourceDetection bool   `json:"enable_ecs_resource_detection,omitempty"`
-	DisableRedirectOTELLogs    bool              `json:"disable_redirect_otel_logs,omitempty"`
-	DisableDatabaseOTELScans   bool              `json:"disable_database_otel_scan,omitempty"`
-	MetricExportInterval       string            `json:"metric_export_interval,omitempty"`
+	Enabled                    bool     `json:"enabled"`
+	ExporterType               string   `json:"exporter_type,omitempty"`
+	ExporterEndpoint           string   `json:"exporter_endpoint,omitempty"`
+	ExporterInsecure           bool     `json:"exporter_insecure,omitempty"`
+	SamplingRatio              *float64 `json:"sampling_ratio,omitempty"`
+	EnableTracing              bool     `json:"enable_tracing,omitempty"`
+	TracerTimeout              string   `json:"tracer_timeout,omitempty"`
+	TracerBatchInterval        string   `json:"tracer_batch_interval,omitempty"`
+	EnableMetrics              bool     `json:"enable_metrics,omitempty"`
+	EnableLogs                 bool     `json:"enable_logs,omitempty"`
+	EnableJobContainerLogs     bool     `json:"enable_job_container_logs,omitempty"`
+	ServiceName                string   `json:"service_name,omitempty"`
+	EnableECSResourceDetection bool     `json:"enable_ecs_resource_detection,omitempty"`
+	DisableRedirectOTELLogs    bool     `json:"disable_redirect_otel_logs,omitempty"`
+	DisableDatabaseOTELScans   bool     `json:"disable_database_otel_scan,omitempty"`
+	MetricExportInterval       string   `json:"metric_export_interval,omitempty"`
 }
 
 // SecretsMapping represents the secrets mapping configuration in config.yaml
@@ -257,6 +257,10 @@ func buildOTELConfig(spec *evalhubv1.OTELSpec) (*OTELConfig, error) {
 		return nil, fmt.Errorf("otel spec is nil")
 	}
 
+	if spec.EnableJobContainerLogs && !spec.EnableLogs {
+		return nil, fmt.Errorf("enableJobContainerLogs requires enableLogs to be true")
+	}
+
 	otelCfg := &OTELConfig{
 		Enabled:                    true,
 		ExporterType:               spec.ExporterType,
@@ -264,7 +268,7 @@ func buildOTELConfig(spec *evalhubv1.OTELSpec) (*OTELConfig, error) {
 		ExporterInsecure:           spec.ExporterInsecure,
 		EnableTracing:              spec.EnableTracing,
 		EnableMetrics:              spec.EnableMetrics,
-		EnableLogs:                   spec.EnableLogs,
+		EnableLogs:                 spec.EnableLogs,
 		EnableJobContainerLogs:     spec.EnableJobContainerLogs,
 		ServiceName:                spec.ServiceName,
 		EnableECSResourceDetection: spec.EnableEcsResourceDetection,
@@ -302,8 +306,12 @@ func buildOTELConfig(spec *evalhubv1.OTELSpec) (*OTELConfig, error) {
 }
 
 func validateOTELDuration(fieldName, value string) error {
-	if _, err := time.ParseDuration(value); err != nil {
+	d, err := time.ParseDuration(value)
+	if err != nil {
 		return fmt.Errorf("invalid %s %q: %w", fieldName, value, err)
+	}
+	if d <= 0 {
+		return fmt.Errorf("invalid %s %q: duration must be greater than zero", fieldName, value)
 	}
 	return nil
 }
