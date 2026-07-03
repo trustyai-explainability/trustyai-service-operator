@@ -195,6 +195,58 @@ func TestConvertNilPointerFields(t *testing.T) {
 	}
 }
 
+func TestConvertToPreservesV1OnlyOTELFields(t *testing.T) {
+	hub := &v1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-evalhub"},
+		Spec: v1.EvalHubSpec{
+			Replicas: int32Ptr(1),
+			Otel: &v1.OTELSpec{
+				ExporterType:               "otlp-grpc",
+				ExporterEndpoint:           "otel-collector:4317",
+				TracerTimeout:              "30s",
+				TracerBatchInterval:        "5s",
+				EnableJobContainerLogs:     true,
+				ServiceName:                "evalhub-test",
+				EnableEcsResourceDetection: true,
+				DisableRedirectOtelLogs:    true,
+				DisableDatabaseOtelScans:   true,
+				MetricExportInterval:       "60s",
+			},
+		},
+	}
+
+	spoke := &EvalHub{
+		Spec: EvalHubSpec{
+			Replicas: int32Ptr(1),
+			Otel: &OTELSpec{
+				ExporterType:     "otlp-http",
+				ExporterEndpoint: "new-endpoint:4318",
+				EnableTracing:    true,
+			},
+		},
+	}
+
+	if err := spoke.ConvertTo(hub); err != nil {
+		t.Fatalf("ConvertTo failed: %v", err)
+	}
+
+	if hub.Spec.Otel.ExporterEndpoint != "new-endpoint:4318" {
+		t.Errorf("ExporterEndpoint = %q, want %q", hub.Spec.Otel.ExporterEndpoint, "new-endpoint:4318")
+	}
+	if hub.Spec.Otel.TracerTimeout != "30s" {
+		t.Errorf("TracerTimeout = %q, want %q", hub.Spec.Otel.TracerTimeout, "30s")
+	}
+	if hub.Spec.Otel.ServiceName != "evalhub-test" {
+		t.Errorf("ServiceName = %q, want %q", hub.Spec.Otel.ServiceName, "evalhub-test")
+	}
+	if hub.Spec.Otel.MetricExportInterval != "60s" {
+		t.Errorf("MetricExportInterval = %q, want %q", hub.Spec.Otel.MetricExportInterval, "60s")
+	}
+	if !hub.Spec.Otel.EnableJobContainerLogs {
+		t.Error("EnableJobContainerLogs was cleared")
+	}
+}
+
 func TestConvertFromDropsV1OnlyOTELFields(t *testing.T) {
 	hub := &v1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-evalhub"},

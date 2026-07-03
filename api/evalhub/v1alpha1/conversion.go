@@ -30,7 +30,12 @@ func (src *EvalHub) ConvertTo(dstRaw conversion.Hub) error {
 	}
 
 	if src.Spec.Otel != nil {
-		dst.Spec.Otel = copyOTELSpecToV1(src.Spec.Otel)
+		if dst.Spec.Otel == nil {
+			dst.Spec.Otel = &v1.OTELSpec{}
+		}
+		mergeOTELSpecToV1(src.Spec.Otel, dst.Spec.Otel)
+	} else {
+		dst.Spec.Otel = nil
 	}
 
 	if src.Spec.MCP != nil {
@@ -192,20 +197,14 @@ func copyInt32Ptr(p *int32) *int32 {
 	return &v
 }
 
-func copyOTELSpecToV1(src *OTELSpec) *v1.OTELSpec {
-	if src == nil {
-		return nil
-	}
-	dst := &v1.OTELSpec{
-		ExporterType:     src.ExporterType,
-		ExporterEndpoint: src.ExporterEndpoint,
-		ExporterInsecure: src.ExporterInsecure,
-		SamplingRatio:    src.SamplingRatio,
-		EnableTracing:    src.EnableTracing,
-		EnableMetrics:    src.EnableMetrics,
-		EnableLogs:       src.EnableLogs,
-	}
-	return dst
+func mergeOTELSpecToV1(src *OTELSpec, dst *v1.OTELSpec) {
+	dst.ExporterType = src.ExporterType
+	dst.ExporterEndpoint = src.ExporterEndpoint
+	dst.ExporterInsecure = src.ExporterInsecure
+	dst.SamplingRatio = src.SamplingRatio
+	dst.EnableTracing = src.EnableTracing
+	dst.EnableMetrics = src.EnableMetrics
+	dst.EnableLogs = src.EnableLogs
 }
 
 func copyOTELSpecFromV1(src *v1.OTELSpec) *OTELSpec {
