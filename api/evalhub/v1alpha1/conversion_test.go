@@ -195,6 +195,34 @@ func TestConvertNilPointerFields(t *testing.T) {
 	}
 }
 
+func TestConvertFromDropsV1OnlyOTELFields(t *testing.T) {
+	hub := &v1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-evalhub"},
+		Spec: v1.EvalHubSpec{
+			Replicas: int32Ptr(1),
+			Otel: &v1.OTELSpec{
+				ExporterType:           "otlp-grpc",
+				ExporterEndpoint:       "otel-collector:4317",
+				TracerTimeout:          "30s",
+				ServiceName:            "evalhub-test",
+				MetricExportInterval:   "60s",
+			},
+		},
+	}
+
+	dst := &EvalHub{}
+	if err := dst.ConvertFrom(hub); err != nil {
+		t.Fatalf("ConvertFrom failed: %v", err)
+	}
+
+	if dst.Spec.Otel == nil {
+		t.Fatal("Otel should be converted")
+	}
+	if dst.Spec.Otel.ExporterEndpoint != "otel-collector:4317" {
+		t.Errorf("ExporterEndpoint = %q, want %q", dst.Spec.Otel.ExporterEndpoint, "otel-collector:4317")
+	}
+}
+
 func TestConvertDeepCopyIsolation(t *testing.T) {
 	src := fullEvalHubV1Alpha1()
 	dst := &v1.EvalHub{}

@@ -38,16 +38,25 @@ type DatabaseConfig struct {
 	MaxIdleConns int    `json:"max_idle_conns,omitempty"`
 }
 
-// OTELConfig represents the OpenTelemetry configuration in config.yaml
+// OTELConfig represents the OpenTelemetry configuration in config.yaml.
+// Field names match eval-hub internal/eval_hub/config/otel.go.
 type OTELConfig struct {
-	Enabled          bool     `json:"enabled"`
-	ExporterType     string   `json:"exporter_type,omitempty"`
-	ExporterEndpoint string   `json:"exporter_endpoint,omitempty"`
-	ExporterInsecure bool     `json:"exporter_insecure,omitempty"`
-	SamplingRatio    *float64 `json:"sampling_ratio,omitempty"`
-	EnableTracing    bool     `json:"enable_tracing,omitempty"`
-	EnableMetrics    bool     `json:"enable_metrics,omitempty"`
-	EnableLogs       bool     `json:"enable_logs,omitempty"`
+	Enabled                    bool              `json:"enabled"`
+	ExporterType               string            `json:"exporter_type,omitempty"`
+	ExporterEndpoint           string            `json:"exporter_endpoint,omitempty"`
+	ExporterInsecure           bool              `json:"exporter_insecure,omitempty"`
+	SamplingRatio              *float64          `json:"sampling_ratio,omitempty"`
+	EnableTracing              bool              `json:"enable_tracing,omitempty"`
+	TracerTimeout              string            `json:"tracer_timeout,omitempty"`
+	TracerBatchInterval        string            `json:"tracer_batch_interval,omitempty"`
+	EnableMetrics              bool              `json:"enable_metrics,omitempty"`
+	EnableLogs                 bool              `json:"enable_logs,omitempty"`
+	EnableJobContainerLogs     bool              `json:"enable_job_container_logs,omitempty"`
+	ServiceName                string `json:"service_name,omitempty"`
+	EnableECSResourceDetection bool   `json:"enable_ecs_resource_detection,omitempty"`
+	DisableRedirectOTELLogs    bool              `json:"disable_redirect_otel_logs,omitempty"`
+	DisableDatabaseOTELScans   bool              `json:"disable_database_otel_scan,omitempty"`
+	MetricExportInterval       string            `json:"metric_export_interval,omitempty"`
 }
 
 // SecretsMapping represents the secrets mapping configuration in config.yaml
@@ -224,21 +233,9 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 
 	// Override OTEL configuration when explicitly configured
 	if instance.Spec.IsOTELConfigured() {
-		otelCfg := &OTELConfig{
-			Enabled:          true,
-			ExporterType:     instance.Spec.Otel.ExporterType,
-			ExporterEndpoint: instance.Spec.Otel.ExporterEndpoint,
-			ExporterInsecure: instance.Spec.Otel.ExporterInsecure,
-			EnableTracing:    instance.Spec.Otel.EnableTracing,
-			EnableMetrics:    instance.Spec.Otel.EnableMetrics,
-			EnableLogs:       instance.Spec.Otel.EnableLogs,
-		}
-		if instance.Spec.Otel.SamplingRatio != "" {
-			ratio, err := strconv.ParseFloat(instance.Spec.Otel.SamplingRatio, 64)
-			if err != nil {
-				return nil, fmt.Errorf("invalid samplingRatio %q: %w", instance.Spec.Otel.SamplingRatio, err)
-			}
-			otelCfg.SamplingRatio = &ratio
+		otelCfg, err := buildOTELConfig(instance.Spec.Otel)
+		if err != nil {
+			return nil, err
 		}
 		config.OTEL = otelCfg
 	}
@@ -253,6 +250,62 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		"config.yaml": string(configYAML),
 		"auth.yaml":   generateAuthConfigData(),
 	}, nil
+}
+
+func buildOTELConfig(spec *evalhubv1.OTELSpec) (*OTELConfig, error) {
+	if spec == nil {
+		return nil, fmt.Errorf("otel spec is nil")
+	}
+
+	otelCfg := &OTELConfig{
+		Enabled:                    true,
+		ExporterType:               spec.ExporterType,
+		ExporterEndpoint:           spec.ExporterEndpoint,
+		ExporterInsecure:           spec.ExporterInsecure,
+		EnableTracing:              spec.EnableTracing,
+		EnableMetrics:              spec.EnableMetrics,
+		EnableLogs:                   spec.EnableLogs,
+		EnableJobContainerLogs:     spec.EnableJobContainerLogs,
+		ServiceName:                spec.ServiceName,
+		EnableECSResourceDetection: spec.EnableEcsResourceDetection,
+		DisableRedirectOTELLogs:    spec.DisableRedirectOtelLogs,
+		DisableDatabaseOTELScans:   spec.DisableDatabaseOtelScans,
+	}
+
+	if spec.SamplingRatio != "" {
+		ratio, err := strconv.ParseFloat(spec.SamplingRatio, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid samplingRatio %q: %w", spec.SamplingRatio, err)
+		}
+		otelCfg.SamplingRatio = &ratio
+	}
+
+	for _, field := range []struct {
+		name  string
+		value string
+		dest  *string
+	}{
+		{name: "tracerTimeout", value: spec.TracerTimeout, dest: &otelCfg.TracerTimeout},
+		{name: "tracerBatchInterval", value: spec.TracerBatchInterval, dest: &otelCfg.TracerBatchInterval},
+		{name: "metricExportInterval", value: spec.MetricExportInterval, dest: &otelCfg.MetricExportInterval},
+	} {
+		if field.value == "" {
+			continue
+		}
+		if err := validateOTELDuration(field.name, field.value); err != nil {
+			return nil, err
+		}
+		*field.dest = field.value
+	}
+
+	return otelCfg, nil
+}
+
+func validateOTELDuration(fieldName, value string) error {
+	if _, err := time.ParseDuration(value); err != nil {
+		return fmt.Errorf("invalid %s %q: %w", fieldName, value, err)
+	}
+	return nil
 }
 
 // generateAuthConfigData returns the authorization configuration for the ConfigMap.

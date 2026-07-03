@@ -30,15 +30,7 @@ func (src *EvalHub) ConvertTo(dstRaw conversion.Hub) error {
 	}
 
 	if src.Spec.Otel != nil {
-		dst.Spec.Otel = &v1.OTELSpec{
-			ExporterType:     src.Spec.Otel.ExporterType,
-			ExporterEndpoint: src.Spec.Otel.ExporterEndpoint,
-			ExporterInsecure: src.Spec.Otel.ExporterInsecure,
-			SamplingRatio:    src.Spec.Otel.SamplingRatio,
-			EnableTracing:    src.Spec.Otel.EnableTracing,
-			EnableMetrics:    src.Spec.Otel.EnableMetrics,
-			EnableLogs:       src.Spec.Otel.EnableLogs,
-		}
+		dst.Spec.Otel = copyOTELSpecToV1(src.Spec.Otel)
 	}
 
 	if src.Spec.MCP != nil {
@@ -112,15 +104,7 @@ func (dst *EvalHub) ConvertFrom(srcRaw conversion.Hub) error {
 	}
 
 	if src.Spec.Otel != nil {
-		dst.Spec.Otel = &OTELSpec{
-			ExporterType:     src.Spec.Otel.ExporterType,
-			ExporterEndpoint: src.Spec.Otel.ExporterEndpoint,
-			ExporterInsecure: src.Spec.Otel.ExporterInsecure,
-			SamplingRatio:    src.Spec.Otel.SamplingRatio,
-			EnableTracing:    src.Spec.Otel.EnableTracing,
-			EnableMetrics:    src.Spec.Otel.EnableMetrics,
-			EnableLogs:       src.Spec.Otel.EnableLogs,
-		}
+		dst.Spec.Otel = copyOTELSpecFromV1(src.Spec.Otel)
 	}
 
 	if src.Spec.MCP != nil {
@@ -206,4 +190,36 @@ func copyInt32Ptr(p *int32) *int32 {
 	}
 	v := *p
 	return &v
+}
+
+func copyOTELSpecToV1(src *OTELSpec) *v1.OTELSpec {
+	if src == nil {
+		return nil
+	}
+	dst := &v1.OTELSpec{
+		ExporterType:     src.ExporterType,
+		ExporterEndpoint: src.ExporterEndpoint,
+		ExporterInsecure: src.ExporterInsecure,
+		SamplingRatio:    src.SamplingRatio,
+		EnableTracing:    src.EnableTracing,
+		EnableMetrics:    src.EnableMetrics,
+		EnableLogs:       src.EnableLogs,
+	}
+	return dst
+}
+
+func copyOTELSpecFromV1(src *v1.OTELSpec) *OTELSpec {
+	if src == nil {
+		return nil
+	}
+	dst := &OTELSpec{
+		ExporterType:     src.ExporterType,
+		ExporterEndpoint: src.ExporterEndpoint,
+		ExporterInsecure: src.ExporterInsecure,
+		SamplingRatio:    src.SamplingRatio,
+		EnableTracing:    src.EnableTracing,
+		EnableMetrics:    src.EnableMetrics,
+		EnableLogs:       src.EnableLogs,
+	}
+	return dst
 }
