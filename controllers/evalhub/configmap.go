@@ -310,8 +310,8 @@ func validateOTELDuration(fieldName, value string) error {
 	if err != nil {
 		return fmt.Errorf("invalid %s %q: %w", fieldName, value, err)
 	}
-	if d <= 0 {
-		return fmt.Errorf("invalid %s %q: duration must be greater than zero", fieldName, value)
+	if d < 0 {
+		return fmt.Errorf("invalid %s %q: duration must be greater than, or equal, to zero", fieldName, value)
 	}
 	return nil
 }

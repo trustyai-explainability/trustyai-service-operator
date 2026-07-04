@@ -88,6 +88,8 @@ func (src *EvalHub) ConvertTo(dstRaw conversion.Hub) error {
 }
 
 // ConvertFrom converts the v1 EvalHub (hub version) to v1alpha1 EvalHub
+// Note: This conversion is not used in the operator, but it is here for completeness.
+// Note: The v1-only fields are not copied to the v1alpha1 EvalHub.
 func (dst *EvalHub) ConvertFrom(srcRaw conversion.Hub) error {
 	src := srcRaw.(*v1.EvalHub)
 

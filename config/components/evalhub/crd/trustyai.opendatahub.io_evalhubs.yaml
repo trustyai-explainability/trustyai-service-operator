@@ -532,7 +532,7 @@ spec:
                   enableJobContainerLogs:
                     description: |-
                       EnableJobContainerLogs exports adapter container logs at job terminal transition.
-                      Requires enableLogs.
+                      Requires enableLogs to be true.
                     type: boolean
                   enableLogs:
                     type: boolean
