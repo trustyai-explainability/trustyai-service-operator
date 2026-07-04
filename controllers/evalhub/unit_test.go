@@ -1277,7 +1277,6 @@ func TestGenerateConfigData_WithOTEL(t *testing.T) {
 			value string
 		}{
 			{name: "unparseable", value: "not-a-duration"},
-			{name: "zero", value: "0s"},
 			{name: "negative", value: "-5s"},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
@@ -1308,6 +1307,39 @@ func TestGenerateConfigData_WithOTEL(t *testing.T) {
 				assert.Contains(t, err.Error(), "tracerTimeout")
 			})
 		}
+	})
+
+	t.Run("should accept zero otel duration fields", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Otel: &evalhubv1.OTELSpec{
+					TracerTimeout: "0s",
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+		require.NotNil(t, config.OTEL)
+		assert.Equal(t, "0s", config.OTEL.TracerTimeout)
 	})
 
 	t.Run("should reject enableJobContainerLogs without enableLogs", func(t *testing.T) {
