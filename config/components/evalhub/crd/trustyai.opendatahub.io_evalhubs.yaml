@@ -1300,9 +1300,14 @@ spec:
                 minimum: 1
                 type: integer
               tenancy:
+                default: multi
                 description: |-
                   Tenancy controls the deployment mode of this EvalHub instance.
-                  "multi" (default): serves multiple tenant namespaces; "single": serves only its own namespace.
+                  "multi" (default): serves multiple tenant namespaces labelled with evalhub.trustyai.opendatahub.io/tenant.
+                  "single": serves only its own namespace; no cross-namespace resource propagation.
+                enum:
+                - single
+                - multi
                 type: string
             type: object
           status:
