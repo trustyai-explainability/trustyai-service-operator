@@ -45,7 +45,12 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 	// Build set of active tenant namespaces for the cleanup pass
 	activeTenants := make(map[string]bool, len(nsList.Items))
 	for i := range nsList.Items {
-		activeTenants[nsList.Items[i].Name] = true
+		ns := &nsList.Items[i]
+		if ns.DeletionTimestamp != nil {
+			log.Info("Skipping terminating tenant namespace", "namespace", ns.Name)
+			continue
+		}
+		activeTenants[ns.Name] = true
 	}
 
 	for ns := range activeTenants {

@@ -1988,6 +1988,42 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
 	})
 
+	t.Run("should skip terminating tenant namespace", func(t *testing.T) {
+		now := metav1.Now()
+		terminatingNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: tenantNamespace,
+				Labels: map[string]string{
+					tenantLabel: "",
+				},
+				DeletionTimestamp: &now,
+				Finalizers:        []string{"kubernetes"},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, terminatingNS).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileTenantNamespaces(ctx, evalHub)
+		require.NoError(t, err)
+
+		cmName := evalHubName + "-service-ca"
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      cmName,
+			Namespace: tenantNamespace,
+		}, cm)
+		assert.True(t, errors.IsNotFound(err))
+	})
+
 	t.Run("should skip instance namespace", func(t *testing.T) {
 		// Label the instance namespace as a tenant — it should be skipped
 		instanceNS := &corev1.Namespace{
