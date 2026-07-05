@@ -1495,7 +1495,7 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 	}
 
 	t.Run("should add DB secret volume and mount when database configured", func(t *testing.T) {
-		err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+		err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 		require.NoError(t, err)
 
 		deployment := &appsv1.Deployment{}
@@ -1745,7 +1745,7 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 		require.Len(t, cmNames, 1)
 
 		// Then reconcile deployment with the provider ConfigMap names
-		err = reconciler.reconcileDeployment(ctx, evalHub, cmNames, nil)
+		err = reconciler.reconcileDeployment(ctx, evalHub, cmNames, nil, nil, nil)
 		require.NoError(t, err)
 
 		// Verify the deployment has the projected volume

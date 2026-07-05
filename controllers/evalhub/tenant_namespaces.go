@@ -26,6 +26,16 @@ const (
 func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
 
+	// Single-tenant instances serve only their own namespace — skip cross-namespace provisioning
+	// and clean up any stale resources left over from a previous multi→single mode switch.
+	if instance.Spec.IsSingleTenancy() {
+		log.Info("Single-tenant mode: skipping cross-namespace tenant provisioning")
+		if err := r.cleanupStaleTenantResources(ctx, instance, map[string]bool{}); err != nil {
+			return err
+		}
+		return r.cleanupDiscoveryConfigMaps(ctx, instance, map[string]bool{})
+	}
+
 	// List namespaces with the tenant label
 	nsList := &corev1.NamespaceList{}
 	if err := r.List(ctx, nsList, client.HasLabels{tenantLabel}); err != nil {

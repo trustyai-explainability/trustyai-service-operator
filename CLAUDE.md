@@ -89,7 +89,7 @@ func init() {
 |------|-----------|-----|
 | `TAS` | `controllers/tas/` | `TrustyAIService` (v1alpha1, v1) |
 | `LMES` | `controllers/lmes/` | `LMEvalJob` (v1alpha1) |
-| `EVALHUB` | `controllers/evalhub/` | `EvalHub` (v1alpha1) |
+| `EVALHUB` | `controllers/evalhub/` | `EvalHub` (v1alpha1, v1) |
 | `GORCH` | `controllers/gorch/` | `GuardrailsOrchestrator` (v1alpha1) |
 | `NEMO_GUARDRAILS` | `controllers/nemo_guardrails/` | `NemoGuardrail` (v1alpha1) |
 | `JOB_MGR` | `controllers/job_mgr/` | (watches external jobs) |
@@ -103,7 +103,7 @@ cmd/
 api/                                # CRD type definitions (kubebuilder markers)
   tas/v1alpha1/, tas/v1/            # TrustyAIService (with version conversion)
   lmes/v1alpha1/                    # LMEvalJob
-  evalhub/v1alpha1/                 # EvalHub
+  evalhub/v1alpha1/, evalhub/v1/    # EvalHub (v1 is storage version)
   gorch/v1alpha1/                   # GuardrailsOrchestrator
   nemo_guardrails/v1alpha1/         # NemoGuardrail
   common/                           # Shared types (Condition, CABundle)
@@ -124,7 +124,8 @@ config/
   base/                             # Base kustomization (namePrefix, labels, params)
   crd/bases/                        # Generated CRD YAML (from make manifests)
   rbac/                             # ClusterRoles, ServiceAccounts, RoleBindings
-    evalhub/                        # EvalHub-specific static ClusterRoles
+  components/                       # Per-service CRDs, RBAC (Kustomize Components)
+    evalhub/                        # EvalHub CRD, static ClusterRoles, manager RBAC
   manager/                          # Operator Deployment manifest
   prometheus/                       # ServiceMonitor definitions
   configmaps/                       # Provider/collection ConfigMaps
@@ -158,11 +159,39 @@ EvalHub exposes Prometheus metrics on a **dedicated port (8081)** bound to `0.0.
 
 The metrics port requires no authentication, is cluster-internal only (no Route), and is reachable by Prometheus via existing namespace NetworkPolicies. The `METRICS_PORT` and `METRICS_HOST` env vars are set on the EvalHub container and protected from CR overrides.
 
+### EvalHub Tenancy
+
+EvalHub deployment mode is controlled by `spec.tenancy` on the EvalHub CR (`multi` default, `single` optional). See `api/evalhub/v1/evalhub_types.go` for `TenancyMode`, `IsSingleTenancy()`, and `IsMultiTenancy()`.
+
+**Modes:**
+
+- **`multi` (default)**: One EvalHub in a control-plane namespace serves multiple tenant namespaces labelled `evalhub.trustyai.opendatahub.io/tenant`. The operator provisions job ServiceAccounts, ClusterRole RoleBindings, service-CA ConfigMaps, and `evalhub-discovery` ConfigMaps in each tenant namespace — `tenant_namespaces.go`.
+- **`single`**: EvalHub runs in the workload namespace only. No cross-namespace tenant discovery or propagation. The operator creates namespace-scoped convenience Roles — `tenant_roles.go`:
+  - `evalhub-tenant-admin` — full CRUD on EvalHub resources + MLflow experiment read
+  - `evalhub-user` — read collections/providers, submit via `evalhubs/proxy`, create status-events
+  - `evalhub-tenant-admin-binding` — binds admin Role to `system:serviceaccounts:<namespace>`
+  - Roles are GC'd via owner references; cleaned up on switch back to `multi`.
+
+**Placement guard** (multi only): If a multi-tenant instance is placed in a namespace carrying the tenant label, reconciliation halts with `InvalidPlacement` / phase `Error`. Fix: remove the tenant label or set `spec.tenancy: single`.
+
+**Provider/collection ConfigMaps — system vs tenant:**
+
+| Source | Label | Handling | Mount path |
+|--------|-------|----------|------------|
+| Operator namespace | `trustyai.opendatahub.io/evalhub-provider-type=system` (collections: `trustyai.opendatahub.io/evalhub-collection-type=system`) | Copied into instance namespace | `/config/providers/`, `/config/collections/` |
+| Instance namespace | `...-provider-type=tenant` / `...-collection-type=tenant` | Discovered in-place (not copied) | `/config/providers/tenant/`, `/config/collections/tenant/` |
+
+Tenant ConfigMap changes trigger reconciliation via a ConfigMap watch (`tenantConfigMapPredicate` in `evalhub_controller.go`) — no CR edit required.
+
+**Operator RBAC** (for contributors): the EvalHub manager role includes `roles` write, EvalHub sub-resource CRDs (`evaluations`, `collections`, `providers`, `status-events`), MLflow `experiments`, and binds additional EvalHub ClusterRoles (jobs-writer, providers-access, etc.). See RBAC markers in `evalhub_controller.go` and `config/components/evalhub/rbac/manager-rbac.yaml`.
+
+**Reconciliation order**: tenant namespace reconciliation and single-tenancy Roles run before provider/collection ConfigMap sync and Deployment creation.
+
 ### Scheme Registration (cmd/main.go init())
 
 Registers all API groups in order:
 - Kubernetes core (`clientgoscheme`)
-- TrustyAI: `tasv1alpha1`, `tasv1`, `lmesv1alpha1`, `evalhubv1alpha1`, `gorchv1alpha1`, `nemoguardrailsv1alpha1`
+- TrustyAI: `tasv1alpha1`, `tasv1`, `lmesv1alpha1`, `evalhubv1alpha1`, `evalhubv1`, `gorchv1alpha1`, `nemoguardrailsv1alpha1`
 - External: `monitoringv1` (Prometheus), `kservev1alpha1`/`v1beta1`, `routev1` (OpenShift), `apiextensionsv1`, `kueuev1beta1`
 
 ### Key Dependencies

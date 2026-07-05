@@ -161,6 +161,11 @@ type EvalHubSpec struct {
 	// MCP optionally enables an MCP server deployment connected to this EvalHub instance.
 	// +optional
 	MCP *EvalHubMCPSpec `json:"mcp,omitempty"`
+
+	// Tenancy controls the deployment mode of this EvalHub instance.
+	// "multi" (default): serves multiple tenant namespaces; "single": serves only its own namespace.
+	// +optional
+	Tenancy string `json:"tenancy,omitempty"`
 }
 
 // EvalHubStatus defines the observed state of EvalHub
