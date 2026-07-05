@@ -5,27 +5,6 @@ metadata:
   name: evalhub-manager-role
 rules:
 - apiGroups:
-  - kueue.x-k8s.io
-  resources:
-  - workloads
-  verbs:
-  - get
-  - list
-  - watch
-  - patch
-- apiGroups:
-  - batch
-  resources:
-  - jobs
-  verbs:
-  - get
-- apiGroups:
-  - trustyai.opendatahub.io
-  resources:
-  - evalhubs
-  verbs:
-  - get
-- apiGroups:
   - batch
   resources:
   - jobs
@@ -233,6 +212,27 @@ rules:
   - get
   - list
 - apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - workloads
+  verbs:
+  - get
+  - list
+  - watch
+  - patch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - get
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - evalhubs
+  verbs:
+  - get
+- apiGroups:
   - rbac.authorization.k8s.io
   resources:
   - clusterroles
@@ -240,3 +240,4 @@ rules:
   - trustyai-service-operator-evalhub-model-secret
   verbs:
   - bind
+

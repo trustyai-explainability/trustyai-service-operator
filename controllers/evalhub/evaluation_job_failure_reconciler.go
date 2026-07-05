@@ -385,7 +385,10 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 		}
 	}
 
-	if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, jobID, providerID, benchmarkID, benchmarkIndex, msg, ""); err != nil {
+	// Sanitize error message before sending to EvalHub (full message already logged above)
+	sanitizedMsg := sanitizeErrorMessage(msg)
+
+	if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, jobID, providerID, benchmarkID, benchmarkIndex, sanitizedMsg, ""); err != nil {
 		log.Error(err, "failed to post EvalHub benchmark failure event",
 			append(failureWatcherLogFields(), "action", "post_events_failed", "job", job.Name, "evalJobID", jobID)...)
 		revert := client.MergeFrom(job.DeepCopy())
@@ -547,6 +550,88 @@ var fatalContainerWaitingReasons = map[string]struct{}{
 func isFatalContainerWaitingReason(reason string) bool {
 	_, ok := fatalContainerWaitingReasons[strings.TrimSpace(reason)]
 	return ok
+}
+
+const (
+	// maxErrorMessageLength is the maximum length of error messages sent to EvalHub.
+	// Messages exceeding this will be condensed using pattern matching or truncated.
+	maxErrorMessageLength = 500
+)
+
+// errorMessagePattern defines a verbose error pattern and its concise replacement.
+type errorMessagePattern struct {
+	// matchSubstring is a substring that, if found, triggers this pattern's condensation.
+	matchSubstring string
+	// condenseFunc takes the full message and returns a condensed version.
+	condenseFunc func(string) string
+}
+
+// knownErrorPatterns contains patterns for condensing verbose Kubernetes error messages.
+// Add new patterns here as they are discovered to improve error message clarity.
+var knownErrorPatterns = []errorMessagePattern{
+	{
+		matchSubstring: "pull image err:",
+		condenseFunc:   condenseImagePullError,
+	},
+	{
+		matchSubstring: "unable to pull image or OCI artifact:",
+		condenseFunc:   condenseImagePullError,
+	},
+}
+
+// condenseImagePullError extracts the essential information from OCI artifact pull errors.
+// Kubernetes image/artifact pull errors can contain very long URLs, signatures, and nested error messages.
+// This function identifies the root cause and returns a concise, actionable message.
+func condenseImagePullError(message string) string {
+	messageLower := strings.ToLower(message)
+
+	// Check for unauthorized/authentication errors
+	if strings.Contains(messageLower, "unauthorized") || strings.Contains(messageLower, "access to the requested resource is not authorized") {
+		return "OCI artifact pull failed: unauthorized access to registry. Verify image pull secrets and registry credentials."
+	}
+
+	// Check for image not found errors
+	if strings.Contains(messageLower, "not found") || strings.Contains(messageLower, "manifest unknown") {
+		return "OCI artifact pull failed: artifact not found in registry. Verify the image/artifact reference and tag."
+	}
+
+	// Check for network/connectivity errors
+	if strings.Contains(messageLower, "timeout") || strings.Contains(messageLower, "eof") ||
+		strings.Contains(messageLower, "connection refused") {
+		return "OCI artifact pull failed: network connectivity issue. Check registry accessibility and network policies."
+	}
+
+	// Check for invalid image name
+	if strings.Contains(messageLower, "invalid image name") || strings.Contains(messageLower, "invalid reference format") {
+		return "OCI artifact pull failed: invalid artifact name or reference format."
+	}
+
+	// Generic OCI artifact pull error (pattern matched but specific cause unknown)
+	return "OCI artifact pull failed. Check artifact reference, registry credentials, and network connectivity."
+}
+
+// sanitizeErrorMessage condenses verbose error messages using known patterns or truncation.
+// Applies pattern matching regardless of message length to provide concise, actionable errors.
+// This function is designed to be extended with new patterns as verbose errors are discovered.
+func sanitizeErrorMessage(message string) string {
+	messageLower := strings.ToLower(message)
+
+	// Try known patterns first (regardless of message length)
+	for _, pattern := range knownErrorPatterns {
+		if strings.Contains(messageLower, pattern.matchSubstring) {
+			// Always return the condensed version if pattern matched
+			return pattern.condenseFunc(message)
+		}
+	}
+
+	// If no pattern matched and message is short enough, return as-is
+	runes := []rune(message)
+	if len(runes) <= maxErrorMessageLength {
+		return message
+	}
+
+	// Fallback: truncate with ellipsis indicating there's more detail in pod logs
+	return string(runes[:maxErrorMessageLength-3]) + "..."
 }
 
 // containerCannotReportToEvalHub detects fatal init/adapter/sidecar states before or without a successful callback.

@@ -122,4 +122,63 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 			Expect(ok).To(BeTrue(), "expected operator-only failure for sidecar CrashLoopBackOff")
 		})
 	})
+
+	Describe("sanitizeErrorMessage", func() {
+		It("returns short messages unchanged", func() {
+			msg := "Image not found"
+			Expect(sanitizeErrorMessage(msg)).To(Equal(msg))
+		})
+
+		It("condenses OCI artifact pull unauthorized errors", func() {
+			msg := `[unable to pull image or OCI artifact: pull image err: copying system image from manifest list: writing blob: storing blob to file "/var/tmp/container_images_storage2488073217/1": happened during read: unexpected EOF (while reconnecting: Get "https://cdn.example.com/registry-blobs/sha256/c4/c4d19f59e080ea5baf32f8368164510de7465fc76d39c87c0d009e287a9ab65d?token=REDACTED&signature=REDACTED&expires=600": EOF); artifact err: provided artifact is a container image, unable to pull image or OCI artifact: pull image err: initializing source docker://registry.example.com/example/eval-job@sha256:1acfc26eb6cca49e318bcdee30f0ce4ea2ceb81f4bbaa68efe3025a664a7a1fb: reading manifest sha256:1acfc26eb6cca49e318bcdee30f0ce4ea2ceb81f4bbaa68efe3025a664a7a1fb in registry.example.com/example/eval-job: unauthorized: access to the requested resource is not authorized; artifact err: get manifest: build image source: reading manifest sha256:1acfc26eb6cca49e318bcdee30f0ce4ea2ceb81f4bbaa68efe3025a664a7a1fb in registry.example.com/example/eval-job: unauthorized: access to the requested resource is not authorized]`
+
+			result := sanitizeErrorMessage(msg)
+			Expect(result).To(Equal("OCI artifact pull failed: unauthorized access to registry. Verify image pull secrets and registry credentials."))
+			Expect(len(result)).To(BeNumerically("<", len(msg)), "condensed message should be shorter than original")
+		})
+
+		It("condenses OCI artifact pull network errors", func() {
+			msg := `unable to pull image or OCI artifact: pull image err: copying system image: reading blob: Get "https://registry.example.com/v2/repo/blobs/sha256:abc123...": EOF (while reconnecting after network timeout)`
+
+			result := sanitizeErrorMessage(msg)
+			Expect(result).To(Equal("OCI artifact pull failed: network connectivity issue. Check registry accessibility and network policies."))
+		})
+
+		It("condenses OCI artifact pull not found errors", func() {
+			msg := `unable to pull image or OCI artifact: pull image err: reading manifest latest in docker.io/library/nonexistent: manifest unknown: manifest unknown`
+
+			result := sanitizeErrorMessage(msg)
+			Expect(result).To(Equal("OCI artifact pull failed: artifact not found in registry. Verify the image/artifact reference and tag."))
+		})
+
+		It("condenses OCI artifact pull invalid name errors", func() {
+			msg := `unable to pull image or OCI artifact: pull image err: invalid reference format: repository name must be lowercase`
+
+			result := sanitizeErrorMessage(msg)
+			Expect(result).To(Equal("OCI artifact pull failed: invalid artifact name or reference format."))
+		})
+
+		It("provides generic message for unknown OCI artifact pull patterns", func() {
+			msg := `unable to pull image or OCI artifact: pull image err: some unknown error occurred during image download that we haven't seen before and is very specific to this case`
+
+			result := sanitizeErrorMessage(msg)
+			Expect(result).To(Equal("OCI artifact pull failed. Check artifact reference, registry credentials, and network connectivity."))
+		})
+
+		It("matches known patterns regardless of message casing", func() {
+			msg := `Unable to pull image or OCI artifact: Pull image err: unauthorized: access to the requested resource is not authorized`
+
+			result := sanitizeErrorMessage(msg)
+			Expect(result).To(Equal("OCI artifact pull failed: unauthorized access to registry. Verify image pull secrets and registry credentials."))
+		})
+
+		It("truncates non-matching long messages", func() {
+			// Create a message longer than maxErrorMessageLength (500) that doesn't match any pattern
+			longMsg := "Some completely different error: " + string(make([]byte, 500))
+
+			result := sanitizeErrorMessage(longMsg)
+			Expect(len(result)).To(Equal(maxErrorMessageLength))
+			Expect(result).To(HaveSuffix("..."))
+		})
+	})
 })
