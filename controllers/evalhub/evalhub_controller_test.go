@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -405,6 +406,19 @@ var _ = Describe("EvalHub InvalidPlacement", func() {
 			Namespace: testNamespace,
 		}, updatedEvalHub)).Should(Succeed())
 		Expect(updatedEvalHub.Status.Phase).To(Equal("Error"))
+
+		conditions := updatedEvalHub.Status.Conditions
+		Expect(conditions).NotTo(BeEmpty())
+		var readyCondition *common.Condition
+		for i := range conditions {
+			if conditions[i].Type == "Ready" {
+				readyCondition = &conditions[i]
+				break
+			}
+		}
+		Expect(readyCondition).NotTo(BeNil())
+		Expect(readyCondition.Status).To(Equal(corev1.ConditionFalse))
+		Expect(readyCondition.Reason).To(Equal(invalidPlacementReason))
 
 		By("Verifying no Deployment was created")
 		deployment := &appsv1.Deployment{}
