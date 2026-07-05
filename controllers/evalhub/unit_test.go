@@ -1218,6 +1218,159 @@ func TestGenerateConfigData_WithOTEL(t *testing.T) {
 		assert.False(t, config.OTEL.EnableLogs)
 	})
 
+	t.Run("should map extended otel fields", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Otel: &evalhubv1.OTELSpec{
+					ExporterType:               "otlp-grpc",
+					ExporterEndpoint:           "otel-collector:4317",
+					EnableTracing:              true,
+					EnableMetrics:              true,
+					EnableLogs:                 true,
+					TracerTimeout:              "30s",
+					TracerBatchInterval:        "5s",
+					EnableJobContainerLogs:     true,
+					ServiceName:                "my-evalhub",
+					EnableEcsResourceDetection: true,
+					DisableRedirectOtelLogs:    true,
+					DisableDatabaseOtelScans:   true,
+					MetricExportInterval:       "10s",
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		require.NotNil(t, config.OTEL)
+		assert.Equal(t, "30s", config.OTEL.TracerTimeout)
+		assert.Equal(t, "5s", config.OTEL.TracerBatchInterval)
+		assert.Equal(t, "10s", config.OTEL.MetricExportInterval)
+		assert.Equal(t, "my-evalhub", config.OTEL.ServiceName)
+		assert.True(t, config.OTEL.EnableJobContainerLogs)
+		assert.True(t, config.OTEL.EnableECSResourceDetection)
+		assert.True(t, config.OTEL.DisableRedirectOTELLogs)
+		assert.True(t, config.OTEL.DisableDatabaseOTELScans)
+	})
+
+	t.Run("should reject invalid otel duration fields", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			value string
+		}{
+			{name: "unparseable", value: "not-a-duration"},
+			{name: "negative", value: "-5s"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				evalHub := &evalhubv1.EvalHub{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-evalhub",
+						Namespace: "test-namespace",
+					},
+					Spec: evalhubv1.EvalHubSpec{
+						Otel: &evalhubv1.OTELSpec{
+							TracerTimeout: tc.value,
+						},
+					},
+				}
+
+				configMap := createConfigMap(configMapName, evalHub.Namespace)
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(evalHub, configMap).
+					Build()
+				reconciler := &EvalHubReconciler{
+					Client:    fakeClient,
+					Scheme:    scheme,
+					Namespace: evalHub.Namespace,
+				}
+				_, err := reconciler.generateConfigData(context.Background(), evalHub)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "tracerTimeout")
+			})
+		}
+	})
+
+	t.Run("should accept zero otel duration fields", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Otel: &evalhubv1.OTELSpec{
+					TracerTimeout: "0s",
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+		require.NotNil(t, config.OTEL)
+		assert.Equal(t, "0s", config.OTEL.TracerTimeout)
+	})
+
+	t.Run("should reject enableJobContainerLogs without enableLogs", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Otel: &evalhubv1.OTELSpec{
+					EnableJobContainerLogs: true,
+					EnableLogs:             false,
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		_, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "enableJobContainerLogs")
+	})
+
 	t.Run("should use custom values", func(t *testing.T) {
 		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{

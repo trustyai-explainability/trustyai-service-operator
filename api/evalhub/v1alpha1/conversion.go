@@ -30,15 +30,12 @@ func (src *EvalHub) ConvertTo(dstRaw conversion.Hub) error {
 	}
 
 	if src.Spec.Otel != nil {
-		dst.Spec.Otel = &v1.OTELSpec{
-			ExporterType:     src.Spec.Otel.ExporterType,
-			ExporterEndpoint: src.Spec.Otel.ExporterEndpoint,
-			ExporterInsecure: src.Spec.Otel.ExporterInsecure,
-			SamplingRatio:    src.Spec.Otel.SamplingRatio,
-			EnableTracing:    src.Spec.Otel.EnableTracing,
-			EnableMetrics:    src.Spec.Otel.EnableMetrics,
-			EnableLogs:       src.Spec.Otel.EnableLogs,
+		if dst.Spec.Otel == nil {
+			dst.Spec.Otel = &v1.OTELSpec{}
 		}
+		mergeOTELSpecToV1(src.Spec.Otel, dst.Spec.Otel)
+	} else {
+		dst.Spec.Otel = nil
 	}
 
 	if src.Spec.MCP != nil {
@@ -91,6 +88,8 @@ func (src *EvalHub) ConvertTo(dstRaw conversion.Hub) error {
 }
 
 // ConvertFrom converts the v1 EvalHub (hub version) to v1alpha1 EvalHub
+// Note: This conversion is not used in the operator, but it is here for completeness.
+// Note: The v1-only fields are not copied to the v1alpha1 EvalHub.
 func (dst *EvalHub) ConvertFrom(srcRaw conversion.Hub) error {
 	src := srcRaw.(*v1.EvalHub)
 
@@ -112,15 +111,7 @@ func (dst *EvalHub) ConvertFrom(srcRaw conversion.Hub) error {
 	}
 
 	if src.Spec.Otel != nil {
-		dst.Spec.Otel = &OTELSpec{
-			ExporterType:     src.Spec.Otel.ExporterType,
-			ExporterEndpoint: src.Spec.Otel.ExporterEndpoint,
-			ExporterInsecure: src.Spec.Otel.ExporterInsecure,
-			SamplingRatio:    src.Spec.Otel.SamplingRatio,
-			EnableTracing:    src.Spec.Otel.EnableTracing,
-			EnableMetrics:    src.Spec.Otel.EnableMetrics,
-			EnableLogs:       src.Spec.Otel.EnableLogs,
-		}
+		dst.Spec.Otel = copyOTELSpecFromV1(src.Spec.Otel)
 	}
 
 	if src.Spec.MCP != nil {
@@ -206,4 +197,30 @@ func copyInt32Ptr(p *int32) *int32 {
 	}
 	v := *p
 	return &v
+}
+
+func mergeOTELSpecToV1(src *OTELSpec, dst *v1.OTELSpec) {
+	dst.ExporterType = src.ExporterType
+	dst.ExporterEndpoint = src.ExporterEndpoint
+	dst.ExporterInsecure = src.ExporterInsecure
+	dst.SamplingRatio = src.SamplingRatio
+	dst.EnableTracing = src.EnableTracing
+	dst.EnableMetrics = src.EnableMetrics
+	dst.EnableLogs = src.EnableLogs
+}
+
+func copyOTELSpecFromV1(src *v1.OTELSpec) *OTELSpec {
+	if src == nil {
+		return nil
+	}
+	dst := &OTELSpec{
+		ExporterType:     src.ExporterType,
+		ExporterEndpoint: src.ExporterEndpoint,
+		ExporterInsecure: src.ExporterInsecure,
+		SamplingRatio:    src.SamplingRatio,
+		EnableTracing:    src.EnableTracing,
+		EnableMetrics:    src.EnableMetrics,
+		EnableLogs:       src.EnableLogs,
+	}
+	return dst
 }
