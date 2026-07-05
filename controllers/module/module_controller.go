@@ -41,6 +41,7 @@ type TrustyAIReconciler struct {
 //+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;create;update;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -96,6 +97,12 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Capture old status to detect changes
 	oldStatus := module.Status.DeepCopy()
 
+	// Reconcile DSC ConfigMap
+	if err := r.reconcileConfigMap(ctx, module); err != nil {
+		logger.Error(err, "Failed to reconcile DSC ConfigMap")
+		return ctrl.Result{}, err
+	}
+
 	// Run health checks and update conditions
 	if err := r.updateHealthStatus(ctx, module); err != nil {
 		logger.Error(err, "Failed to update health status")
@@ -125,8 +132,11 @@ func (r *TrustyAIReconciler) handleDeletion(ctx context.Context, module *modulev
 	if controllerutil.ContainsFinalizer(module, FinalizerName) {
 		logger.Info("Performing cleanup for TrustyAI module")
 
-		// Perform any cleanup operations here
-		// For now, we just remove the finalizer as the operator will clean up its own resources
+		// Delete DSC ConfigMap
+		if err := r.deleteDSCConfigMap(ctx); err != nil {
+			logger.Error(err, "Failed to delete DSC ConfigMap during cleanup")
+			return ctrl.Result{}, err
+		}
 
 		controllerutil.RemoveFinalizer(module, FinalizerName)
 		if err := r.Update(ctx, module); err != nil {

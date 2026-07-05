@@ -18,4 +18,11 @@ const (
 	// Phases
 	PhaseReady    = "Ready"
 	PhaseNotReady = "Not Ready"
+
+	// ConfigMap names
+	DSCConfigMapName = "trustyai-dsc-config"
+
+	// ConfigMap keys
+	LMEvalPermitCodeExecutionKey = "eval.lmeval.permitCodeExecution"
+	LMEvalPermitOnlineKey        = "eval.lmeval.permitOnline"
 )

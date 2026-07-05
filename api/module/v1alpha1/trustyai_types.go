@@ -40,6 +40,26 @@ type EnabledServices struct {
 	NemoGuardrails bool `json:"nemoGuardrails,omitempty"`
 }
 
+// LMEvalConfig defines LMEval-specific configuration
+type LMEvalConfig struct {
+	// PermitCodeExecution allows code execution in LMEval jobs
+	// +kubebuilder:default=false
+	// +optional
+	PermitCodeExecution bool `json:"permitCodeExecution,omitempty"`
+
+	// PermitOnline allows online access in LMEval jobs
+	// +kubebuilder:default=false
+	// +optional
+	PermitOnline bool `json:"permitOnline,omitempty"`
+}
+
+// EvalConfig defines evaluation-related configuration
+type EvalConfig struct {
+	// LMEval contains LMEval-specific settings
+	// +optional
+	LMEval LMEvalConfig `json:"lmeval,omitempty"`
+}
+
 // TrustyAISpec defines the desired state of TrustyAI module
 type TrustyAISpec struct {
 	// ManagementState indicates whether the module is managed or should be removed
@@ -50,6 +70,10 @@ type TrustyAISpec struct {
 	// EnabledServices defines which TrustyAI services are enabled
 	// +optional
 	EnabledServices EnabledServices `json:"enabledServices,omitempty"`
+
+	// Eval contains evaluation-related configuration
+	// +optional
+	Eval EvalConfig `json:"eval,omitempty"`
 }
 
 // DistributionInfo represents the distribution information

@@ -48,6 +48,23 @@ spec:
                 description: EnabledServices is a map of service names to their enabled
                   state
                 type: object
+              eval:
+                description: Eval contains evaluation-related configuration
+                properties:
+                  lmeval:
+                    description: LMEval contains LMEval-specific settings
+                    properties:
+                      permitCodeExecution:
+                        default: false
+                        description: PermitCodeExecution allows code execution in
+                          LMEval jobs
+                        type: boolean
+                      permitOnline:
+                        default: false
+                        description: PermitOnline allows online access in LMEval jobs
+                        type: boolean
+                    type: object
+                type: object
               managementState:
                 default: Managed
                 description: ManagementState indicates whether the module is managed
