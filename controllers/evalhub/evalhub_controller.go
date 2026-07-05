@@ -162,7 +162,10 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 					"or set spec.tenancy: single.",
 				corev1.ConditionFalse)
 			instance.Status.Phase = "Error"
-			r.Status().Update(ctx, instance)
+			if err := r.Status().Update(ctx, instance); err != nil {
+				log.Error(err, "Failed to update EvalHub status for invalid placement", "namespace", instance.Namespace)
+				return RequeueWithError(err)
+			}
 			r.EventRecorder.Event(instance, corev1.EventTypeWarning, invalidPlacementReason,
 				"multi-tenant EvalHub placed in a tenant namespace; deployment halted")
 			return DoNotRequeue()
