@@ -17,17 +17,7 @@ spec:
     singular: trustyai
   scope: Cluster
   versions:
-  - additionalPrinterColumns:
-    - jsonPath: .spec.managementState
-      name: Management State
-      type: string
-    - jsonPath: .status.phase
-      name: Phase
-      type: string
-    - jsonPath: .metadata.creationTimestamp
-      name: Age
-      type: date
-    name: v1alpha1
+  - name: v1alpha1
     schema:
       openAPIV3Schema:
         description: TrustyAI is the Schema for the trustyais API
@@ -53,23 +43,10 @@ spec:
             description: TrustyAISpec defines the desired state of TrustyAI module
             properties:
               enabledServices:
-                description: EnabledServices defines which TrustyAI services are enabled
-                properties:
-                  evalHub:
-                    description: EvalHub enables the EvalHub service
-                    type: boolean
-                  gorch:
-                    description: GORCH enables the Guardrails Orchestrator
-                    type: boolean
-                  lmes:
-                    description: LMES enables the LM Evaluation Service
-                    type: boolean
-                  nemoGuardrails:
-                    description: NemoGuardrails enables Nemo Guardrails
-                    type: boolean
-                  tas:
-                    description: TAS enables the TrustyAI Service
-                    type: boolean
+                additionalProperties:
+                  type: boolean
+                description: EnabledServices is a map of service names to their enabled
+                  state
                 type: object
               managementState:
                 default: Managed
@@ -78,7 +55,6 @@ spec:
                 enum:
                 - Managed
                 - Removed
-                - Unmanaged
                 type: string
             type: object
           status:
@@ -142,22 +118,6 @@ spec:
                   - type
                   type: object
                 type: array
-                x-kubernetes-list-map-keys:
-                - type
-                x-kubernetes-list-type: map
-              distribution:
-                description: Distribution contains information about the distribution
-                properties:
-                  name:
-                    description: Name is the name of the distribution
-                    type: string
-                  version:
-                    description: Version is the version of the distribution
-                    type: string
-                required:
-                - name
-                - version
-                type: object
               observedGeneration:
                 description: ObservedGeneration is the last generation reconciled
                   by the controller

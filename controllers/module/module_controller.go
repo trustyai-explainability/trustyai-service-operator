@@ -5,7 +5,6 @@ import (
 	"time"
 
 	modulev1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/module/v1alpha1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,11 +35,14 @@ type TrustyAIReconciler struct {
 	Namespace             string
 	OperatorConfigMapName string
 	EventRecorder         record.EventRecorder
+	SkipDependencyChecks  bool // Set to true to skip dependency validation (for testing)
 }
 
-//+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais/finalizers,verbs=update
+//+kubebuilder:rbac:groups=maistra.io,resources=servicemeshcontrolplanes,verbs=get;list
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheuses,verbs=get;list
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -93,8 +95,63 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.handleRemoval(ctx, module)
 	}
 
-	// Capture old status to detect changes
-	oldStatus := module.Status.DeepCopy()
+	// Check platform dependencies (unless skipped for testing)
+	if !r.SkipDependencyChecks {
+		dependencyResults, err := r.checkDependencies(ctx)
+		if err != nil {
+			logger.Error(err, "Failed to check dependencies")
+			return ctrl.Result{}, err
+		}
+
+		// Update DependenciesMet condition
+		dependenciesSatisfied := allDependenciesSatisfied(dependencyResults)
+		if dependenciesSatisfied {
+			meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+				Type:               ConditionTypeDependenciesMet,
+				Status:             metav1.ConditionTrue,
+				Reason:             "AllDependenciesMet",
+				Message:            formatDependencyMessages(dependencyResults),
+				ObservedGeneration: module.Generation,
+			})
+		} else {
+			meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+				Type:               ConditionTypeDependenciesMet,
+				Status:             metav1.ConditionFalse,
+				Reason:             "DependenciesMissing",
+				Message:            formatDependencyMessages(dependencyResults),
+				ObservedGeneration: module.Generation,
+			})
+
+			// Set phase to NotReady and block further reconciliation
+			module.Status.Phase = PhaseNotReady
+			meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+				Type:               ConditionTypeReady,
+				Status:             metav1.ConditionFalse,
+				Reason:             "DependenciesMissing",
+				Message:            "Cannot deploy: " + formatDependencyMessages(dependencyResults),
+				ObservedGeneration: module.Generation,
+			})
+
+			// Update status and requeue
+			if err := r.Status().Update(ctx, module); err != nil {
+				logger.Error(err, "Failed to update status after dependency check")
+				return ctrl.Result{}, err
+			}
+
+			logger.Info("Blocking deployment due to missing dependencies", "message", formatDependencyMessages(dependencyResults))
+			// Requeue after interval to re-check dependencies
+			return ctrl.Result{RequeueAfter: time.Duration(DefaultRequeueInterval) * time.Second}, nil
+		}
+	} else {
+		// Set DependenciesMet=True when checks are skipped (test mode)
+		meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+			Type:               ConditionTypeDependenciesMet,
+			Status:             metav1.ConditionTrue,
+			Reason:             "ChecksSkipped",
+			Message:            "Dependency checks skipped (test mode)",
+			ObservedGeneration: module.Generation,
+		})
+	}
 
 	// Run health checks and update conditions
 	if err := r.updateHealthStatus(ctx, module); err != nil {
@@ -105,13 +162,10 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Update releases information
 	r.updateReleases(module)
 
-	// Only update status if it changed
-	if !equality.Semantic.DeepEqual(oldStatus, &module.Status) {
-		if err := r.Status().Update(ctx, module); err != nil {
-			logger.Error(err, "Failed to update TrustyAI module status")
-			return ctrl.Result{}, err
-		}
-		logger.V(1).Info("Updated TrustyAI module status")
+	// Update status
+	if err := r.Status().Update(ctx, module); err != nil {
+		logger.Error(err, "Failed to update TrustyAI module status")
+		return ctrl.Result{}, err
 	}
 
 	// Requeue after interval for periodic health checks
@@ -144,13 +198,8 @@ func (r *TrustyAIReconciler) handleRemoval(ctx context.Context, module *modulev1
 	logger := log.FromContext(ctx)
 	logger.Info("TrustyAI module is in Removed state, skipping reconciliation")
 
-	// Capture old status to detect changes
-	oldStatus := module.Status.DeepCopy()
-
-	// Update phase and reset all conditions
+	// Update phase and conditions
 	module.Status.Phase = PhaseNotReady
-
-	// Set Ready=False
 	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
 		Type:               ConditionTypeReady,
 		Status:             metav1.ConditionFalse,
@@ -159,35 +208,13 @@ func (r *TrustyAIReconciler) handleRemoval(ctx context.Context, module *modulev1
 		ObservedGeneration: module.Generation,
 	})
 
-	// Reset ProvisioningSucceeded
-	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
-		Type:               ConditionTypeProvisioningSucceeded,
-		Status:             metav1.ConditionFalse,
-		Reason:             "ModuleRemoved",
-		Message:            "Module management state is set to Removed",
-		ObservedGeneration: module.Generation,
-	})
-
-	// Reset Degraded
-	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
-		Type:               ConditionTypeDegraded,
-		Status:             metav1.ConditionFalse,
-		Reason:             "ModuleRemoved",
-		Message:            "Module is not deployed",
-		ObservedGeneration: module.Generation,
-	})
-
-	// Only update status if it changed
-	if !equality.Semantic.DeepEqual(oldStatus, &module.Status) {
-		if err := r.Status().Update(ctx, module); err != nil {
-			logger.Error(err, "Failed to update TrustyAI module status")
-			return ctrl.Result{}, err
-		}
-		logger.V(1).Info("Updated TrustyAI module status after removal")
+	// Update status
+	if err := r.Status().Update(ctx, module); err != nil {
+		logger.Error(err, "Failed to update TrustyAI module status")
+		return ctrl.Result{}, err
 	}
 
-	// Requeue to handle potential state transitions
-	return ctrl.Result{RequeueAfter: time.Duration(DefaultRequeueInterval) * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 // updateHealthStatus runs health checks and updates status conditions
@@ -195,46 +222,10 @@ func (r *TrustyAIReconciler) updateHealthStatus(ctx context.Context, module *mod
 	logger := log.FromContext(ctx)
 
 	// TODO: Integrate with health checker (GAP-06/67662)
-	// Until health checker integration is complete, mark as NotReady to avoid false positives in DSC ModulesReady
-	module.Status.Phase = PhaseNotReady
-
-	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
-		Type:               ConditionTypeReady,
-		Status:             metav1.ConditionFalse,
-		Reason:             "HealthCheckPending",
-		Message:            "Health checker integration pending (RHOAIENG-67662)",
-		ObservedGeneration: module.Generation,
-	})
-
-	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
-		Type:               ConditionTypeProvisioningSucceeded,
-		Status:             metav1.ConditionFalse,
-		Reason:             "HealthCheckPending",
-		Message:            "Awaiting health checker integration",
-		ObservedGeneration: module.Generation,
-	})
-
-	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
-		Type:               ConditionTypeDegraded,
-		Status:             metav1.ConditionFalse,
-		Reason:             "HealthCheckPending",
-		Message:            "Health status unknown until health checker integration",
-		ObservedGeneration: module.Generation,
-	})
-
-	logger.Info("Health status update skipped - awaiting health checker integration", "phase", module.Status.Phase)
-
-	return nil
-}
-
-// updateHealthStatusOld is the old implementation that will be replaced by health checker integration
-// Keeping this commented out as reference for when health checker is integrated
-/*
-func (r *TrustyAIReconciler) updateHealthStatusOld(ctx context.Context, module *modulev1alpha1.TrustyAI) error {
-	logger := log.FromContext(ctx)
+	// For now, we'll set a basic Ready condition
 
 	// Check if all enabled services are healthy
-	// This will be replaced with actual health checker calls
+	// This is a placeholder - actual implementation will use health checkers
 	allHealthy := true
 	partiallyHealthy := false
 
@@ -291,7 +282,6 @@ func (r *TrustyAIReconciler) updateHealthStatusOld(ctx context.Context, module *
 
 	return nil
 }
-*/
 
 // updateReleases populates the releases field with component version information
 func (r *TrustyAIReconciler) updateReleases(module *modulev1alpha1.TrustyAI) {

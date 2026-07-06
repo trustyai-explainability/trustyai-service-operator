@@ -14,6 +14,7 @@ const (
 	ConditionTypeReady                 = "Ready"
 	ConditionTypeProvisioningSucceeded = "ProvisioningSucceeded"
 	ConditionTypeDegraded              = "Degraded"
+	ConditionTypeDependenciesMet       = "DependenciesMet"
 
 	// Phases
 	PhaseReady    = "Ready"
