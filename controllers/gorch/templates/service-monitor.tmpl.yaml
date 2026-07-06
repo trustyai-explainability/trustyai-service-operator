@@ -1,0 +1,22 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+    name: {{ .Orchestrator.Name }}-service-monitor
+    namespace: {{.Orchestrator.Namespace}}
+    labels:
+        component: {{ .Orchestrator.Name }}
+spec:
+    endpoints:
+        - bearerTokenSecret:
+              key: ''
+          honorLabels: true
+          interval: 30s
+          path: /metrics
+          scheme: http
+          port: {{ .TargetPort }}
+    selector:
+        matchLabels:
+            component: {{ .Orchestrator.Name }}
+    namespaceSelector:
+      matchNames:
+        - {{ .Orchestrator.Namespace }}

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{.Name}}
+  namespace: {{.Owner.Namespace}}
+  annotations:
+    service.beta.openshift.io/inject-cabundle: 'true'
+  labels:
+    app: {{.Owner.Name}}
+    component: {{.Owner.Name}}

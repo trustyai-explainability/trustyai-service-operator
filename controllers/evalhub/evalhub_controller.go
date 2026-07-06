@@ -1,0 +1,603 @@
+package evalhub
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+)
+
+func ControllerSetUp(mgr manager.Manager, ns, operatorConfigMapName string, recorder record.EventRecorder) error {
+	return (&EvalHubReconciler{
+		Client:                mgr.GetClient(),
+		Scheme:                mgr.GetScheme(),
+		restMapper:            mgr.GetRESTMapper(),
+		Namespace:             ns,
+		OperatorConfigMapName: operatorConfigMapName,
+		EventRecorder:         recorder,
+	}).SetupWithManager(mgr)
+}
+
+// EvalHubReconciler reconciles an EvalHub object
+type EvalHubReconciler struct {
+	client.Client
+	Scheme                *runtime.Scheme
+	restMapper            meta.RESTMapper
+	Namespace             string
+	OperatorConfigMapName string
+	EventRecorder         record.EventRecorder
+}
+
+//+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs/proxy,verbs=get;create
+//+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs/finalizers,verbs=update
+//+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=status-events,verbs=create
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=list;watch;get;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;delete
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update
+//+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=list;watch;get;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=namespaces,verbs=list;watch
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,resourceNames=trustyai-service-operator-evalhub-model-secret,verbs=bind
+//+kubebuilder:rbac:groups=infrastructure.opendatahub.io,resources=hardwareprofiles,verbs=get;list
+
+// Reconcile is part of the main kubernetes reconciliation loop which aims to
+// move the current state of the cluster closer to the desired state.
+func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+
+	// Fetch the EvalHub instance
+	instance := &evalhubv1.EvalHub{}
+	err := r.Get(ctx, req.NamespacedName, instance)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile request.
+			log.Info("EvalHub resource not found. Ignoring since object must be deleted")
+			return DoNotRequeue()
+		}
+		// Error reading the object - requeue the request.
+		log.Error(err, "Failed to get EvalHub")
+		return RequeueWithError(err)
+	}
+
+	log.Info("Reconciling EvalHub", "name", instance.Name, "namespace", instance.Namespace)
+
+	// Handle deletion first to avoid blocking removal with status init.
+	if instance.DeletionTimestamp != nil {
+		return r.handleDeletion(ctx, instance)
+	}
+
+	// Set initial status if not set
+	if instance.Status.Phase == "" {
+		instance.Status.Phase = "Pending"
+		instance.Status.Ready = corev1.ConditionFalse
+		instance.SetStatus("Ready", "Initializing", "EvalHub is initializing", corev1.ConditionFalse)
+		if err := r.Status().Update(ctx, instance); err != nil {
+			log.Error(err, "Failed to update EvalHub status")
+			return RequeueWithError(err)
+		}
+		return RequeueWithDelay(time.Second * 5)
+	}
+
+	// Add finalizer if not present
+	if !controllerutil.ContainsFinalizer(instance, evalhubv1.FinalizerName) {
+		controllerutil.AddFinalizer(instance, evalhubv1.FinalizerName)
+		if err := r.Update(ctx, instance); err != nil {
+			log.Error(err, "Failed to add finalizer")
+			return RequeueWithError(err)
+		}
+		return RequeueWithDelay(time.Second * 5)
+	}
+
+	// Validate that database configuration is explicitly provided
+	if !instance.Spec.IsDatabaseConfigured() {
+		log.Error(nil, "Database configuration is missing from EvalHub spec - database settings must be explicit")
+		instance.SetStatus("Ready", "DatabaseConfigMissing",
+			"spec.database is required: set spec.database.type to \"sqlite\" or \"postgresql\". "+
+				"The operator does not assume a default database.",
+			corev1.ConditionFalse)
+		instance.Status.Phase = "Error"
+		r.Status().Update(ctx, instance)
+		r.EventRecorder.Event(instance, corev1.EventTypeWarning, "DatabaseConfigMissing",
+			"Database configuration is required but not provided in spec.database")
+		return RequeueWithError(fmt.Errorf("spec.database is required: the operator does not assume a default database"))
+	}
+
+	// Validate that postgresql has a secret reference
+	if instance.Spec.IsPostgreSQL() && instance.Spec.Database.Secret == "" {
+		log.Error(nil, "PostgreSQL database type requires a secret reference")
+		instance.SetStatus("Ready", "DatabaseConfigInvalid",
+			"spec.database.secret is required when type is \"postgresql\"",
+			corev1.ConditionFalse)
+		instance.Status.Phase = "Error"
+		r.Status().Update(ctx, instance)
+		r.EventRecorder.Event(instance, corev1.EventTypeWarning, "DatabaseConfigInvalid",
+			"PostgreSQL database type requires spec.database.secret to reference a Secret with a db-url key")
+		return RequeueWithError(fmt.Errorf("spec.database.secret is required for postgresql"))
+	}
+
+	// Create ServiceAccount for EvalHub
+	err = r.createServiceAccount(ctx, instance)
+	if err != nil {
+		log.Error(err, "Failed to create ServiceAccount")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to create ServiceAccount: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
+	// Create ServiceAccount for jobs in the instance namespace.
+	err = r.createJobsServiceAccount(ctx, instance, instance.Namespace)
+	if err != nil {
+		log.Error(err, "Failed to create job ServiceAccount")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to create job ServiceAccount: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
+	// Reconcile tenant namespaces: create job SAs and API SA bindings in any
+	// namespace labelled with evalhub.trustyai.opendatahub.io/tenant.
+	if err := r.reconcileTenantNamespaces(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile tenant namespaces")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile tenant namespaces: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
+	// Reconcile ConfigMap
+	if err := r.reconcileConfigMap(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile ConfigMap")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile ConfigMap: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
+	// Reconcile Service CA ConfigMap (for jobs to mount service CA certificate)
+	if err := r.reconcileServiceCAConfigMap(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile Service CA ConfigMap")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Service CA ConfigMap: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
+	// Reconcile Provider ConfigMaps (copy from operator namespace to instance namespace)
+	providerCMNames, err := r.reconcileProviderConfigMaps(ctx, instance)
+	if err != nil {
+		log.Error(err, "Failed to reconcile Provider ConfigMaps")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Provider ConfigMaps: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+	instance.Status.ActiveProviders = instance.Spec.Providers
+
+	// Reconcile Collection ConfigMaps (copy from operator namespace to instance namespace)
+	collectionCMNames, err := r.reconcileCollectionConfigMaps(ctx, instance)
+	if err != nil {
+		log.Error(err, "Failed to reconcile Collection ConfigMaps")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Collection ConfigMaps: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+	instance.Status.ActiveCollections = instance.Spec.Collections
+
+	// Reconcile Deployment
+	if err := r.reconcileDeployment(ctx, instance, providerCMNames, collectionCMNames); err != nil {
+		log.Error(err, "Failed to reconcile Deployment")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Deployment: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
+	// Reconcile Service
+	if err := r.reconcileService(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile Service")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Service: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
+	// Reconcile metrics Service (dedicated ClusterIP for Prometheus scraping on metricsPort)
+	if err := r.reconcileMetricsService(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile metrics Service")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile metrics Service: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
+	// Reconcile monitoring resources (ServiceMonitor).
+	// Monitoring failures are non-fatal: log, set a degraded condition, and continue.
+	// The condition is set in memory only — updateStatus() at the end of the loop
+	// persists the full status in a single write, avoiding mid-reconcile status
+	// updates that would trigger unnecessary re-reconciles.
+	if r.isServiceMonitorSupported() {
+		if err := r.reconcileServiceMonitor(ctx, instance); err != nil {
+			log.Error(err, "Failed to reconcile ServiceMonitor")
+			instance.SetStatus("MonitoringDegraded", "ServiceMonitorFailed", fmt.Sprintf("Failed to reconcile ServiceMonitor: %v", err), corev1.ConditionTrue)
+		} else {
+			instance.SetStatus("MonitoringDegraded", "MonitoringReady", "", corev1.ConditionFalse)
+		}
+	} else {
+		log.Info("ServiceMonitor CRD not available on this cluster, skipping monitoring reconciliation")
+	}
+
+	// Reconcile Route (if on OpenShift and enabled)
+	if err := r.reconcileRoute(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile Route")
+		// Log warning but don't update status - Route is optional (OpenShift only)
+		// The Ready status will be determined by updateStatus based on deployment readiness
+		// Route errors are not fatal, continue
+	}
+
+	// Reconcile optional MCP resources. Failures are recorded on status.mcp only; EvalHub API
+	// readiness is determined from the main deployment in updateStatus.
+	mcpReconcileOK := true
+	if instance.Spec.IsMCPEnabled() {
+		mcpReconcileOK = r.reconcileMCPServer(ctx, instance)
+	}
+
+	// Check deployment status and update EvalHub status
+	if err := r.updateStatus(ctx, instance, mcpReconcileOK); err != nil {
+		log.Error(err, "Failed to update EvalHub status")
+		return RequeueWithError(err)
+	}
+
+	// If everything is ready, requeue after a longer delay for periodic checks
+	if instance.IsReady() {
+		return RequeueWithDelay(time.Minute * 5)
+	}
+
+	return RequeueWithDelay(time.Second * 30)
+}
+
+// SetupWithManager registers the EvalHub CR reconciler, the evaluation Job failure → EvalHub events controller,
+// and optionally the evaluation failed Kueue Workload → EvalHub events controller when the cluster serves
+// kueue.x-k8s.io/v1beta1 workloads.
+// It creates and bootstraps a shared evalHubTenantNamespaces cache, then passes it to the auxiliary controllers.
+// controller-runtime runs separate loops for EvalHub, batch Job, and (if installed) kueue Workload.
+func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	b := ctrl.NewControllerManagedBy(mgr).
+		Named("evalhub").
+		For(&evalhubv1.EvalHub{}).
+		Owns(&appsv1.Deployment{}).
+		Owns(&corev1.Service{}, builder.OnlyMetadata).
+		Owns(&corev1.ConfigMap{}, builder.OnlyMetadata).
+		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.mapNamespaceToEvalHubs), builder.OnlyMetadata, builder.WithPredicates(tenantLabelPredicate()))
+
+	if r.isServiceMonitorSupported() {
+		b = b.Owns(&monitoringv1.ServiceMonitor{}, builder.OnlyMetadata)
+	}
+
+	if err := b.Complete(r); err != nil {
+		return err
+	}
+	tenantNS := newEvalHubTenantNamespaces()
+	if err := tenantNS.bootstrap(context.Background(), mgr.GetAPIReader()); err != nil {
+		return fmt.Errorf("evalhub: bootstrap tenant namespaces: %w", err)
+	}
+	if err := registerEvalHubEvaluationJobFailureController(mgr, tenantNS); err != nil {
+		return err
+	}
+	if clusterSupportsKueueWorkloads(mgr.GetConfig()) {
+		return registerEvalHubEvaluationFailedKueueWorkloadsReconciler(mgr, tenantNS)
+	}
+	log.Log.Info("Kueue Workload API not available; skipping EvalHub failed Kueue Workloads controller",
+		"groupVersion", "kueue.x-k8s.io/v1beta1", "resource", kueueWorkloadResourceName)
+	return nil
+}
+
+// tenantLabelPredicate returns a predicate that fires only when the tenant label is
+// added to or removed from a namespace. This avoids triggering a full reconcile on
+// every namespace update across the cluster.
+//
+// - Create/Delete: pass only if the namespace carries the tenant label.
+// - Update: pass only if the tenant label presence changed (added or removed).
+// - Generic: ignored.
+func tenantLabelPredicate() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			_, has := e.Object.GetLabels()[tenantLabel]
+			return has
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			_, oldHas := e.ObjectOld.GetLabels()[tenantLabel]
+			_, newHas := e.ObjectNew.GetLabels()[tenantLabel]
+			return oldHas != newHas
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			_, has := e.Object.GetLabels()[tenantLabel]
+			return has
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+	}
+}
+
+// mapNamespaceToEvalHubs maps a Namespace event to reconcile requests for all EvalHub
+// instances. The tenantLabelPredicate ensures this is only called when the tenant label
+// is added to or removed from a namespace, so we enqueue unconditionally here.
+func (r *EvalHubReconciler) mapNamespaceToEvalHubs(ctx context.Context, _ client.Object) []ctrl.Request {
+	evalHubList := &evalhubv1.EvalHubList{}
+	if err := r.List(ctx, evalHubList); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to list EvalHub instances for namespace watch")
+		return nil
+	}
+
+	requests := make([]ctrl.Request, len(evalHubList.Items))
+	for i, eh := range evalHubList.Items {
+		requests[i] = ctrl.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      eh.Name,
+				Namespace: eh.Namespace,
+			},
+		}
+	}
+	return requests
+}
+
+// Helper functions for reconcile results
+func DoNotRequeue() (ctrl.Result, error) {
+	return ctrl.Result{}, nil
+}
+
+func RequeueWithError(err error) (ctrl.Result, error) {
+	return ctrl.Result{}, err
+}
+
+func RequeueWithDelay(delay time.Duration) (ctrl.Result, error) {
+	return ctrl.Result{RequeueAfter: delay}, nil
+}
+
+func Requeue() (ctrl.Result, error) {
+	return ctrl.Result{Requeue: true}, nil
+}
+
+// handleDeletion handles the deletion of EvalHub resources
+func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhubv1.EvalHub) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+	log.Info("Handling EvalHub deletion", "name", instance.Name)
+
+	// Clean up cluster-scoped resources that won't be garbage collected
+	if err := r.cleanupClusterRoleBinding(ctx, instance); err != nil {
+		log.Error(err, "Failed to cleanup ClusterRoleBinding")
+		return RequeueWithError(err)
+	}
+
+	// Clean up job resources (SA, Roles, RoleBindings) which use labels instead of owner refs
+	if err := r.cleanupJobResources(ctx, instance); err != nil {
+		log.Error(err, "Failed to cleanup job resources")
+		return RequeueWithError(err)
+	}
+
+	// Remove finalizer
+	controllerutil.RemoveFinalizer(instance, evalhubv1.FinalizerName)
+	if err := r.Update(ctx, instance); err != nil {
+		log.Error(err, "Failed to remove finalizer")
+		return RequeueWithError(err)
+	}
+
+	return DoNotRequeue()
+}
+
+// cleanupClusterRoleBinding deletes EvalHub cluster-scoped RBAC resources upon instance deletion.
+func (r *EvalHubReconciler) cleanupClusterRoleBinding(ctx context.Context, instance *evalhubv1.EvalHub) error {
+	// Delete auth reviewer ClusterRoleBinding (cannot be owner-ref'd to a namespaced resource)
+	authCRBName := generateAuthReviewerClusterRoleBindingName(instance)
+	if err := r.deleteClusterRoleBinding(ctx, authCRBName); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// cleanupJobResources deletes job-related resources (ServiceAccounts, Roles, RoleBindings)
+// that are identified by the eval-hub.trustyai.opendatahub.io label. These resources do not
+// use owner references because they may reside in a different namespace from the EvalHub CR.
+func (r *EvalHubReconciler) cleanupJobResources(ctx context.Context, instance *evalhubv1.EvalHub) error {
+	log := log.FromContext(ctx)
+	selector := client.MatchingLabels{
+		"eval-hub.trustyai.opendatahub.io": jobResourceInstanceID(instance),
+		"app.kubernetes.io/component":      "job",
+	}
+
+	// Delete RoleBindings
+	rbList := &rbacv1.RoleBindingList{}
+	if err := r.List(ctx, rbList, selector); err != nil {
+		return err
+	}
+	for i := range rbList.Items {
+		log.Info("Deleting job RoleBinding", "Name", rbList.Items[i].Name, "Namespace", rbList.Items[i].Namespace)
+		if err := r.Delete(ctx, &rbList.Items[i]); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	// Delete Roles
+	roleList := &rbacv1.RoleList{}
+	if err := r.List(ctx, roleList, selector); err != nil {
+		return err
+	}
+	for i := range roleList.Items {
+		log.Info("Deleting job Role", "Name", roleList.Items[i].Name, "Namespace", roleList.Items[i].Namespace)
+		if err := r.Delete(ctx, &roleList.Items[i]); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	// Delete ServiceAccounts
+	saList := &corev1.ServiceAccountList{}
+	if err := r.List(ctx, saList, selector); err != nil {
+		return err
+	}
+	for i := range saList.Items {
+		log.Info("Deleting job ServiceAccount", "Name", saList.Items[i].Name, "Namespace", saList.Items[i].Namespace)
+		if err := r.Delete(ctx, &saList.Items[i]); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// deleteClusterRoleBinding deletes a specific ClusterRoleBinding by name
+func (r *EvalHubReconciler) deleteClusterRoleBinding(ctx context.Context, crbName string) error {
+	log := log.FromContext(ctx)
+
+	crb := &rbacv1.ClusterRoleBinding{}
+	log.Info("Deleting ClusterRoleBinding", "name", crbName)
+
+	err := r.Get(ctx, types.NamespacedName{Name: crbName}, crb)
+	if err == nil {
+		// ClusterRoleBinding exists, delete it
+		return r.Delete(ctx, crb)
+	} else if errors.IsNotFound(err) {
+		// ClusterRoleBinding doesn't exist, nothing to do
+		log.Info("ClusterRoleBinding not found, may have been already deleted", "name", crbName)
+		return nil
+	} else {
+		// Error getting ClusterRoleBinding
+		return err
+	}
+}
+
+// updateStatus updates the EvalHub status based on the deployment status
+func (r *EvalHubReconciler) updateStatus(ctx context.Context, instance *evalhubv1.EvalHub, mcpReconcileOK bool) error {
+	log := log.FromContext(ctx)
+
+	// Get the deployment
+	deployment := &appsv1.Deployment{}
+	err := r.Get(ctx, client.ObjectKey{
+		Namespace: instance.Namespace,
+		Name:      instance.Name,
+	}, deployment)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			instance.Status.Phase = "Pending"
+			instance.Status.Ready = corev1.ConditionFalse
+			instance.SetStatus("Ready", "DeploymentNotFound", "Deployment not found", corev1.ConditionFalse)
+			return r.Status().Update(ctx, instance)
+		}
+		return err
+	}
+
+	// Update replica counts
+	instance.Status.Replicas = deployment.Status.Replicas
+	instance.Status.ReadyReplicas = deployment.Status.ReadyReplicas
+
+	// Determine readiness based on deployment status
+	ready := deployment.Status.ReadyReplicas > 0 &&
+		deployment.Status.ReadyReplicas == deployment.Status.Replicas
+
+	if ready {
+		instance.Status.Phase = "Ready"
+		instance.Status.Ready = corev1.ConditionTrue
+		instance.SetStatus("Ready", "DeploymentReady", "All replicas are ready", corev1.ConditionTrue)
+
+		// Set URL based on service
+		instance.Status.URL = fmt.Sprintf("https://%s.%s.svc.cluster.local:%d",
+			instance.Name, instance.Namespace, servicePort)
+	} else {
+		instance.Status.Phase = "Pending"
+		instance.Status.Ready = corev1.ConditionFalse
+		instance.SetStatus("Ready", "DeploymentNotReady",
+			fmt.Sprintf("Waiting for deployment to be ready (%d/%d replicas ready)",
+				deployment.Status.ReadyReplicas, deployment.Status.Replicas),
+			corev1.ConditionFalse)
+	}
+
+	// Update MCP status
+	r.updateMCPStatus(ctx, instance, mcpReconcileOK)
+
+	log.Info("Updating EvalHub status", "phase", instance.Status.Phase, "ready", instance.Status.Ready)
+	return r.Status().Update(ctx, instance)
+}
+
+// updateMCPStatus sets the MCP sub-status based on reconcile outcome and MCP deployment readiness.
+func (r *EvalHubReconciler) updateMCPStatus(ctx context.Context, instance *evalhubv1.EvalHub, mcpReconcileOK bool) {
+	if !instance.Spec.IsMCPEnabled() {
+		instance.Status.MCP = &evalhubv1.EvalHubMCPStatus{
+			Phase: "Disabled",
+			Ready: false,
+		}
+		return
+	}
+
+	if !mcpReconcileOK {
+		// reconcileMCPServer already set status.mcp phase/conditions
+		if instance.Status.MCP == nil {
+			instance.Status.MCP = &evalhubv1.EvalHubMCPStatus{
+				Phase: "Error",
+				Ready: false,
+			}
+		}
+		return
+	}
+
+	mcpStatus := &evalhubv1.EvalHubMCPStatus{
+		Phase: "Pending",
+		Ready: false,
+	}
+	conditions := instance.Status.MCP
+	if conditions != nil {
+		mcpStatus.Conditions = conditions.Conditions
+	}
+	setMCPCondition(&mcpStatus.Conditions, mcpConditionReconciled, metav1.ConditionTrue, "ReconcileComplete", "", instance.Generation)
+
+	deployment := &appsv1.Deployment{}
+	err := r.Get(ctx, client.ObjectKey{
+		Namespace: instance.Namespace,
+		Name:      mcpDeploymentName(instance),
+	}, deployment)
+
+	log := log.FromContext(ctx)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			mcpStatus.Phase = "Pending"
+			setMCPCondition(&mcpStatus.Conditions, mcpConditionReady, metav1.ConditionFalse, "DeploymentNotFound", "MCP deployment not found", instance.Generation)
+		} else {
+			log.Error(err, "Failed to get MCP deployment for status update")
+			mcpStatus.Phase = "Error"
+			setMCPCondition(&mcpStatus.Conditions, mcpConditionReady, metav1.ConditionFalse, "DeploymentGetFailed", err.Error(), instance.Generation)
+		}
+	} else if deployment.Status.ReadyReplicas > 0 && deployment.Status.ReadyReplicas == deployment.Status.Replicas {
+		mcpStatus.Phase = "Ready"
+		mcpStatus.Ready = true
+		mcpStatus.URL = fmt.Sprintf("https://%s.%s.svc.cluster.local:%d",
+			mcpServiceName(instance), instance.Namespace, mcpServicePort)
+		setMCPCondition(&mcpStatus.Conditions, mcpConditionReady, metav1.ConditionTrue, "DeploymentReady", "All MCP replicas are ready", instance.Generation)
+	} else {
+		mcpStatus.Phase = "Pending"
+		setMCPCondition(&mcpStatus.Conditions, mcpConditionReady, metav1.ConditionFalse, "DeploymentNotReady",
+			fmt.Sprintf("Waiting for MCP deployment (%d/%d replicas ready)",
+				deployment.Status.ReadyReplicas, deployment.Status.Replicas),
+			instance.Generation)
+	}
+
+	instance.Status.MCP = mcpStatus
+}

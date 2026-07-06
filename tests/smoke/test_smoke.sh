@@ -1,0 +1,106 @@
+#!/bin/bash
+
+# Define the namespace
+NAMESPACE="test-1"
+
+# Define the path to the CRD
+CRD_PATH="./tests/smoke/manifests/trustyai-cr.yaml"
+
+# Define the expected names
+PVC_NAME="trustyai-service-pvc"
+SERVICE_NAME_1="trustyai-service"
+SERVICE_NAME_2="trustyai-service-tls"
+DEPLOYMENT_NAME="trustyai-service-operator-controller-manager"
+
+EXPECTED_IMAGE="smoke/operator:pr-${PR_NUMBER:-default-pr-number}"
+
+log_success() {
+    local message=$1
+    echo "✅ $message"
+}
+
+log_failure() {
+    local message=$1
+    echo "❌ $message"
+
+    # Dump operator logs if the pod exists
+    OPERATOR_POD=$(kubectl get pods -n system -l control-plane=trustyai-service-operator -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    if [[ -n "$OPERATOR_POD" ]]; then
+        echo ""
+        echo "========== Operator Pod Logs =========="
+        kubectl logs -n system "$OPERATOR_POD" --all-containers --tail=100 || echo "Failed to retrieve operator logs"
+        echo "========================================"
+    fi
+
+    exit 1
+}
+
+# Function to check resource existence
+check_resource() {
+    local resource_type=$1
+    local resource_name=$2
+    local namespace=$3
+
+    if ! kubectl get "$resource_type" -n "$namespace" | grep -q "$resource_name"; then
+        log_failure "Failed to find $resource_type: $resource_name in namespace $namespace"
+    else
+        log_success "$resource_type: $resource_name found in namespace $namespace"
+    fi
+}
+
+gen_cert() {
+    openssl req -x509 -nodes -newkey rsa:2048 -keyout tls.key -days 365 -out tls.crt -subj '/CN=trustyai-service-tls'
+    kubectl create secret generic trustyai-service-internal  --from-file=./tls.crt --from-file=./tls.key -n "$NAMESPACE"
+    kubectl create secret generic trustyai-service-tls  --from-file=./tls.crt --from-file=./tls.key -n "$NAMESPACE"
+    rm tls.key tls.crt
+}
+
+# Apply the CR (note: this is a v1alpha1 CR that will be converted to v1 by the webhook)
+kubectl create namespace "$NAMESPACE"
+gen_cert
+kubectl apply -f "$CRD_PATH" -n "$NAMESPACE"
+
+# Wait for TrustyAIService to be created (confirms webhook conversion worked)
+echo "Waiting for TrustyAIService to be created and reconciled..."
+for i in {1..30}; do
+    if kubectl get trustyaiservice trustyai-service -n "$NAMESPACE" &> /dev/null; then
+        echo "TrustyAIService resource found"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        log_failure "TrustyAIService was not created after 30 seconds"
+    fi
+    sleep 1
+done
+
+# Wait for reconciliation to complete (give controller time to create resources)
+sleep 15
+
+# Check for the creation of services
+check_resource service "$SERVICE_NAME_1" "$NAMESPACE"
+check_resource service "$SERVICE_NAME_2" "$NAMESPACE"
+
+# Check for the PVC creation
+check_resource pvc "$PVC_NAME" "$NAMESPACE"
+
+# Check for correct Operator image assignment
+OPERATOR_IMAGE=$(kubectl get deployment "${DEPLOYMENT_NAME}" -n system \
+  -o jsonpath='{.spec.template.spec.containers[0].image}')
+
+if [[ "${OPERATOR_IMAGE}" == "${EXPECTED_IMAGE}" ]]; then
+  log_success "Operator image is correct: ${OPERATOR_IMAGE}"
+else
+  log_failure "Operator image mismatch! Expected ${EXPECTED_IMAGE}, got ${OPERATOR_IMAGE}"
+fi
+
+kubectl delete namespace "$NAMESPACE"
+
+sleep 10
+
+if kubectl get namespace "$NAMESPACE" &> /dev/null; then
+    log_failure "Namespace $NAMESPACE was not deleted successfully"
+else
+    log_success "Namespace $NAMESPACE has been deleted successfully"
+fi
+
+echo "All tests passed successfully."

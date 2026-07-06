@@ -1,0 +1,30 @@
+FROM registry.access.redhat.com/ubi9/go-toolset:1.26 AS builder
+
+WORKDIR /go/src/github.com/trustyai-explainability/trustyai-service-operator
+# Copy the Go Modules manifests
+COPY go.mod go.mod
+COPY go.sum go.sum
+# cache deps before building and copying source so that we don't need to re-download as much
+# and so that source changes don't invalidate our downloaded layer
+RUN go mod download
+# Copy the go source
+COPY cmd/ cmd/
+COPY api/ api/
+COPY controllers/ controllers/
+
+# Copy license
+COPY LICENSE /licenses/ta-lmes-driver.md
+
+USER root
+RUN GO111MODULE=on CGO_ENABLED=1 GOOS=linux GOEXPERIMENT=strictfipsruntime \
+    go build -tags 'strictfipsruntime netgo' -o /bin/driver ./cmd/lmes_driver/*.go
+
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+COPY --from=builder /bin/driver /bin/driver
+
+USER 65532:65532
+
+WORKDIR /bin
+
+ENTRYPOINT [ "/bin/driver" ]

@@ -1,0 +1,46 @@
+name: Tier 1 - Manifest policy check
+
+on: [push, pull_request]
+
+jobs:
+  conftest-rbac:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@2ba527d4d055ab63514ba50a99456fc35684947f # v2
+        with:
+          kustomize-version: "5.7.0"
+
+      - name: Install conftest
+        run: |
+          CONFTEST_VERSION=0.68.2
+          curl -sSL "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" \
+            | tar -xz -C /usr/local/bin conftest
+
+      - name: Run OPA unit tests
+        run: conftest verify --policy policy/
+
+      - name: Check manifest policies (all kustomize targets)
+        run: |
+          failed=0
+          for target in \
+            config/base \
+            config/overlays/odh \
+            config/overlays/rhoai \
+            config/overlays/lmes \
+            config/overlays/odh-kueue \
+            config/overlays/testing \
+            config/overlays/mcp-guardrails; do
+            echo "=== Testing $target ==="
+            rendered=$(kustomize build "$target")
+            for ns in rbac selector; do
+              if ! echo "$rendered" | conftest test --policy policy/ --namespace "$ns" -; then
+                failed=1
+              fi
+            done
+          done
+          exit $failed

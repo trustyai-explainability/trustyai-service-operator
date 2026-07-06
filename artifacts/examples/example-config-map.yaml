@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trustyai-service-operator-config
+data:
+  trustyaiServiceImage: "quay.io/trustyai/trustyai-service:latest"
+  evalHubImage: "quay.io/ruimvieira/eval-hub:latest"  # example image

@@ -1,0 +1,2501 @@
+package evalhub
+
+import (
+	"context"
+	"testing"
+
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/yaml"
+)
+
+func TestEvalHubReconciler_reconcileService(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		Namespace:     testNamespace,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should create service with correct spec", func(t *testing.T) {
+		err := reconciler.reconcileService(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Verify service was created
+		service := &corev1.Service{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		}, service)
+		require.NoError(t, err)
+
+		// Check basic service properties
+		assert.Equal(t, evalHubName, service.Name)
+		assert.Equal(t, testNamespace, service.Namespace)
+		assert.Equal(t, corev1.ServiceTypeClusterIP, service.Spec.Type)
+
+		// Check ports
+		require.Len(t, service.Spec.Ports, 1)
+		port := service.Spec.Ports[0]
+		assert.Equal(t, "https", port.Name)
+		assert.Equal(t, int32(8443), port.Port)
+		assert.Equal(t, intstr.FromString("https"), port.TargetPort)
+		assert.Equal(t, corev1.ProtocolTCP, port.Protocol)
+
+		// Check selector
+		assert.Equal(t, "eval-hub", service.Spec.Selector["app"])
+		assert.Equal(t, evalHubName, service.Spec.Selector["instance"])
+		assert.Equal(t, "api", service.Spec.Selector["component"])
+	})
+}
+
+func TestEvalHubReconciler_reconcileConfigMap(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		},
+	}
+
+	operatorCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMapName,
+			Namespace: testNamespace,
+		},
+		Data: map[string]string{
+			configMapEvalHubImageKey:       testReconcilerEvalHubImage,
+			configMapKubeRBACProxyImageKey: testKubeRBACProxyImage,
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub, operatorCM).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		Namespace:     testNamespace,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should create configmap with valid configuration", func(t *testing.T) {
+		err := reconciler.reconcileConfigMap(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Verify configmap was created
+		configMap := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName + "-config",
+			Namespace: testNamespace,
+		}, configMap)
+		require.NoError(t, err)
+
+		// Check basic configmap properties
+		assert.Equal(t, evalHubName+"-config", configMap.Name)
+		assert.Equal(t, testNamespace, configMap.Namespace)
+
+		// Check data keys exist
+		assert.Contains(t, configMap.Data, "config.yaml")
+
+		// Parse and validate config.yaml
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), &config)
+		require.NoError(t, err)
+	})
+}
+
+func TestEvalHubReconciler_updateStatus(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		},
+	}
+
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		},
+		Status: appsv1.DeploymentStatus{
+			Replicas:      2,
+			ReadyReplicas: 2,
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub, deployment).
+		WithStatusSubresource(&evalhubv1.EvalHub{}).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		Namespace:     testNamespace,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should update status to Ready when deployment is ready", func(t *testing.T) {
+		err := reconciler.updateStatus(ctx, evalHub, true)
+		require.NoError(t, err)
+
+		// Verify status was updated
+		updatedEvalHub := &evalhubv1.EvalHub{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		}, updatedEvalHub)
+		require.NoError(t, err)
+
+		assert.Equal(t, "Ready", updatedEvalHub.Status.Phase)
+		assert.Equal(t, corev1.ConditionTrue, updatedEvalHub.Status.Ready)
+		assert.Equal(t, int32(2), updatedEvalHub.Status.Replicas)
+		assert.Equal(t, int32(2), updatedEvalHub.Status.ReadyReplicas)
+
+		expectedURL := "https://test-evalhub.test-namespace.svc.cluster.local:8443"
+		assert.Equal(t, expectedURL, updatedEvalHub.Status.URL)
+
+		// Check conditions
+		require.NotEmpty(t, updatedEvalHub.Status.Conditions)
+		var readyCondition *common.Condition
+		for i := range updatedEvalHub.Status.Conditions {
+			if updatedEvalHub.Status.Conditions[i].Type == "Ready" {
+				readyCondition = &updatedEvalHub.Status.Conditions[i]
+				break
+			}
+		}
+		require.NotNil(t, readyCondition)
+		assert.Equal(t, corev1.ConditionTrue, readyCondition.Status)
+		assert.Equal(t, "DeploymentReady", readyCondition.Reason)
+	})
+
+	t.Run("should update status to Pending when deployment not ready", func(t *testing.T) {
+		// Update deployment to not ready
+		deployment.Status.ReadyReplicas = 1
+		err := fakeClient.Status().Update(ctx, deployment)
+		require.NoError(t, err)
+
+		err = reconciler.updateStatus(ctx, evalHub, true)
+		require.NoError(t, err)
+
+		// Verify status was updated
+		updatedEvalHub := &evalhubv1.EvalHub{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		}, updatedEvalHub)
+		require.NoError(t, err)
+
+		assert.Equal(t, "Pending", updatedEvalHub.Status.Phase)
+		assert.Equal(t, corev1.ConditionFalse, updatedEvalHub.Status.Ready)
+
+		// Check conditions
+		require.NotEmpty(t, updatedEvalHub.Status.Conditions)
+		var readyCondition *common.Condition
+		for i := range updatedEvalHub.Status.Conditions {
+			if updatedEvalHub.Status.Conditions[i].Type == "Ready" {
+				readyCondition = &updatedEvalHub.Status.Conditions[i]
+				break
+			}
+		}
+		require.NotNil(t, readyCondition)
+		assert.Equal(t, corev1.ConditionFalse, readyCondition.Status)
+		assert.Equal(t, "DeploymentNotReady", readyCondition.Reason)
+		assert.Contains(t, readyCondition.Message, "Waiting for deployment to be ready")
+	})
+}
+
+func TestGenerateConfigData(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-evalhub",
+			Namespace: "test-namespace",
+		},
+	}
+
+	configMap := createConfigMap(configMapName, evalHub.Namespace)
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub, configMap).
+		Build()
+	reconciler := &EvalHubReconciler{
+		Client:    fakeClient,
+		Scheme:    scheme,
+		Namespace: evalHub.Namespace,
+	}
+
+	t.Run("should generate valid configuration data", func(t *testing.T) {
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		// Check keys exist
+		assert.Contains(t, configData, "config.yaml")
+
+		// Parse config.yaml
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+	})
+}
+
+func TestEvalHubHelperMethods(t *testing.T) {
+	t.Run("EvalHub IsReady method", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{}
+
+		// Test not ready
+		evalHub.Status.Ready = corev1.ConditionFalse
+		assert.False(t, evalHub.IsReady())
+
+		// Test ready
+		evalHub.Status.Ready = corev1.ConditionTrue
+		assert.True(t, evalHub.IsReady())
+	})
+
+	t.Run("EvalHub SetStatus method", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{}
+
+		// Set initial status
+		evalHub.SetStatus("Ready", "TestReason", "Test message", corev1.ConditionTrue)
+
+		require.Len(t, evalHub.Status.Conditions, 1)
+		condition := evalHub.Status.Conditions[0]
+		assert.Equal(t, "Ready", condition.Type)
+		assert.Equal(t, "TestReason", condition.Reason)
+		assert.Equal(t, "Test message", condition.Message)
+		assert.Equal(t, corev1.ConditionTrue, condition.Status)
+		require.NotNil(t, evalHub.Status.LastUpdateTime)
+	})
+
+	t.Run("EvalHubSpec GetReplicas method", func(t *testing.T) {
+		spec := &evalhubv1.EvalHubSpec{}
+
+		// Test default value
+		assert.Equal(t, int32(1), spec.GetReplicas())
+
+		// Test custom value
+		customReplicas := int32(3)
+		spec.Replicas = &customReplicas
+		assert.Equal(t, int32(3), spec.GetReplicas())
+	})
+
+	t.Run("EvalHubSpec GetMCPReplicas method", func(t *testing.T) {
+		var nilSpec *evalhubv1.EvalHubSpec
+		assert.Equal(t, int32(1), nilSpec.GetMCPReplicas())
+
+		spec := &evalhubv1.EvalHubSpec{}
+		assert.Equal(t, int32(1), spec.GetMCPReplicas())
+
+		spec.MCP = &evalhubv1.EvalHubMCPSpec{}
+		assert.Equal(t, int32(1), spec.GetMCPReplicas())
+
+		three := int32(3)
+		spec.MCP.Replicas = &three
+		assert.Equal(t, int32(3), spec.GetMCPReplicas())
+	})
+}
+
+// TestEvalHubReconciler_createJobsServiceAccount verifies that the jobs ServiceAccount
+// is created with the correct name, labels, and owner reference.
+func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, rbacv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+			UID:       "test-uid-123",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should create job ServiceAccount with correct properties", func(t *testing.T) {
+		err := reconciler.createJobsServiceAccount(ctx, evalHub, testNamespace)
+		require.NoError(t, err)
+
+		// Verify ServiceAccount was created
+		jobsSAName := generateJobsServiceAccountName(evalHub)
+		jobsSA := &corev1.ServiceAccount{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      jobsSAName,
+			Namespace: testNamespace,
+		}, jobsSA)
+		require.NoError(t, err)
+
+		// Check name and namespace
+		assert.Equal(t, jobsSAName, jobsSA.Name)
+		assert.Equal(t, testNamespace, jobsSA.Namespace)
+
+		// Check labels (used for cleanup instead of owner references)
+		assert.Equal(t, "eval-hub", jobsSA.Labels["app"])
+		assert.Equal(t, jobsSAName, jobsSA.Labels["app.kubernetes.io/name"])
+		assert.Equal(t, evalHubName, jobsSA.Labels["app.kubernetes.io/instance"])
+		assert.Equal(t, "job", jobsSA.Labels["app.kubernetes.io/component"])
+		assert.Equal(t, "trustyai-service-operator", jobsSA.Labels["app.kubernetes.io/managed-by"])
+		assert.Equal(t, jobResourceInstanceID(evalHub), jobsSA.Labels["eval-hub.trustyai.opendatahub.io"])
+
+		// No owner references — cleanup is label-based via the finalizer
+		assert.Empty(t, jobsSA.OwnerReferences)
+	})
+
+	t.Run("should be idempotent on repeated calls", func(t *testing.T) {
+		// Call again
+		err := reconciler.createJobsServiceAccount(ctx, evalHub, testNamespace)
+		require.NoError(t, err)
+
+		// Verify still only one ServiceAccount exists
+		jobsSAName := generateJobsServiceAccountName(evalHub)
+		jobsSA := &corev1.ServiceAccount{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      jobsSAName,
+			Namespace: testNamespace,
+		}, jobsSA)
+		require.NoError(t, err)
+	})
+
+	t.Run("should create MLFlow service SA RoleBinding in target namespace", func(t *testing.T) {
+		// The RoleBinding created by the first sub-test should reference the full
+		// MLFlow access ClusterRole and bind the service SA (not the job SA).
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + testNamespace + "-mlflow-service-rb")
+		rb := &rbacv1.RoleBinding{}
+		err := fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		// Should reference the full MLFlow access ClusterRole, not the restricted jobs role
+		assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
+		assert.Equal(t, mlflowAccessClusterRoleName, rb.RoleRef.Name)
+		assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
+
+		// Subject must be the service SA, not the job SA
+		svcSAName := generateServiceAccountName(evalHub)
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
+		assert.Equal(t, svcSAName, rb.Subjects[0].Name)
+		assert.Equal(t, testNamespace, rb.Subjects[0].Namespace)
+
+		// No owner references — cleanup is label-based via the finalizer
+		assert.Empty(t, rb.OwnerReferences)
+		assert.Equal(t, jobResourceInstanceID(evalHub), rb.Labels["eval-hub.trustyai.opendatahub.io"])
+		assert.Equal(t, "job", rb.Labels["app.kubernetes.io/component"])
+	})
+}
+
+// TestEvalHubReconciler_createJobsAPIAccessRoleBinding verifies that the jobs API access RoleBinding
+// is created with the correct RoleRef, Subjects, and owner reference.
+func TestEvalHubReconciler_createJobsAPIAccessRoleBinding(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, rbacv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+			UID:       "test-uid-123",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should create jobs API access RoleBinding referencing per-instance Role", func(t *testing.T) {
+		jobsSAName := generateJobsServiceAccountName(evalHub)
+		err := reconciler.createJobsAPIAccessRoleBinding(ctx, evalHub, jobsSAName, testNamespace)
+		require.NoError(t, err)
+
+		// Verify RoleBinding was created
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + testNamespace + "-job-access-rb")
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		// Check RoleRef — should reference the per-instance Role (not ClusterRole)
+		assert.Equal(t, "Role", rb.RoleRef.Kind)
+		assert.Equal(t, generateJobsAPIAccessRoleName(evalHub), rb.RoleRef.Name)
+		assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
+
+		// Check Subjects
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
+		assert.Equal(t, jobsSAName, rb.Subjects[0].Name)
+		assert.Equal(t, testNamespace, rb.Subjects[0].Namespace)
+
+		// No owner references — cleanup is label-based via the finalizer
+		assert.Empty(t, rb.OwnerReferences)
+		assert.Equal(t, jobResourceInstanceID(evalHub), rb.Labels["eval-hub.trustyai.opendatahub.io"])
+		assert.Equal(t, "job", rb.Labels["app.kubernetes.io/component"])
+	})
+
+	t.Run("should update subjects when they differ", func(t *testing.T) {
+		// Get existing RoleBinding
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + testNamespace + "-job-access-rb")
+		rb := &rbacv1.RoleBinding{}
+		err := fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		// Modify subjects
+		rb.Subjects = []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "different-sa",
+				Namespace: testNamespace,
+			},
+		}
+		err = fakeClient.Update(ctx, rb)
+		require.NoError(t, err)
+
+		// Reconcile again
+		jobsSAName := generateJobsServiceAccountName(evalHub)
+		err = reconciler.createJobsAPIAccessRoleBinding(ctx, evalHub, jobsSAName, testNamespace)
+		require.NoError(t, err)
+
+		// Verify subjects were updated
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, jobsSAName, rb.Subjects[0].Name)
+	})
+}
+
+// TestEvalHubReconciler_createAPIAccessRole verifies that the per-instance API access Role
+// is created with resourceNames scoped to the instance, with correct owner ref and idempotency.
+func TestEvalHubReconciler_createAPIAccessRole(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, rbacv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+			UID:       "test-uid-123",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should create API access Role with resourceNames", func(t *testing.T) {
+		err := reconciler.createAPIAccessRole(ctx, evalHub)
+		require.NoError(t, err)
+
+		roleName := generateAPIAccessRoleName(evalHub)
+		role := &rbacv1.Role{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      roleName,
+			Namespace: testNamespace,
+		}, role)
+		require.NoError(t, err)
+
+		// Check name
+		assert.Equal(t, evalHubName+"-service-access-role", role.Name)
+
+		// Check rules have resourceNames scoped to this instance
+		require.Len(t, role.Rules, 2)
+
+		// First rule: evalhubs get
+		assert.Equal(t, []string{"trustyai.opendatahub.io"}, role.Rules[0].APIGroups)
+		assert.Equal(t, []string{"evalhubs"}, role.Rules[0].Resources)
+		assert.Equal(t, []string{evalHubName}, role.Rules[0].ResourceNames)
+		assert.Equal(t, []string{"get"}, role.Rules[0].Verbs)
+
+		// Second rule: evalhubs/proxy get,create
+		assert.Equal(t, []string{"trustyai.opendatahub.io"}, role.Rules[1].APIGroups)
+		assert.Equal(t, []string{"evalhubs/proxy"}, role.Rules[1].Resources)
+		assert.Equal(t, []string{evalHubName}, role.Rules[1].ResourceNames)
+		assert.Equal(t, []string{"get", "create"}, role.Rules[1].Verbs)
+
+		// Check owner reference
+		require.Len(t, role.OwnerReferences, 1)
+		assert.Equal(t, evalHubName, role.OwnerReferences[0].Name)
+		assert.Equal(t, "EvalHub", role.OwnerReferences[0].Kind)
+		assert.True(t, *role.OwnerReferences[0].Controller)
+	})
+
+	t.Run("should be idempotent on repeated calls", func(t *testing.T) {
+		err := reconciler.createAPIAccessRole(ctx, evalHub)
+		require.NoError(t, err)
+
+		roleName := generateAPIAccessRoleName(evalHub)
+		role := &rbacv1.Role{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      roleName,
+			Namespace: testNamespace,
+		}, role)
+		require.NoError(t, err)
+		assert.Equal(t, []string{evalHubName}, role.Rules[0].ResourceNames)
+	})
+}
+
+// TestEvalHubReconciler_createAPIAccessRoleBinding_RefersToRole verifies that the
+// API access RoleBinding references a Role (not ClusterRole).
+func TestEvalHubReconciler_createAPIAccessRoleBinding_RefersToRole(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, rbacv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+			UID:       "test-uid-123",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should reference Role not ClusterRole", func(t *testing.T) {
+		apiSAName := evalHubName + "-service"
+		err := reconciler.createAPIAccessRoleBinding(ctx, evalHub, apiSAName)
+		require.NoError(t, err)
+
+		rbName := evalHubName + "-service-access-rb"
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		assert.Equal(t, "Role", rb.RoleRef.Kind, "RoleBinding should reference Role, not ClusterRole")
+		assert.Equal(t, generateAPIAccessRoleName(evalHub), rb.RoleRef.Name)
+	})
+}
+
+// TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole verifies that the jobs
+// MLflow RoleBinding uses the restricted jobs-specific ClusterRole.
+func TestEvalHubReconciler_createMLFlowAccessRoleBinding_JobsRole(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, rbacv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+			UID:       "test-uid-123",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should create jobs MLflow RoleBinding with restricted ClusterRole", func(t *testing.T) {
+		jobsSAName := generateJobsServiceAccountName(evalHub)
+		err := reconciler.createJobRoleBinding(ctx, evalHub, normalizeDNS1123LabelValue(evalHubName+"-"+testNamespace+"-mlflow-job-rb"), jobsSAName, testNamespace, rbacv1.RoleRef{
+			Kind:     "ClusterRole",
+			Name:     mlflowJobsAccessClusterRoleName,
+			APIGroup: rbacv1.GroupName,
+		})
+		require.NoError(t, err)
+
+		// Verify RoleBinding was created
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + testNamespace + "-mlflow-job-rb")
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		// Check RoleRef uses the jobs-specific restricted role
+		assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
+		assert.Equal(t, "trustyai-service-operator-evalhub-mlflow-jobs-access", rb.RoleRef.Name)
+		assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
+
+		// Check Subjects
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
+		assert.Equal(t, jobsSAName, rb.Subjects[0].Name)
+		assert.Equal(t, testNamespace, rb.Subjects[0].Namespace)
+
+		// No owner references — cleanup is label-based via the finalizer
+		assert.Empty(t, rb.OwnerReferences)
+		assert.Equal(t, jobResourceInstanceID(evalHub), rb.Labels["eval-hub.trustyai.opendatahub.io"])
+		assert.Equal(t, "job", rb.Labels["app.kubernetes.io/component"])
+	})
+
+	t.Run("should create API MLflow RoleBinding with full ClusterRole", func(t *testing.T) {
+		apiSAName := evalHubName + "-service"
+		err := reconciler.createMLFlowAccessRoleBinding(ctx, evalHub, apiSAName, "service", mlflowAccessClusterRoleName)
+		require.NoError(t, err)
+
+		// Verify RoleBinding was created
+		rbName := evalHubName + "-mlflow-service-rb"
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		// Check RoleRef uses the full access role
+		assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
+		assert.Equal(t, "trustyai-service-operator-evalhub-mlflow-access", rb.RoleRef.Name)
+		assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
+
+		// Check Subjects
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
+		assert.Equal(t, apiSAName, rb.Subjects[0].Name)
+	})
+
+	t.Run("should be idempotent on repeated calls", func(t *testing.T) {
+		jobsSAName := generateJobsServiceAccountName(evalHub)
+		err := reconciler.createJobRoleBinding(ctx, evalHub, normalizeDNS1123LabelValue(evalHubName+"-"+testNamespace+"-mlflow-job-rb"), jobsSAName, testNamespace, rbacv1.RoleRef{
+			Kind:     "ClusterRole",
+			Name:     mlflowJobsAccessClusterRoleName,
+			APIGroup: rbacv1.GroupName,
+		})
+		require.NoError(t, err)
+
+		// Verify RoleBinding still exists with correct properties
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + testNamespace + "-mlflow-job-rb")
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: testNamespace,
+		}, rb)
+		require.NoError(t, err)
+
+		assert.Equal(t, "trustyai-service-operator-evalhub-mlflow-jobs-access", rb.RoleRef.Name)
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, jobsSAName, rb.Subjects[0].Name)
+	})
+}
+
+// TestEvalHubReconciler_cleanupClusterRoleBinding verifies that cleanup removes
+// the auth-reviewer ClusterRoleBinding (the only cluster-scoped resource not owner-ref'd).
+func TestEvalHubReconciler_cleanupClusterRoleBinding(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, rbacv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		},
+	}
+
+	authCRBName := evalHubName + "-" + testNamespace + "-auth-reviewer-crb"
+	authCRB := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: authCRBName,
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: rbacv1.GroupName,
+			Kind:     "ClusterRole",
+			Name:     authReviewerClusterRoleName,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      evalHubName + "-service",
+				Namespace: testNamespace,
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub, authCRB).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should delete auth reviewer ClusterRoleBinding", func(t *testing.T) {
+		err := reconciler.cleanupClusterRoleBinding(ctx, evalHub)
+		require.NoError(t, err)
+
+		err = fakeClient.Get(ctx, types.NamespacedName{Name: authCRBName}, &rbacv1.ClusterRoleBinding{})
+		assert.True(t, errors.IsNotFound(err), "Auth reviewer ClusterRoleBinding should be deleted")
+	})
+
+	t.Run("should be idempotent when resources don't exist", func(t *testing.T) {
+		err := reconciler.cleanupClusterRoleBinding(ctx, evalHub)
+		require.NoError(t, err)
+	})
+}
+
+// TestEvalHubReconciler_reconcileServiceCAConfigMap verifies that the service CA ConfigMap
+// is created when missing and updated with the inject-cabundle annotation when it exists.
+func TestEvalHubReconciler_reconcileServiceCAConfigMap(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+			UID:       "test-uid-123",
+		},
+	}
+
+	t.Run("should create ConfigMap when missing", func(t *testing.T) {
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileServiceCAConfigMap(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Verify ConfigMap was created
+		cmName := evalHubName + "-service-ca"
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      cmName,
+			Namespace: testNamespace,
+		}, cm)
+		require.NoError(t, err)
+
+		// Check name and namespace
+		assert.Equal(t, cmName, cm.Name)
+		assert.Equal(t, testNamespace, cm.Namespace)
+
+		// Check inject-cabundle annotation
+		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
+
+		// Check owner reference
+		require.Len(t, cm.OwnerReferences, 1)
+		assert.Equal(t, evalHubName, cm.OwnerReferences[0].Name)
+		assert.Equal(t, "EvalHub", cm.OwnerReferences[0].Kind)
+
+		// Check data is initialized (empty or nil - both are valid)
+		// The OpenShift service CA operator will inject service-ca.crt later
+		if cm.Data != nil {
+			assert.Empty(t, cm.Data)
+		}
+	})
+
+	t.Run("should update annotation when ConfigMap exists", func(t *testing.T) {
+		// Create ConfigMap with missing annotation
+		cmName := evalHubName + "-service-ca"
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      cmName,
+				Namespace: testNamespace,
+				Annotations: map[string]string{
+					"custom-annotation": "keep-me",
+				},
+			},
+			Data: map[string]string{
+				"existing-key": "existing-value",
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, existingCM).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileServiceCAConfigMap(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Verify ConfigMap was updated
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      cmName,
+			Namespace: testNamespace,
+		}, cm)
+		require.NoError(t, err)
+
+		// Check inject-cabundle annotation was added
+		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
+
+		// Check custom annotation was preserved
+		assert.Equal(t, "keep-me", cm.Annotations["custom-annotation"])
+
+		// Check data was preserved
+		assert.Equal(t, "existing-value", cm.Data["existing-key"])
+	})
+
+	t.Run("should reset annotation when it has wrong value", func(t *testing.T) {
+		// Create ConfigMap with wrong annotation value
+		cmName := evalHubName + "-service-ca"
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      cmName,
+				Namespace: testNamespace,
+				Annotations: map[string]string{
+					"service.beta.openshift.io/inject-cabundle": "false",
+				},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, existingCM).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileServiceCAConfigMap(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Verify annotation was corrected
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      cmName,
+			Namespace: testNamespace,
+		}, cm)
+		require.NoError(t, err)
+
+		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
+	})
+}
+
+func TestGenerateConfigData_WithDatabase(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	t.Run("should include database and secrets sections when DB configured", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Database: &evalhubv1.DatabaseSpec{
+					Type:   "postgresql",
+					Secret: "my-db-secret",
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		// Database section
+		require.NotNil(t, config.Database)
+		assert.Equal(t, dbDriver, config.Database.Driver)
+		assert.Equal(t, dbDefaultMaxOpen, config.Database.MaxOpenConns)
+		assert.Equal(t, dbDefaultMaxIdle, config.Database.MaxIdleConns)
+
+		// Secrets section
+		require.NotNil(t, config.Secrets)
+		assert.Equal(t, dbSecretMountPath, config.Secrets.Dir)
+		assert.Equal(t, "database.url", config.Secrets.Mappings[dbSecretKey])
+	})
+
+	t.Run("should use custom pool sizes when specified", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Database: &evalhubv1.DatabaseSpec{
+					Type:         "postgresql",
+					Secret:       "my-db-secret",
+					MaxOpenConns: 50,
+					MaxIdleConns: 10,
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		require.NotNil(t, config.Database)
+		assert.Equal(t, 50, config.Database.MaxOpenConns)
+		assert.Equal(t, 10, config.Database.MaxIdleConns)
+	})
+
+	t.Run("should not include database section when DB not configured", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		assert.Nil(t, config.Database, "database section should be absent when not configured")
+		assert.Nil(t, config.Secrets, "secrets section should be absent when DB not configured")
+	})
+
+	t.Run("should configure sqlite when type is sqlite", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Database: &evalhubv1.DatabaseSpec{
+					Type: "sqlite",
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		require.NotNil(t, config.Database)
+		assert.Equal(t, "sqlite", config.Database.Driver)
+		assert.NotEmpty(t, config.Database.URL)
+		assert.Nil(t, config.Secrets, "secrets should be absent for sqlite")
+	})
+}
+
+func TestGenerateConfigData_WithOTEL(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	t.Run("should include otel section when configured", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Otel: &evalhubv1.OTELSpec{
+					ExporterType:     "otlp-grpc",
+					ExporterEndpoint: "otel-collector:4317",
+					ExporterInsecure: true,
+					SamplingRatio:    "0.5",
+					EnableTracing:    true,
+					EnableMetrics:    true,
+					EnableLogs:       false,
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		require.NotNil(t, config.OTEL)
+		assert.True(t, config.OTEL.Enabled)
+		assert.Equal(t, "otlp-grpc", config.OTEL.ExporterType)
+		assert.Equal(t, "otel-collector:4317", config.OTEL.ExporterEndpoint)
+		assert.True(t, config.OTEL.ExporterInsecure)
+		require.NotNil(t, config.OTEL.SamplingRatio)
+		assert.Equal(t, 0.5, *config.OTEL.SamplingRatio)
+		assert.True(t, config.OTEL.EnableTracing)
+		assert.True(t, config.OTEL.EnableMetrics)
+		assert.False(t, config.OTEL.EnableLogs)
+	})
+
+	t.Run("should map extended otel fields", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Otel: &evalhubv1.OTELSpec{
+					ExporterType:               "otlp-grpc",
+					ExporterEndpoint:           "otel-collector:4317",
+					EnableTracing:              true,
+					EnableMetrics:              true,
+					EnableLogs:                 true,
+					TracerTimeout:              "30s",
+					TracerBatchInterval:        "5s",
+					EnableJobContainerLogs:     true,
+					ServiceName:                "my-evalhub",
+					EnableEcsResourceDetection: true,
+					DisableRedirectOtelLogs:    true,
+					DisableDatabaseOtelScans:   true,
+					MetricExportInterval:       "10s",
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		require.NotNil(t, config.OTEL)
+		assert.Equal(t, "30s", config.OTEL.TracerTimeout)
+		assert.Equal(t, "5s", config.OTEL.TracerBatchInterval)
+		assert.Equal(t, "10s", config.OTEL.MetricExportInterval)
+		assert.Equal(t, "my-evalhub", config.OTEL.ServiceName)
+		assert.True(t, config.OTEL.EnableJobContainerLogs)
+		assert.True(t, config.OTEL.EnableECSResourceDetection)
+		assert.True(t, config.OTEL.DisableRedirectOTELLogs)
+		assert.True(t, config.OTEL.DisableDatabaseOTELScans)
+	})
+
+	t.Run("should reject invalid otel duration fields", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			value string
+		}{
+			{name: "unparseable", value: "not-a-duration"},
+			{name: "negative", value: "-5s"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				evalHub := &evalhubv1.EvalHub{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-evalhub",
+						Namespace: "test-namespace",
+					},
+					Spec: evalhubv1.EvalHubSpec{
+						Otel: &evalhubv1.OTELSpec{
+							TracerTimeout: tc.value,
+						},
+					},
+				}
+
+				configMap := createConfigMap(configMapName, evalHub.Namespace)
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(evalHub, configMap).
+					Build()
+				reconciler := &EvalHubReconciler{
+					Client:    fakeClient,
+					Scheme:    scheme,
+					Namespace: evalHub.Namespace,
+				}
+				_, err := reconciler.generateConfigData(context.Background(), evalHub)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "tracerTimeout")
+			})
+		}
+	})
+
+	t.Run("should accept zero otel duration fields", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Otel: &evalhubv1.OTELSpec{
+					TracerTimeout: "0s",
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+		require.NotNil(t, config.OTEL)
+		assert.Equal(t, "0s", config.OTEL.TracerTimeout)
+	})
+
+	t.Run("should reject enableJobContainerLogs without enableLogs", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Otel: &evalhubv1.OTELSpec{
+					EnableJobContainerLogs: true,
+					EnableLogs:             false,
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		_, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "enableJobContainerLogs")
+	})
+
+	t.Run("should use custom values", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Otel: &evalhubv1.OTELSpec{
+					ExporterType:     "otlp-http",
+					ExporterEndpoint: "https://tempo.example.com:4318",
+					ExporterInsecure: false,
+					SamplingRatio:    "0.1",
+					EnableTracing:    true,
+					EnableMetrics:    false,
+					EnableLogs:       true,
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		require.NotNil(t, config.OTEL)
+		assert.Equal(t, "otlp-http", config.OTEL.ExporterType)
+		assert.Equal(t, "https://tempo.example.com:4318", config.OTEL.ExporterEndpoint)
+		assert.False(t, config.OTEL.ExporterInsecure)
+		require.NotNil(t, config.OTEL.SamplingRatio)
+		assert.Equal(t, 0.1, *config.OTEL.SamplingRatio)
+		assert.True(t, config.OTEL.EnableTracing)
+		assert.False(t, config.OTEL.EnableMetrics)
+		assert.True(t, config.OTEL.EnableLogs)
+	})
+
+	t.Run("should omit otel section when not configured", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		assert.Nil(t, config.OTEL)
+	})
+}
+
+func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+	dbSecretName := "evalhub-db-credentials"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		},
+		Spec: evalhubv1.EvalHubSpec{
+			Database: &evalhubv1.DatabaseSpec{
+				Type:   "postgresql",
+				Secret: dbSecretName,
+			},
+		},
+	}
+
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMapName,
+			Namespace: testNamespace,
+		},
+		Data: map[string]string{
+			configMapEvalHubImageKey:       testEvalHubLatestImage,
+			configMapKubeRBACProxyImageKey: testKubeRBACProxyImage,
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub, configMap).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		Namespace:     testNamespace,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	t.Run("should add DB secret volume and mount when database configured", func(t *testing.T) {
+		err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+		require.NoError(t, err)
+
+		deployment := &appsv1.Deployment{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		}, deployment)
+		require.NoError(t, err)
+
+		// Should have 5 volumes: evalhub-config, tls, service-ca, mlflow-token, db-secret
+		assert.Len(t, deployment.Spec.Template.Spec.Volumes, 5)
+
+		// Find the DB secret volume
+		var dbVolume *corev1.Volume
+		for i, v := range deployment.Spec.Template.Spec.Volumes {
+			if v.Name == dbSecretVolumeName {
+				dbVolume = &deployment.Spec.Template.Spec.Volumes[i]
+				break
+			}
+		}
+		require.NotNil(t, dbVolume, "DB secret volume should be present")
+		require.NotNil(t, dbVolume.VolumeSource.Secret)
+		assert.Equal(t, dbSecretName, dbVolume.VolumeSource.Secret.SecretName)
+		require.Len(t, dbVolume.VolumeSource.Secret.Items, 1)
+		assert.Equal(t, dbSecretKey, dbVolume.VolumeSource.Secret.Items[0].Key)
+		assert.Equal(t, dbSecretKey, dbVolume.VolumeSource.Secret.Items[0].Path)
+
+		// Find evalhub container and check volume mount
+		var container *corev1.Container
+		for i, c := range deployment.Spec.Template.Spec.Containers {
+			if c.Name == containerName {
+				container = &deployment.Spec.Template.Spec.Containers[i]
+				break
+			}
+		}
+		require.NotNil(t, container)
+		assert.Len(t, container.VolumeMounts, 4) // evalhub-config + service-ca + mlflow-token + db-secret
+
+		var dbMount *corev1.VolumeMount
+		for i, m := range container.VolumeMounts {
+			if m.Name == dbSecretVolumeName {
+				dbMount = &container.VolumeMounts[i]
+				break
+			}
+		}
+		require.NotNil(t, dbMount, "DB secret volume mount should be present")
+		assert.Equal(t, dbSecretMountPath, dbMount.MountPath)
+		assert.True(t, dbMount.ReadOnly)
+	})
+}
+
+func TestEvalHubHelperMethods_IsDatabaseConfigured(t *testing.T) {
+	t.Run("should return false when Database is nil", func(t *testing.T) {
+		spec := &evalhubv1.EvalHubSpec{}
+		assert.False(t, spec.IsDatabaseConfigured())
+	})
+
+	t.Run("should return false when Database.Type is empty", func(t *testing.T) {
+		spec := &evalhubv1.EvalHubSpec{
+			Database: &evalhubv1.DatabaseSpec{},
+		}
+		assert.False(t, spec.IsDatabaseConfigured())
+	})
+
+	t.Run("should return true when Database.Type is postgresql", func(t *testing.T) {
+		spec := &evalhubv1.EvalHubSpec{
+			Database: &evalhubv1.DatabaseSpec{
+				Type:   "postgresql",
+				Secret: "my-secret",
+			},
+		}
+		assert.True(t, spec.IsDatabaseConfigured())
+		assert.True(t, spec.IsPostgreSQL())
+		assert.False(t, spec.IsSQLite())
+	})
+
+	t.Run("should return true when Database.Type is sqlite", func(t *testing.T) {
+		spec := &evalhubv1.EvalHubSpec{
+			Database: &evalhubv1.DatabaseSpec{
+				Type: "sqlite",
+			},
+		}
+		assert.True(t, spec.IsDatabaseConfigured())
+		assert.True(t, spec.IsSQLite())
+		assert.False(t, spec.IsPostgreSQL())
+	})
+}
+
+func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	operatorNamespace := "operator-ns"
+	instanceNamespace := "instance-ns"
+	evalHubName := "test-evalhub"
+
+	// Source provider ConfigMap in the operator namespace (simulates what kustomize deploys)
+	sourceProvider := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "trustyai-service-operator-evalhub-provider-testprovider",
+			Namespace: operatorNamespace,
+			Labels: map[string]string{
+				providerLabel:     "system",
+				providerNameLabel: "testprovider",
+			},
+		},
+		Data: map[string]string{
+			"testprovider.yaml": "id: testprovider\nname: Test Provider\nruntime:\n  k8s:\n    image: quay.io/test/provider:latest\n",
+		},
+	}
+
+	t.Run("should copy provider ConfigMap to instance namespace", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      evalHubName,
+				Namespace: instanceNamespace,
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Providers: []string{"testprovider"},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, sourceProvider).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			Namespace:     operatorNamespace,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		cmNames, err := reconciler.reconcileProviderConfigMaps(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Should return the target ConfigMap name
+		require.Len(t, cmNames, 1)
+		assert.Equal(t, evalHubName+"-provider-testprovider", cmNames[0])
+
+		// Verify the ConfigMap was created in the instance namespace with correct data
+		copiedCM := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName + "-provider-testprovider",
+			Namespace: instanceNamespace,
+		}, copiedCM)
+		require.NoError(t, err)
+		assert.Equal(t, sourceProvider.Data["testprovider.yaml"], copiedCM.Data["testprovider.yaml"])
+	})
+
+	t.Run("should return nil when no providers specified", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      evalHubName,
+				Namespace: instanceNamespace,
+			},
+			Spec: evalhubv1.EvalHubSpec{},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			Namespace:     operatorNamespace,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		cmNames, err := reconciler.reconcileProviderConfigMaps(ctx, evalHub)
+		require.NoError(t, err)
+		assert.Nil(t, cmNames)
+	})
+
+	t.Run("should error when provider not found", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      evalHubName,
+				Namespace: instanceNamespace,
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Providers: []string{"nonexistent"},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			Namespace:     operatorNamespace,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		cmNames, err := reconciler.reconcileProviderConfigMaps(ctx, evalHub)
+		require.Error(t, err)
+		assert.Nil(t, cmNames)
+		assert.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("should mount providers as projected volume in deployment", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      evalHubName,
+				Namespace: instanceNamespace,
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Providers: []string{"testprovider"},
+			},
+		}
+
+		operatorConfigMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      configMapName,
+				Namespace: operatorNamespace,
+			},
+			Data: map[string]string{
+				configMapEvalHubImageKey:       testEvalHubLatestImage,
+				configMapKubeRBACProxyImageKey: testKubeRBACProxyImage,
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, sourceProvider, operatorConfigMap).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			Namespace:     operatorNamespace,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		// First reconcile provider ConfigMaps
+		cmNames, err := reconciler.reconcileProviderConfigMaps(ctx, evalHub)
+		require.NoError(t, err)
+		require.Len(t, cmNames, 1)
+
+		// Then reconcile deployment with the provider ConfigMap names
+		err = reconciler.reconcileDeployment(ctx, evalHub, cmNames, nil)
+		require.NoError(t, err)
+
+		// Verify the deployment has the projected volume
+		deployment := &appsv1.Deployment{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName,
+			Namespace: instanceNamespace,
+		}, deployment)
+		require.NoError(t, err)
+
+		// Find the evalhub-providers projected volume
+		var providersVolume *corev1.Volume
+		for i, v := range deployment.Spec.Template.Spec.Volumes {
+			if v.Name == providersVolumeName {
+				providersVolume = &deployment.Spec.Template.Spec.Volumes[i]
+				break
+			}
+		}
+		require.NotNil(t, providersVolume, "evalhub-providers volume should be present")
+		require.NotNil(t, providersVolume.VolumeSource.Projected)
+		require.Len(t, providersVolume.VolumeSource.Projected.Sources, 1)
+		assert.Equal(t, evalHubName+"-provider-testprovider",
+			providersVolume.VolumeSource.Projected.Sources[0].ConfigMap.Name)
+
+		// Find the providers volume mount on the evalhub container
+		var evalHubContainer *corev1.Container
+		for i, c := range deployment.Spec.Template.Spec.Containers {
+			if c.Name == containerName {
+				evalHubContainer = &deployment.Spec.Template.Spec.Containers[i]
+				break
+			}
+		}
+		require.NotNil(t, evalHubContainer)
+
+		var providersMount *corev1.VolumeMount
+		for i, m := range evalHubContainer.VolumeMounts {
+			if m.Name == providersVolumeName {
+				providersMount = &evalHubContainer.VolumeMounts[i]
+				break
+			}
+		}
+		require.NotNil(t, providersMount, "providers volume mount should be present")
+		assert.Equal(t, providersMountPath, providersMount.MountPath)
+		assert.True(t, providersMount.ReadOnly)
+	})
+}
+
+// TestEvalHubReconciler_createTenantServiceCAConfigMap verifies that the service CA
+// ConfigMap is created in tenant namespaces with the inject-cabundle annotation
+// and job resource labels for cleanup.
+func TestEvalHubReconciler_createTenantServiceCAConfigMap(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	instanceNamespace := "opendatahub"
+	tenantNamespace := "team-a"
+	evalHubName := "evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: instanceNamespace,
+			UID:       "test-uid-456",
+		},
+	}
+
+	t.Run("should create ConfigMap in tenant namespace", func(t *testing.T) {
+		tenantNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: tenantNamespace},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, tenantNS).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.createTenantServiceCAConfigMap(ctx, evalHub, tenantNamespace)
+		require.NoError(t, err)
+
+		// Verify ConfigMap was created in tenant namespace
+		cmName := evalHubName + "-service-ca"
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      cmName,
+			Namespace: tenantNamespace,
+		}, cm)
+		require.NoError(t, err)
+
+		assert.Equal(t, cmName, cm.Name)
+		assert.Equal(t, tenantNamespace, cm.Namespace)
+		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
+
+		// Should have job resource labels for cleanup
+		assert.Equal(t, "eval-hub", cm.Labels["app"])
+		assert.Equal(t, "trustyai-service-operator", cm.Labels["app.kubernetes.io/managed-by"])
+		assert.Equal(t, "job", cm.Labels["app.kubernetes.io/component"])
+
+		// Should NOT have owner references (cross-namespace)
+		assert.Empty(t, cm.OwnerReferences)
+	})
+
+	t.Run("should not recreate existing ConfigMap", func(t *testing.T) {
+		cmName := evalHubName + "-service-ca"
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      cmName,
+				Namespace: tenantNamespace,
+				Annotations: map[string]string{
+					"service.beta.openshift.io/inject-cabundle": "true",
+				},
+				Labels: map[string]string{
+					"custom-label": "keep-me",
+				},
+			},
+			Data: map[string]string{
+				"service-ca.crt": "existing-cert-data",
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, existingCM).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.createTenantServiceCAConfigMap(ctx, evalHub, tenantNamespace)
+		require.NoError(t, err)
+
+		// Verify data was preserved
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      cmName,
+			Namespace: tenantNamespace,
+		}, cm)
+		require.NoError(t, err)
+
+		assert.Equal(t, "existing-cert-data", cm.Data["service-ca.crt"])
+		assert.Equal(t, "keep-me", cm.Labels["custom-label"])
+	})
+
+	t.Run("should fix missing annotation on existing ConfigMap", func(t *testing.T) {
+		cmName := evalHubName + "-service-ca"
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      cmName,
+				Namespace: tenantNamespace,
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, existingCM).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.createTenantServiceCAConfigMap(ctx, evalHub, tenantNamespace)
+		require.NoError(t, err)
+
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      cmName,
+			Namespace: tenantNamespace,
+		}, cm)
+		require.NoError(t, err)
+
+		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
+	})
+}
+
+// TestEvalHubReconciler_reconcileTenantNamespaces verifies that tenant namespace
+// reconciliation creates the job SA, RBAC bindings, and service CA ConfigMap.
+func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, rbacv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	instanceNamespace := "opendatahub"
+	tenantNamespace := "team-b"
+	evalHubName := "evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: instanceNamespace,
+			UID:       "test-uid-789",
+		},
+	}
+
+	t.Run("should provision resources in labelled tenant namespace", func(t *testing.T) {
+		tenantNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: tenantNamespace,
+				Labels: map[string]string{
+					tenantLabel: "",
+				},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, tenantNS).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileTenantNamespaces(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Verify service CA ConfigMap was created
+		cmName := evalHubName + "-service-ca"
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      cmName,
+			Namespace: tenantNamespace,
+		}, cm)
+		require.NoError(t, err)
+		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
+	})
+
+	t.Run("should skip instance namespace", func(t *testing.T) {
+		// Label the instance namespace as a tenant — it should be skipped
+		instanceNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: instanceNamespace,
+				Labels: map[string]string{
+					tenantLabel: "",
+				},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, instanceNS).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileTenantNamespaces(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Service CA ConfigMap should NOT exist in instance namespace
+		// (it's created by the main reconcile, not by reconcileTenantNamespaces)
+		cmName := evalHubName + "-service-ca"
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      cmName,
+			Namespace: instanceNamespace,
+		}, cm)
+		assert.True(t, errors.IsNotFound(err))
+	})
+
+	t.Run("should not provision in unlabelled namespaces", func(t *testing.T) {
+		unlabelledNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "unlabelled-ns",
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, unlabelledNS).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileTenantNamespaces(ctx, evalHub)
+		require.NoError(t, err)
+
+		// Nothing should be created
+		cmName := evalHubName + "-service-ca"
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      cmName,
+			Namespace: "unlabelled-ns",
+		}, cm)
+		assert.True(t, errors.IsNotFound(err))
+	})
+
+	t.Run("should clean up resources when tenant label is removed", func(t *testing.T) {
+		// Namespace WITHOUT the tenant label but WITH stale resources
+		staleNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "former-tenant",
+			},
+		}
+
+		// Simulate stale resources left from when the namespace was a tenant
+		staleSA := &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "evalhub-opendatahub-job",
+				Namespace: "former-tenant",
+				Labels:    jobResourceLabels(evalHub, "evalhub-opendatahub-job"),
+			},
+		}
+		staleRB := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "evalhub-former-tenant-job-writer-rb",
+				Namespace: "former-tenant",
+				Labels:    jobResourceLabels(evalHub, "evalhub-former-tenant-job-writer-rb"),
+			},
+			RoleRef: rbacv1.RoleRef{
+				Kind:     "ClusterRole",
+				Name:     jobsWriterClusterRoleName,
+				APIGroup: rbacv1.GroupName,
+			},
+		}
+		staleCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      evalHubName + "-service-ca",
+				Namespace: "former-tenant",
+				Labels:    jobResourceLabels(evalHub, evalHubName+"-service-ca"),
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, staleNS, staleSA, staleRB, staleCM).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileTenantNamespaces(ctx, evalHub)
+		require.NoError(t, err)
+
+		// All stale resources should be deleted
+		sa := &corev1.ServiceAccount{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name: staleSA.Name, Namespace: "former-tenant",
+		}, sa)
+		assert.True(t, errors.IsNotFound(err), "stale SA should be deleted")
+
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name: staleRB.Name, Namespace: "former-tenant",
+		}, rb)
+		assert.True(t, errors.IsNotFound(err), "stale RoleBinding should be deleted")
+
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name: staleCM.Name, Namespace: "former-tenant",
+		}, cm)
+		assert.True(t, errors.IsNotFound(err), "stale ConfigMap should be deleted")
+	})
+
+	t.Run("should create hardware-profiles-reader RoleBinding in tenant namespace", func(t *testing.T) {
+		tenantNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   tenantNamespace,
+				Labels: map[string]string{tenantLabel: ""},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, tenantNS).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileTenantNamespaces(ctx, evalHub)
+		require.NoError(t, err)
+
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + tenantNamespace + "-hardware-profiles-reader-rb")
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: tenantNamespace,
+		}, rb)
+		require.NoError(t, err, "hardware-profiles-reader RoleBinding should exist in tenant namespace")
+
+		assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
+		assert.Equal(t, hardwareProfilesReaderClusterRoleName, rb.RoleRef.Name)
+		assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
+
+		svcSAName := generateServiceAccountName(evalHub)
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
+		assert.Equal(t, svcSAName, rb.Subjects[0].Name)
+		assert.Equal(t, instanceNamespace, rb.Subjects[0].Namespace)
+	})
+
+	t.Run("should create MLFlow service SA RoleBinding in tenant namespace", func(t *testing.T) {
+		// This is the cross-namespace case: EvalHub runs in instanceNamespace but jobs
+		// run in tenantNamespace. The service SA must be able to create MLFlow experiments
+		// in the tenant workspace, so a RoleBinding is needed there too.
+		tenantNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   tenantNamespace,
+				Labels: map[string]string{tenantLabel: ""},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, tenantNS).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileTenantNamespaces(ctx, evalHub)
+		require.NoError(t, err)
+
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + instanceNamespace + "-mlflow-service-rb")
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: tenantNamespace,
+		}, rb)
+		require.NoError(t, err, "MLFlow service SA RoleBinding should exist in tenant namespace")
+
+		// Must reference the full MLFlow access ClusterRole
+		assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
+		assert.Equal(t, mlflowAccessClusterRoleName, rb.RoleRef.Name)
+		assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
+
+		// Subject is the service SA from instanceNamespace, not the tenant namespace
+		svcSAName := generateServiceAccountName(evalHub)
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
+		assert.Equal(t, svcSAName, rb.Subjects[0].Name)
+		assert.Equal(t, instanceNamespace, rb.Subjects[0].Namespace)
+	})
+
+	t.Run("should not clean up resources in active tenant namespaces", func(t *testing.T) {
+		// Namespace WITH the tenant label and resources
+		activeNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "active-tenant",
+				Labels: map[string]string{tenantLabel: ""},
+			},
+		}
+
+		activeSA := &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "evalhub-opendatahub-job",
+				Namespace: "active-tenant",
+				Labels:    jobResourceLabels(evalHub, "evalhub-opendatahub-job"),
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, activeNS, activeSA).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileTenantNamespaces(ctx, evalHub)
+		require.NoError(t, err)
+
+		// SA should still exist
+		sa := &corev1.ServiceAccount{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name: activeSA.Name, Namespace: "active-tenant",
+		}, sa)
+		require.NoError(t, err, "active tenant SA should not be deleted")
+	})
+}
+
+func TestEvalHubReconciler_reconcileServiceMonitor_NoOpUpdate(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+	require.NoError(t, monitoringv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+	}
+
+	var smUpdateCount int
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+				if _, ok := obj.(*monitoringv1.ServiceMonitor); ok {
+					smUpdateCount++
+				}
+				return c.Update(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		Namespace:     "ns",
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	// First call: creates the ServiceMonitor (Create, not Update)
+	require.NoError(t, reconciler.reconcileServiceMonitor(ctx, evalHub))
+	assert.Equal(t, 0, smUpdateCount, "first call should Create, not Update")
+
+	// Second call: spec unchanged — should NOT call Update
+	require.NoError(t, reconciler.reconcileServiceMonitor(ctx, evalHub))
+	assert.Equal(t, 0, smUpdateCount,
+		"reconcileServiceMonitor should not update when spec is unchanged")
+}
+
+func TestEvalHubReconciler_reconcileDiscoveryConfigMap(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	instanceNamespace := "opendatahub"
+	tenantNamespace := "team-a"
+	evalHubName := "evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: instanceNamespace,
+			UID:       "test-uid-789",
+		},
+	}
+
+	expectedURL := "https://evalhub.opendatahub.svc.cluster.local:8443"
+	urlKey := evalHubName + ".url"
+
+	t.Run("should create discovery ConfigMap in tenant namespace", func(t *testing.T) {
+		tenantNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: tenantNamespace}}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, tenantNS).Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		err := reconciler.reconcileDiscoveryConfigMap(ctx, evalHub, tenantNamespace)
+		require.NoError(t, err)
+
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{Name: discoveryConfigMapName, Namespace: tenantNamespace}, cm)
+		require.NoError(t, err)
+
+		assert.Equal(t, discoveryConfigMapName, cm.Name)
+		assert.Equal(t, tenantNamespace, cm.Namespace)
+		assert.Equal(t, expectedURL, cm.Data[urlKey])
+		assert.Equal(t, "true", cm.Labels[discoveryConfigMapLabel])
+	})
+
+	t.Run("should update URL key when service URL drifts", func(t *testing.T) {
+		// Pre-existing CM with stale URL
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      discoveryConfigMapName,
+				Namespace: tenantNamespace,
+				Labels:    map[string]string{discoveryConfigMapLabel: "true"},
+			},
+			Data: map[string]string{urlKey: "https://old-url.example.com:9999"},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, existingCM).Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		err := reconciler.reconcileDiscoveryConfigMap(ctx, evalHub, tenantNamespace)
+		require.NoError(t, err)
+
+		cm := &corev1.ConfigMap{}
+		require.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: discoveryConfigMapName, Namespace: tenantNamespace}, cm))
+		assert.Equal(t, expectedURL, cm.Data[urlKey])
+	})
+
+	t.Run("should add key to existing CM without removing other instance keys", func(t *testing.T) {
+		otherKey := "other-evalhub.url"
+		otherURL := "https://other-evalhub.other-ns.svc.cluster.local:8443"
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      discoveryConfigMapName,
+				Namespace: tenantNamespace,
+				Labels:    map[string]string{discoveryConfigMapLabel: "true"},
+			},
+			Data: map[string]string{otherKey: otherURL},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, existingCM).Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		err := reconciler.reconcileDiscoveryConfigMap(ctx, evalHub, tenantNamespace)
+		require.NoError(t, err)
+
+		cm := &corev1.ConfigMap{}
+		require.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: discoveryConfigMapName, Namespace: tenantNamespace}, cm))
+		assert.Equal(t, expectedURL, cm.Data[urlKey], "own key must be present")
+		assert.Equal(t, otherURL, cm.Data[otherKey], "other instance key must be preserved")
+	})
+
+	t.Run("should be idempotent when URL is unchanged", func(t *testing.T) {
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            discoveryConfigMapName,
+				Namespace:       tenantNamespace,
+				Labels:          map[string]string{discoveryConfigMapLabel: "true"},
+				ResourceVersion: "1",
+			},
+			Data: map[string]string{urlKey: expectedURL},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, existingCM).Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		// Call twice — second call must not trigger an Update
+		require.NoError(t, reconciler.reconcileDiscoveryConfigMap(ctx, evalHub, tenantNamespace))
+		require.NoError(t, reconciler.reconcileDiscoveryConfigMap(ctx, evalHub, tenantNamespace))
+
+		cm := &corev1.ConfigMap{}
+		require.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: discoveryConfigMapName, Namespace: tenantNamespace}, cm))
+		assert.Equal(t, expectedURL, cm.Data[urlKey])
+	})
+}
+
+func TestEvalHubReconciler_cleanupDiscoveryConfigMaps(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	instanceNamespace := "opendatahub"
+	evalHubName := "evalhub"
+	urlKey := evalHubName + ".url"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{Name: evalHubName, Namespace: instanceNamespace},
+	}
+
+	t.Run("should delete discovery CM when it becomes empty", func(t *testing.T) {
+		// namespace "former-tenant" is NOT in activeTenants
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      discoveryConfigMapName,
+				Namespace: "former-tenant",
+				Labels:    map[string]string{discoveryConfigMapLabel: "true"},
+			},
+			Data: map[string]string{urlKey: "https://evalhub.opendatahub.svc.cluster.local:8443"},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, cm).Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		err := reconciler.cleanupDiscoveryConfigMaps(ctx, evalHub, map[string]bool{})
+		require.NoError(t, err)
+
+		deleted := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{Name: discoveryConfigMapName, Namespace: "former-tenant"}, deleted)
+		assert.True(t, errors.IsNotFound(err), "CM should be deleted when it becomes empty")
+	})
+
+	t.Run("should remove only own key when other instance keys exist", func(t *testing.T) {
+		otherKey := "other-evalhub.url"
+		otherURL := "https://other-evalhub.other-ns.svc.cluster.local:8443"
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      discoveryConfigMapName,
+				Namespace: "former-tenant",
+				Labels:    map[string]string{discoveryConfigMapLabel: "true"},
+			},
+			Data: map[string]string{
+				urlKey:   "https://evalhub.opendatahub.svc.cluster.local:8443",
+				otherKey: otherURL,
+			},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, cm).Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		err := reconciler.cleanupDiscoveryConfigMaps(ctx, evalHub, map[string]bool{})
+		require.NoError(t, err)
+
+		remaining := &corev1.ConfigMap{}
+		require.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: discoveryConfigMapName, Namespace: "former-tenant"}, remaining))
+		assert.NotContains(t, remaining.Data, urlKey, "own key must be removed")
+		assert.Equal(t, otherURL, remaining.Data[otherKey], "other instance key must survive")
+	})
+
+	t.Run("should not touch CM in active tenant namespaces", func(t *testing.T) {
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      discoveryConfigMapName,
+				Namespace: "active-tenant",
+				Labels:    map[string]string{discoveryConfigMapLabel: "true"},
+			},
+			Data: map[string]string{urlKey: "https://evalhub.opendatahub.svc.cluster.local:8443"},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(evalHub, cm).Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		err := reconciler.cleanupDiscoveryConfigMaps(ctx, evalHub, map[string]bool{"active-tenant": true})
+		require.NoError(t, err)
+
+		still := &corev1.ConfigMap{}
+		require.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: discoveryConfigMapName, Namespace: "active-tenant"}, still))
+		assert.Equal(t, "https://evalhub.opendatahub.svc.cluster.local:8443", still.Data[urlKey])
+	})
+}
+
+func TestGenerateMCPAuthConfigData_MethodsPresent(t *testing.T) {
+	instance := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{Name: "eh", Namespace: "team-a"},
+	}
+	out := generateMCPAuthConfigData(instance)
+
+	// kube-rbac-proxy rejects mappings without an explicit methods list.
+	assert.Contains(t, out, "methods: [get]", "GET mapping must declare methods")
+	assert.Contains(t, out, "methods: [post]", "POST mapping must declare methods")
+	assert.Contains(t, out, "evalhubs")
+	assert.Contains(t, out, "team-a")
+	assert.Contains(t, out, "eh")
+
+	// Validate the generated YAML is parseable.
+	var parsed map[string]interface{}
+	require.NoError(t, yaml.Unmarshal([]byte(out), &parsed), "auth.yaml must be valid YAML")
+}
