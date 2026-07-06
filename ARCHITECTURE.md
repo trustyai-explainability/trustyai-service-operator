@@ -118,8 +118,9 @@ flowchart LR
 
         subgraph evalhub_ctrl["evalhub/"]
             evalhub_rec["EvalHubReconciler"]
-            evalhub_providers["providers.go\n(ConfigMap sync)"]
-            evalhub_tenants["tenants.go\n(namespace management)"]
+            evalhub_providers["configmap.go\n(provider/collection sync)"]
+            evalhub_tenants["tenant_namespaces.go\n(cross-ns tenant provisioning)"]
+            evalhub_roles["tenant_roles.go\n(single-mode RBAC)"]
         end
 
         subgraph gorch_ctrl["gorch/"]
@@ -145,7 +146,7 @@ flowchart LR
     subgraph api["api/"]
         tas_types["tas/v1, v1alpha1\nTrustyAIService"]
         lmes_types["lmes/v1alpha1\nLMEvalJob"]
-        evalhub_types["evalhub/v1alpha1\nEvalHub"]
+        evalhub_types["evalhub/v1, v1alpha1\nEvalHub"]
         gorch_types["gorch/v1alpha1\nGuardrailsOrchestrator"]
         nemo_types["nemo_guardrails/v1alpha1\nNemoGuardrails"]
         common["common/\nCondition, helpers"]
@@ -302,6 +303,7 @@ sequenceDiagram
     participant EH as EvalHub Controller
     participant OpNS as Operator Namespace
     participant InstanceNS as Instance Namespace
+    participant TenantNS as Tenant Namespace
     participant EHPod as EvalHub Pod
 
     Admin->>K8sAPI: Create EvalHub CR
@@ -310,11 +312,27 @@ sequenceDiagram
     EH->>K8sAPI: Validate database config
     EH->>K8sAPI: Create ServiceAccount
 
-    EH->>OpNS: List Provider ConfigMaps (by label)
-    EH->>OpNS: List Collection ConfigMaps (by label)
-    EH->>InstanceNS: Copy matched ConfigMaps
+    alt spec.tenancy = multi and instance NS has tenant label
+        EH->>K8sAPI: Set InvalidPlacement status, halt
+    else spec.tenancy = multi (default)
+        EH->>K8sAPI: List tenant-labelled namespaces
+        loop Each tenant namespace
+            EH->>TenantNS: Create job SA, RoleBindings, service-CA CM
+            EH->>TenantNS: Upsert evalhub-discovery ConfigMap
+        end
+    else spec.tenancy = single
+        EH->>InstanceNS: Create evalhub-tenant-admin and evalhub-user Roles
+        EH->>InstanceNS: Create evalhub-tenant-admin-binding
+    end
 
-    EH->>K8sAPI: Create Deployment (mount providers + collections)
+    EH->>OpNS: List system Provider ConfigMaps (by label)
+    EH->>OpNS: List system Collection ConfigMaps (by label)
+    EH->>InstanceNS: Copy matched system ConfigMaps
+
+    EH->>InstanceNS: Discover tenant Provider ConfigMaps (type=tenant)
+    EH->>InstanceNS: Discover tenant Collection ConfigMaps (type=tenant)
+
+    EH->>K8sAPI: Create Deployment (system + tenant volume mounts)
     EH->>K8sAPI: Create API Service (port 8443, HTTPS via kube-rbac-proxy)
     EH->>K8sAPI: Create metrics Service (port 8081, plain HTTP, cluster-internal)
     EH->>K8sAPI: Create Route
@@ -323,13 +341,10 @@ sequenceDiagram
         EH->>K8sAPI: Create ServiceMonitor (targets metrics Service, HTTP, no TLS)
     end
 
-    EHPod->>EHPod: Load providers from /providers/
-    EHPod->>EHPod: Load collections from /collections/
-
-    opt Tenant namespaces labeled
-        EH->>K8sAPI: Create job ServiceAccounts in tenant NS
-        EH->>K8sAPI: Create RoleBindings for job access
-    end
+    EHPod->>EHPod: Load system providers from /config/providers/
+    EHPod->>EHPod: Load system collections from /config/collections/
+    EHPod->>EHPod: Load tenant providers from /config/providers/tenant/
+    EHPod->>EHPod: Load tenant collections from /config/collections/tenant/
 
     EH->>K8sAPI: Update status (Ready, URL, active providers)
 ```
@@ -384,7 +399,7 @@ sequenceDiagram
 - **ConfigMap-driven operator configuration**: All image references and runtime parameters live in a ConfigMap (`trustyai-service-operator-config`), not hardcoded. Overlays swap the ConfigMap contents per environment.
 - **Finalizer-based cleanup**: Every controller uses finalizers to ensure child resources (PVCs, ConfigMaps, Routes, RBAC bindings) are properly cleaned up on CR deletion.
 - **Pod-based evaluation (LMES)**: LMEvalJobs run as Pods (not Jobs) with a driver sidecar for status reporting. This gives the controller direct exec access for progress monitoring and supports Kueue's suspend/resume semantics.
-- **Tenant namespace model (EvalHub)**: EvalHub creates job ServiceAccounts in labeled tenant namespaces, allowing multi-tenant evaluation workloads with scoped RBAC.
+- **EvalHub tenancy modes**: EvalHub supports `spec.tenancy: multi` (default) and `single`. In **multi** mode, a control-plane EvalHub serves tenant namespaces labelled `evalhub.trustyai.opendatahub.io/tenant`, provisioning job ServiceAccounts, ClusterRole RoleBindings, service-CA ConfigMaps, and discovery ConfigMaps in each tenant namespace. Multi-tenant instances cannot be placed in a tenant-labelled namespace (InvalidPlacement). In **single** mode, EvalHub deploys directly in the workload namespace with no cross-namespace propagation; the operator creates convenience Roles (`evalhub-tenant-admin`, `evalhub-user`) for namespace users. System provider/collection ConfigMaps are copied from the operator namespace; tenant-provided ConfigMaps (labelled `type=tenant`) are discovered in the instance namespace and mounted at `/config/providers/tenant/` and `/config/collections/tenant/` (separate from `/config/providers/` and `/config/collections/`) to avoid shadowing system configs. Switching modes cleans up stale cross-namespace resources (single) or convenience Roles (multi). Tenant ConfigMap changes hot-reload via a ConfigMap watch without editing the CR.
 
 ## Deployment
 
@@ -451,14 +466,15 @@ trustyai-service-operator/
 │   ├── tas/v1/                    # TrustyAIService v1 (storage version)
 │   ├── tas/v1alpha1/              # TrustyAIService v1alpha1 (deprecated)
 │   ├── lmes/v1alpha1/             # LMEvalJob types
-│   ├── evalhub/v1alpha1/          # EvalHub types
+│   ├── evalhub/v1/                # EvalHub v1 (storage version)
+│   ├── evalhub/v1alpha1/          # EvalHub v1alpha1
 │   ├── gorch/v1alpha1/            # GuardrailsOrchestrator types
 │   └── nemo_guardrails/v1alpha1/  # NemoGuardrails types
 ├── controllers/
 │   ├── controllers.go             # Service registry (init-based registration)
 │   ├── tas/                       # TAS reconciler (KServe, TLS, storage)
 │   ├── lmes/                      # LMES reconciler (pod lifecycle, state machine)
-│   ├── evalhub/                   # EvalHub reconciler (providers, tenants, DB)
+│   ├── evalhub/                   # EvalHub reconciler (providers, tenancy, DB)
 │   ├── gorch/                     # GORCH reconciler (auto-config, detectors)
 │   ├── nemo_guardrails/           # NeMo reconciler (CA bundles)
 │   ├── job_mgr/                   # Kueue job manager

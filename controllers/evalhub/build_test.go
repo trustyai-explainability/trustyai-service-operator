@@ -91,7 +91,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 	})
 
 	It("builds the expected DeploymentSpec (labels, eval-hub, kube-rbac-proxy, strategy)", func() {
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(*deploymentSpec.Replicas).To(Equal(replicas))
@@ -187,7 +187,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 		operatorCM.Data["kubeRBACProxyMemoryRequest"] = "64Mi"
 		Expect(k8sClient.Update(ctx, operatorCM)).To(Succeed())
 
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		app := findContainerByName(deploymentSpec.Template.Spec.Containers, containerName)
@@ -214,14 +214,14 @@ var _ = Describe("buildDeploymentSpec", func() {
 			EventRecorder:         record.NewFakeRecorder(10),
 		}
 
-		_, err := r.buildDeploymentSpec(ctx, evalHub, nil, nil)
+		_, err := r.buildDeploymentSpec(ctx, evalHub, nil, nil, nil, nil)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("resolving EvalHub image"))
 	})
 
 	It("adds provider volume and mount when providerCMNames is non-nil", func() {
 		providerCMNames := []string{"test-evalhub-provider-lm-eval", "test-evalhub-provider-garak"}
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, providerCMNames, nil)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, providerCMNames, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		podSpec := deploymentSpec.Template.Spec
@@ -257,7 +257,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 
 	It("adds collection volume and mount when collectionCMNames is non-nil", func() {
 		collectionCMNames := []string{"test-evalhub-collection-healthcare-safety"}
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, collectionCMNames)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, collectionCMNames, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		podSpec := deploymentSpec.Template.Spec
@@ -294,7 +294,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 	It("adds both provider and collection volumes when both slices are non-nil", func() {
 		providerCMNames := []string{"test-evalhub-provider-lm-eval"}
 		collectionCMNames := []string{"test-evalhub-collection-healthcare-safety", "test-evalhub-collection-finance"}
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, providerCMNames, collectionCMNames)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, providerCMNames, collectionCMNames, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		podSpec := deploymentSpec.Template.Spec
@@ -327,7 +327,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 	})
 
 	It("does not include provider or collection volumes when both arguments are nil", func() {
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		for _, v := range deploymentSpec.Template.Spec.Volumes {
@@ -352,7 +352,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 			Spec: evalhubv1.EvalHubSpec{},
 		}
 
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHubNoReplicas, nil, nil)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHubNoReplicas, nil, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(*deploymentSpec.Replicas).To(Equal(int32(1)))
 	})

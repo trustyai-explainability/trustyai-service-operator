@@ -6,10 +6,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -340,5 +342,90 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		Expect(updatedEvalHub.Status.Replicas).To(Equal(int32(1)))
 		Expect(updatedEvalHub.Status.ReadyReplicas).To(Equal(int32(1)))
 		Expect(updatedEvalHub.Status.URL).To(ContainSubstring(evalHubName))
+	})
+})
+
+var _ = Describe("EvalHub InvalidPlacement", func() {
+	const (
+		evalHubName   = "placement-evalhub"
+		configMapName = "trustyai-service-operator-config"
+	)
+
+	var (
+		testNamespace string
+		tenantNS      *corev1.Namespace
+		configMap     *corev1.ConfigMap
+		evalHub       *evalhubv1.EvalHub
+		reconciler    *EvalHubReconciler
+	)
+
+	BeforeEach(func() {
+		testNamespace = fmt.Sprintf("tenant-ns-%d", time.Now().UnixNano())
+
+		// Namespace is labelled as a tenant namespace before the EvalHub is placed.
+		tenantNS = &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   testNamespace,
+				Labels: map[string]string{tenantLabel: "true"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, tenantNS)).Should(Succeed())
+
+		configMap = createConfigMap(configMapName, testNamespace)
+		Expect(k8sClient.Create(ctx, configMap)).Should(Succeed())
+
+		// Multi-tenant (default) EvalHub placed in a tenant-labelled namespace.
+		// Use SQLite so the DB check passes before reaching the placement guard.
+		evalHub = createEvalHubInstanceWithSQLite(evalHubName, testNamespace)
+		Expect(k8sClient.Create(ctx, evalHub)).Should(Succeed())
+
+		reconciler, _ = setupReconciler(testNamespace)
+	})
+
+	AfterEach(func() {
+		cleanupResourcesInNamespace(testNamespace, evalHub, configMap)
+		deleteNamespace(tenantNS)
+		evalHub = nil
+		configMap = nil
+		tenantNS = nil
+	})
+
+	It("should set InvalidPlacement error status and not create a Deployment", func() {
+		By("Running the initial reconciliation passes (status init + finalizer)")
+		performReconcile(reconciler, evalHubName, testNamespace)
+		performReconcile(reconciler, evalHubName, testNamespace)
+
+		By("Running the reconcile that hits the placement guard")
+		_, err := performReconcile(reconciler, evalHubName, testNamespace)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Verifying status is Error with InvalidPlacement reason")
+		updatedEvalHub := &evalhubv1.EvalHub{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		}, updatedEvalHub)).Should(Succeed())
+		Expect(updatedEvalHub.Status.Phase).To(Equal("Error"))
+
+		conditions := updatedEvalHub.Status.Conditions
+		Expect(conditions).NotTo(BeEmpty())
+		var readyCondition *common.Condition
+		for i := range conditions {
+			if conditions[i].Type == "Ready" {
+				readyCondition = &conditions[i]
+				break
+			}
+		}
+		Expect(readyCondition).NotTo(BeNil())
+		Expect(readyCondition.Status).To(Equal(corev1.ConditionFalse))
+		Expect(readyCondition.Reason).To(Equal(invalidPlacementReason))
+
+		By("Verifying no Deployment was created")
+		deployment := &appsv1.Deployment{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+		}, deployment)
+		Expect(errors.IsNotFound(err)).To(BeTrue())
 	})
 })

@@ -3,6 +3,7 @@ package evalhub
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -707,6 +708,43 @@ func providerVolumeProjections(cmNames []string) []corev1.VolumeProjection {
 		})
 	}
 	return projections
+}
+
+// reconcileTenantProviderConfigMaps discovers provider ConfigMaps in the instance namespace that are
+// labeled evalhub-provider-type=tenant. Unlike system CMs, tenant CMs are not copied — they already
+// reside in the correct namespace. Returns the names of all matching ConfigMaps.
+func (r *EvalHubReconciler) reconcileTenantProviderConfigMaps(ctx context.Context, instance *evalhubv1.EvalHub) ([]string, error) {
+	var list corev1.ConfigMapList
+	if err := r.List(ctx, &list,
+		client.InNamespace(instance.Namespace),
+		client.MatchingLabels{providerLabel: providerTenantValue},
+	); err != nil {
+		return nil, fmt.Errorf("failed to list tenant provider ConfigMaps in namespace %s: %w", instance.Namespace, err)
+	}
+	names := make([]string, 0, len(list.Items))
+	for i := range list.Items {
+		names = append(names, list.Items[i].Name)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// reconcileTenantCollectionConfigMaps discovers collection ConfigMaps in the instance namespace that
+// are labeled evalhub-collection-type=tenant. Returns the names of all matching ConfigMaps.
+func (r *EvalHubReconciler) reconcileTenantCollectionConfigMaps(ctx context.Context, instance *evalhubv1.EvalHub) ([]string, error) {
+	var list corev1.ConfigMapList
+	if err := r.List(ctx, &list,
+		client.InNamespace(instance.Namespace),
+		client.MatchingLabels{collectionLabel: collectionTenantValue},
+	); err != nil {
+		return nil, fmt.Errorf("failed to list tenant collection ConfigMaps in namespace %s: %w", instance.Namespace, err)
+	}
+	names := make([]string, 0, len(list.Items))
+	for i := range list.Items {
+		names = append(names, list.Items[i].Name)
+	}
+	sort.Strings(names)
+	return names, nil
 }
 
 // reconcileServiceCAConfigMap creates or updates the ConfigMap for service CA certificate injection

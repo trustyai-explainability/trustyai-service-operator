@@ -38,6 +38,7 @@ while IFS= read -r line; do
     # Parse key=value pairs
     groups=""
     resources=""
+    resource_names=""
     verbs=""
     urls=""
 
@@ -49,13 +50,14 @@ while IFS= read -r line; do
         case "${key}" in
             groups) groups="${value}" ;;
             resources) resources="${value}" ;;
+            resourceNames) resource_names="${value}" ;;
             verbs) verbs="${value}" ;;
             urls) urls="${value}" ;;
         esac
     done
 
     # Create a unique key for deduplication
-    rule_key="${groups}|${resources}|${verbs}|${urls}"
+    rule_key="${groups}|${resources}|${resource_names}|${verbs}|${urls}"
 
     # Check if we've seen this rule before (simple deduplication)
     if grep -Fxq "${rule_key}" "${TEMP_SEEN}" 2>/dev/null; then
@@ -84,6 +86,14 @@ while IFS= read -r line; do
         IFS=';' read -ra RESOURCE_ARRAY <<< "${resources}"
         for resource in "${RESOURCE_ARRAY[@]}"; do
             echo "  - ${resource}"
+        done
+    fi
+
+    if [[ -n "${resource_names}" ]]; then
+        echo "  resourceNames:"
+        IFS=';' read -ra RESOURCE_NAME_ARRAY <<< "${resource_names}"
+        for resource_name in "${RESOURCE_NAME_ARRAY[@]}"; do
+            echo "  - ${resource_name}"
         done
     fi
 

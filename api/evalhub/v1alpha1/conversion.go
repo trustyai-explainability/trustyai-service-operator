@@ -51,6 +51,8 @@ func (src *EvalHub) ConvertTo(dstRaw conversion.Hub) error {
 		}
 	}
 
+	dst.Spec.Tenancy = v1.TenancyMulti
+
 	// Status
 	dst.Status.Phase = src.Status.Phase
 	dst.Status.Replicas = src.Status.Replicas

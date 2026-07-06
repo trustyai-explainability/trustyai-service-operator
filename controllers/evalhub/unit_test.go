@@ -1495,7 +1495,7 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 	}
 
 	t.Run("should add DB secret volume and mount when database configured", func(t *testing.T) {
-		err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+		err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 		require.NoError(t, err)
 
 		deployment := &appsv1.Deployment{}
@@ -1745,7 +1745,7 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 		require.Len(t, cmNames, 1)
 
 		// Then reconcile deployment with the provider ConfigMap names
-		err = reconciler.reconcileDeployment(ctx, evalHub, cmNames, nil)
+		err = reconciler.reconcileDeployment(ctx, evalHub, cmNames, nil, nil, nil)
 		require.NoError(t, err)
 
 		// Verify the deployment has the projected volume
@@ -1986,6 +1986,42 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 		}, cm)
 		require.NoError(t, err)
 		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
+	})
+
+	t.Run("should skip terminating tenant namespace", func(t *testing.T) {
+		now := metav1.Now()
+		terminatingNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: tenantNamespace,
+				Labels: map[string]string{
+					tenantLabel: "",
+				},
+				DeletionTimestamp: &now,
+				Finalizers:        []string{"kubernetes"},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, terminatingNS).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileTenantNamespaces(ctx, evalHub)
+		require.NoError(t, err)
+
+		cmName := evalHubName + "-service-ca"
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      cmName,
+			Namespace: tenantNamespace,
+		}, cm)
+		assert.True(t, errors.IsNotFound(err))
 	})
 
 	t.Run("should skip instance namespace", func(t *testing.T) {

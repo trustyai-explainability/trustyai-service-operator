@@ -78,6 +78,7 @@ allowed_api_resources := {
 
 	# --- trustyai ---
 	["trustyai.opendatahub.io", "collections"],
+	["trustyai.opendatahub.io", "evaluations"],
 	["trustyai.opendatahub.io", "evalhubs"],
 	["trustyai.opendatahub.io", "evalhubs/finalizers"],
 	["trustyai.opendatahub.io", "evalhubs/proxy"],
