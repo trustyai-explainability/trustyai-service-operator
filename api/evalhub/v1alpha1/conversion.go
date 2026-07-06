@@ -51,7 +51,7 @@ func (src *EvalHub) ConvertTo(dstRaw conversion.Hub) error {
 		}
 	}
 
-	dst.Spec.Tenancy = src.Spec.Tenancy
+	dst.Spec.Tenancy = v1.TenancyMulti
 
 	// Status
 	dst.Status.Phase = src.Status.Phase
@@ -128,8 +128,6 @@ func (dst *EvalHub) ConvertFrom(srcRaw conversion.Hub) error {
 			AuthSecret:       src.Spec.MCP.AuthSecret,
 		}
 	}
-
-	dst.Spec.Tenancy = src.Spec.Tenancy
 
 	// Status
 	dst.Status.Phase = src.Status.Phase

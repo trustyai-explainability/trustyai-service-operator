@@ -298,3 +298,41 @@ func TestConvertDeepCopyIsolation(t *testing.T) {
 		t.Error("MCP was not deep-copied — mutation leaked")
 	}
 }
+
+func TestConvertToDefaultsTenancyMulti(t *testing.T) {
+	src := &EvalHub{
+		ObjectMeta: metav1.ObjectMeta{Name: "minimal"},
+		Spec: EvalHubSpec{
+			Replicas: int32Ptr(1),
+		},
+	}
+	dst := &v1.EvalHub{}
+
+	if err := src.ConvertTo(dst); err != nil {
+		t.Fatalf("ConvertTo failed: %v", err)
+	}
+	if dst.Spec.Tenancy != v1.TenancyMulti {
+		t.Errorf("Tenancy = %q, want %q", dst.Spec.Tenancy, v1.TenancyMulti)
+	}
+	if !dst.Spec.IsMultiTenancy() {
+		t.Error("IsMultiTenancy() should be true when Tenancy is multi")
+	}
+}
+
+func TestConvertFromDropsTenancy(t *testing.T) {
+	hub := &v1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-evalhub"},
+		Spec: v1.EvalHubSpec{
+			Replicas: int32Ptr(1),
+			Tenancy:  v1.TenancySingle,
+		},
+	}
+
+	dst := &EvalHub{}
+	if err := dst.ConvertFrom(hub); err != nil {
+		t.Fatalf("ConvertFrom failed: %v", err)
+	}
+	if *dst.Spec.Replicas != 1 {
+		t.Errorf("Replicas = %d, want 1", *dst.Spec.Replicas)
+	}
+}

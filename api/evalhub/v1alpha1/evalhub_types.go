@@ -6,18 +6,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// TenancyMode controls how an EvalHub instance manages tenant namespaces.
-type TenancyMode = string
-
-const (
-	// TenancyMulti is the default mode: one EvalHub in a control-plane namespace
-	// serves multiple tenant namespaces labelled with evalhub.trustyai.opendatahub.io/tenant.
-	TenancyMulti TenancyMode = "multi"
-	// TenancySingle deploys EvalHub directly in the workload namespace; no
-	// cross-namespace tenant label discovery or resource propagation is performed.
-	TenancySingle TenancyMode = "single"
-)
-
 // EvalHub is the Schema for the evalhubs API
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
@@ -173,14 +161,6 @@ type EvalHubSpec struct {
 	// MCP optionally enables an MCP server deployment connected to this EvalHub instance.
 	// +optional
 	MCP *EvalHubMCPSpec `json:"mcp,omitempty"`
-
-	// Tenancy controls the deployment mode of this EvalHub instance.
-	// "multi" (default): serves multiple tenant namespaces labelled with evalhub.trustyai.opendatahub.io/tenant.
-	// "single": serves only its own namespace; no cross-namespace resource propagation.
-	// +kubebuilder:default:=multi
-	// +kubebuilder:validation:Enum=single;multi
-	// +optional
-	Tenancy TenancyMode `json:"tenancy,omitempty"`
 }
 
 // EvalHubStatus defines the observed state of EvalHub
