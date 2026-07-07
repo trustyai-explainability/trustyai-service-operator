@@ -110,7 +110,7 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 			log.Error(err, "Failed to create service pod-logs Role in tenant namespace", "namespace", ns)
 			return err
 		}
-		podLogsRBName := normalizeDNS1123LabelValue(instance.Name + "-" + ns + "-service-pod-logs-rb")
+		podLogsRBName := normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-" + ns + "-service-pod-logs-rb")
 		if err := r.createJobRoleBinding(ctx, instance, podLogsRBName, serviceAccountName, ns, rbacv1.RoleRef{
 			Kind:     "Role",
 			Name:     generateServicePodLogsRoleName(instance),

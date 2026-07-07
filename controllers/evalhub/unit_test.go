@@ -2239,7 +2239,7 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 		assert.Equal(t, []string{"pods/log"}, role.Rules[1].Resources)
 		assert.Equal(t, []string{"get"}, role.Rules[1].Verbs)
 
-		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + tenantNamespace + "-service-pod-logs-rb")
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + instanceNamespace + "-" + tenantNamespace + "-service-pod-logs-rb")
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      rbName,
