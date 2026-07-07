@@ -5,7 +5,7 @@ import (
 )
 
 // ManagementState defines the management state of the module
-// +kubebuilder:validation:Enum=Managed;Removed
+// +kubebuilder:validation:Enum=Managed;Removed;Unmanaged
 type ManagementState string
 
 const (
@@ -13,7 +13,32 @@ const (
 	ManagementStateManaged ManagementState = "Managed"
 	// Removed means the operator should remove the module
 	ManagementStateRemoved ManagementState = "Removed"
+	// Unmanaged means the operator should not reconcile the module
+	ManagementStateUnmanaged ManagementState = "Unmanaged"
 )
+
+// EnabledServices defines which TrustyAI services are enabled
+type EnabledServices struct {
+	// TAS enables the TrustyAI Service
+	// +optional
+	TAS bool `json:"tas,omitempty"`
+
+	// LMES enables the LM Evaluation Service
+	// +optional
+	LMES bool `json:"lmes,omitempty"`
+
+	// EvalHub enables the EvalHub service
+	// +optional
+	EvalHub bool `json:"evalHub,omitempty"`
+
+	// GORCH enables the Guardrails Orchestrator
+	// +optional
+	GORCH bool `json:"gorch,omitempty"`
+
+	// NemoGuardrails enables Nemo Guardrails
+	// +optional
+	NemoGuardrails bool `json:"nemoGuardrails,omitempty"`
+}
 
 // TrustyAISpec defines the desired state of TrustyAI module
 type TrustyAISpec struct {
@@ -22,9 +47,18 @@ type TrustyAISpec struct {
 	// +optional
 	ManagementState ManagementState `json:"managementState,omitempty"`
 
-	// EnabledServices is a map of service names to their enabled state
+	// EnabledServices defines which TrustyAI services are enabled
 	// +optional
-	EnabledServices map[string]bool `json:"enabledServices,omitempty"`
+	EnabledServices EnabledServices `json:"enabledServices,omitempty"`
+}
+
+// DistributionInfo represents the distribution information
+type DistributionInfo struct {
+	// Name is the name of the distribution
+	Name string `json:"name"`
+
+	// Version is the version of the distribution
+	Version string `json:"version"`
 }
 
 // ComponentRelease represents information about a component release
@@ -50,6 +84,10 @@ type TrustyAIStatus struct {
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
+	// Distribution contains information about the distribution
+	// +optional
+	Distribution DistributionInfo `json:"distribution,omitempty"`
+
 	// Releases contains information about component releases
 	// +optional
 	Releases []ComponentRelease `json:"releases,omitempty"`
@@ -60,6 +98,9 @@ type TrustyAIStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,shortName=tai
 // +kubebuilder:validation:XValidation:rule="self.metadata.name == 'default'",message="TrustyAI resource must be named 'default'"
+// +kubebuilder:printcolumn:name="Management State",type=string,JSONPath=`.spec.managementState`
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type TrustyAI struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
