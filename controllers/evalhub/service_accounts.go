@@ -207,7 +207,8 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
-	err = r.createGenericRoleBinding(ctx, instance, instance.Name+"-service-pod-logs-rb", serviceAccountName, rbacv1.RoleRef{
+	podLogsRBName := normalizeDNS1123LabelValue(instance.Name + "-service-pod-logs-rb")
+	err = r.createGenericRoleBinding(ctx, instance, podLogsRBName, serviceAccountName, rbacv1.RoleRef{
 		Kind:     "Role",
 		Name:     generateServicePodLogsRoleName(instance),
 		APIGroup: rbacv1.GroupName,
