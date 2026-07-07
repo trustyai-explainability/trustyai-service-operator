@@ -2202,6 +2202,62 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 		assert.Equal(t, instanceNamespace, rb.Subjects[0].Namespace)
 	})
 
+	t.Run("should create service pod-logs Role and RoleBinding in tenant namespace", func(t *testing.T) {
+		tenantNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   tenantNamespace,
+				Labels: map[string]string{tenantLabel: ""},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, tenantNS).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileTenantNamespaces(ctx, evalHub)
+		require.NoError(t, err)
+
+		roleName := generateServicePodLogsRoleName(evalHub)
+		role := &rbacv1.Role{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      roleName,
+			Namespace: tenantNamespace,
+		}, role)
+		require.NoError(t, err, "service pod-logs Role should exist in tenant namespace")
+		require.Len(t, role.Rules, 2)
+		assert.Equal(t, []string{""}, role.Rules[0].APIGroups)
+		assert.Equal(t, []string{"pods"}, role.Rules[0].Resources)
+		assert.Equal(t, []string{"get", "list"}, role.Rules[0].Verbs)
+		assert.Equal(t, []string{""}, role.Rules[1].APIGroups)
+		assert.Equal(t, []string{"pods/log"}, role.Rules[1].Resources)
+		assert.Equal(t, []string{"get"}, role.Rules[1].Verbs)
+
+		rbName := normalizeDNS1123LabelValue(evalHubName + "-" + tenantNamespace + "-service-pod-logs-rb")
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      rbName,
+			Namespace: tenantNamespace,
+		}, rb)
+		require.NoError(t, err, "service pod-logs RoleBinding should exist in tenant namespace")
+
+		assert.Equal(t, "Role", rb.RoleRef.Kind)
+		assert.Equal(t, roleName, rb.RoleRef.Name)
+		assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
+
+		svcSAName := generateServiceAccountName(evalHub)
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
+		assert.Equal(t, svcSAName, rb.Subjects[0].Name)
+		assert.Equal(t, instanceNamespace, rb.Subjects[0].Namespace)
+	})
+
 	t.Run("should create MLFlow service SA RoleBinding in tenant namespace", func(t *testing.T) {
 		// This is the cross-namespace case: EvalHub runs in instanceNamespace but jobs
 		// run in tenantNamespace. The service SA must be able to create MLFlow experiments
