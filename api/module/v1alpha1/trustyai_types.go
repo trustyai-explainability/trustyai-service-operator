@@ -82,6 +82,8 @@ type TrustyAIStatus struct {
 
 	// Conditions represent the latest available observations of the module's state
 	// +optional
+	// +listType=map
+	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// Distribution contains information about the distribution
@@ -97,6 +99,7 @@ type TrustyAIStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,shortName=tai
+// +kubebuilder:storageversion
 // +kubebuilder:validation:XValidation:rule="self.metadata.name == 'default'",message="TrustyAI resource must be named 'default'"
 // +kubebuilder:printcolumn:name="Management State",type=string,JSONPath=`.spec.managementState`
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`

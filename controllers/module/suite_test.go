@@ -44,7 +44,7 @@ var _ = BeforeSuite(func() {
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
-			filepath.Join("..", "..", "config", "components", "module", "crd"),
+			filepath.Join("..", "..", "config", "crd", "bases"),
 		},
 		ErrorIfCRDPathMissing: true,
 	}
@@ -83,9 +83,12 @@ func createModuleInstance(name string, managementState modulev1alpha1.Management
 		},
 		Spec: modulev1alpha1.TrustyAISpec{
 			ManagementState: managementState,
-			EnabledServices: map[string]bool{
-				"service1": true,
-				"service2": false,
+			EnabledServices: modulev1alpha1.EnabledServices{
+				TAS:            true,
+				LMES:           true,
+				EvalHub:        false,
+				GORCH:          false,
+				NemoGuardrails: false,
 			},
 		},
 	}

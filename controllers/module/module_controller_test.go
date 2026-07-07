@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	modulev1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/module/v1alpha1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -86,13 +87,14 @@ var _ = Describe("TrustyAI Module Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Check Ready condition
+			// Until health checker integration (RHOAIENG-67662), should be NotReady
 			updated := &modulev1alpha1.TrustyAI{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, updated)).To(Succeed())
 
 			readyCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeReady)
 			Expect(readyCondition).NotTo(BeNil())
-			Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
-			Expect(readyCondition.Reason).To(Equal("AllServicesHealthy"))
+			Expect(readyCondition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCondition.Reason).To(Equal("HealthCheckPending"))
 		})
 
 		It("Should set ProvisioningSucceeded condition", func() {
@@ -108,16 +110,17 @@ var _ = Describe("TrustyAI Module Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Check ProvisioningSucceeded condition
+			// Until health checker integration (RHOAIENG-67662), should be False/Pending
 			updated := &modulev1alpha1.TrustyAI{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, updated)).To(Succeed())
 
 			provisioningCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeProvisioningSucceeded)
 			Expect(provisioningCondition).NotTo(BeNil())
-			Expect(provisioningCondition.Status).To(Equal(metav1.ConditionTrue))
-			Expect(provisioningCondition.Reason).To(Equal("ProvisioningComplete"))
+			Expect(provisioningCondition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(provisioningCondition.Reason).To(Equal("HealthCheckPending"))
 		})
 
-		It("Should set phase to Ready when healthy", func() {
+		It("Should set phase to NotReady pending health checker", func() {
 			module := createModuleInstance("default", modulev1alpha1.ManagementStateManaged)
 			Expect(k8sClient.Create(ctx, module)).To(Succeed())
 
@@ -130,9 +133,10 @@ var _ = Describe("TrustyAI Module Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Check phase
+			// Until health checker integration (RHOAIENG-67662), should be NotReady
 			updated := &modulev1alpha1.TrustyAI{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, updated)).To(Succeed())
-			Expect(updated.Status.Phase).To(Equal(PhaseReady))
+			Expect(updated.Status.Phase).To(Equal(PhaseNotReady))
 		})
 
 		It("Should handle Removed management state", func() {
@@ -177,7 +181,7 @@ var _ = Describe("TrustyAI Module Controller", func() {
 			deleted := &modulev1alpha1.TrustyAI{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, deleted)
-				return err != nil // Should be NotFound
+				return apierrors.IsNotFound(err)
 			}, timeout, interval).Should(BeTrue())
 		})
 

@@ -5,13 +5,8 @@ metadata:
 spec:
   managementState: Managed
   enabledServices:
-    TAS: true
-    LMES: true
-    EVALHUB: true
-    GORCH: false
-    NEMO_GUARDRAILS: false
-status:
-  observedGeneration: 0
-  phase: ""
-  conditions: []
-  releases: []
+    tas: true
+    lmes: true
+    evalHub: true
+    gorch: false
+    nemoGuardrails: false

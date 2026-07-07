@@ -5,6 +5,7 @@ import (
 	"time"
 
 	modulev1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/module/v1alpha1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,7 +38,7 @@ type TrustyAIReconciler struct {
 	EventRecorder         record.EventRecorder
 }
 
-//+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais/finalizers,verbs=update
 
@@ -92,6 +93,9 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.handleRemoval(ctx, module)
 	}
 
+	// Capture old status to detect changes
+	oldStatus := module.Status.DeepCopy()
+
 	// Run health checks and update conditions
 	if err := r.updateHealthStatus(ctx, module); err != nil {
 		logger.Error(err, "Failed to update health status")
@@ -101,10 +105,13 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Update releases information
 	r.updateReleases(module)
 
-	// Update status
-	if err := r.Status().Update(ctx, module); err != nil {
-		logger.Error(err, "Failed to update TrustyAI module status")
-		return ctrl.Result{}, err
+	// Only update status if it changed
+	if !equality.Semantic.DeepEqual(oldStatus, &module.Status) {
+		if err := r.Status().Update(ctx, module); err != nil {
+			logger.Error(err, "Failed to update TrustyAI module status")
+			return ctrl.Result{}, err
+		}
+		logger.V(1).Info("Updated TrustyAI module status")
 	}
 
 	// Requeue after interval for periodic health checks
@@ -137,8 +144,13 @@ func (r *TrustyAIReconciler) handleRemoval(ctx context.Context, module *modulev1
 	logger := log.FromContext(ctx)
 	logger.Info("TrustyAI module is in Removed state, skipping reconciliation")
 
-	// Update phase and conditions
+	// Capture old status to detect changes
+	oldStatus := module.Status.DeepCopy()
+
+	// Update phase and reset all conditions
 	module.Status.Phase = PhaseNotReady
+
+	// Set Ready=False
 	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
 		Type:               ConditionTypeReady,
 		Status:             metav1.ConditionFalse,
@@ -147,13 +159,35 @@ func (r *TrustyAIReconciler) handleRemoval(ctx context.Context, module *modulev1
 		ObservedGeneration: module.Generation,
 	})
 
-	// Update status
-	if err := r.Status().Update(ctx, module); err != nil {
-		logger.Error(err, "Failed to update TrustyAI module status")
-		return ctrl.Result{}, err
+	// Reset ProvisioningSucceeded
+	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+		Type:               ConditionTypeProvisioningSucceeded,
+		Status:             metav1.ConditionFalse,
+		Reason:             "ModuleRemoved",
+		Message:            "Module management state is set to Removed",
+		ObservedGeneration: module.Generation,
+	})
+
+	// Reset Degraded
+	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+		Type:               ConditionTypeDegraded,
+		Status:             metav1.ConditionFalse,
+		Reason:             "ModuleRemoved",
+		Message:            "Module is not deployed",
+		ObservedGeneration: module.Generation,
+	})
+
+	// Only update status if it changed
+	if !equality.Semantic.DeepEqual(oldStatus, &module.Status) {
+		if err := r.Status().Update(ctx, module); err != nil {
+			logger.Error(err, "Failed to update TrustyAI module status")
+			return ctrl.Result{}, err
+		}
+		logger.V(1).Info("Updated TrustyAI module status after removal")
 	}
 
-	return ctrl.Result{}, nil
+	// Requeue to handle potential state transitions
+	return ctrl.Result{RequeueAfter: time.Duration(DefaultRequeueInterval) * time.Second}, nil
 }
 
 // updateHealthStatus runs health checks and updates status conditions
@@ -161,10 +195,46 @@ func (r *TrustyAIReconciler) updateHealthStatus(ctx context.Context, module *mod
 	logger := log.FromContext(ctx)
 
 	// TODO: Integrate with health checker (GAP-06/67662)
-	// For now, we'll set a basic Ready condition
+	// Until health checker integration is complete, mark as NotReady to avoid false positives in DSC ModulesReady
+	module.Status.Phase = PhaseNotReady
+
+	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+		Type:               ConditionTypeReady,
+		Status:             metav1.ConditionFalse,
+		Reason:             "HealthCheckPending",
+		Message:            "Health checker integration pending (RHOAIENG-67662)",
+		ObservedGeneration: module.Generation,
+	})
+
+	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+		Type:               ConditionTypeProvisioningSucceeded,
+		Status:             metav1.ConditionFalse,
+		Reason:             "HealthCheckPending",
+		Message:            "Awaiting health checker integration",
+		ObservedGeneration: module.Generation,
+	})
+
+	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+		Type:               ConditionTypeDegraded,
+		Status:             metav1.ConditionFalse,
+		Reason:             "HealthCheckPending",
+		Message:            "Health status unknown until health checker integration",
+		ObservedGeneration: module.Generation,
+	})
+
+	logger.Info("Health status update skipped - awaiting health checker integration", "phase", module.Status.Phase)
+
+	return nil
+}
+
+// updateHealthStatusOld is the old implementation that will be replaced by health checker integration
+// Keeping this commented out as reference for when health checker is integrated
+/*
+func (r *TrustyAIReconciler) updateHealthStatusOld(ctx context.Context, module *modulev1alpha1.TrustyAI) error {
+	logger := log.FromContext(ctx)
 
 	// Check if all enabled services are healthy
-	// This is a placeholder - actual implementation will use health checkers
+	// This will be replaced with actual health checker calls
 	allHealthy := true
 	partiallyHealthy := false
 
@@ -221,6 +291,7 @@ func (r *TrustyAIReconciler) updateHealthStatus(ctx context.Context, module *mod
 
 	return nil
 }
+*/
 
 // updateReleases populates the releases field with component version information
 func (r *TrustyAIReconciler) updateReleases(module *modulev1alpha1.TrustyAI) {
