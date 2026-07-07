@@ -3,6 +3,7 @@ package evalhub
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -21,15 +22,13 @@ import (
 
 // ServiceConfig represents the service section in config.yaml
 type ServiceConfig struct {
-	Port             int    `json:"port"`
-	Host             string `json:"host,omitempty"`
-	DisableAuth      bool   `json:"disable_auth,omitempty"`
-	ReadyFile        string `json:"ready_file"`
-	TerminationFile  string `json:"termination_file"`
-	EvalInitImage    string `json:"eval_init_image,omitempty"`
-	EvalSidecarImage string `json:"eval_sidecar_image,omitempty"`
-	TLSCertFile      string `json:"tls_cert_file,omitempty"`
-	TLSKeyFile       string `json:"tls_key_file,omitempty"`
+	Port            int    `json:"port"`
+	Host            string `json:"host,omitempty"`
+	DisableAuth     bool   `json:"disable_auth,omitempty"`
+	TerminationFile string `json:"termination_file"`
+	EvalInitImage   string `json:"eval_init_image,omitempty"`
+	TLSCertFile     string `json:"tls_cert_file,omitempty"`
+	TLSKeyFile      string `json:"tls_key_file,omitempty"`
 }
 
 // DatabaseConfig represents the database configuration in config.yaml
@@ -40,16 +39,25 @@ type DatabaseConfig struct {
 	MaxIdleConns int    `json:"max_idle_conns,omitempty"`
 }
 
-// OTELConfig represents the OpenTelemetry configuration in config.yaml
+// OTELConfig represents the OpenTelemetry configuration in config.yaml.
+// Field names match eval-hub internal/eval_hub/config/otel.go.
 type OTELConfig struct {
-	Enabled          bool     `json:"enabled"`
-	ExporterType     string   `json:"exporter_type,omitempty"`
-	ExporterEndpoint string   `json:"exporter_endpoint,omitempty"`
-	ExporterInsecure bool     `json:"exporter_insecure,omitempty"`
-	SamplingRatio    *float64 `json:"sampling_ratio,omitempty"`
-	EnableTracing    bool     `json:"enable_tracing,omitempty"`
-	EnableMetrics    bool     `json:"enable_metrics,omitempty"`
-	EnableLogs       bool     `json:"enable_logs,omitempty"`
+	Enabled                    bool     `json:"enabled"`
+	ExporterType               string   `json:"exporter_type,omitempty"`
+	ExporterEndpoint           string   `json:"exporter_endpoint,omitempty"`
+	ExporterInsecure           bool     `json:"exporter_insecure,omitempty"`
+	SamplingRatio              *float64 `json:"sampling_ratio,omitempty"`
+	EnableTracing              bool     `json:"enable_tracing,omitempty"`
+	TracerTimeout              string   `json:"tracer_timeout,omitempty"`
+	TracerBatchInterval        string   `json:"tracer_batch_interval,omitempty"`
+	EnableMetrics              bool     `json:"enable_metrics,omitempty"`
+	EnableLogs                 bool     `json:"enable_logs,omitempty"`
+	EnableJobContainerLogs     bool     `json:"enable_job_container_logs,omitempty"`
+	ServiceName                string   `json:"service_name,omitempty"`
+	EnableECSResourceDetection bool     `json:"enable_ecs_resource_detection,omitempty"`
+	DisableRedirectOTELLogs    bool     `json:"disable_redirect_otel_logs,omitempty"`
+	DisableDatabaseOTELScans   bool     `json:"disable_database_otel_scan,omitempty"`
+	MetricExportInterval       string   `json:"metric_export_interval,omitempty"`
 }
 
 // SecretsMapping represents the secrets mapping configuration in config.yaml
@@ -155,12 +163,10 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 
 	config := EvalHubConfig{
 		Service: ServiceConfig{
-			Port:             evalHubAppPort,
-			DisableAuth:      true,
-			ReadyFile:        "/tmp/repo-ready",
-			TerminationFile:  "/tmp/termination-log",
-			EvalInitImage:    evalHubImage,
-			EvalSidecarImage: evalHubImage,
+			Port:            evalHubAppPort,
+			DisableAuth:     true,
+			TerminationFile: "/tmp/termination-log",
+			EvalInitImage:   evalHubImage,
 		},
 		EnvMappings: EnvMappings{
 			"PORT":                        "service.port",
@@ -228,21 +234,9 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 
 	// Override OTEL configuration when explicitly configured
 	if instance.Spec.IsOTELConfigured() {
-		otelCfg := &OTELConfig{
-			Enabled:          true,
-			ExporterType:     instance.Spec.Otel.ExporterType,
-			ExporterEndpoint: instance.Spec.Otel.ExporterEndpoint,
-			ExporterInsecure: instance.Spec.Otel.ExporterInsecure,
-			EnableTracing:    instance.Spec.Otel.EnableTracing,
-			EnableMetrics:    instance.Spec.Otel.EnableMetrics,
-			EnableLogs:       instance.Spec.Otel.EnableLogs,
-		}
-		if instance.Spec.Otel.SamplingRatio != "" {
-			ratio, err := strconv.ParseFloat(instance.Spec.Otel.SamplingRatio, 64)
-			if err != nil {
-				return nil, fmt.Errorf("invalid samplingRatio %q: %w", instance.Spec.Otel.SamplingRatio, err)
-			}
-			otelCfg.SamplingRatio = &ratio
+		otelCfg, err := buildOTELConfig(instance.Spec.Otel)
+		if err != nil {
+			return nil, err
 		}
 		config.OTEL = otelCfg
 	}
@@ -257,6 +251,70 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		"config.yaml": string(configYAML),
 		"auth.yaml":   generateAuthConfigData(),
 	}, nil
+}
+
+func buildOTELConfig(spec *evalhubv1.OTELSpec) (*OTELConfig, error) {
+	if spec == nil {
+		return nil, fmt.Errorf("otel spec is nil")
+	}
+
+	if spec.EnableJobContainerLogs && !spec.EnableLogs {
+		return nil, fmt.Errorf("enableJobContainerLogs requires enableLogs to be true")
+	}
+
+	otelCfg := &OTELConfig{
+		Enabled:                    true,
+		ExporterType:               spec.ExporterType,
+		ExporterEndpoint:           spec.ExporterEndpoint,
+		ExporterInsecure:           spec.ExporterInsecure,
+		EnableTracing:              spec.EnableTracing,
+		EnableMetrics:              spec.EnableMetrics,
+		EnableLogs:                 spec.EnableLogs,
+		EnableJobContainerLogs:     spec.EnableJobContainerLogs,
+		ServiceName:                spec.ServiceName,
+		EnableECSResourceDetection: spec.EnableEcsResourceDetection,
+		DisableRedirectOTELLogs:    spec.DisableRedirectOtelLogs,
+		DisableDatabaseOTELScans:   spec.DisableDatabaseOtelScans,
+	}
+
+	if spec.SamplingRatio != "" {
+		ratio, err := strconv.ParseFloat(spec.SamplingRatio, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid samplingRatio %q: %w", spec.SamplingRatio, err)
+		}
+		otelCfg.SamplingRatio = &ratio
+	}
+
+	for _, field := range []struct {
+		name  string
+		value string
+		dest  *string
+	}{
+		{name: "tracerTimeout", value: spec.TracerTimeout, dest: &otelCfg.TracerTimeout},
+		{name: "tracerBatchInterval", value: spec.TracerBatchInterval, dest: &otelCfg.TracerBatchInterval},
+		{name: "metricExportInterval", value: spec.MetricExportInterval, dest: &otelCfg.MetricExportInterval},
+	} {
+		if field.value == "" {
+			continue
+		}
+		if err := validateOTELDuration(field.name, field.value); err != nil {
+			return nil, err
+		}
+		*field.dest = field.value
+	}
+
+	return otelCfg, nil
+}
+
+func validateOTELDuration(fieldName, value string) error {
+	d, err := time.ParseDuration(value)
+	if err != nil {
+		return fmt.Errorf("invalid %s %q: %w", fieldName, value, err)
+	}
+	if d < 0 {
+		return fmt.Errorf("invalid %s %q: duration must be greater than, or equal, to zero", fieldName, value)
+	}
+	return nil
 }
 
 // generateAuthConfigData returns the authorization configuration for the ConfigMap.
@@ -650,6 +708,43 @@ func providerVolumeProjections(cmNames []string) []corev1.VolumeProjection {
 		})
 	}
 	return projections
+}
+
+// reconcileTenantProviderConfigMaps discovers provider ConfigMaps in the instance namespace that are
+// labeled evalhub-provider-type=tenant. Unlike system CMs, tenant CMs are not copied — they already
+// reside in the correct namespace. Returns the names of all matching ConfigMaps.
+func (r *EvalHubReconciler) reconcileTenantProviderConfigMaps(ctx context.Context, instance *evalhubv1.EvalHub) ([]string, error) {
+	var list corev1.ConfigMapList
+	if err := r.List(ctx, &list,
+		client.InNamespace(instance.Namespace),
+		client.MatchingLabels{providerLabel: providerTenantValue},
+	); err != nil {
+		return nil, fmt.Errorf("failed to list tenant provider ConfigMaps in namespace %s: %w", instance.Namespace, err)
+	}
+	names := make([]string, 0, len(list.Items))
+	for i := range list.Items {
+		names = append(names, list.Items[i].Name)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// reconcileTenantCollectionConfigMaps discovers collection ConfigMaps in the instance namespace that
+// are labeled evalhub-collection-type=tenant. Returns the names of all matching ConfigMaps.
+func (r *EvalHubReconciler) reconcileTenantCollectionConfigMaps(ctx context.Context, instance *evalhubv1.EvalHub) ([]string, error) {
+	var list corev1.ConfigMapList
+	if err := r.List(ctx, &list,
+		client.InNamespace(instance.Namespace),
+		client.MatchingLabels{collectionLabel: collectionTenantValue},
+	); err != nil {
+		return nil, fmt.Errorf("failed to list tenant collection ConfigMaps in namespace %s: %w", instance.Namespace, err)
+	}
+	names := make([]string, 0, len(list.Items))
+	for i := range list.Items {
+		names = append(names, list.Items[i].Name)
+	}
+	sort.Strings(names)
+	return names, nil
 }
 
 // reconcileServiceCAConfigMap creates or updates the ConfigMap for service CA certificate injection

@@ -16,8 +16,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// reconcileDeployment creates or updates the Deployment for EvalHub
-func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *evalhubv1.EvalHub, providerCMNames []string, collectionCMNames []string) error {
+// reconcileDeployment creates or updates the Deployment for EvalHub.
+// systemProviderCMNames and systemCollectionCMNames are CMs copied from the operator namespace.
+// tenantProviderCMNames and tenantCollectionCMNames are CMs in the instance namespace labeled with type=tenant.
+func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *evalhubv1.EvalHub, providerCMNames []string, collectionCMNames []string, tenantProviderCMNames []string, tenantCollectionCMNames []string) error {
 	log := log.FromContext(ctx)
 	log.Info("Reconciling Deployment", "name", instance.Name)
 
@@ -35,7 +37,7 @@ func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *e
 	}
 
 	// Define the desired deployment spec
-	desiredSpec, err := r.buildDeploymentSpec(ctx, instance, providerCMNames, collectionCMNames)
+	desiredSpec, err := r.buildDeploymentSpec(ctx, instance, providerCMNames, collectionCMNames, tenantProviderCMNames, tenantCollectionCMNames)
 	if err != nil {
 		return err
 	}
@@ -60,7 +62,7 @@ func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *e
 }
 
 // buildDeploymentSpec builds the deployment specification for EvalHub
-func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *evalhubv1.EvalHub, providerCMNames []string, collectionCMNames []string) (appsv1.DeploymentSpec, error) {
+func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *evalhubv1.EvalHub, providerCMNames []string, collectionCMNames []string, tenantProviderCMNames []string, tenantCollectionCMNames []string) (appsv1.DeploymentSpec, error) {
 	labels := map[string]string{
 		"app":       "eval-hub",
 		"instance":  instance.Name,
@@ -175,6 +177,20 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      collectionsVolumeName,
 			MountPath: collectionsMountPath,
+			ReadOnly:  true,
+		})
+	}
+	if len(tenantProviderCMNames) > 0 {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      providersTenantVolumeName,
+			MountPath: providersTenantMountPath,
+			ReadOnly:  true,
+		})
+	}
+	if len(tenantCollectionCMNames) > 0 {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      collectionsTenantVolumeName,
+			MountPath: collectionsTenantMountPath,
 			ReadOnly:  true,
 		})
 	}
@@ -359,6 +375,26 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			VolumeSource: corev1.VolumeSource{
 				Projected: &corev1.ProjectedVolumeSource{
 					Sources: collectionVolumeProjections(collectionCMNames),
+				},
+			},
+		})
+	}
+	if len(tenantProviderCMNames) > 0 {
+		volumes = append(volumes, corev1.Volume{
+			Name: providersTenantVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Projected: &corev1.ProjectedVolumeSource{
+					Sources: providerVolumeProjections(tenantProviderCMNames),
+				},
+			},
+		})
+	}
+	if len(tenantCollectionCMNames) > 0 {
+		volumes = append(volumes, corev1.Volume{
+			Name: collectionsTenantVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Projected: &corev1.ProjectedVolumeSource{
+					Sources: collectionVolumeProjections(tenantCollectionCMNames),
 				},
 			},
 		})

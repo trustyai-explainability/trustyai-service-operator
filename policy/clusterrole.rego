@@ -47,6 +47,9 @@ allowed_api_resources := {
 	["rbac.authorization.k8s.io", "roles"],
 	["rbac.authorization.k8s.io", "rolebindings"],
 
+	# --- openshift config ---
+	["config.openshift.io", "apiservers"],
+
 	# --- networking / routes ---
 	["gateway.networking.k8s.io", "gateways"],
 	["mcp.kuadrant.io", "mcpgatewayextensions"],
@@ -78,6 +81,7 @@ allowed_api_resources := {
 
 	# --- trustyai ---
 	["trustyai.opendatahub.io", "collections"],
+	["trustyai.opendatahub.io", "evaluations"],
 	["trustyai.opendatahub.io", "evalhubs"],
 	["trustyai.opendatahub.io", "evalhubs/finalizers"],
 	["trustyai.opendatahub.io", "evalhubs/proxy"],

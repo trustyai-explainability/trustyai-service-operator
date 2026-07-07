@@ -39,7 +39,8 @@ func TestBuildMCPDeploymentSpec_envAndArgs(t *testing.T) {
 	operatorCM := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: configMapName, Namespace: "op-system"},
 		Data: map[string]string{
-			configMapKubeRBACProxyImageKey: "quay.io/test/kube-rbac-proxy:v1",
+			configMapEvalHubImageKey:       testMCPEvalHubImage,
+			configMapKubeRBACProxyImageKey: testBuildKubeRBACProxyImage,
 		},
 	}
 

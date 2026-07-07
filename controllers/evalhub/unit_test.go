@@ -106,8 +106,8 @@ func TestEvalHubReconciler_reconcileConfigMap(t *testing.T) {
 			Namespace: testNamespace,
 		},
 		Data: map[string]string{
-			configMapEvalHubImageKey:       "quay.io/evalhub/evalhub:test",
-			configMapKubeRBACProxyImageKey: "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable",
+			configMapEvalHubImageKey:       testReconcilerEvalHubImage,
+			configMapKubeRBACProxyImageKey: testKubeRBACProxyImage,
 		},
 	}
 
@@ -1218,6 +1218,159 @@ func TestGenerateConfigData_WithOTEL(t *testing.T) {
 		assert.False(t, config.OTEL.EnableLogs)
 	})
 
+	t.Run("should map extended otel fields", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Otel: &evalhubv1.OTELSpec{
+					ExporterType:               "otlp-grpc",
+					ExporterEndpoint:           "otel-collector:4317",
+					EnableTracing:              true,
+					EnableMetrics:              true,
+					EnableLogs:                 true,
+					TracerTimeout:              "30s",
+					TracerBatchInterval:        "5s",
+					EnableJobContainerLogs:     true,
+					ServiceName:                "my-evalhub",
+					EnableEcsResourceDetection: true,
+					DisableRedirectOtelLogs:    true,
+					DisableDatabaseOtelScans:   true,
+					MetricExportInterval:       "10s",
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+
+		require.NotNil(t, config.OTEL)
+		assert.Equal(t, "30s", config.OTEL.TracerTimeout)
+		assert.Equal(t, "5s", config.OTEL.TracerBatchInterval)
+		assert.Equal(t, "10s", config.OTEL.MetricExportInterval)
+		assert.Equal(t, "my-evalhub", config.OTEL.ServiceName)
+		assert.True(t, config.OTEL.EnableJobContainerLogs)
+		assert.True(t, config.OTEL.EnableECSResourceDetection)
+		assert.True(t, config.OTEL.DisableRedirectOTELLogs)
+		assert.True(t, config.OTEL.DisableDatabaseOTELScans)
+	})
+
+	t.Run("should reject invalid otel duration fields", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			value string
+		}{
+			{name: "unparseable", value: "not-a-duration"},
+			{name: "negative", value: "-5s"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				evalHub := &evalhubv1.EvalHub{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-evalhub",
+						Namespace: "test-namespace",
+					},
+					Spec: evalhubv1.EvalHubSpec{
+						Otel: &evalhubv1.OTELSpec{
+							TracerTimeout: tc.value,
+						},
+					},
+				}
+
+				configMap := createConfigMap(configMapName, evalHub.Namespace)
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(evalHub, configMap).
+					Build()
+				reconciler := &EvalHubReconciler{
+					Client:    fakeClient,
+					Scheme:    scheme,
+					Namespace: evalHub.Namespace,
+				}
+				_, err := reconciler.generateConfigData(context.Background(), evalHub)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "tracerTimeout")
+			})
+		}
+	})
+
+	t.Run("should accept zero otel duration fields", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Otel: &evalhubv1.OTELSpec{
+					TracerTimeout: "0s",
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.NoError(t, err)
+
+		var config EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+		require.NoError(t, err)
+		require.NotNil(t, config.OTEL)
+		assert.Equal(t, "0s", config.OTEL.TracerTimeout)
+	})
+
+	t.Run("should reject enableJobContainerLogs without enableLogs", func(t *testing.T) {
+		evalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-evalhub",
+				Namespace: "test-namespace",
+			},
+			Spec: evalhubv1.EvalHubSpec{
+				Otel: &evalhubv1.OTELSpec{
+					EnableJobContainerLogs: true,
+					EnableLogs:             false,
+				},
+			},
+		}
+
+		configMap := createConfigMap(configMapName, evalHub.Namespace)
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, configMap).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:    fakeClient,
+			Scheme:    scheme,
+			Namespace: evalHub.Namespace,
+		}
+		_, err := reconciler.generateConfigData(context.Background(), evalHub)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "enableJobContainerLogs")
+	})
+
 	t.Run("should use custom values", func(t *testing.T) {
 		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1324,8 +1477,8 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 			Namespace: testNamespace,
 		},
 		Data: map[string]string{
-			configMapEvalHubImageKey:       "quay.io/test/eval-hub:latest",
-			configMapKubeRBACProxyImageKey: "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable",
+			configMapEvalHubImageKey:       testEvalHubLatestImage,
+			configMapKubeRBACProxyImageKey: testKubeRBACProxyImage,
 		},
 	}
 
@@ -1342,7 +1495,7 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 	}
 
 	t.Run("should add DB secret volume and mount when database configured", func(t *testing.T) {
-		err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+		err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 		require.NoError(t, err)
 
 		deployment := &appsv1.Deployment{}
@@ -1569,8 +1722,8 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 				Namespace: operatorNamespace,
 			},
 			Data: map[string]string{
-				configMapEvalHubImageKey:       "quay.io/test/eval-hub:latest",
-				configMapKubeRBACProxyImageKey: "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable",
+				configMapEvalHubImageKey:       testEvalHubLatestImage,
+				configMapKubeRBACProxyImageKey: testKubeRBACProxyImage,
 			},
 		}
 
@@ -1592,7 +1745,7 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 		require.Len(t, cmNames, 1)
 
 		// Then reconcile deployment with the provider ConfigMap names
-		err = reconciler.reconcileDeployment(ctx, evalHub, cmNames, nil)
+		err = reconciler.reconcileDeployment(ctx, evalHub, cmNames, nil, nil, nil)
 		require.NoError(t, err)
 
 		// Verify the deployment has the projected volume
@@ -1833,6 +1986,42 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 		}, cm)
 		require.NoError(t, err)
 		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
+	})
+
+	t.Run("should skip terminating tenant namespace", func(t *testing.T) {
+		now := metav1.Now()
+		terminatingNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: tenantNamespace,
+				Labels: map[string]string{
+					tenantLabel: "",
+				},
+				DeletionTimestamp: &now,
+				Finalizers:        []string{"kubernetes"},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, terminatingNS).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.reconcileTenantNamespaces(ctx, evalHub)
+		require.NoError(t, err)
+
+		cmName := evalHubName + "-service-ca"
+		cm := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      cmName,
+			Namespace: tenantNamespace,
+		}, cm)
+		assert.True(t, errors.IsNotFound(err))
 	})
 
 	t.Run("should skip instance namespace", func(t *testing.T) {

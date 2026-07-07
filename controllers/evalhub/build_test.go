@@ -68,8 +68,8 @@ var _ = Describe("buildDeploymentSpec", func() {
 				Namespace: testNamespace,
 			},
 			Data: map[string]string{
-				configMapEvalHubImageKey:       "quay.io/test/eval-hub:v1.2.3",
-				configMapKubeRBACProxyImageKey: "quay.io/test/kube-rbac-proxy:v1",
+				configMapEvalHubImageKey:       testBuildEvalHubImage,
+				configMapKubeRBACProxyImageKey: testBuildKubeRBACProxyImage,
 			},
 		}
 		Expect(k8sClient.Create(ctx, operatorCM)).To(Succeed())
@@ -91,7 +91,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 	})
 
 	It("builds the expected DeploymentSpec (labels, eval-hub, kube-rbac-proxy, strategy)", func() {
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(*deploymentSpec.Replicas).To(Equal(replicas))
@@ -111,7 +111,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 		Expect(container).NotTo(BeNil(), "evalhub container should be present")
 
 		Expect(container.Name).To(Equal(containerName))
-		Expect(container.Image).To(Equal("quay.io/test/eval-hub:v1.2.3"))
+		Expect(container.Image).To(Equal(testBuildEvalHubImage))
 		Expect(container.ImagePullPolicy).To(Equal(corev1.PullAlways))
 
 		Expect(container.Ports).To(HaveLen(2))
@@ -154,7 +154,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 
 		krp := findContainerByName(podSpec.Containers, kubeRBACProxyContainerName)
 		Expect(krp).NotTo(BeNil())
-		Expect(krp.Image).To(Equal("quay.io/test/kube-rbac-proxy:v1"))
+		Expect(krp.Image).To(Equal(testBuildKubeRBACProxyImage))
 		Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 		Expect(krp.ReadinessProbe).NotTo(BeNil())
 		Expect(krp.StartupProbe).NotTo(BeNil())
@@ -187,7 +187,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 		operatorCM.Data["kubeRBACProxyMemoryRequest"] = "64Mi"
 		Expect(k8sClient.Update(ctx, operatorCM)).To(Succeed())
 
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		app := findContainerByName(deploymentSpec.Template.Spec.Containers, containerName)
@@ -214,14 +214,14 @@ var _ = Describe("buildDeploymentSpec", func() {
 			EventRecorder:         record.NewFakeRecorder(10),
 		}
 
-		_, err := r.buildDeploymentSpec(ctx, evalHub, nil, nil)
+		_, err := r.buildDeploymentSpec(ctx, evalHub, nil, nil, nil, nil)
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("resolving kube-rbac-proxy image"))
+		Expect(err.Error()).To(ContainSubstring("resolving EvalHub image"))
 	})
 
 	It("adds provider volume and mount when providerCMNames is non-nil", func() {
 		providerCMNames := []string{"test-evalhub-provider-lm-eval", "test-evalhub-provider-garak"}
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, providerCMNames, nil)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, providerCMNames, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		podSpec := deploymentSpec.Template.Spec
@@ -257,7 +257,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 
 	It("adds collection volume and mount when collectionCMNames is non-nil", func() {
 		collectionCMNames := []string{"test-evalhub-collection-healthcare-safety"}
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, collectionCMNames)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, collectionCMNames, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		podSpec := deploymentSpec.Template.Spec
@@ -294,7 +294,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 	It("adds both provider and collection volumes when both slices are non-nil", func() {
 		providerCMNames := []string{"test-evalhub-provider-lm-eval"}
 		collectionCMNames := []string{"test-evalhub-collection-healthcare-safety", "test-evalhub-collection-finance"}
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, providerCMNames, collectionCMNames)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, providerCMNames, collectionCMNames, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		podSpec := deploymentSpec.Template.Spec
@@ -327,7 +327,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 	})
 
 	It("does not include provider or collection volumes when both arguments are nil", func() {
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		for _, v := range deploymentSpec.Template.Spec.Volumes {
@@ -352,7 +352,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 			Spec: evalhubv1.EvalHubSpec{},
 		}
 
-		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHubNoReplicas, nil, nil)
+		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHubNoReplicas, nil, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(*deploymentSpec.Replicas).To(Equal(int32(1)))
 	})
@@ -402,7 +402,7 @@ var _ = Describe("getImageFromConfigMap", func() {
 				Namespace: nsName,
 			},
 			Data: map[string]string{
-				configMapEvalHubImageKey: "quay.io/test/eval-hub:custom",
+				configMapEvalHubImageKey: testCustomEvalHubImage,
 			},
 		}
 		Expect(k8sClient.Create(ctx, cm)).To(Succeed())
@@ -413,7 +413,7 @@ var _ = Describe("getImageFromConfigMap", func() {
 		}
 		image, err := r.getImageFromConfigMap(ctx, configMapEvalHubImageKey)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(image).To(Equal("quay.io/test/eval-hub:custom"))
+		Expect(image).To(Equal(testCustomEvalHubImage))
 	})
 
 	It("returns an error when the ConfigMap is not found", func() {

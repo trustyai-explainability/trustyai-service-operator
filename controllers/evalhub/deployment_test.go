@@ -47,8 +47,8 @@ var _ = Describe("EvalHub Deployment", func() {
 				Namespace: testNamespace,
 			},
 			Data: map[string]string{
-				"evalHubImage":    "quay.io/ruimvieira/eval-hub:test",
-				"kube-rbac-proxy": "quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable",
+				"evalHubImage":    testEvalHubImage,
+				"kube-rbac-proxy": testKubeRBACProxyImage,
 			},
 		}
 		Expect(k8sClient.Create(ctx, configMap)).Should(Succeed())
@@ -78,7 +78,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should create deployment with correct specifications", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Verifying deployment exists")
@@ -108,7 +108,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should configure evalhub container correctly", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -126,7 +126,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(evalHubContainer).NotTo(BeNil(), "evalhub container should be present")
 
 			By("Checking evalhub container configuration")
-			Expect(evalHubContainer.Image).To(Equal("quay.io/ruimvieira/eval-hub:test")) // From test configmap
+			Expect(evalHubContainer.Image).To(Equal(testEvalHubImage)) // From test configmap
 			Expect(evalHubContainer.ImagePullPolicy).To(Equal(corev1.PullAlways))
 
 			// Check ports (loopback app port + metrics port; Service targets kube-rbac-proxy on 8443)
@@ -146,7 +146,7 @@ var _ = Describe("EvalHub Deployment", func() {
 				}
 			}
 			Expect(krp).NotTo(BeNil())
-			Expect(krp.Image).To(Equal("quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable"))
+			Expect(krp.Image).To(Equal(testKubeRBACProxyImage))
 			Expect(krp.Args).To(ContainElement("--config-file=" + kubeRBACProxyConfigMountPath))
 			Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 			var hasAuthMount bool
@@ -160,7 +160,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should set default environment variables", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -197,7 +197,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should include custom environment variables", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -226,7 +226,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should configure resource requirements", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -260,7 +260,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should configure security contexts", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -289,7 +289,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should update existing deployment", func() {
 			By("Creating initial deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Modifying EvalHub replicas")
@@ -299,7 +299,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Reconciling deployment again")
-			err = reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+			err = reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Verifying deployment is updated")
@@ -317,14 +317,14 @@ var _ = Describe("EvalHub Deployment", func() {
 			err := k8sClient.Delete(ctx, configMap)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+			err = reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("resolving kube-rbac-proxy image"))
+			Expect(err.Error()).To(ContainSubstring("resolving EvalHub image"))
 		})
 
 		It("should configure rolling update strategy", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -346,7 +346,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			defer k8sClient.Delete(ctx, dbEvalHub)
 
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, dbEvalHub, nil, nil)
+			err := reconciler.reconcileDeployment(ctx, dbEvalHub, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -406,7 +406,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(k8sClient.Create(ctx, evalHub)).Should(Succeed())
 
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -442,7 +442,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			}
 
 			By("Attempting to reconcile deployment")
-			err := reconciler.reconcileDeployment(ctx, nonExistentEvalHub, nil, nil)
+			err := reconciler.reconcileDeployment(ctx, nonExistentEvalHub, nil, nil, nil, nil)
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -456,7 +456,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should mount TLS secret on kube-rbac-proxy container", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -486,7 +486,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should configure deployment volumes", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -518,7 +518,7 @@ var _ = Describe("EvalHub Deployment", func() {
 
 		It("should configure service account for API", func() {
 			By("Reconciling deployment")
-			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil)
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting deployment")
@@ -554,8 +554,8 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 				Namespace: testNamespace,
 			},
 			Data: map[string]string{
-				configMapEvalHubImageKey:       "quay.io/test/eval-hub:latest",
-				configMapKubeRBACProxyImageKey: "quay.io/test/kube-rbac-proxy:latest",
+				configMapEvalHubImageKey:       testEvalHubLatestImage,
+				configMapKubeRBACProxyImageKey: testKubeRBACProxyLatestImage,
 			},
 		}
 		Expect(k8sClient.Create(ctx, operatorCM)).To(Succeed())
@@ -599,7 +599,7 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 	})
 
 	It("creates the Deployment with expected pod spec from reconcileDeployment", func() {
-		Expect(reconciler.reconcileDeployment(ctx, evalHubInst, nil, nil)).To(Succeed())
+		Expect(reconciler.reconcileDeployment(ctx, evalHubInst, nil, nil, nil, nil)).To(Succeed())
 
 		deployment := waitForDeployment(parityEvalHubName, testNamespace)
 		Expect(deployment.Name).To(Equal(parityEvalHubName))
@@ -620,7 +620,7 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 		Expect(evalHubC).NotTo(BeNil())
 		Expect(krp).NotTo(BeNil())
 
-		Expect(evalHubC.Image).To(Equal("quay.io/test/eval-hub:latest"))
+		Expect(evalHubC.Image).To(Equal(testEvalHubLatestImage))
 		Expect(evalHubC.ImagePullPolicy).To(Equal(corev1.PullAlways))
 		Expect(evalHubC.Ports).To(HaveLen(2))
 		Expect(evalHubC.Ports[0].Name).To(Equal("evalhub"))
@@ -644,7 +644,7 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 		Expect(evalHubC.ReadinessProbe).To(BeNil())
 		Expect(evalHubC.LivenessProbe).To(BeNil())
 
-		Expect(krp.Image).To(Equal("quay.io/test/kube-rbac-proxy:latest"))
+		Expect(krp.Image).To(Equal(testKubeRBACProxyLatestImage))
 		Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 		Expect(krp.Args).To(ContainElement("--config-file=" + kubeRBACProxyConfigMountPath))
 
@@ -694,8 +694,8 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 			OperatorConfigMapName: configMapName,
 			EventRecorder:         record.NewFakeRecorder(100),
 		}
-		err := r.reconcileDeployment(ctx, fh, nil, nil)
+		err := r.reconcileDeployment(ctx, fh, nil, nil, nil, nil)
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("resolving kube-rbac-proxy image"))
+		Expect(err.Error()).To(ContainSubstring("resolving EvalHub image"))
 	})
 })

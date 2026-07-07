@@ -6,6 +6,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// TenancyMode controls how an EvalHub instance manages tenant namespaces.
+type TenancyMode = string
+
+const (
+	// TenancyMulti is the default mode: one EvalHub in a control-plane namespace
+	// serves multiple tenant namespaces labelled with evalhub.trustyai.opendatahub.io/tenant.
+	TenancyMulti TenancyMode = "multi"
+	// TenancySingle deploys EvalHub directly in the workload namespace; no
+	// cross-namespace tenant label discovery or resource propagation is performed.
+	TenancySingle TenancyMode = "single"
+)
+
 // EvalHub is the Schema for the evalhubs API
 // +kubebuilder:object:root=true
 // +kubebuilder:storageversion
@@ -63,6 +75,34 @@ type OTELSpec struct {
 	EnableMetrics bool `json:"enableMetrics,omitempty"`
 	// +optional
 	EnableLogs bool `json:"enableLogs,omitempty"`
+	// TracerTimeout is the trace export timeout (Go duration string, e.g. "30s").
+	// +kubebuilder:validation:Pattern=`^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$`
+	// +optional
+	TracerTimeout string `json:"tracerTimeout,omitempty"`
+	// TracerBatchInterval is the trace batch flush interval (Go duration string, e.g. "5s").
+	// +kubebuilder:validation:Pattern=`^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$`
+	// +optional
+	TracerBatchInterval string `json:"tracerBatchInterval,omitempty"`
+	// EnableJobContainerLogs exports adapter container logs at job terminal transition.
+	// Requires enableLogs.
+	// +optional
+	EnableJobContainerLogs bool `json:"enableJobContainerLogs,omitempty"`
+	// ServiceName overrides the default OTEL service.name resource attribute.
+	// +optional
+	ServiceName string `json:"serviceName,omitempty"`
+	// EnableEcsResourceDetection enables ECS resource detection on the OTEL resource.
+	// +optional
+	EnableEcsResourceDetection bool `json:"enableEcsResourceDetection,omitempty"`
+	// DisableRedirectOtelLogs prevents OTEL SDK diagnostic logs from being redirected to the main logger.
+	// +optional
+	DisableRedirectOtelLogs bool `json:"disableRedirectOtelLogs,omitempty"`
+	// DisableDatabaseOtelScans disables database query spans while still allowing DB metrics when enabled.
+	// +optional
+	DisableDatabaseOtelScans bool `json:"disableDatabaseOtelScans,omitempty"`
+	// MetricExportInterval is the metrics export interval (Go duration string, e.g. "60s").
+	// +kubebuilder:validation:Pattern=`^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$`
+	// +optional
+	MetricExportInterval string `json:"metricExportInterval,omitempty"`
 }
 
 // EvalHubMCPSpec defines the optional MCP server deployment configuration.
@@ -165,6 +205,14 @@ type EvalHubSpec struct {
 	// MCP optionally enables an MCP server deployment connected to this EvalHub instance.
 	// +optional
 	MCP *EvalHubMCPSpec `json:"mcp,omitempty"`
+
+	// Tenancy controls the deployment mode of this EvalHub instance.
+	// "multi" (default): serves multiple tenant namespaces labelled with evalhub.trustyai.opendatahub.io/tenant.
+	// "single": serves only its own namespace; no cross-namespace resource propagation.
+	// +kubebuilder:default:=multi
+	// +kubebuilder:validation:Enum=single;multi
+	// +optional
+	Tenancy TenancyMode `json:"tenancy,omitempty"`
 }
 
 // EvalHubStatus defines the observed state of EvalHub
@@ -273,6 +321,12 @@ func (e *EvalHubSpec) IsSQLite() bool {
 func (e *EvalHubSpec) IsOTELConfigured() bool {
 	return e.Otel != nil
 }
+
+// IsSingleTenancy returns true if this instance is in single-tenant mode.
+func (e *EvalHubSpec) IsSingleTenancy() bool { return e.Tenancy == TenancySingle }
+
+// IsMultiTenancy returns true if this instance is in multi-tenant mode (the default).
+func (e *EvalHubSpec) IsMultiTenancy() bool { return !e.IsSingleTenancy() }
 
 // IsMCPEnabled returns true if the MCP server is explicitly enabled
 func (e *EvalHubSpec) IsMCPEnabled() bool {

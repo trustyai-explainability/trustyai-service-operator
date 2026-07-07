@@ -32,6 +32,7 @@ func printKubeObject(obj interface{}) {
 
 func setupAndTestDeploymentDefault(instance *trustyaiopendatahubiov1.TrustyAIService, namespace string) {
 	Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+	Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
 	caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
 	Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
@@ -53,8 +54,8 @@ func setupAndTestDeploymentDefault(instance *trustyaiopendatahubiov1.TrustyAISer
 	Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
 
 	Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
-	Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
-	Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable"))
+	Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal(testTrustAIServiceImage))
+	Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal(testKubeRBACProxyImage))
 
 	WaitFor(func() error {
 		internalServiceConfig := getServiceConfig(instance.Name, instance)
@@ -167,6 +168,7 @@ func setupAndTestDeploymentConfigMap(instance *trustyaiopendatahubiov1.TrustyAIS
 
 func setupAndTestDeploymentNoCustomCABundle(instance *trustyaiopendatahubiov1.TrustyAIService, namespace string) {
 	Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+	Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
 
 	caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
@@ -201,6 +203,7 @@ func setupAndTestDeploymentNoCustomCABundle(instance *trustyaiopendatahubiov1.Tr
 func setupAndTestDeploymentCustomCABundle(instance *trustyaiopendatahubiov1.TrustyAIService, namespace string) {
 	caBundleConfigMap := createTrustedCABundleConfigMap(namespace)
 	Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+	Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
 	Expect(k8sClient.Create(ctx, caBundleConfigMap)).To(Succeed())
 
 	caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
@@ -235,6 +238,7 @@ func setupAndTestDeploymentCustomCABundle(instance *trustyaiopendatahubiov1.Trus
 
 func setupAndTestDeploymentServiceAccount(instance *trustyaiopendatahubiov1.TrustyAIService, namespace string, mode string) {
 	Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+	Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
 
 	caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
@@ -257,6 +261,10 @@ func setupAndTestDeploymentInferenceService(instance *trustyaiopendatahubiov1.Tr
 	WaitFor(func() error {
 		return createNamespace(ctx, k8sClient, namespace)
 	}, "failed to create namespace")
+	cmErr := k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))
+	if cmErr != nil {
+		Expect(apierrors.IsAlreadyExists(cmErr)).To(BeTrue(), "unexpected error creating operator ConfigMap: %v", cmErr)
+	}
 
 	caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
@@ -398,6 +406,7 @@ var _ = Describe("TrustyAI operator", func() {
 			instance = createDefaultPVCCustomResource(namespace)
 			//printKubeObject(instance)
 			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
 
 			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
@@ -489,6 +498,7 @@ var _ = Describe("TrustyAI operator", func() {
 			namespace := "trusty-ns-a-4-db"
 			instance = createDefaultDBCustomResource(namespace)
 			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
 			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
 			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
@@ -599,6 +609,7 @@ var _ = Describe("TrustyAI operator", func() {
 			namespace := "trusty-ns-a-4-migration"
 			instance = createDefaultMigrationCustomResource(namespace)
 			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
 			//printKubeObject(instance)
 			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
@@ -833,6 +844,7 @@ var _ = Describe("TrustyAI operator", func() {
 
 	BeforeEach(func() {
 		recorder = record.NewFakeRecorder(10)
+		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
 			Scheme:        scheme.Scheme,
@@ -857,6 +869,7 @@ var _ = Describe("TrustyAI operator", func() {
 					return createNamespace(ctx, k8sClient, namespace)
 				}, "failed to create namespace")
 			}
+			Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
 
 			for _, instance := range instances {
 				caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
@@ -888,8 +901,8 @@ var _ = Describe("TrustyAI operator", func() {
 				Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
 
 				Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
-				Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal("quay.io/trustyai/trustyai-service:latest"))
-				Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal("quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable"))
+				Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal(testTrustAIServiceImage))
+				Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal(testKubeRBACProxyImage))
 
 				WaitFor(func() error {
 					err := reconciler.createServiceAccount(ctx, instance)

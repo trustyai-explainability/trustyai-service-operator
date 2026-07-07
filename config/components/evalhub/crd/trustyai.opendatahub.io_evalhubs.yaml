@@ -517,6 +517,23 @@ spec:
                   When set, the operator includes OTEL settings in the generated config.
                   When omitted, the service uses its defaults (OTEL disabled).
                 properties:
+                  disableDatabaseOtelScans:
+                    description: DisableDatabaseOtelScans disables database query
+                      spans while still allowing DB metrics when enabled.
+                    type: boolean
+                  disableRedirectOtelLogs:
+                    description: DisableRedirectOtelLogs prevents OTEL SDK diagnostic
+                      logs from being redirected to the main logger.
+                    type: boolean
+                  enableEcsResourceDetection:
+                    description: EnableEcsResourceDetection enables ECS resource detection
+                      on the OTEL resource.
+                    type: boolean
+                  enableJobContainerLogs:
+                    description: |-
+                      EnableJobContainerLogs exports adapter container logs at job terminal transition.
+                      Requires enableLogs.
+                    type: boolean
                   enableLogs:
                     type: boolean
                   enableMetrics:
@@ -536,11 +553,30 @@ spec:
                     - otlp-http
                     - stdout
                     type: string
+                  metricExportInterval:
+                    description: MetricExportInterval is the metrics export interval
+                      (Go duration string, e.g. "60s").
+                    pattern: ^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$
+                    type: string
                   samplingRatio:
                     default: "1.0"
                     description: |-
                       Trace sampling ratio as a string-encoded float between "0" and "1" (e.g. "0.5").
                       Defaults to "1.0" (sample everything) when omitted.
+                    type: string
+                  serviceName:
+                    description: ServiceName overrides the default OTEL service.name
+                      resource attribute.
+                    type: string
+                  tracerBatchInterval:
+                    description: TracerBatchInterval is the trace batch flush interval
+                      (Go duration string, e.g. "5s").
+                    pattern: ^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$
+                    type: string
+                  tracerTimeout:
+                    description: TracerTimeout is the trace export timeout (Go duration
+                      string, e.g. "30s").
+                    pattern: ^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$
                     type: string
                 type: object
               providers:
@@ -560,6 +596,16 @@ spec:
                 format: int32
                 minimum: 1
                 type: integer
+              tenancy:
+                default: multi
+                description: |-
+                  Tenancy controls the deployment mode of this EvalHub instance.
+                  "multi" (default): serves multiple tenant namespaces labelled with evalhub.trustyai.opendatahub.io/tenant.
+                  "single": serves only its own namespace; no cross-namespace resource propagation.
+                enum:
+                - single
+                - multi
+                type: string
             type: object
           status:
             description: EvalHubStatus defines the observed state of EvalHub

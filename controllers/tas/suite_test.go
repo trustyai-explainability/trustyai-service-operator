@@ -384,7 +384,7 @@ func makeDeploymentReady(ctx context.Context, k8sClient client.Client, instance 
 			Containers: []corev1.Container{
 				{
 					Name:  "trustyai-service",
-					Image: "quay.io/trustyai/trustyai-service:latest",
+					Image: testTrustAIServiceImage,
 					Ports: []corev1.ContainerPort{
 						{
 							ContainerPort: 8080,
@@ -551,6 +551,13 @@ var _ = BeforeSuite(func() {
 	Eventually(func() error {
 		return createNamespace(ctx, k8sClient, operatorNamespace)
 	}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create namespace")
+	Eventually(func() error {
+		cm := createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage)
+		if err := k8sClient.Create(ctx, cm); err != nil && !errors.IsAlreadyExists(err) {
+			return err
+		}
+		return nil
+	}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create operator ConfigMap")
 	Eventually(func() error {
 		return createMockPV(ctx, k8sClient, "mypv", "100Gi")
 	}, time.Second*10, time.Millisecond*250).Should(Succeed(), "failed to create PV")
