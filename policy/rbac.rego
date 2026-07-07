@@ -17,8 +17,10 @@ expected_crbs := {
 	# --- rbac-base (all overlays) ---
 	"manager-auth-delegator": "system:auth-delegator",
 	"proxy-rolebinding": "proxy-role",
+	"tls-profile-reader-binding": "tls-profile-reader",
 	"trustyai-service-operator-manager-auth-delegator": "system:auth-delegator",
 	"trustyai-service-operator-proxy-rolebinding": "trustyai-service-operator-proxy-role",
+	"trustyai-service-operator-tls-profile-reader-binding": "trustyai-service-operator-tls-profile-reader",
 
 	# --- component: tas ---
 	"trustyai-service-operator-tas-manager-rolebinding": "trustyai-service-operator-tas-manager-role",

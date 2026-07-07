@@ -7,3 +7,5 @@ resources:
   - leader_election_role.yaml
   - leader_election_role_binding.yaml
   - service_account.yaml
+  - tls_profile_role.yaml
+  - tls_profile_role_binding.yaml
