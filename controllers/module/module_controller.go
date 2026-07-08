@@ -80,6 +80,7 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, err
 		}
 		logger.Info("Added finalizer to TrustyAI module")
+		r.EventRecorder.Event(module, "Normal", "FinalizerAdded", "Added finalizer to TrustyAI module")
 		// Requeue to continue reconciliation
 		return ctrl.Result{Requeue: true}, nil
 	}
@@ -132,6 +133,7 @@ func (r *TrustyAIReconciler) handleDeletion(ctx context.Context, module *modulev
 			return ctrl.Result{}, err
 		}
 		logger.Info("Removed finalizer from TrustyAI module")
+		r.EventRecorder.Event(module, "Normal", "FinalizerRemoved", "Removed finalizer from TrustyAI module")
 	}
 
 	return ctrl.Result{}, nil
@@ -220,6 +222,14 @@ func (r *TrustyAIReconciler) updateHealthStatus(ctx context.Context, module *mod
 			ObservedGeneration: module.Generation,
 		})
 
+		meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+			Type:               ConditionTypeProvisioningSucceeded,
+			Status:             metav1.ConditionFalse,
+			Reason:             "ServicesUnhealthy",
+			Message:            "One or more services are not healthy",
+			ObservedGeneration: module.Generation,
+		})
+
 		// Set Degraded=True if some (but not all) services are healthy
 		if partiallyHealthy {
 			meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
@@ -229,10 +239,28 @@ func (r *TrustyAIReconciler) updateHealthStatus(ctx context.Context, module *mod
 				Message:            "Some services are unavailable: " + strings.Join(unhealthyReasons, "; "),
 				ObservedGeneration: module.Generation,
 			})
+		} else {
+			// All services are unhealthy
+			meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+				Type:               ConditionTypeDegraded,
+				Status:             metav1.ConditionTrue,
+				Reason:             "AllServicesUnhealthy",
+				Message:            "All services are unavailable: " + strings.Join(unhealthyReasons, "; "),
+				ObservedGeneration: module.Generation,
+			})
 		}
 	}
 
 	logger.Info("Updated health status", "phase", module.Status.Phase, "ready", meta.IsStatusConditionTrue(module.Status.Conditions, ConditionTypeReady))
+
+	// Emit event based on health status
+	if allHealthy {
+		r.EventRecorder.Event(module, "Normal", "HealthCheckPassed", "All enabled services are healthy")
+	} else if partiallyHealthy {
+		r.EventRecorder.Event(module, "Warning", "HealthCheckPartial", "Some services are unhealthy")
+	} else {
+		r.EventRecorder.Event(module, "Warning", "HealthCheckFailed", "All services are unhealthy")
+	}
 
 	return nil
 }
