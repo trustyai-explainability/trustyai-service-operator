@@ -354,6 +354,73 @@ func TestEvalHubHelperMethods(t *testing.T) {
 	})
 }
 
+// TestEvalHubReconciler_createServiceAccount_podLogsRBAC verifies that createServiceAccount
+// provisions the service pod-logs Role and RoleBinding in the instance namespace.
+func TestEvalHubReconciler_createServiceAccount_podLogsRBAC(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, rbacv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	testNamespace := "test-namespace"
+	evalHubName := "test-evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: testNamespace,
+			UID:       "test-uid-456",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(evalHub).
+		Build()
+
+	reconciler := &EvalHubReconciler{
+		Client:        fakeClient,
+		Scheme:        scheme,
+		EventRecorder: record.NewFakeRecorder(10),
+	}
+
+	require.NoError(t, reconciler.createServiceAccount(ctx, evalHub))
+
+	roleName := generateServicePodLogsRoleName(evalHub)
+	role := &rbacv1.Role{}
+	err := fakeClient.Get(ctx, types.NamespacedName{
+		Name:      roleName,
+		Namespace: testNamespace,
+	}, role)
+	require.NoError(t, err, "service pod-logs Role should exist in instance namespace")
+	require.Len(t, role.Rules, 2)
+	assert.Equal(t, []string{""}, role.Rules[0].APIGroups)
+	assert.Equal(t, []string{"pods"}, role.Rules[0].Resources)
+	assert.Equal(t, []string{"get", "list"}, role.Rules[0].Verbs)
+	assert.Equal(t, []string{""}, role.Rules[1].APIGroups)
+	assert.Equal(t, []string{"pods/log"}, role.Rules[1].Resources)
+	assert.Equal(t, []string{"get"}, role.Rules[1].Verbs)
+
+	rbName := normalizeDNS1123LabelValue(evalHubName + "-" + testNamespace + "-service-pod-logs-rb")
+	rb := &rbacv1.RoleBinding{}
+	err = fakeClient.Get(ctx, types.NamespacedName{
+		Name:      rbName,
+		Namespace: testNamespace,
+	}, rb)
+	require.NoError(t, err, "service pod-logs RoleBinding should exist in instance namespace")
+
+	assert.Equal(t, "Role", rb.RoleRef.Kind)
+	assert.Equal(t, roleName, rb.RoleRef.Name)
+	assert.Equal(t, rbacv1.GroupName, rb.RoleRef.APIGroup)
+
+	svcSAName := generateServiceAccountName(evalHub)
+	require.Len(t, rb.Subjects, 1)
+	assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
+	assert.Equal(t, svcSAName, rb.Subjects[0].Name)
+	assert.Equal(t, testNamespace, rb.Subjects[0].Namespace)
+}
+
 // TestEvalHubReconciler_createJobsServiceAccount verifies that the jobs ServiceAccount
 // is created with the correct name, labels, and owner reference.
 func TestEvalHubReconciler_createJobsServiceAccount(t *testing.T) {
