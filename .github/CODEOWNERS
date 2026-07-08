@@ -1,0 +1,32 @@
+# CODEOWNERS
+# Each line is a file pattern followed by one or more owners.
+# The last matching pattern takes precedence.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global fallback — core maintainers review everything not matched below
+* @ruivieira @RobGeada @ABeltramo
+
+# CI/CD and repository configuration
+/.github/ @ruivieira @RobGeada @ABeltramo
+/Makefile @ruivieira @RobGeada @ABeltramo
+/config/ @ruivieira @RobGeada @ABeltramo
+
+# TrustyAI Service (TAS)
+/controllers/tas/ @ruivieira @RobGeada @SudipSinha
+/api/tas/ @ruivieira @RobGeada @SudipSinha
+
+# LMEval
+/controllers/lmes/ @ruivieira
+/api/lmes/ @ruivieira
+
+# Guardrails Orchestrator
+/controllers/gorch/ @RobGeada @christinaexyou @m-misiura
+/api/gorch/ @RobGeada @christinaexyou @m-misiura
+
+# NeMo Guardrails
+/controllers/nemo_guardrails/ @RobGeada @m-misiura @christinaexyou
+/api/nemo_guardrails/ @RobGeada @m-misiura @christinaexyou
+
+# EvalHub
+/controllers/evalhub/ @ruivieira @julpayne
+/api/evalhub/ @ruivieira @julpayne
