@@ -5,8 +5,8 @@ metadata:
 spec:
   managementState: Managed
   enabledServices:
-    tas: true
-    lmes: true
-    evalHub: true
-    gorch: false
-    nemoGuardrails: false
+    TAS: true
+    LMES: true
+    EVALHUB: true
+    GORCH: false
+    NEMO_GUARDRAILS: false
