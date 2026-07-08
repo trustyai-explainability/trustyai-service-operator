@@ -105,6 +105,21 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 			return err
 		}
 
+		// Create pod-logs Role and RoleBinding so the EvalHub service SA can read job pod logs.
+		if err := r.createServicePodLogsRole(ctx, instance, ns); err != nil {
+			log.Error(err, "Failed to create service pod-logs Role in tenant namespace", "namespace", ns)
+			return err
+		}
+		podLogsRBName := normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-" + ns + "-service-pod-logs-rb")
+		if err := r.createJobRoleBinding(ctx, instance, podLogsRBName, serviceAccountName, ns, rbacv1.RoleRef{
+			Kind:     "Role",
+			Name:     generateServicePodLogsRoleName(instance),
+			APIGroup: rbacv1.GroupName,
+		}, instance.Namespace); err != nil {
+			log.Error(err, "Failed to create service pod-logs RoleBinding in tenant namespace", "namespace", ns)
+			return err
+		}
+
 		// Create service CA ConfigMap in the tenant namespace so job pods can
 		// mount the cluster service CA for TLS callbacks to EvalHub.
 		if err := r.createTenantServiceCAConfigMap(ctx, instance, ns); err != nil {

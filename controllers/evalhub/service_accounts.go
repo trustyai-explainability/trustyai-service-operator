@@ -114,6 +114,13 @@ func generateJobsAPIAccessRoleName(instance *evalhubv1.EvalHub) string {
 	return normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-job-access-role")
 }
 
+// generateServicePodLogsRoleName returns the name for the per-instance service pod-logs Role.
+// The name is namespace-qualified to avoid collisions when multiple EvalHub CRs with
+// the same name in different namespaces create job resources in the same target namespace.
+func generateServicePodLogsRoleName(instance *evalhubv1.EvalHub) string {
+	return normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-service-pod-logs-role")
+}
+
 func generateAuthReviewerClusterRoleBindingName(instance *evalhubv1.EvalHub) string {
 	return instance.Name + "-" + instance.Namespace + "-auth-reviewer-crb"
 }
@@ -191,6 +198,21 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 	}
 
 	err = r.createHardwareProfilesReaderRoleBinding(ctx, instance, serviceAccountName)
+	if err != nil {
+		return err
+	}
+
+	err = r.createServicePodLogsRole(ctx, instance, instance.Namespace)
+	if err != nil {
+		return err
+	}
+
+	podLogsRBName := normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-service-pod-logs-rb")
+	err = r.createGenericRoleBinding(ctx, instance, podLogsRBName, serviceAccountName, rbacv1.RoleRef{
+		Kind:     "Role",
+		Name:     generateServicePodLogsRoleName(instance),
+		APIGroup: rbacv1.GroupName,
+	})
 	if err != nil {
 		return err
 	}
@@ -352,6 +374,50 @@ func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instanc
 	if !equalPolicyRules(found.Rules, role.Rules) {
 		found.Rules = role.Rules
 		log.Info("Updating job access Role rules", "Name", role.Name)
+		return r.Update(ctx, found)
+	}
+
+	return nil
+}
+
+// createServicePodLogsRole creates a per-instance namespaced Role granting the EvalHub
+// service SA read access to job pods and their logs in the target namespace.
+func (r *EvalHubReconciler) createServicePodLogsRole(ctx context.Context, instance *evalhubv1.EvalHub, targetNamespace string) error {
+	log := log.FromContext(ctx)
+
+	roleName := generateServicePodLogsRoleName(instance)
+	role := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      roleName,
+			Namespace: targetNamespace,
+			Labels:    jobResourceLabels(instance, roleName),
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"pods"},
+				Verbs:     []string{"get", "list"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"pods/log"},
+				Verbs:     []string{"get"},
+			},
+		},
+	}
+
+	found := &rbacv1.Role{}
+	err := r.Get(ctx, types.NamespacedName{Name: role.Name, Namespace: role.Namespace}, found)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Creating service pod-logs Role", "Namespace", role.Namespace, "Name", role.Name)
+		return r.Create(ctx, role)
+	} else if err != nil {
+		return err
+	}
+
+	if !equalPolicyRules(found.Rules, role.Rules) {
+		found.Rules = role.Rules
+		log.Info("Updating service pod-logs Role rules", "Name", role.Name)
 		return r.Update(ctx, found)
 	}
 
