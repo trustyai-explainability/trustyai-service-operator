@@ -329,6 +329,42 @@ var _ = Describe("EvalHub API RBAC", func() {
 			Expect(cRB.Subjects[0].Name).To(Equal(evalHubName + "-service"))
 		})
 
+		It("should create service pod-logs Role and RoleBinding in instance namespace", func() {
+			By("Creating service account (which creates pod-logs RBAC)")
+			err := reconciler.createServiceAccount(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			roleName := generateServicePodLogsRoleName(evalHub)
+			role := &rbacv1.Role{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      roleName,
+				Namespace: testNamespace,
+			}, role)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(role.Rules).To(HaveLen(2))
+			Expect(role.Rules[0].APIGroups).To(Equal([]string{""}))
+			Expect(role.Rules[0].Resources).To(Equal([]string{"pods"}))
+			Expect(role.Rules[0].Verbs).To(Equal([]string{"get", "list"}))
+			Expect(role.Rules[1].APIGroups).To(Equal([]string{""}))
+			Expect(role.Rules[1].Resources).To(Equal([]string{"pods/log"}))
+			Expect(role.Rules[1].Verbs).To(Equal([]string{"get"}))
+
+			rbName := normalizeDNS1123LabelValue(evalHubName + "-" + testNamespace + "-service-pod-logs-rb")
+			rb := &rbacv1.RoleBinding{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      rbName,
+				Namespace: testNamespace,
+			}, rb)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rb.RoleRef.Kind).To(Equal("Role"))
+			Expect(rb.RoleRef.Name).To(Equal(roleName))
+			Expect(rb.RoleRef.APIGroup).To(Equal(rbacv1.GroupName))
+			Expect(rb.Subjects).To(HaveLen(1))
+			Expect(rb.Subjects[0].Kind).To(Equal("ServiceAccount"))
+			Expect(rb.Subjects[0].Name).To(Equal(generateServiceAccountName(evalHub)))
+			Expect(rb.Subjects[0].Namespace).To(Equal(testNamespace))
+		})
+
 		It("should not bind jobs SA to resource-manager roles", func() {
 			By("Creating service account")
 			err := reconciler.createServiceAccount(ctx, evalHub)
