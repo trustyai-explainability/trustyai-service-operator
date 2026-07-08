@@ -29,9 +29,7 @@ COLLECTION_TYPE_LABEL = "trustyai.opendatahub.io/evalhub-collection-type"
 COLLECTION_NAME_LABEL = "trustyai.opendatahub.io/evalhub-collection-name"
 
 # Files to exclude from the upstream repository (by filename)
-EXCLUDE_FILES = {
-    "ragas.yaml",
-}
+EXCLUDE_FILES: set[str] = set()
 
 # Providers that reuse an existing kustomize image variable instead of
 # the default ``evalhub-provider-<id>-image`` naming convention.
