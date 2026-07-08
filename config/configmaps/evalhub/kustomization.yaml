@@ -5,6 +5,7 @@ resources:
   - provider-ibm-clear.yaml
   - provider-lighteval.yaml
   - provider-lm-evaluation-harness.yaml
+  - provider-ragas.yaml
   - collection-coding-v1.yaml
   - collection-instruction-following-v1.yaml
   - collection-leaderboard-v2.yaml
