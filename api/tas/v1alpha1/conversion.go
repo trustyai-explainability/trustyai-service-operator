@@ -44,12 +44,23 @@ func (src *TrustyAIService) ConvertTo(dstRaw conversion.Hub) error {
 			status = metav1.ConditionUnknown
 		}
 
+		// metav1.Condition requires Reason and Message to be non-empty
+		// Provide defaults if missing from v1alpha1 condition
+		reason := srcCondition.Reason
+		if reason == "" {
+			reason = "Unknown"
+		}
+		message := srcCondition.Message
+		if message == "" {
+			message = "No message provided"
+		}
+
 		dst.Status.Conditions[i] = metav1.Condition{
 			Type:               srcCondition.Type,
 			Status:             status,
 			LastTransitionTime: srcCondition.LastTransitionTime,
-			Reason:             srcCondition.Reason,
-			Message:            srcCondition.Message,
+			Reason:             reason,
+			Message:            message,
 		}
 	}
 
