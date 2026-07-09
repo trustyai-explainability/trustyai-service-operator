@@ -54,11 +54,11 @@ type TrustyAIServiceStatus struct {
 
 	// Phase represents the current phase of the service
 	// +optional
-	Phase string `json:"phase"`
+	Phase string `json:"phase,omitempty"`
 
 	// Replicas is the number of running replicas
 	// +optional
-	Replicas int32 `json:"replicas"`
+	Replicas int32 `json:"replicas,omitempty"`
 
 	// Conditions represent the latest available observations of the service's state.
 	// Uses metav1.Condition for platform contract compliance (RHOAIENG-67659).
@@ -130,7 +130,6 @@ func (t *TrustyAIService) SetStatus(condType, reason, message string, status cor
 		Status:             metaStatus,
 		Reason:             reason,
 		Message:            message,
-		LastTransitionTime: metav1.Now(),
 		ObservedGeneration: t.Generation,
 	}
 
@@ -150,6 +149,8 @@ func (t *TrustyAIService) SetStatus(condType, reason, message string, status cor
 		}
 	}
 	if !found {
+		// New condition, set LastTransitionTime
+		condition.LastTransitionTime = metav1.Now()
 		t.Status.Conditions = append(t.Status.Conditions, condition)
 	}
 }

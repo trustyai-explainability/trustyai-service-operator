@@ -95,6 +95,12 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 					UpdateDBAvailable(saved)
 				} else {
 					UpdateDBConnectionError(saved)
+					// Don't return early - set standard conditions for inconsistent state
+					saved.Status.Phase = PhaseNotReady
+					saved.Status.Ready = v1.ConditionFalse
+					saved.SetStatus(ConditionTypeReady, "DBNotReady", "Database is not accessible", v1.ConditionFalse)
+					saved.SetStatus(ConditionTypeProvisioningSucceeded, "ProvisioningInProgress", "Service provisioning in progress", v1.ConditionFalse)
+					saved.SetStatus(ConditionTypeDegraded, "PartialFunctionality", "PVC components are ready but database is not accessible", v1.ConditionTrue)
 					return
 				}
 			}
@@ -147,7 +153,7 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 			saved.SetStatus(ConditionTypeProvisioningSucceeded, "ProvisioningInProgress", "Service provisioning in progress", v1.ConditionFalse)
 
 			// Set Degraded based on partial availability
-			if status.DeploymentReady || status.RouteReady || status.PVCReady {
+			if status.DeploymentReady || status.RouteReady || status.PVCReady || status.DBReady {
 				saved.SetStatus(ConditionTypeDegraded, "PartialFunctionality", "Some components are available but service is not fully functional", v1.ConditionTrue)
 			} else {
 				saved.SetStatus(ConditionTypeDegraded, "NoFunctionality", "No components are available", v1.ConditionTrue)
