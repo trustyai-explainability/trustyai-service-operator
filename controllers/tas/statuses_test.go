@@ -7,19 +7,30 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
-	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func checkCondition(conditions []common.Condition, conditionType string, expectedStatus corev1.ConditionStatus, allowMissing bool) (*common.Condition, bool, error) {
+func checkCondition(conditions []metav1.Condition, conditionType string, expectedStatus corev1.ConditionStatus, allowMissing bool) (*metav1.Condition, bool, error) {
+	// Convert expectedStatus from corev1.ConditionStatus to metav1.ConditionStatus for comparison
+	var expectedMetaStatus metav1.ConditionStatus
+	switch expectedStatus {
+	case corev1.ConditionTrue:
+		expectedMetaStatus = metav1.ConditionTrue
+	case corev1.ConditionFalse:
+		expectedMetaStatus = metav1.ConditionFalse
+	default:
+		expectedMetaStatus = metav1.ConditionUnknown
+	}
+
 	for _, cond := range conditions {
 		if cond.Type == conditionType {
-			isExpectedStatus := cond.Status == expectedStatus
+			isExpectedStatus := cond.Status == expectedMetaStatus
 			return &cond, isExpectedStatus, nil
 		}
 	}
