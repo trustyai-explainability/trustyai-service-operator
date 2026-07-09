@@ -80,6 +80,7 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, err
 		}
 		logger.Info("Added finalizer to TrustyAI module")
+		r.EventRecorder.Event(module, "Normal", "FinalizerAdded", "Finalizer added to TrustyAI module")
 		// Requeue to continue reconciliation
 		return ctrl.Result{Requeue: true}, nil
 	}
@@ -87,6 +88,7 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Perform SSA adoption of in-tree resources (one-time migration)
 	if err := r.adoptInTreeResources(ctx, module); err != nil {
 		logger.Error(err, "Failed to adopt in-tree resources")
+		r.EventRecorder.Event(module, "Warning", "MigrationFailed", fmt.Sprintf("SSA adoption failed: %v", err))
 
 		// Update status to reflect migration failure
 		module.Status.Phase = PhaseNotReady

@@ -64,6 +64,7 @@ func (r *TrustyAIReconciler) adoptInTreeResources(ctx context.Context, module *m
 	adoptedCount += count
 
 	logger.Info("SSA adoption completed", "resourcesAdopted", adoptedCount)
+	r.EventRecorder.Event(module, "Normal", "MigrationCompleted", fmt.Sprintf("Successfully adopted %d in-tree resources", adoptedCount))
 
 	// Mark adoption as completed
 	if module.Annotations == nil {
@@ -245,7 +246,7 @@ func (r *TrustyAIReconciler) adoptResource(ctx context.Context, obj client.Objec
 	if annotations == nil {
 		annotations = make(map[string]string)
 	}
-	annotations["trustyai.opendatahub.io/adopted-from"] = "in-tree-component"
+	annotations[AdoptedFromAnnotationKey] = "in-tree-component"
 	current.SetAnnotations(annotations)
 
 	// Clear managed fields (required for SSA)
