@@ -148,7 +148,7 @@ var _ = Describe("Status and condition tests", func() {
 			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 			Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
 			if readyCondition != nil {
-				Expect(statusMatch).To(Equal(corev1.ConditionTrue), "Ready condition should be true")
+				Expect(statusMatch).To(Equal(true), "Ready condition should be true")
 			}
 
 			availableCondition, statusMatch, err := checkCondition(instance.Status.Conditions, StatusTypeAvailable, corev1.ConditionTrue, false)
@@ -212,7 +212,7 @@ var _ = Describe("Status and condition tests", func() {
 			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 			Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
 			if readyCondition != nil {
-				Expect(statusMatch).To(Equal(corev1.ConditionTrue), "Ready condition should be true")
+				Expect(statusMatch).To(Equal(true), "Ready condition should be true")
 			}
 
 			availableCondition, statusMatch, err := checkCondition(instance.Status.Conditions, StatusTypeAvailable, corev1.ConditionTrue, false)
@@ -281,7 +281,7 @@ var _ = Describe("Status and condition tests", func() {
 			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 			Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
 			if readyCondition != nil {
-				Expect(statusMatch).To(Equal(corev1.ConditionTrue), "Ready condition should be true")
+				Expect(statusMatch).To(Equal(true), "Ready condition should be true")
 			}
 
 			availableCondition, statusMatch, err := checkCondition(instance.Status.Conditions, StatusTypeAvailable, corev1.ConditionTrue, false)
@@ -364,7 +364,7 @@ var _ = Describe("Status and condition tests", func() {
 			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 			Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
 			if readyCondition != nil {
-				Expect(statusMatch).To(Equal(corev1.ConditionTrue), "Ready condition should be true")
+				Expect(statusMatch).To(Equal(true), "Ready condition should be true")
 			}
 
 			availableCondition, statusMatch, err := checkCondition(instance.Status.Conditions, StatusTypeAvailable, corev1.ConditionTrue, false)
