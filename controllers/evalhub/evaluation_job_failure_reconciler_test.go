@@ -121,5 +121,95 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 			_, ok := podOperatorOnlyFailureMessage(pod)
 			Expect(ok).To(BeTrue(), "expected operator-only failure for sidecar CrashLoopBackOff")
 		})
+
+		It("reports pod unschedulable (e.g. missing PVC)", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:    corev1.PodScheduled,
+						Status:  corev1.ConditionFalse,
+						Reason:  corev1.PodReasonUnschedulable,
+						Message: "0/3 nodes available: persistentvolumeclaim \"my-pvc\" not found",
+					}},
+				},
+			}
+			msg, ok := podOperatorOnlyFailureMessage(pod)
+			Expect(ok).To(BeTrue(), "expected operator-only failure for unschedulable pod")
+			Expect(msg).To(ContainSubstring("unschedulable"))
+			Expect(msg).To(ContainSubstring("my-pvc"))
+		})
+
+		It("does not report scheduled pod as unschedulable", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+					Conditions: []corev1.PodCondition{{
+						Type:   corev1.PodScheduled,
+						Status: corev1.ConditionTrue,
+					}},
+				},
+			}
+			_, ok := podOperatorOnlyFailureMessage(pod)
+			Expect(ok).To(BeFalse(), "should not report a successfully scheduled running pod")
+		})
+
+		It("does not report pending pod without Unschedulable reason", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:   corev1.PodScheduled,
+						Status: corev1.ConditionFalse,
+						Reason: "ContainersNotReady",
+					}},
+				},
+			}
+			_, ok := podOperatorOnlyFailureMessage(pod)
+			Expect(ok).To(BeFalse(), "should not report pending pod without Unschedulable reason")
+		})
+	})
+
+	Describe("podSchedulingFailureMessage", func() {
+		It("returns false for non-pending pod", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+			_, ok := podSchedulingFailureMessage(pod)
+			Expect(ok).To(BeFalse())
+		})
+
+		It("returns true with message for Unschedulable pending pod", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:    corev1.PodScheduled,
+						Status:  corev1.ConditionFalse,
+						Reason:  corev1.PodReasonUnschedulable,
+						Message: "persistentvolumeclaim \"datasets-pvc\" not found",
+					}},
+				},
+			}
+			msg, ok := podSchedulingFailureMessage(pod)
+			Expect(ok).To(BeTrue())
+			Expect(msg).To(ContainSubstring("datasets-pvc"))
+		})
+
+		It("uses fallback message when condition message is empty", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:   corev1.PodScheduled,
+						Status: corev1.ConditionFalse,
+						Reason: corev1.PodReasonUnschedulable,
+					}},
+				},
+			}
+			msg, ok := podSchedulingFailureMessage(pod)
+			Expect(ok).To(BeTrue())
+			Expect(msg).To(ContainSubstring("pod unschedulable"))
+		})
 	})
 })

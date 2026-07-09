@@ -498,9 +498,33 @@ func podIndicatesOperatorOnlyFailure(pod *corev1.Pod) bool {
 	return ok
 }
 
+// podSchedulingFailureMessage returns a non-empty message and true when the pod is stuck in Pending
+// because the scheduler could not place it (e.g. a referenced PVC does not exist).
+// The pod never starts, so no container callback to EvalHub is possible.
+func podSchedulingFailureMessage(pod *corev1.Pod) (string, bool) {
+	if pod.Status.Phase != corev1.PodPending {
+		return "", false
+	}
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Reason == corev1.PodReasonUnschedulable {
+			msg := c.Message
+			if msg == "" {
+				msg = "pod unschedulable"
+			}
+			return fmt.Sprintf("pod unschedulable: %s", msg), true
+		}
+	}
+	return "", false
+}
+
 // podOperatorOnlyFailureMessage returns true when the eval-hub init, adapter, or sidecar is in a state
 // that typically means EvalHub was never notified (vs. adapter exiting after reporting failure).
+// Scheduling failures (pod stuck in Pending, e.g. missing PVC) are also detected here.
 func podOperatorOnlyFailureMessage(pod *corev1.Pod) (string, bool) {
+	// A pod that never scheduled cannot run any container and will never call EvalHub.
+	if msg, ok := podSchedulingFailureMessage(pod); ok {
+		return msg, true
+	}
 	for _, name := range []string{initContainerName, adapterContainerName, sidecarContainerName} {
 		if msg, ok := containerCannotReportToEvalHub(pod, name); ok {
 			return fmt.Sprintf("%s: %s", name, msg), true
