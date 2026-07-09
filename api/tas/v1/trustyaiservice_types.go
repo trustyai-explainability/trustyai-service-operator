@@ -60,7 +60,10 @@ type TrustyAIServiceStatus struct {
 	// +optional
 	Replicas int32 `json:"replicas"`
 
-	// Conditions represent the latest available observations of the service's state
+	// Conditions represent the latest available observations of the service's state.
+	// Uses metav1.Condition for platform contract compliance (RHOAIENG-67659).
+	// BREAKING CHANGE: Requires lastTransitionTime, reason, and message fields (previously optional in common.Condition).
+	// v1alpha1 conversion provides defaults for backward compatibility.
 	// +optional
 	// +listType=map
 	// +listMapKey=type
