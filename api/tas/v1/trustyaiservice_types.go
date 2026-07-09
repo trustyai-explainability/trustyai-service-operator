@@ -1,7 +1,6 @@
 package v1
 
 import (
-	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -49,11 +48,28 @@ type TrustyAIServiceSpec struct {
 
 // TrustyAIServiceStatus defines the observed state of TrustyAIService
 type TrustyAIServiceStatus struct {
-	// Define your status fields here
-	Phase      string                 `json:"phase"`
-	Replicas   int32                  `json:"replicas"`
-	Conditions []common.Condition     `json:"conditions"`
-	Ready      corev1.ConditionStatus `json:"ready,omitempty"`
+	// ObservedGeneration is the last generation reconciled by the controller
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// Phase represents the current phase of the service
+	// +optional
+	Phase string `json:"phase"`
+
+	// Replicas is the number of running replicas
+	// +optional
+	Replicas int32 `json:"replicas"`
+
+	// Conditions represent the latest available observations of the service's state
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Ready indicates whether the service is ready
+	// +optional
+	// Deprecated: Use Conditions with type "Ready" instead
+	Ready corev1.ConditionStatus `json:"ready,omitempty"`
 }
 
 // +kubebuilder:object:root=true

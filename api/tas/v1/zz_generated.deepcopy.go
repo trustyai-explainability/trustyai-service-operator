@@ -21,7 +21,7 @@ limitations under the License.
 package v1
 
 import (
-	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -162,7 +162,7 @@ func (in *TrustyAIServiceStatus) DeepCopyInto(out *TrustyAIServiceStatus) {
 	*out = *in
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
-		*out = make([]common.Condition, len(*in))
+		*out = make([]metav1.Condition, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
