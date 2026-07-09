@@ -111,20 +111,36 @@ func (t *TrustyAIService) IsMigration() bool {
 	}
 }
 
-// SetStatus sets the status of the TrustyAIService
+// SetStatus sets the status of the TrustyAIService using metav1.Condition
 func (t *TrustyAIService) SetStatus(condType, reason, message string, status corev1.ConditionStatus) {
-	now := metav1.Now()
-	condition := common.Condition{
+	// Convert corev1.ConditionStatus to metav1.ConditionStatus
+	metaStatus := metav1.ConditionUnknown
+	switch status {
+	case corev1.ConditionTrue:
+		metaStatus = metav1.ConditionTrue
+	case corev1.ConditionFalse:
+		metaStatus = metav1.ConditionFalse
+	}
+
+	condition := metav1.Condition{
 		Type:               condType,
-		Status:             status,
+		Status:             metaStatus,
 		Reason:             reason,
 		Message:            message,
-		LastTransitionTime: now,
+		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: t.Generation,
 	}
+
 	// Replace or append condition
 	found := false
 	for i, cond := range t.Status.Conditions {
 		if cond.Type == condType {
+			// Only update LastTransitionTime if status actually changed
+			if cond.Status != condition.Status {
+				condition.LastTransitionTime = metav1.Now()
+			} else {
+				condition.LastTransitionTime = cond.LastTransitionTime
+			}
 			t.Status.Conditions[i] = condition
 			found = true
 			break
