@@ -34,6 +34,7 @@ func (r *TrustyAIReconciler) reconcileConfigMap(ctx context.Context, module *mod
 			if err := r.Create(ctx, desired); err != nil {
 				return fmt.Errorf("failed to create DSC ConfigMap: %w", err)
 			}
+			logger.Info("DSC ConfigMap created successfully", "name", DSCConfigMapName)
 			return nil
 		}
 		return fmt.Errorf("failed to get DSC ConfigMap: %w", err)
@@ -46,6 +47,7 @@ func (r *TrustyAIReconciler) reconcileConfigMap(ctx context.Context, module *mod
 		if err := r.Update(ctx, existing); err != nil {
 			return fmt.Errorf("failed to update DSC ConfigMap: %w", err)
 		}
+		logger.Info("DSC ConfigMap updated successfully", "name", DSCConfigMapName)
 	}
 
 	return nil

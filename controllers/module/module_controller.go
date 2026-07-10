@@ -77,6 +77,7 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, err
 		}
 		logger.Info("Added finalizer to TrustyAI module")
+		r.EventRecorder.Event(module, "Normal", "FinalizerAdded", "Finalizer added to TrustyAI module")
 		// Requeue to continue reconciliation
 		return ctrl.Result{Requeue: true}, nil
 	}
@@ -131,10 +132,12 @@ func (r *TrustyAIReconciler) handleDeletion(ctx context.Context, module *modulev
 
 	if controllerutil.ContainsFinalizer(module, FinalizerName) {
 		logger.Info("Performing cleanup for TrustyAI module")
+		r.EventRecorder.Event(module, "Normal", "Cleanup", "Starting cleanup for TrustyAI module")
 
 		// Delete DSC ConfigMap
 		if err := r.deleteDSCConfigMap(ctx); err != nil {
 			logger.Error(err, "Failed to delete DSC ConfigMap during cleanup")
+			r.EventRecorder.Event(module, "Warning", "CleanupFailed", "Failed to delete DSC ConfigMap during cleanup")
 			return ctrl.Result{}, err
 		}
 
@@ -144,6 +147,7 @@ func (r *TrustyAIReconciler) handleDeletion(ctx context.Context, module *modulev
 			return ctrl.Result{}, err
 		}
 		logger.Info("Removed finalizer from TrustyAI module")
+		r.EventRecorder.Event(module, "Normal", "FinalizerRemoved", "Finalizer removed from TrustyAI module")
 	}
 
 	return ctrl.Result{}, nil
