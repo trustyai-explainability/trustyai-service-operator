@@ -250,5 +250,21 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 			Expect(ok).To(BeTrue())
 			Expect(msg).To(ContainSubstring("pod unschedulable"))
 		})
+
+		It("does not fire when LastTransitionTime is zero", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:   corev1.PodScheduled,
+						Status: corev1.ConditionFalse,
+						Reason: corev1.PodReasonUnschedulable,
+						// LastTransitionTime intentionally zero — treat as not yet eligible
+					}},
+				},
+			}
+			_, ok := podSchedulingFailureMessage(pod)
+			Expect(ok).To(BeFalse(), "zero LastTransitionTime should not be treated as past grace period")
+		})
 	})
 })
