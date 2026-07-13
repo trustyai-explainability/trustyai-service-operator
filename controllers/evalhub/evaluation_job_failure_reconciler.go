@@ -259,7 +259,8 @@ func podUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 				return false
 			}
 			// Replay and rare creates where status already shows operator-only failure.
-			return podIndicatesOperatorOnlyFailure(newPod)
+			// Also pass through Unschedulable pods so the reconciler can schedule a requeue.
+			return podIndicatesOperatorOnlyFailure(newPod) || podIsUnschedulable(newPod)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			oldPod, okOld := e.ObjectOld.(*corev1.Pod)
@@ -267,8 +268,10 @@ func podUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 			if !okOld || !okNew || !podOwnedByJob(newPod) || !r.tenantNS.IsTenant(newPod.Namespace) {
 				return false
 			}
-			// Only enqueue when init/adapter/sidecar transition into a state that implies no EvalHub callback
-			return !podIndicatesOperatorOnlyFailure(oldPod) && podIndicatesOperatorOnlyFailure(newPod)
+			// Enqueue when transitioning into an operator-only failure state, or when a pod
+			// first becomes Unschedulable so the reconciler can schedule a grace-period requeue.
+			return (!podIndicatesOperatorOnlyFailure(oldPod) && podIndicatesOperatorOnlyFailure(newPod)) ||
+				(!podIsUnschedulable(oldPod) && podIsUnschedulable(newPod))
 		},
 		DeleteFunc:  func(event.DeleteEvent) bool { return false },
 		GenericFunc: func(event.GenericEvent) bool { return false },
@@ -501,6 +504,23 @@ func (r *EvalHubEvaluationJobFailureReconciler) operatorOnlyFailureFromPods(ctx 
 func podIndicatesOperatorOnlyFailure(pod *corev1.Pod) bool {
 	_, ok := podOperatorOnlyFailureMessage(pod)
 	return ok
+}
+
+// podIsUnschedulable returns true when the pod is Pending and has an Unschedulable condition,
+// regardless of whether the grace period has elapsed. Used by the predicate to let events through
+// so the reconciler can schedule its own requeue.
+func podIsUnschedulable(pod *corev1.Pod) bool {
+	if pod.Status.Phase != corev1.PodPending {
+		return false
+	}
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.PodScheduled &&
+			c.Status == corev1.ConditionFalse &&
+			c.Reason == corev1.PodReasonUnschedulable {
+			return true
+		}
+	}
+	return false
 }
 
 // schedulingGracePeriod is how long a pod may remain Unschedulable before the operator treats it as
