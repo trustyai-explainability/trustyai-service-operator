@@ -1,4 +1,5 @@
 resources:
+  - provider-deepeval.yaml
   - provider-garak-kfp.yaml
   - provider-garak.yaml
   - provider-guidellm.yaml
