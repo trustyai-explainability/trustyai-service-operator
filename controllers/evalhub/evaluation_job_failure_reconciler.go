@@ -578,6 +578,8 @@ func (r *EvalHubEvaluationJobFailureReconciler) pendingSchedulingRequeueAfter(ct
 	if err := r.List(ctx, list, client.InNamespace(job.Namespace), client.MatchingLabels{
 		"batch.kubernetes.io/job-name": job.Name,
 	}); err != nil {
+		log.FromContext(ctx).Error(err, "pendingSchedulingRequeueAfter: failed to list pods",
+			append(failureWatcherLogFields(), "job", job.Name, "namespace", job.Namespace)...)
 		return 0
 	}
 	var earliest time.Duration
