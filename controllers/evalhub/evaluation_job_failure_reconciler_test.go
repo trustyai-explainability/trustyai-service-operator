@@ -8,6 +8,8 @@ you may not use this file except in compliance with the License.
 package evalhub
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -122,22 +124,40 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 			Expect(ok).To(BeTrue(), "expected operator-only failure for sidecar CrashLoopBackOff")
 		})
 
-		It("reports pod unschedulable (e.g. missing PVC)", func() {
+		It("reports pod unschedulable (e.g. missing PVC) after grace period", func() {
 			pod := &corev1.Pod{
 				Status: corev1.PodStatus{
 					Phase: corev1.PodPending,
 					Conditions: []corev1.PodCondition{{
-						Type:    corev1.PodScheduled,
-						Status:  corev1.ConditionFalse,
-						Reason:  corev1.PodReasonUnschedulable,
-						Message: "0/3 nodes available: persistentvolumeclaim \"my-pvc\" not found",
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionFalse,
+						Reason:             corev1.PodReasonUnschedulable,
+						Message:            "0/3 nodes available: persistentvolumeclaim \"my-pvc\" not found",
+						LastTransitionTime: metav1.NewTime(time.Now().Add(-3 * time.Minute)),
 					}},
 				},
 			}
 			msg, ok := podOperatorOnlyFailureMessage(pod)
-			Expect(ok).To(BeTrue(), "expected operator-only failure for unschedulable pod")
+			Expect(ok).To(BeTrue(), "expected operator-only failure for unschedulable pod past grace period")
 			Expect(msg).To(ContainSubstring("unschedulable"))
 			Expect(msg).To(ContainSubstring("my-pvc"))
+		})
+
+		It("does not report pod unschedulable within grace period (transient autoscaler condition)", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionFalse,
+						Reason:             corev1.PodReasonUnschedulable,
+						Message:            "0/3 nodes available: insufficient memory",
+						LastTransitionTime: metav1.NewTime(time.Now().Add(-30 * time.Second)),
+					}},
+				},
+			}
+			_, ok := podOperatorOnlyFailureMessage(pod)
+			Expect(ok).To(BeFalse(), "should not report unschedulable pod within grace period")
 		})
 
 		It("does not report scheduled pod as unschedulable", func() {
@@ -179,15 +199,16 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 			Expect(ok).To(BeFalse())
 		})
 
-		It("returns true with message for Unschedulable pending pod", func() {
+		It("returns true with message for Unschedulable pending pod past grace period", func() {
 			pod := &corev1.Pod{
 				Status: corev1.PodStatus{
 					Phase: corev1.PodPending,
 					Conditions: []corev1.PodCondition{{
-						Type:    corev1.PodScheduled,
-						Status:  corev1.ConditionFalse,
-						Reason:  corev1.PodReasonUnschedulable,
-						Message: "persistentvolumeclaim \"datasets-pvc\" not found",
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionFalse,
+						Reason:             corev1.PodReasonUnschedulable,
+						Message:            "persistentvolumeclaim \"datasets-pvc\" not found",
+						LastTransitionTime: metav1.NewTime(time.Now().Add(-3 * time.Minute)),
 					}},
 				},
 			}
@@ -196,14 +217,32 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 			Expect(msg).To(ContainSubstring("datasets-pvc"))
 		})
 
+		It("returns false for Unschedulable pod within grace period", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionFalse,
+						Reason:             corev1.PodReasonUnschedulable,
+						Message:            "insufficient memory",
+						LastTransitionTime: metav1.NewTime(time.Now().Add(-10 * time.Second)),
+					}},
+				},
+			}
+			_, ok := podSchedulingFailureMessage(pod)
+			Expect(ok).To(BeFalse(), "should not fire within grace period")
+		})
+
 		It("uses fallback message when condition message is empty", func() {
 			pod := &corev1.Pod{
 				Status: corev1.PodStatus{
 					Phase: corev1.PodPending,
 					Conditions: []corev1.PodCondition{{
-						Type:   corev1.PodScheduled,
-						Status: corev1.ConditionFalse,
-						Reason: corev1.PodReasonUnschedulable,
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionFalse,
+						Reason:             corev1.PodReasonUnschedulable,
+						LastTransitionTime: metav1.NewTime(time.Now().Add(-3 * time.Minute)),
 					}},
 				},
 			}

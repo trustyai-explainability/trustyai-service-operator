@@ -498,15 +498,23 @@ func podIndicatesOperatorOnlyFailure(pod *corev1.Pod) bool {
 	return ok
 }
 
-// podSchedulingFailureMessage returns a non-empty message and true when the pod is stuck in Pending
-// because the scheduler could not place it (e.g. a referenced PVC does not exist).
-// The pod never starts, so no container callback to EvalHub is possible.
+// schedulingGracePeriod is how long a pod may remain Unschedulable before the operator treats it as
+// a terminal failure. This allows transient conditions (e.g. autoscaler node provisioning) to resolve
+// before EvalHub is notified. Permanent conditions (e.g. missing PVC) still fire after the period.
+const schedulingGracePeriod = 2 * time.Minute
+
+// podSchedulingFailureMessage returns a non-empty message and true when the pod has been stuck in
+// Pending/Unschedulable for longer than schedulingGracePeriod. The grace period prevents false
+// positives on autoscaling clusters where a node may take a minute or two to become available.
 func podSchedulingFailureMessage(pod *corev1.Pod) (string, bool) {
 	if pod.Status.Phase != corev1.PodPending {
 		return "", false
 	}
 	for _, c := range pod.Status.Conditions {
-		if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Reason == corev1.PodReasonUnschedulable {
+		if c.Type == corev1.PodScheduled &&
+			c.Status == corev1.ConditionFalse &&
+			c.Reason == corev1.PodReasonUnschedulable &&
+			time.Since(c.LastTransitionTime.Time) > schedulingGracePeriod {
 			msg := c.Message
 			if msg == "" {
 				msg = "pod unschedulable"
