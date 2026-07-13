@@ -267,4 +267,60 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 			Expect(ok).To(BeFalse(), "zero LastTransitionTime should not be treated as past grace period")
 		})
 	})
+
+	Describe("schedulingGracePeriodRemaining", func() {
+		It("returns remaining duration for pod within grace period", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionFalse,
+						Reason:             corev1.PodReasonUnschedulable,
+						LastTransitionTime: metav1.NewTime(time.Now().Add(-30 * time.Second)),
+					}},
+				},
+			}
+			remaining := schedulingGracePeriodRemaining(pod)
+			Expect(remaining).To(BeNumerically(">", 0), "should have remaining grace period")
+			Expect(remaining).To(BeNumerically("<=", schedulingGracePeriod))
+		})
+
+		It("returns 0 for pod past grace period", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionFalse,
+						Reason:             corev1.PodReasonUnschedulable,
+						LastTransitionTime: metav1.NewTime(time.Now().Add(-3 * time.Minute)),
+					}},
+				},
+			}
+			remaining := schedulingGracePeriodRemaining(pod)
+			Expect(remaining).To(Equal(time.Duration(0)))
+		})
+
+		It("returns 0 for non-pending pod", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+			Expect(schedulingGracePeriodRemaining(pod)).To(Equal(time.Duration(0)))
+		})
+
+		It("returns 0 when LastTransitionTime is zero", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:   corev1.PodScheduled,
+						Status: corev1.ConditionFalse,
+						Reason: corev1.PodReasonUnschedulable,
+					}},
+				},
+			}
+			Expect(schedulingGracePeriodRemaining(pod)).To(Equal(time.Duration(0)))
+		})
+	})
 })

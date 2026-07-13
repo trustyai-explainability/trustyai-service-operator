@@ -332,6 +332,11 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 	if !failed {
 		log.Info("skip EvalHub POST: no operator-only container failure",
 			append(failureWatcherLogFields(), "action", "skip_no_operator_failure", "job", job.Name, "namespace", job.Namespace)...)
+		if requeue := r.pendingSchedulingRequeueAfter(ctx, &job); requeue > 0 {
+			log.Info("pod unschedulable within grace period — requeuing",
+				append(failureWatcherLogFields(), "action", "requeue_scheduling_grace", "job", job.Name, "namespace", job.Namespace, "requeueAfter", requeue)...)
+			return ctrl.Result{RequeueAfter: requeue}, nil
+		}
 		return ctrl.Result{}, nil
 	}
 	detailForLog := msg
@@ -524,6 +529,47 @@ func podSchedulingFailureMessage(pod *corev1.Pod) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// schedulingGracePeriodRemaining returns the time left in the grace period for an Unschedulable pod,
+// or 0 if the pod is not pending/unschedulable or the grace period has already elapsed.
+func schedulingGracePeriodRemaining(pod *corev1.Pod) time.Duration {
+	if pod.Status.Phase != corev1.PodPending {
+		return 0
+	}
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.PodScheduled &&
+			c.Status == corev1.ConditionFalse &&
+			c.Reason == corev1.PodReasonUnschedulable &&
+			!c.LastTransitionTime.IsZero() {
+			elapsed := time.Since(c.LastTransitionTime.Time)
+			if elapsed < schedulingGracePeriod {
+				return schedulingGracePeriod - elapsed
+			}
+		}
+	}
+	return 0
+}
+
+// pendingSchedulingRequeueAfter returns the earliest requeue duration needed across all pods of the
+// job that are within the scheduling grace period, so the reconciler re-runs once the period expires.
+func (r *EvalHubEvaluationJobFailureReconciler) pendingSchedulingRequeueAfter(ctx context.Context, job *batchv1.Job) time.Duration {
+	list := &corev1.PodList{}
+	if err := r.List(ctx, list, client.InNamespace(job.Namespace), client.MatchingLabels{
+		"batch.kubernetes.io/job-name": job.Name,
+	}); err != nil {
+		return 0
+	}
+	var earliest time.Duration
+	for i := range list.Items {
+		pod := &list.Items[i]
+		if remaining := schedulingGracePeriodRemaining(pod); remaining > 0 {
+			if earliest == 0 || remaining < earliest {
+				earliest = remaining
+			}
+		}
+	}
+	return earliest
 }
 
 // podOperatorOnlyFailureMessage returns true when the eval-hub init, adapter, or sidecar is in a state
