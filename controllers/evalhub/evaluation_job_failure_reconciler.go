@@ -541,11 +541,10 @@ func podSchedulingFailureMessage(pod *corev1.Pod) (string, bool) {
 			c.Reason == corev1.PodReasonUnschedulable &&
 			!c.LastTransitionTime.IsZero() &&
 			time.Since(c.LastTransitionTime.Time) > schedulingGracePeriod {
-			msg := c.Message
-			if msg == "" {
-				msg = "pod unschedulable"
+			if c.Message == "" {
+				return "pod unschedulable", true
 			}
-			return fmt.Sprintf("pod unschedulable: %s", msg), true
+			return fmt.Sprintf("pod unschedulable: %s", c.Message), true
 		}
 	}
 	return "", false
