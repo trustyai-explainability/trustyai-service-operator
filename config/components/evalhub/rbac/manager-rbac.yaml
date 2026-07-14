@@ -5,27 +5,6 @@ metadata:
   name: evalhub-manager-role
 rules:
 - apiGroups:
-  - kueue.x-k8s.io
-  resources:
-  - workloads
-  verbs:
-  - get
-  - list
-  - watch
-  - patch
-- apiGroups:
-  - batch
-  resources:
-  - jobs
-  verbs:
-  - get
-- apiGroups:
-  - trustyai.opendatahub.io
-  resources:
-  - evalhubs
-  verbs:
-  - get
-- apiGroups:
   - batch
   resources:
   - jobs
@@ -214,40 +193,6 @@ rules:
   - patch
   - delete
 - apiGroups:
-  - trustyai.opendatahub.io
-  resources:
-  - evaluations
-  - collections
-  - providers
-  verbs:
-  - get
-  - list
-  - watch
-  - create
-  - update
-  - patch
-  - delete
-- apiGroups:
-  - trustyai.opendatahub.io
-  resources:
-  - status-events
-  verbs:
-  - get
-  - list
-  - watch
-  - create
-  - update
-  - patch
-  - delete
-- apiGroups:
-  - mlflow.kubeflow.org
-  resources:
-  - experiments
-  verbs:
-  - get
-  - list
-  - create
-- apiGroups:
   - rbac.authorization.k8s.io
   resources:
   - rolebindings
@@ -263,16 +208,6 @@ rules:
   - rbac.authorization.k8s.io
   resources:
   - clusterroles
-  resourceNames:
-  - trustyai-service-operator-evalhub-model-secret
-  - trustyai-service-operator-evalhub-auth-reviewer-role
-  - trustyai-service-operator-evalhub-jobs-writer
-  - trustyai-service-operator-evalhub-job-config
-  - trustyai-service-operator-evalhub-hardware-profiles-reader
-  - trustyai-service-operator-evalhub-mlflow-access
-  - trustyai-service-operator-evalhub-mlflow-jobs-access
-  - trustyai-service-operator-evalhub-providers-access
-  - trustyai-service-operator-evalhub-collections-access
   verbs:
   - bind
 - apiGroups:
@@ -282,3 +217,24 @@ rules:
   verbs:
   - get
   - list
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - workloads
+  verbs:
+  - get
+  - list
+  - watch
+  - patch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - get
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - evalhubs
+  verbs:
+  - get
