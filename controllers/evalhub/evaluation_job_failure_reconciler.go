@@ -259,7 +259,8 @@ func podUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 				return false
 			}
 			// Replay and rare creates where status already shows operator-only failure.
-			return podIndicatesOperatorOnlyFailure(newPod)
+			// Also pass through Unschedulable pods so the reconciler can schedule a requeue.
+			return podIndicatesOperatorOnlyFailure(newPod) || podIsUnschedulable(newPod)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			oldPod, okOld := e.ObjectOld.(*corev1.Pod)
@@ -267,8 +268,10 @@ func podUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 			if !okOld || !okNew || !podOwnedByJob(newPod) || !r.tenantNS.IsTenant(newPod.Namespace) {
 				return false
 			}
-			// Only enqueue when init/adapter/sidecar transition into a state that implies no EvalHub callback
-			return !podIndicatesOperatorOnlyFailure(oldPod) && podIndicatesOperatorOnlyFailure(newPod)
+			// Enqueue when transitioning into an operator-only failure state, or when a pod
+			// first becomes Unschedulable so the reconciler can schedule a grace-period requeue.
+			return (!podIndicatesOperatorOnlyFailure(oldPod) && podIndicatesOperatorOnlyFailure(newPod)) ||
+				(!podIsUnschedulable(oldPod) && podIsUnschedulable(newPod))
 		},
 		DeleteFunc:  func(event.DeleteEvent) bool { return false },
 		GenericFunc: func(event.GenericEvent) bool { return false },
@@ -332,6 +335,11 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 	if !failed {
 		log.Info("skip EvalHub POST: no operator-only container failure",
 			append(failureWatcherLogFields(), "action", "skip_no_operator_failure", "job", job.Name, "namespace", job.Namespace)...)
+		if requeue := r.pendingSchedulingRequeueAfter(ctx, &job); requeue > 0 {
+			log.Info("pod unschedulable within grace period — requeuing",
+				append(failureWatcherLogFields(), "action", "requeue_scheduling_grace", "job", job.Name, "namespace", job.Namespace, "requeueAfter", requeue)...)
+			return ctrl.Result{RequeueAfter: requeue}, nil
+		}
 		return ctrl.Result{}, nil
 	}
 	detailForLog := msg
@@ -498,9 +506,101 @@ func podIndicatesOperatorOnlyFailure(pod *corev1.Pod) bool {
 	return ok
 }
 
+// podIsUnschedulable returns true when the pod is Pending and has an Unschedulable condition,
+// regardless of whether the grace period has elapsed. Used by the predicate to let events through
+// so the reconciler can schedule its own requeue.
+func podIsUnschedulable(pod *corev1.Pod) bool {
+	if pod.Status.Phase != corev1.PodPending {
+		return false
+	}
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.PodScheduled &&
+			c.Status == corev1.ConditionFalse &&
+			c.Reason == corev1.PodReasonUnschedulable {
+			return true
+		}
+	}
+	return false
+}
+
+// schedulingGracePeriod is how long a pod may remain Unschedulable before the operator treats it as
+// a terminal failure. This allows transient conditions (e.g. autoscaler node provisioning) to resolve
+// before EvalHub is notified. Permanent conditions (e.g. missing PVC) still fire after the period.
+const schedulingGracePeriod = 2 * time.Minute
+
+// podSchedulingFailureMessage returns a non-empty message and true when the pod has been stuck in
+// Pending/Unschedulable for longer than schedulingGracePeriod. The grace period prevents false
+// positives on autoscaling clusters where a node may take a minute or two to become available.
+func podSchedulingFailureMessage(pod *corev1.Pod) (string, bool) {
+	if pod.Status.Phase != corev1.PodPending {
+		return "", false
+	}
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.PodScheduled &&
+			c.Status == corev1.ConditionFalse &&
+			c.Reason == corev1.PodReasonUnschedulable &&
+			!c.LastTransitionTime.IsZero() &&
+			time.Since(c.LastTransitionTime.Time) > schedulingGracePeriod {
+			if c.Message == "" {
+				return "pod unschedulable", true
+			}
+			return fmt.Sprintf("pod unschedulable: %s", c.Message), true
+		}
+	}
+	return "", false
+}
+
+// schedulingGracePeriodRemaining returns the time left in the grace period for an Unschedulable pod,
+// or 0 if the pod is not pending/unschedulable or the grace period has already elapsed.
+func schedulingGracePeriodRemaining(pod *corev1.Pod) time.Duration {
+	if pod.Status.Phase != corev1.PodPending {
+		return 0
+	}
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.PodScheduled &&
+			c.Status == corev1.ConditionFalse &&
+			c.Reason == corev1.PodReasonUnschedulable &&
+			!c.LastTransitionTime.IsZero() {
+			elapsed := time.Since(c.LastTransitionTime.Time)
+			if elapsed < schedulingGracePeriod {
+				return schedulingGracePeriod - elapsed
+			}
+		}
+	}
+	return 0
+}
+
+// pendingSchedulingRequeueAfter returns the earliest requeue duration needed across all pods of the
+// job that are within the scheduling grace period, so the reconciler re-runs once the period expires.
+func (r *EvalHubEvaluationJobFailureReconciler) pendingSchedulingRequeueAfter(ctx context.Context, job *batchv1.Job) time.Duration {
+	list := &corev1.PodList{}
+	if err := r.List(ctx, list, client.InNamespace(job.Namespace), client.MatchingLabels{
+		"batch.kubernetes.io/job-name": job.Name,
+	}); err != nil {
+		log.FromContext(ctx).Error(err, "pendingSchedulingRequeueAfter: failed to list pods",
+			append(failureWatcherLogFields(), "job", job.Name, "namespace", job.Namespace)...)
+		return 0
+	}
+	var earliest time.Duration
+	for i := range list.Items {
+		pod := &list.Items[i]
+		if remaining := schedulingGracePeriodRemaining(pod); remaining > 0 {
+			if earliest == 0 || remaining < earliest {
+				earliest = remaining
+			}
+		}
+	}
+	return earliest
+}
+
 // podOperatorOnlyFailureMessage returns true when the eval-hub init, adapter, or sidecar is in a state
 // that typically means EvalHub was never notified (vs. adapter exiting after reporting failure).
+// Scheduling failures (pod stuck in Pending, e.g. missing PVC) are also detected here.
 func podOperatorOnlyFailureMessage(pod *corev1.Pod) (string, bool) {
+	// A pod that never scheduled cannot run any container and will never call EvalHub.
+	if msg, ok := podSchedulingFailureMessage(pod); ok {
+		return msg, true
+	}
 	for _, name := range []string{initContainerName, adapterContainerName, sidecarContainerName} {
 		if msg, ok := containerCannotReportToEvalHub(pod, name); ok {
 			return fmt.Sprintf("%s: %s", name, msg), true
