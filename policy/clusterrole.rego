@@ -16,6 +16,7 @@ allowed_api_resources := {
 	["", "persistentvolumes"],
 	["", "pods"],
 	["", "pods/exec"],
+	["", "pods/log"],
 	["", "secrets"],
 	["", "serviceaccounts"],
 	["", "services"],
