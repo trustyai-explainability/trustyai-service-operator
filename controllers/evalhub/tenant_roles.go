@@ -134,6 +134,11 @@ func tenantAdminRules(instance *evalhubv1.EvalHub) []rbacv1.PolicyRule {
 	return []rbacv1.PolicyRule{
 		{
 			APIGroups: []string{"trustyai.opendatahub.io"},
+			Resources: []string{"evalhubs"},
+			Verbs:     []string{"get", "list"},
+		},
+		{
+			APIGroups: []string{"trustyai.opendatahub.io"},
 			Resources: []string{"evaluations", "collections", "providers", "status-events"},
 			Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
 		},
@@ -155,6 +160,11 @@ func tenantAdminRules(instance *evalhubv1.EvalHub) []rbacv1.PolicyRule {
 // Read on collections/providers, submit evaluations, read MLflow experiments.
 func tenantUserRules(instance *evalhubv1.EvalHub) []rbacv1.PolicyRule {
 	return []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{"trustyai.opendatahub.io"},
+			Resources: []string{"evalhubs"},
+			Verbs:     []string{"get", "list"},
+		},
 		{
 			APIGroups: []string{"trustyai.opendatahub.io"},
 			Resources: []string{"collections", "providers"},

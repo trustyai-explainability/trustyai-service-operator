@@ -55,10 +55,40 @@ func TestReconcileSingleTenancyRoles_SingleMode(t *testing.T) {
 		assert.NotEmpty(t, role.Rules)
 	})
 
+	t.Run("admin Role grants evalhubs read for CR discovery", func(t *testing.T) {
+		role := &rbacv1.Role{}
+		require.NoError(t, fc.Get(ctx, types.NamespacedName{Name: tenantAdminRoleName, Namespace: "team-a"}, role))
+		found := false
+		for _, rule := range role.Rules {
+			if len(rule.Resources) == 1 && rule.Resources[0] == "evalhubs" {
+				assert.Contains(t, rule.Verbs, "get")
+				assert.Contains(t, rule.Verbs, "list")
+				assert.Empty(t, rule.ResourceNames, "must not scope by resourceNames so list works")
+				found = true
+			}
+		}
+		assert.True(t, found, "admin Role must include an evalhubs rule for BFF discovery")
+	})
+
 	t.Run("creates user Role", func(t *testing.T) {
 		role := &rbacv1.Role{}
 		require.NoError(t, fc.Get(ctx, types.NamespacedName{Name: tenantUserRoleName, Namespace: "team-a"}, role))
 		assert.NotEmpty(t, role.Rules)
+	})
+
+	t.Run("user Role grants evalhubs read for CR discovery", func(t *testing.T) {
+		role := &rbacv1.Role{}
+		require.NoError(t, fc.Get(ctx, types.NamespacedName{Name: tenantUserRoleName, Namespace: "team-a"}, role))
+		found := false
+		for _, rule := range role.Rules {
+			if len(rule.Resources) == 1 && rule.Resources[0] == "evalhubs" {
+				assert.Contains(t, rule.Verbs, "get")
+				assert.Contains(t, rule.Verbs, "list")
+				assert.Empty(t, rule.ResourceNames, "must not scope by resourceNames so list works")
+				found = true
+			}
+		}
+		assert.True(t, found, "user Role must include an evalhubs rule for BFF discovery")
 	})
 
 	t.Run("creates admin RoleBinding", func(t *testing.T) {
