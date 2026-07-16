@@ -151,7 +151,8 @@ func main() {
 
 	if slices.Contains(enabledServices, serviceEvalHub) {
 		mgrOpts.WebhookServer = ctrlwebhook.NewServer(ctrlwebhook.Options{
-			Port: 9443,
+			Port:    9443,
+			TLSOpts: tlsOpts,
 		})
 	}
 
