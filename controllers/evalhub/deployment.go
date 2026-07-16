@@ -222,6 +222,30 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		Resources:       settings.EvalHubResources,
 		SecurityContext: defaultSecurityContext,
 		VolumeMounts:    volumeMounts,
+		StartupProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   evalHubInternalHealthPath,
+					Port:   intstr.FromInt(metricsPort),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			PeriodSeconds:    10,
+			TimeoutSeconds:   5,
+			FailureThreshold: 30,
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   evalHubInternalHealthPath,
+					Port:   intstr.FromInt(metricsPort),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			PeriodSeconds:    10,
+			TimeoutSeconds:   5,
+			FailureThreshold: 3,
+		},
 	}
 
 	upstreamURL := fmt.Sprintf("http://127.0.0.1:%d/", evalHubAppPort)
@@ -237,7 +261,6 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			"--tls-cert-file=" + tlsSecretMountPath + "/" + tlsCertFile,
 			"--tls-private-key-file=" + tlsSecretMountPath + "/" + tlsKeyFile,
 			"--proxy-endpoints-port=" + fmt.Sprintf("%d", kubeRBACProxyHealthPort),
-			"--ignore-paths=" + evalHubHealthPath,
 			"--auth-header-fields-enabled",
 			"--auth-header-user-field-name=X-User",
 			"--v=0",
@@ -273,30 +296,6 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 				MountPath: kubeRBACProxyUpstreamCAMountPath,
 				ReadOnly:  true,
 			},
-		},
-		StartupProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   evalHubHealthPath,
-					Port:   intstr.FromInt(servicePort),
-					Scheme: corev1.URISchemeHTTPS,
-				},
-			},
-			PeriodSeconds:    10,
-			TimeoutSeconds:   5,
-			FailureThreshold: 30,
-		},
-		ReadinessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   evalHubHealthPath,
-					Port:   intstr.FromInt(servicePort),
-					Scheme: corev1.URISchemeHTTPS,
-				},
-			},
-			PeriodSeconds:    10,
-			TimeoutSeconds:   5,
-			FailureThreshold: 3,
 		},
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
