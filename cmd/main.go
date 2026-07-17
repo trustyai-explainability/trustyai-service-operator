@@ -60,7 +60,10 @@ import (
 	//+kubebuilder:scaffold:imports
 )
 
-const serviceEvalHub = "EVALHUB"
+const (
+	serviceEvalHub = "EVALHUB"
+	serviceTAS     = "TAS"
+)
 
 var (
 	scheme   = runtime.NewScheme()
@@ -142,16 +145,17 @@ func main() {
 				},
 			},
 		},
-		WebhookServer: ctrlwebhook.NewServer(ctrlwebhook.Options{
-			Port:    9443,
-			TLSOpts: tlsOpts,
-		}),
 		// LeaderElectionReleaseOnCancel: true,
 	}
 
 	if slices.Contains(enabledServices, serviceEvalHub) {
 		mgrOpts.WebhookServer = ctrlwebhook.NewServer(ctrlwebhook.Options{
 			Port: 9443,
+		})
+	} else if slices.Contains(enabledServices, serviceTAS) {
+		mgrOpts.WebhookServer = ctrlwebhook.NewServer(ctrlwebhook.Options{
+			Port:    9443,
+			TLSOpts: tlsOpts,
 		})
 	}
 
@@ -168,9 +172,11 @@ func main() {
 		}
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).For(&tasv1.TrustyAIService{}).Complete(); err != nil {
-		setupLog.Error(err, "unable to create TrustyAIService conversion webhook")
-		os.Exit(1)
+	if slices.Contains(enabledServices, serviceTAS) {
+		if err := ctrl.NewWebhookManagedBy(mgr).For(&tasv1.TrustyAIService{}).Complete(); err != nil {
+			setupLog.Error(err, "unable to create TrustyAIService conversion webhook")
+			os.Exit(1)
+		}
 	}
 
 	recorder := mgr.GetEventRecorderFor("trustyai-service-operator")
