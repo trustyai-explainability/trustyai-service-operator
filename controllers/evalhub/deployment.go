@@ -226,8 +226,8 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Path:   evalHubInternalHealthPath,
-					Port:   intstr.FromInt(metricsPort),
-					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(servicePort),
+					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
 			PeriodSeconds:    10,
@@ -238,8 +238,8 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Path:   evalHubInternalHealthPath,
-					Port:   intstr.FromInt(metricsPort),
-					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(servicePort),
+					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
 			PeriodSeconds:    10,
@@ -261,6 +261,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			"--tls-cert-file=" + tlsSecretMountPath + "/" + tlsCertFile,
 			"--tls-private-key-file=" + tlsSecretMountPath + "/" + tlsKeyFile,
 			"--proxy-endpoints-port=" + fmt.Sprintf("%d", kubeRBACProxyHealthPort),
+			"--ignore-paths=" + evalHubInternalHealthPath,
 			"--auth-header-fields-enabled",
 			"--auth-header-user-field-name=X-User",
 			"--v=0",

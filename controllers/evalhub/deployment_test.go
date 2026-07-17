@@ -148,6 +148,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(krp).NotTo(BeNil())
 			Expect(krp.Image).To(Equal(testKubeRBACProxyImage))
 			Expect(krp.Args).To(ContainElement("--config-file=" + kubeRBACProxyConfigMountPath))
+			Expect(krp.Args).To(ContainElement("--ignore-paths=" + evalHubInternalHealthPath))
 			Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 			var hasAuthMount bool
 			for _, m := range krp.VolumeMounts {
@@ -643,20 +644,21 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 
 		Expect(evalHubC.LivenessProbe).To(BeNil())
 
-		By("evalhub container: startup/readiness probe cluster-internal /healthz on metricsPort")
+		By("evalhub container: startup/readiness probe /healthz via kube-rbac-proxy on servicePort")
 		Expect(evalHubC.StartupProbe).NotTo(BeNil())
 		Expect(evalHubC.StartupProbe.HTTPGet.Path).To(Equal(evalHubInternalHealthPath))
-		Expect(evalHubC.StartupProbe.HTTPGet.Port.IntVal).To(Equal(int32(metricsPort)))
-		Expect(evalHubC.StartupProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTP))
+		Expect(evalHubC.StartupProbe.HTTPGet.Port.IntVal).To(Equal(int32(servicePort)))
+		Expect(evalHubC.StartupProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
 		Expect(evalHubC.ReadinessProbe).NotTo(BeNil())
 		Expect(evalHubC.ReadinessProbe.HTTPGet.Path).To(Equal(evalHubInternalHealthPath))
-		Expect(evalHubC.ReadinessProbe.HTTPGet.Port.IntVal).To(Equal(int32(metricsPort)))
-		Expect(evalHubC.ReadinessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTP))
+		Expect(evalHubC.ReadinessProbe.HTTPGet.Port.IntVal).To(Equal(int32(servicePort)))
+		Expect(evalHubC.ReadinessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTPS))
 		Expect(evalHubC.ReadinessProbe.PeriodSeconds).To(Equal(int32(10)))
 
 		Expect(krp.Image).To(Equal(testKubeRBACProxyLatestImage))
 		Expect(strings.Join(krp.Args, " ")).To(ContainSubstring(fmt.Sprintf("--upstream=http://127.0.0.1:%d/", evalHubAppPort)))
 		Expect(krp.Args).To(ContainElement("--config-file=" + kubeRBACProxyConfigMountPath))
+		Expect(krp.Args).To(ContainElement("--ignore-paths=" + evalHubInternalHealthPath))
 
 		By("kube-rbac-proxy: no startup/readiness probes; liveness uses proxy /healthz")
 		Expect(krp.StartupProbe).To(BeNil())

@@ -16,8 +16,8 @@ const (
 	evalHubAppPort = 8444
 	// evalHubHealthPath is the application health check path exposed via the Route (SAR-protected by kube-rbac-proxy).
 	evalHubHealthPath = "/api/v1/health"
-	// evalHubInternalHealthPath is the cluster-internal health check path served by the metrics server on metricsPort.
-	// Used by kubelet probes; not exposed via Route, so no SAR is needed.
+	// evalHubInternalHealthPath is the cluster-internal health check path served by the main API server on evalHubAppPort.
+	// Kubelet probes reach it via kube-rbac-proxy (servicePort), which bypasses SAR for this path (--ignore-paths).
 	evalHubInternalHealthPath = "/healthz"
 	// kubeRBACProxyHealthPath is served by kube-rbac-proxy on kubeRBACProxyHealthPort (see --proxy-endpoints-port).
 	kubeRBACProxyHealthPath = "/healthz"
