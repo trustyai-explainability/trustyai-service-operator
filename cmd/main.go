@@ -148,11 +148,7 @@ func main() {
 		// LeaderElectionReleaseOnCancel: true,
 	}
 
-	if slices.Contains(enabledServices, serviceEvalHub) {
-		mgrOpts.WebhookServer = ctrlwebhook.NewServer(ctrlwebhook.Options{
-			Port: 9443,
-		})
-	} else if slices.Contains(enabledServices, serviceTAS) {
+	if slices.Contains(enabledServices, serviceEvalHub) || slices.Contains(enabledServices, serviceTAS) {
 		mgrOpts.WebhookServer = ctrlwebhook.NewServer(ctrlwebhook.Options{
 			Port:    9443,
 			TLSOpts: tlsOpts,
