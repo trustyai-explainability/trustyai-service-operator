@@ -323,6 +323,18 @@ func validateOTELDuration(fieldName, value string) error {
 func generateAuthConfigData() string {
 	return `authorization:
   endpoints:
+    - path: /api/v1/health
+      mappings:
+        - methods: [get]
+          resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: health
+                verb: get
     - path: /api/v1/evaluations/jobs/*/events
       mappings:
         - methods: [post]

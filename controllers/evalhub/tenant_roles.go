@@ -139,6 +139,11 @@ func tenantAdminRules(instance *evalhubv1.EvalHub) []rbacv1.PolicyRule {
 		},
 		{
 			APIGroups: []string{"trustyai.opendatahub.io"},
+			Resources: []string{"health"},
+			Verbs:     []string{"get"},
+		},
+		{
+			APIGroups: []string{"trustyai.opendatahub.io"},
 			Resources: []string{"evaluations", "collections", "providers", "status-events"},
 			Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
 		},
@@ -164,6 +169,11 @@ func tenantUserRules(instance *evalhubv1.EvalHub) []rbacv1.PolicyRule {
 			APIGroups: []string{"trustyai.opendatahub.io"},
 			Resources: []string{"evalhubs"},
 			Verbs:     []string{"get", "list"},
+		},
+		{
+			APIGroups: []string{"trustyai.opendatahub.io"},
+			Resources: []string{"health"},
+			Verbs:     []string{"get"},
 		},
 		{
 			APIGroups: []string{"trustyai.opendatahub.io"},
