@@ -32,9 +32,10 @@ func (r *TrustyAIReconciler) reconcileConfigMap(ctx context.Context, module *mod
 			// Create new ConfigMap
 			logger.Info("Creating DSC ConfigMap", "name", DSCConfigMapName, "namespace", r.Namespace)
 			if err := r.Create(ctx, desired); err != nil {
+				r.EventRecorder.Event(module, "Warning", "ConfigMapCreateFailed", "Failed to create DSC ConfigMap")
 				return fmt.Errorf("failed to create DSC ConfigMap: %w", err)
 			}
-			logger.Info("DSC ConfigMap created successfully", "name", DSCConfigMapName)
+			r.EventRecorder.Event(module, "Normal", "ConfigMapCreated", "DSC ConfigMap created successfully")
 			return nil
 		}
 		return fmt.Errorf("failed to get DSC ConfigMap: %w", err)
@@ -45,9 +46,10 @@ func (r *TrustyAIReconciler) reconcileConfigMap(ctx context.Context, module *mod
 		logger.Info("Updating DSC ConfigMap", "name", DSCConfigMapName, "namespace", r.Namespace)
 		existing.Data = desired.Data
 		if err := r.Update(ctx, existing); err != nil {
+			r.EventRecorder.Event(module, "Warning", "ConfigMapUpdateFailed", "Failed to update DSC ConfigMap")
 			return fmt.Errorf("failed to update DSC ConfigMap: %w", err)
 		}
-		logger.Info("DSC ConfigMap updated successfully", "name", DSCConfigMapName)
+		r.EventRecorder.Event(module, "Normal", "ConfigMapUpdated", "DSC ConfigMap updated successfully")
 	}
 
 	return nil
