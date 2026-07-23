@@ -101,7 +101,7 @@ func setupReconciler() *TrustyAIReconciler {
 	return &TrustyAIReconciler{
 		Client:                k8sClient,
 		Scheme:                scheme.Scheme,
-		Namespace:             "test-namespace",
+		Namespace:             "default",
 		OperatorConfigMapName: "test-config",
 		EventRecorder:         eventRecorder,
 	}

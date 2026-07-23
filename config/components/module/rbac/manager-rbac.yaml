@@ -30,3 +30,29 @@ rules:
   - trustyais/finalizers
   verbs:
   - update
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - services
+  verbs:
+  - get
+  - list
+  - patch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - get
+  - list
+  - patch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - clusterrolebindings
+  verbs:
+  - get
+  - list
+  - patch
