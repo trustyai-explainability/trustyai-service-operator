@@ -13,7 +13,7 @@ require (
 	google.golang.org/grpc v1.82.1 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	k8s.io/api v0.34.5
-	k8s.io/apimachinery v0.34.5
+	k8s.io/apimachinery v0.36.3
 	k8s.io/client-go v0.34.5
 	sigs.k8s.io/controller-runtime v0.22.5
 	sigs.k8s.io/kueue v0.16.0-devel
@@ -71,7 +71,6 @@ require (
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/moby/spdystream v0.5.1 // indirect
-	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
@@ -106,6 +105,7 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	k8s.io/apiserver v0.34.5 // indirect
 	k8s.io/component-helpers v0.34.5 // indirect
+	k8s.io/streaming v0.36.3 // indirect
 	sigs.k8s.io/gateway-api v1.4.2-0.20260116062110-0d0ca872766e // indirect
 	sigs.k8s.io/gateway-api-inference-extension v1.3.1 // indirect
 	sigs.k8s.io/jobset v0.11.0-devel // indirect
