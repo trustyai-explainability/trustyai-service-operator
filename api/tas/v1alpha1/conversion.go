@@ -1,8 +1,9 @@
 package v1alpha1
 
 import (
-	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
 	v1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/conversion"
 )
 
@@ -29,15 +30,37 @@ func (src *TrustyAIService) ConvertTo(dstRaw conversion.Hub) error {
 	dst.Status.Replicas = src.Status.Replicas
 	dst.Status.Ready = src.Status.Ready
 
-	// Convert Conditions
-	dst.Status.Conditions = make([]common.Condition, len(src.Status.Conditions))
+	// Convert Conditions from common.Condition (v1alpha1 src) to metav1.Condition (v1 dst)
+	dst.Status.Conditions = make([]metav1.Condition, len(src.Status.Conditions))
 	for i, srcCondition := range src.Status.Conditions {
-		dst.Status.Conditions[i] = common.Condition{
+		// Convert corev1.ConditionStatus to metav1.ConditionStatus
+		var status metav1.ConditionStatus
+		switch srcCondition.Status {
+		case corev1.ConditionTrue:
+			status = metav1.ConditionTrue
+		case corev1.ConditionFalse:
+			status = metav1.ConditionFalse
+		default:
+			status = metav1.ConditionUnknown
+		}
+
+		// metav1.Condition requires Reason and Message to be non-empty
+		// Provide defaults if missing from v1alpha1 condition
+		reason := srcCondition.Reason
+		if reason == "" {
+			reason = "Unknown"
+		}
+		message := srcCondition.Message
+		if message == "" {
+			message = "No message provided"
+		}
+
+		dst.Status.Conditions[i] = metav1.Condition{
 			Type:               srcCondition.Type,
-			Status:             srcCondition.Status,
+			Status:             status,
 			LastTransitionTime: srcCondition.LastTransitionTime,
-			Reason:             srcCondition.Reason,
-			Message:            srcCondition.Message,
+			Reason:             reason,
+			Message:            message,
 		}
 	}
 
@@ -67,12 +90,23 @@ func (dst *TrustyAIService) ConvertFrom(srcRaw conversion.Hub) error {
 	dst.Status.Replicas = src.Status.Replicas
 	dst.Status.Ready = src.Status.Ready
 
-	// Convert Conditions
+	// Convert Conditions from metav1.Condition (v1) to common.Condition (v1alpha1)
 	dst.Status.Conditions = make([]Condition, len(src.Status.Conditions))
 	for i, srcCondition := range src.Status.Conditions {
+		// Convert metav1.ConditionStatus to corev1.ConditionStatus
+		var status corev1.ConditionStatus
+		switch srcCondition.Status {
+		case metav1.ConditionTrue:
+			status = corev1.ConditionTrue
+		case metav1.ConditionFalse:
+			status = corev1.ConditionFalse
+		default:
+			status = corev1.ConditionUnknown
+		}
+
 		dst.Status.Conditions[i] = Condition{
 			Type:               srcCondition.Type,
-			Status:             srcCondition.Status,
+			Status:             status,
 			LastTransitionTime: srcCondition.LastTransitionTime,
 			Reason:             srcCondition.Reason,
 			Message:            srcCondition.Message,

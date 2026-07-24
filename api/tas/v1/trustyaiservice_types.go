@@ -1,7 +1,6 @@
 package v1
 
 import (
-	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -49,11 +48,31 @@ type TrustyAIServiceSpec struct {
 
 // TrustyAIServiceStatus defines the observed state of TrustyAIService
 type TrustyAIServiceStatus struct {
-	// Define your status fields here
-	Phase      string                 `json:"phase"`
-	Replicas   int32                  `json:"replicas"`
-	Conditions []common.Condition     `json:"conditions"`
-	Ready      corev1.ConditionStatus `json:"ready,omitempty"`
+	// ObservedGeneration is the last generation reconciled by the controller
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// Phase represents the current phase of the service
+	// +optional
+	Phase string `json:"phase,omitempty"`
+
+	// Replicas is the number of running replicas
+	// +optional
+	Replicas int32 `json:"replicas,omitempty"`
+
+	// Conditions represent the latest available observations of the service's state.
+	// Uses metav1.Condition for platform contract compliance (RHOAIENG-67659).
+	// BREAKING CHANGE: Requires lastTransitionTime, reason, and message fields (previously optional in common.Condition).
+	// v1alpha1 conversion provides defaults for backward compatibility.
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Ready indicates whether the service is ready
+	// +optional
+	// Deprecated: Use Conditions with type "Ready" instead
+	Ready corev1.ConditionStatus `json:"ready,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -95,26 +114,43 @@ func (t *TrustyAIService) IsMigration() bool {
 	}
 }
 
-// SetStatus sets the status of the TrustyAIService
+// SetStatus sets the status of the TrustyAIService using metav1.Condition
 func (t *TrustyAIService) SetStatus(condType, reason, message string, status corev1.ConditionStatus) {
-	now := metav1.Now()
-	condition := common.Condition{
+	// Convert corev1.ConditionStatus to metav1.ConditionStatus
+	metaStatus := metav1.ConditionUnknown
+	switch status {
+	case corev1.ConditionTrue:
+		metaStatus = metav1.ConditionTrue
+	case corev1.ConditionFalse:
+		metaStatus = metav1.ConditionFalse
+	}
+
+	condition := metav1.Condition{
 		Type:               condType,
-		Status:             status,
+		Status:             metaStatus,
 		Reason:             reason,
 		Message:            message,
-		LastTransitionTime: now,
+		ObservedGeneration: t.Generation,
 	}
+
 	// Replace or append condition
 	found := false
 	for i, cond := range t.Status.Conditions {
 		if cond.Type == condType {
+			// Only update LastTransitionTime if status actually changed
+			if cond.Status != condition.Status {
+				condition.LastTransitionTime = metav1.Now()
+			} else {
+				condition.LastTransitionTime = cond.LastTransitionTime
+			}
 			t.Status.Conditions[i] = condition
 			found = true
 			break
 		}
 	}
 	if !found {
+		// New condition, set LastTransitionTime
+		condition.LastTransitionTime = metav1.Now()
 		t.Status.Conditions = append(t.Status.Conditions, condition)
 	}
 }
