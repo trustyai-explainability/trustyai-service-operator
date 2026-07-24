@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	modulev1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/module/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,6 +22,14 @@ var _ = Describe("TrustyAI Module Controller", func() {
 	})
 
 	AfterEach(func() {
+		// Cleanup DSC ConfigMap
+		cm := &corev1.ConfigMap{}
+		_ = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      DSCConfigMapName,
+			Namespace: reconciler.Namespace,
+		}, cm)
+		_ = k8sClient.Delete(ctx, cm)
+
 		// Cleanup all TrustyAI instances
 		moduleList := &modulev1alpha1.TrustyAIList{}
 		_ = k8sClient.List(ctx, moduleList)
