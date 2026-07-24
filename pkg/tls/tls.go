@@ -19,6 +19,7 @@ package tls
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"time"
 
@@ -102,10 +103,12 @@ func Resolve(ctx context.Context, cfg *rest.Config) (Result, error) {
 			log.Info("APIServer resource not found, using hardened defaults")
 		case apierrors.IsServiceUnavailable(err):
 			log.Info("API server unavailable, using hardened defaults", "error", err)
-		case apierrors.IsTimeout(err):
+		case apierrors.IsTimeout(err), apierrors.IsServerTimeout(err):
 			log.Info("API server request timed out, using hardened defaults", "error", err)
 		case apierrors.IsTooManyRequests(err):
 			log.Info("API server throttled request, using hardened defaults", "error", err)
+		case errors.Is(err, context.DeadlineExceeded):
+			log.Info("API server request deadline exceeded, using hardened defaults", "error", err)
 		default:
 			return result, fmt.Errorf("failed to read APIServer TLS profile: %w", err)
 		}
