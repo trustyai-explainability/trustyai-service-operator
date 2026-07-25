@@ -18,4 +18,12 @@ const (
 	// Phases
 	PhaseReady    = "Ready"
 	PhaseNotReady = "Not Ready"
+
+	// Reasons
+	ReasonModuleUnmanaged = "ModuleUnmanaged"
+
+	// Event reasons
+	EventReasonRemoved       = "Removed"
+	EventReasonUnmanaged     = "Unmanaged"
+	EventReasonStatusUpdated = "StatusUpdated"
 )

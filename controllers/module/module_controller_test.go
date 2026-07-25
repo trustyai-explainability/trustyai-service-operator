@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -202,6 +203,57 @@ var _ = Describe("TrustyAI Module Controller", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, updated)).To(Succeed())
 			Expect(updated.Status.Releases).NotTo(BeEmpty())
 			Expect(updated.Status.Releases[0].Name).To(Equal("trustyai-service-operator"))
+		})
+
+		It("Should handle Unmanaged management state", func() {
+			module := createModuleInstance("default", modulev1alpha1.ManagementStateUnmanaged)
+			Expect(k8sClient.Create(ctx, module)).To(Succeed())
+
+			// First reconcile - adds finalizer
+			_, err := performReconcile(reconciler, "default")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile - handles unmanaged
+			result, err := performReconcile(reconciler, "default")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(time.Duration(0)))
+			Expect(result.Requeue).To(BeFalse())
+
+			// Check conditions are Unknown
+			updated := &modulev1alpha1.TrustyAI{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, updated)).To(Succeed())
+
+			readyCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeReady)
+			Expect(readyCondition).NotTo(BeNil())
+			Expect(readyCondition.Status).To(Equal(metav1.ConditionUnknown))
+			Expect(readyCondition.Reason).To(Equal(ReasonModuleUnmanaged))
+
+			provisioningCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeProvisioningSucceeded)
+			Expect(provisioningCondition).NotTo(BeNil())
+			Expect(provisioningCondition.Status).To(Equal(metav1.ConditionUnknown))
+
+			degradedCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeDegraded)
+			Expect(degradedCondition).NotTo(BeNil())
+			Expect(degradedCondition.Status).To(Equal(metav1.ConditionUnknown))
+		})
+
+		It("Should emit events on status transitions", func() {
+			module := createModuleInstance("default", modulev1alpha1.ManagementStateManaged)
+			Expect(k8sClient.Create(ctx, module)).To(Succeed())
+
+			fakeRecorder := reconciler.EventRecorder.(*record.FakeRecorder)
+
+			// First reconcile - adds finalizer
+			_, err := performReconcile(reconciler, "default")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile - updates status, should emit event
+			_, err = performReconcile(reconciler, "default")
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() int {
+				return len(fakeRecorder.Events)
+			}, timeout, interval).Should(BeNumerically(">=", 1))
 		})
 	})
 })
