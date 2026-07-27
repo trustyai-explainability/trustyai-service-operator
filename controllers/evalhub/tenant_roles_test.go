@@ -2,11 +2,16 @@ package evalhub
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -158,3 +163,64 @@ func TestReconcileSingleTenancyRoles_SwitchSingleToMulti(t *testing.T) {
 		assert.True(t, errors.IsNotFound(err))
 	})
 }
+
+var _ = Describe("reconcileSingleTenancyRoles evaluations access", func() {
+	const evalHubName = "tenant-roles-evalhub"
+
+	var (
+		testNamespace string
+		namespace     *corev1.Namespace
+		evalHub       *evalhubv1.EvalHub
+		reconciler    *EvalHubReconciler
+	)
+
+	BeforeEach(func() {
+		testNamespace = fmt.Sprintf("evalhub-tenant-roles-%d", time.Now().UnixNano())
+		namespace = createNamespace(testNamespace)
+		Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
+
+		evalHub = createEvalHubInstanceWithSQLite(evalHubName, testNamespace)
+		evalHub.Spec.Tenancy = evalhubv1.TenancySingle
+		Expect(k8sClient.Create(ctx, evalHub)).To(Succeed())
+
+		reconciler, _ = setupReconciler(testNamespace)
+	})
+
+	AfterEach(func() {
+		cleanupResourcesInNamespace(testNamespace, evalHub, nil)
+		_ = k8sClient.Delete(ctx, &rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{Name: tenantUserRoleName, Namespace: testNamespace},
+		})
+		_ = k8sClient.Delete(ctx, &rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{Name: tenantAdminRoleName, Namespace: testNamespace},
+		})
+		_ = k8sClient.Delete(ctx, &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: tenantAdminBindingName, Namespace: testNamespace},
+		})
+		deleteNamespace(namespace)
+		evalHub, namespace = nil, nil
+	})
+
+	It("user Role grants evaluations job lifecycle", func() {
+		Expect(reconciler.reconcileSingleTenancyRoles(ctx, evalHub)).To(Succeed())
+
+		role := &rbacv1.Role{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{
+				Name:      tenantUserRoleName,
+				Namespace: testNamespace,
+			}, role)
+		}, timeout, interval).Should(Succeed())
+
+		found := false
+		for _, rule := range role.Rules {
+			if len(rule.Resources) == 1 && rule.Resources[0] == "evaluations" {
+				Expect(rule.APIGroups).To(Equal([]string{"trustyai.opendatahub.io"}))
+				Expect(rule.ResourceNames).To(BeEmpty())
+				Expect(rule.Verbs).To(ConsistOf("get", "list", "create", "update", "patch", "delete"))
+				found = true
+			}
+		}
+		Expect(found).To(BeTrue(), "user Role must grant evaluations for ListEvaluationJobs and job lifecycle")
+	})
+})
