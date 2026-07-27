@@ -91,6 +91,21 @@ func TestReconcileSingleTenancyRoles_SingleMode(t *testing.T) {
 		assert.True(t, found, "user Role must include an evalhubs rule for BFF discovery")
 	})
 
+	t.Run("user Role grants evaluations job lifecycle", func(t *testing.T) {
+		role := &rbacv1.Role{}
+		require.NoError(t, fc.Get(ctx, types.NamespacedName{Name: tenantUserRoleName, Namespace: "team-a"}, role))
+		found := false
+		for _, rule := range role.Rules {
+			if len(rule.Resources) == 1 && rule.Resources[0] == "evaluations" {
+				for _, verb := range []string{"get", "list", "create", "update", "patch", "delete"} {
+					assert.Contains(t, rule.Verbs, verb)
+				}
+				found = true
+			}
+		}
+		assert.True(t, found, "user Role must grant evaluations for ListEvaluationJobs and job lifecycle")
+	})
+
 	t.Run("creates admin RoleBinding", func(t *testing.T) {
 		rb := &rbacv1.RoleBinding{}
 		require.NoError(t, fc.Get(ctx, types.NamespacedName{Name: tenantAdminBindingName, Namespace: "team-a"}, rb))
