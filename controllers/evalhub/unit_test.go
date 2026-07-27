@@ -2344,10 +2344,10 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 	})
 }
 
-// TestEvalHubReconciler_createOpendatahubHardwareProfilesReaderRoleBinding verifies that the
-// EvalHub API SA gets hardwareprofiles get/list in the platform namespace even when the
-// EvalHub instance is deployed elsewhere, and that stale-tenant cleanup preserves it.
-func TestEvalHubReconciler_createOpendatahubHardwareProfilesReaderRoleBinding(t *testing.T) {
+// TestEvalHubReconciler_createApplicationsHardwareProfilesReaderRoleBinding verifies that the
+// EvalHub API SA gets hardwareprofiles get/list in the applications namespace (r.Namespace)
+// even when the EvalHub instance is deployed elsewhere, and that stale-tenant cleanup preserves it.
+func TestEvalHubReconciler_createApplicationsHardwareProfilesReaderRoleBinding(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, rbacv1.AddToScheme(scheme))
@@ -2355,39 +2355,42 @@ func TestEvalHubReconciler_createOpendatahubHardwareProfilesReaderRoleBinding(t 
 
 	ctx := context.Background()
 	instanceNamespace := "team-control-plane"
+	// Simulate RHOAI: APPLICATIONS_NAMESPACE / operator ns is redhat-ods-applications.
+	applicationsNamespace := "redhat-ods-applications"
 	evalHubName := "evalhub"
 
 	evalHub := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evalHubName,
 			Namespace: instanceNamespace,
-			UID:       "test-uid-hp-odh",
+			UID:       "test-uid-hp-apps",
 		},
 	}
 
-	hpNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hardwareProfilesNamespace}}
+	appsNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: applicationsNamespace}}
 	instanceNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: instanceNamespace}}
 
-	t.Run("creates RoleBinding in opendatahub for API SA when instance is elsewhere", func(t *testing.T) {
+	t.Run("creates RoleBinding in applications namespace for API SA when instance is elsewhere", func(t *testing.T) {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(evalHub, hpNS, instanceNS).
+			WithObjects(evalHub, appsNS, instanceNS).
 			Build()
 
 		reconciler := &EvalHubReconciler{
 			Client:        fakeClient,
 			Scheme:        scheme,
+			Namespace:     applicationsNamespace,
 			EventRecorder: record.NewFakeRecorder(10),
 		}
 
 		svcSAName := generateServiceAccountName(evalHub)
-		err := reconciler.createOpendatahubHardwareProfilesReaderRoleBinding(ctx, evalHub, svcSAName)
+		err := reconciler.createApplicationsHardwareProfilesReaderRoleBinding(ctx, evalHub, svcSAName)
 		require.NoError(t, err)
 
 		rb := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
-			Name:      generateOpendatahubHardwareProfilesReaderRBName(evalHub),
-			Namespace: hardwareProfilesNamespace,
+			Name:      generateApplicationsHardwareProfilesReaderRBName(evalHub),
+			Namespace: applicationsNamespace,
 		}, rb)
 		require.NoError(t, err)
 		assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
@@ -2400,36 +2403,58 @@ func TestEvalHubReconciler_createOpendatahubHardwareProfilesReaderRoleBinding(t 
 		assert.Equal(t, jobResourceInstanceID(evalHub), rb.Labels["eval-hub.trustyai.opendatahub.io"])
 	})
 
-	t.Run("skips when EvalHub already lives in opendatahub", func(t *testing.T) {
-		odhEvalHub := evalHub.DeepCopy()
-		odhEvalHub.Namespace = hardwareProfilesNamespace
+	t.Run("skips when EvalHub already lives in applications namespace", func(t *testing.T) {
+		localEvalHub := evalHub.DeepCopy()
+		localEvalHub.Namespace = applicationsNamespace
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(odhEvalHub, hpNS).
+			WithObjects(localEvalHub, appsNS).
 			Build()
 
 		reconciler := &EvalHubReconciler{
 			Client:        fakeClient,
 			Scheme:        scheme,
+			Namespace:     applicationsNamespace,
 			EventRecorder: record.NewFakeRecorder(10),
 		}
 
-		err := reconciler.createOpendatahubHardwareProfilesReaderRoleBinding(ctx, odhEvalHub, generateServiceAccountName(odhEvalHub))
+		err := reconciler.createApplicationsHardwareProfilesReaderRoleBinding(ctx, localEvalHub, generateServiceAccountName(localEvalHub))
 		require.NoError(t, err)
 
 		rbList := &rbacv1.RoleBindingList{}
-		require.NoError(t, fakeClient.List(ctx, rbList, client.InNamespace(hardwareProfilesNamespace)))
-		assert.Empty(t, rbList.Items, "should not create a redundant platform RoleBinding")
+		require.NoError(t, fakeClient.List(ctx, rbList, client.InNamespace(applicationsNamespace)))
+		assert.Empty(t, rbList.Items, "should not create a redundant applications-namespace RoleBinding")
+	})
+
+	t.Run("skips when reconciler Namespace is empty", func(t *testing.T) {
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, instanceNS).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			Namespace:     "",
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.createApplicationsHardwareProfilesReaderRoleBinding(ctx, evalHub, generateServiceAccountName(evalHub))
+		require.NoError(t, err)
+
+		rbList := &rbacv1.RoleBindingList{}
+		require.NoError(t, fakeClient.List(ctx, rbList))
+		assert.Empty(t, rbList.Items)
 	})
 
 	t.Run("survives stale tenant cleanup when not a tenant namespace", func(t *testing.T) {
 		svcSAName := generateServiceAccountName(evalHub)
-		rbName := generateOpendatahubHardwareProfilesReaderRBName(evalHub)
+		rbName := generateApplicationsHardwareProfilesReaderRBName(evalHub)
 		platformRB := &rbacv1.RoleBinding{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      rbName,
-				Namespace: hardwareProfilesNamespace,
+				Namespace: applicationsNamespace,
 				Labels:    jobResourceLabels(evalHub, rbName),
 			},
 			Subjects: []rbacv1.Subject{{
@@ -2450,13 +2475,14 @@ func TestEvalHubReconciler_createOpendatahubHardwareProfilesReaderRoleBinding(t 
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(evalHub, hpNS, instanceNS, platformRB, staleRB,
+			WithObjects(evalHub, appsNS, instanceNS, platformRB, staleRB,
 				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "former-tenant"}}).
 			Build()
 
 		reconciler := &EvalHubReconciler{
 			Client:        fakeClient,
 			Scheme:        scheme,
+			Namespace:     applicationsNamespace,
 			EventRecorder: record.NewFakeRecorder(10),
 		}
 
@@ -2465,9 +2491,9 @@ func TestEvalHubReconciler_createOpendatahubHardwareProfilesReaderRoleBinding(t 
 
 		kept := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
-			Name: rbName, Namespace: hardwareProfilesNamespace,
+			Name: rbName, Namespace: applicationsNamespace,
 		}, kept)
-		require.NoError(t, err, "platform hardware-profiles-reader RoleBinding must not be cleaned as stale")
+		require.NoError(t, err, "applications-namespace hardware-profiles-reader RoleBinding must not be cleaned as stale")
 
 		gone := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{

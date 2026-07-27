@@ -188,9 +188,9 @@ func (r *EvalHubReconciler) cleanupStaleTenantResources(ctx context.Context, ins
 		if ns == instance.Namespace || activeTenants[ns] {
 			continue
 		}
-		// Keep the platform hardware-profiles-reader binding for the API SA. It lives
-		// in hardwareProfilesNamespace (not a tenant) for the lifetime of the EvalHub.
-		if isOpendatahubHardwareProfilesReaderRoleBinding(instance, &rbList.Items[i]) {
+		// Keep the applications-namespace hardware-profiles-reader binding for the API SA.
+		// It lives in r.Namespace (not a tenant) for the lifetime of the EvalHub.
+		if isApplicationsHardwareProfilesReaderRoleBinding(instance, r.Namespace, &rbList.Items[i]) {
 			continue
 		}
 		log.Info("Removing stale job RoleBinding", "name", rbList.Items[i].Name, "namespace", ns)

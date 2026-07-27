@@ -304,19 +304,19 @@ var _ = Describe("EvalHub API RBAC", func() {
 			Expect(hpRB.Subjects).To(HaveLen(1))
 			Expect(hpRB.Subjects[0].Name).To(Equal(evalHubName + "-service"))
 
-			By("Verifying platform (opendatahub) hardware-profiles-reader RoleBinding exists")
-			odhHPRB := &rbacv1.RoleBinding{}
+			By("Verifying applications-namespace hardware-profiles-reader RoleBinding exists")
+			appsHPRB := &rbacv1.RoleBinding{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      generateOpendatahubHardwareProfilesReaderRBName(evalHub),
-				Namespace: hardwareProfilesNamespace,
-			}, odhHPRB)
+				Name:      generateApplicationsHardwareProfilesReaderRBName(evalHub),
+				Namespace: operatorNamespace,
+			}, appsHPRB)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(odhHPRB.RoleRef.Kind).To(Equal("ClusterRole"))
-			Expect(odhHPRB.RoleRef.Name).To(Equal(hardwareProfilesReaderClusterRoleName))
-			Expect(odhHPRB.Subjects).To(HaveLen(1))
-			Expect(odhHPRB.Subjects[0].Kind).To(Equal("ServiceAccount"))
-			Expect(odhHPRB.Subjects[0].Name).To(Equal(evalHubName + "-service"))
-			Expect(odhHPRB.Subjects[0].Namespace).To(Equal(testNamespace))
+			Expect(appsHPRB.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(appsHPRB.RoleRef.Name).To(Equal(hardwareProfilesReaderClusterRoleName))
+			Expect(appsHPRB.Subjects).To(HaveLen(1))
+			Expect(appsHPRB.Subjects[0].Kind).To(Equal("ServiceAccount"))
+			Expect(appsHPRB.Subjects[0].Name).To(Equal(evalHubName + "-service"))
+			Expect(appsHPRB.Subjects[0].Namespace).To(Equal(testNamespace))
 
 			By("Verifying providers-access RoleBinding exists")
 			pRB := &rbacv1.RoleBinding{}

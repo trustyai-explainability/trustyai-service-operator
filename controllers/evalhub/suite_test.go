@@ -78,15 +78,6 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	// Platform namespace where createServiceAccount places the hardware-profiles-reader
-	// RoleBinding for the EvalHub API SA (independent of the EvalHub instance namespace).
-	By("ensuring hardware profiles platform namespace exists")
-	hpNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hardwareProfilesNamespace}}
-	err = k8sClient.Create(ctx, hpNS)
-	if err != nil && !errors.IsAlreadyExists(err) {
-		Expect(err).NotTo(HaveOccurred())
-	}
-
 })
 
 var _ = AfterSuite(func() {
@@ -346,15 +337,18 @@ func createEvalHubInstanceWithSQLite(name, namespace string) *evalhubv1.EvalHub 
 // cleanupResourcesInNamespace deletes all test resources in a namespace
 func cleanupResourcesInNamespace(_ string, evalHub *evalhubv1.EvalHub, configMap *corev1.ConfigMap) {
 	if evalHub != nil {
-		// Remove the platform-namespace hardware-profiles-reader RoleBinding (no owner ref).
-		if evalHub.Namespace != hardwareProfilesNamespace {
-			rb := &rbacv1.RoleBinding{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      generateOpendatahubHardwareProfilesReaderRBName(evalHub),
-					Namespace: hardwareProfilesNamespace,
-				},
+		// Remove the applications-namespace hardware-profiles-reader RoleBinding (no owner ref).
+		// It may live in any namespace (r.Namespace); discover by label + name.
+		rbName := generateApplicationsHardwareProfilesReaderRBName(evalHub)
+		rbList := &rbacv1.RoleBindingList{}
+		_ = k8sClient.List(ctx, rbList, client.MatchingLabels{
+			"eval-hub.trustyai.opendatahub.io": jobResourceInstanceID(evalHub),
+			"app.kubernetes.io/component":      "job",
+		})
+		for i := range rbList.Items {
+			if rbList.Items[i].Name == rbName {
+				_ = k8sClient.Delete(ctx, &rbList.Items[i])
 			}
-			_ = k8sClient.Delete(ctx, rb)
 		}
 		k8sClient.Delete(ctx, evalHub)
 	}

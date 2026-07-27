@@ -48,10 +48,9 @@ func TestAuthReviewerCRB_AppNameLabelIsNormalizedWhenBindingNameTooLong(t *testi
 		},
 	}
 
-	hpNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hardwareProfilesNamespace}}
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(evalHub, hpNS).
+		WithObjects(evalHub).
 		Build()
 
 	reconciler := &EvalHubReconciler{
