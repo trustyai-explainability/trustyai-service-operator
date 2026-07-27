@@ -215,9 +215,9 @@ var _ = Describe("reconcileSingleTenancyRoles evaluations access", func() {
 		found := false
 		for _, rule := range role.Rules {
 			if len(rule.Resources) == 1 && rule.Resources[0] == "evaluations" {
-				for _, verb := range []string{"get", "list", "create", "update", "patch", "delete"} {
-					Expect(rule.Verbs).To(ContainElement(verb))
-				}
+				Expect(rule.APIGroups).To(Equal([]string{"trustyai.opendatahub.io"}))
+				Expect(rule.ResourceNames).To(BeEmpty())
+				Expect(rule.Verbs).To(ConsistOf("get", "list", "create", "update", "patch", "delete"))
 				found = true
 			}
 		}
