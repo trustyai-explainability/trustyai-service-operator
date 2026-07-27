@@ -12,6 +12,7 @@ import (
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -76,6 +77,15 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	// Platform namespace where createServiceAccount places the hardware-profiles-reader
+	// RoleBinding for the EvalHub API SA (independent of the EvalHub instance namespace).
+	By("ensuring hardware profiles platform namespace exists")
+	hpNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hardwareProfilesNamespace}}
+	err = k8sClient.Create(ctx, hpNS)
+	if err != nil && !errors.IsAlreadyExists(err) {
+		Expect(err).NotTo(HaveOccurred())
+	}
 
 })
 
@@ -336,6 +346,16 @@ func createEvalHubInstanceWithSQLite(name, namespace string) *evalhubv1.EvalHub 
 // cleanupResourcesInNamespace deletes all test resources in a namespace
 func cleanupResourcesInNamespace(_ string, evalHub *evalhubv1.EvalHub, configMap *corev1.ConfigMap) {
 	if evalHub != nil {
+		// Remove the platform-namespace hardware-profiles-reader RoleBinding (no owner ref).
+		if evalHub.Namespace != hardwareProfilesNamespace {
+			rb := &rbacv1.RoleBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      generateOpendatahubHardwareProfilesReaderRBName(evalHub),
+					Namespace: hardwareProfilesNamespace,
+				},
+			}
+			_ = k8sClient.Delete(ctx, rb)
+		}
 		k8sClient.Delete(ctx, evalHub)
 	}
 	if configMap != nil {

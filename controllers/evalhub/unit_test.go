@@ -2344,6 +2344,139 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 	})
 }
 
+// TestEvalHubReconciler_createOpendatahubHardwareProfilesReaderRoleBinding verifies that the
+// EvalHub API SA gets hardwareprofiles get/list in the platform namespace even when the
+// EvalHub instance is deployed elsewhere, and that stale-tenant cleanup preserves it.
+func TestEvalHubReconciler_createOpendatahubHardwareProfilesReaderRoleBinding(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, rbacv1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	instanceNamespace := "team-control-plane"
+	evalHubName := "evalhub"
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: instanceNamespace,
+			UID:       "test-uid-hp-odh",
+		},
+	}
+
+	hpNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hardwareProfilesNamespace}}
+	instanceNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: instanceNamespace}}
+
+	t.Run("creates RoleBinding in opendatahub for API SA when instance is elsewhere", func(t *testing.T) {
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, hpNS, instanceNS).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		svcSAName := generateServiceAccountName(evalHub)
+		err := reconciler.createOpendatahubHardwareProfilesReaderRoleBinding(ctx, evalHub, svcSAName)
+		require.NoError(t, err)
+
+		rb := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      generateOpendatahubHardwareProfilesReaderRBName(evalHub),
+			Namespace: hardwareProfilesNamespace,
+		}, rb)
+		require.NoError(t, err)
+		assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
+		assert.Equal(t, hardwareProfilesReaderClusterRoleName, rb.RoleRef.Name)
+		require.Len(t, rb.Subjects, 1)
+		assert.Equal(t, "ServiceAccount", rb.Subjects[0].Kind)
+		assert.Equal(t, svcSAName, rb.Subjects[0].Name)
+		assert.Equal(t, instanceNamespace, rb.Subjects[0].Namespace)
+		assert.Equal(t, "job", rb.Labels["app.kubernetes.io/component"])
+		assert.Equal(t, jobResourceInstanceID(evalHub), rb.Labels["eval-hub.trustyai.opendatahub.io"])
+	})
+
+	t.Run("skips when EvalHub already lives in opendatahub", func(t *testing.T) {
+		odhEvalHub := evalHub.DeepCopy()
+		odhEvalHub.Namespace = hardwareProfilesNamespace
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(odhEvalHub, hpNS).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.createOpendatahubHardwareProfilesReaderRoleBinding(ctx, odhEvalHub, generateServiceAccountName(odhEvalHub))
+		require.NoError(t, err)
+
+		rbList := &rbacv1.RoleBindingList{}
+		require.NoError(t, fakeClient.List(ctx, rbList, client.InNamespace(hardwareProfilesNamespace)))
+		assert.Empty(t, rbList.Items, "should not create a redundant platform RoleBinding")
+	})
+
+	t.Run("survives stale tenant cleanup when not a tenant namespace", func(t *testing.T) {
+		svcSAName := generateServiceAccountName(evalHub)
+		rbName := generateOpendatahubHardwareProfilesReaderRBName(evalHub)
+		platformRB := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      rbName,
+				Namespace: hardwareProfilesNamespace,
+				Labels:    jobResourceLabels(evalHub, rbName),
+			},
+			Subjects: []rbacv1.Subject{{
+				Kind: "ServiceAccount", Name: svcSAName, Namespace: instanceNamespace,
+			}},
+			RoleRef: rbacv1.RoleRef{
+				Kind: "ClusterRole", Name: hardwareProfilesReaderClusterRoleName, APIGroup: rbacv1.GroupName,
+			},
+		}
+		// A truly stale binding in another namespace should still be removed.
+		staleRB := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "stale-job-rb",
+				Namespace: "former-tenant",
+				Labels:    jobResourceLabels(evalHub, "stale-job-rb"),
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, hpNS, instanceNS, platformRB, staleRB,
+				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "former-tenant"}}).
+			Build()
+
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		err := reconciler.cleanupStaleTenantResources(ctx, evalHub, map[string]bool{})
+		require.NoError(t, err)
+
+		kept := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name: rbName, Namespace: hardwareProfilesNamespace,
+		}, kept)
+		require.NoError(t, err, "platform hardware-profiles-reader RoleBinding must not be cleaned as stale")
+
+		gone := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name: "stale-job-rb", Namespace: "former-tenant",
+		}, gone)
+		assert.True(t, errors.IsNotFound(err), "unrelated stale RoleBinding should still be deleted")
+	})
+}
+
 func TestEvalHubReconciler_reconcileServiceMonitor_NoOpUpdate(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))

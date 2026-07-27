@@ -116,6 +116,13 @@ const (
 	// Tenancy
 	invalidPlacementReason = "InvalidPlacement"
 
+	// hardwareProfilesNamespace is the platform namespace where cluster-shared
+	// HardwareProfile CRs live. The EvalHub API SA always gets get/list on
+	// hardwareprofiles here, in addition to the instance and tenant namespaces,
+	// so EvalHub can resolve profiles after kube-rbac-proxy (user token is not
+	// forwarded; only X-User / X-Tenant are).
+	hardwareProfilesNamespace = "opendatahub"
+
 	// Single-tenancy convenience Role names (namespace-scoped, created in instance namespace)
 	tenantAdminRoleName    = "evalhub-tenant-admin"
 	tenantUserRoleName     = "evalhub-user"
