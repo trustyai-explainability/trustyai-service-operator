@@ -136,6 +136,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 		Expect(envVarMap["MAX_RETRY_ATTEMPTS"]).To(Equal("3"))
 		Expect(envVarMap["SERVICE_URL"]).To(Equal(fmt.Sprintf("https://%s.%s.svc.cluster.local:%d", evalHubName, testNamespace, servicePort)))
 		Expect(envVarMap["EVALHUB_INSTANCE_NAME"]).To(Equal(evalHubName))
+		Expect(envVarMap["EVALHUB_HARDWARE_PROFILES_NAMESPACE"]).To(Equal(testNamespace))
 		Expect(envVarMap["CUSTOM_VAR"]).To(Equal("custom-value"))
 		Expect(envVarMap["ANOTHER_VAR"]).To(Equal("another-value"))
 
