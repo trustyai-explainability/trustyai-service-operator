@@ -586,15 +586,23 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 	currentTime := v1.Now()
 	pod := CreatePod(Options, job, permConfig, caBundle, caBundleKey, log)
 	if err := r.Create(ctx, pod, &client.CreateOptions{}); err != nil {
-		// Failed to create the pod. Mark the status as complete with failed
-		job.Status.State = lmesv1alpha1.CompleteJobState
-		job.Status.Reason = lmesv1alpha1.FailedReason
-		job.Status.Message = err.Error()
-		if err := r.Status().Update(ctx, job); err != nil {
-			log.Error(err, "unable to update LMEvalJob status for pod creation failure")
+		if apierrors.IsAlreadyExists(err) {
+			// Pod already exists from a previous reconcile attempt. This happens
+			// when the status update after pod creation fails with a conflict error
+			// and the controller retries handleNewCR. Treat as success and proceed
+			// to set the Scheduled state.
+			log.Info("pod already exists, proceeding to set Scheduled state", "podName", job.GetPodName())
+		} else {
+			// Genuine pod creation failure
+			job.Status.State = lmesv1alpha1.CompleteJobState
+			job.Status.Reason = lmesv1alpha1.FailedReason
+			job.Status.Message = err.Error()
+			if err := r.Status().Update(ctx, job); err != nil {
+				log.Error(err, "unable to update LMEvalJob status for pod creation failure")
+			}
+			log.Error(err, "Failed to create pod for the LMEvalJob", "name", job.Name)
+			return ctrl.Result{}, err
 		}
-		log.Error(err, "Failed to create pod for the LMEvalJob", "name", job.Name)
-		return ctrl.Result{}, err
 	}
 
 	// Create metrics
