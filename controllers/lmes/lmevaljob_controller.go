@@ -596,17 +596,28 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 			// belongs to this job before proceeding.
 			existingPod, getErr := r.getPod(ctx, job)
 			if getErr != nil {
-				log.Error(getErr, "pod AlreadyExists but cannot fetch it — possible name collision")
+				log.Error(getErr, "pod AlreadyExists but cannot verify ownership")
 				job.Status.State = lmesv1alpha1.CompleteJobState
 				job.Status.Reason = lmesv1alpha1.FailedReason
-				job.Status.Message = fmt.Sprintf("pod name collision: %v", getErr)
+				job.Status.Message = fmt.Sprintf("failed to verify existing pod ownership: %v", getErr)
 				if err := r.Status().Update(ctx, job); err != nil {
 					log.Error(err, "unable to update LMEvalJob status for pod collision")
 				}
 				return ctrl.Result{}, getErr
 			}
-			log.Info("pod already exists with valid ownership, proceeding to set Scheduled state",
+			log.Info("pod already exists with valid ownership",
 				"podName", existingPod.Name, "podPhase", existingPod.Status.Phase)
+			if existingPod.Status.Phase == corev1.PodSucceeded {
+				job.Status.State = lmesv1alpha1.CompleteJobState
+				job.Status.Reason = lmesv1alpha1.SucceedReason
+				job.Status.Message = "job completed (pod found on re-reconcile)"
+				return r.handleComplete(ctx, log, job)
+			} else if existingPod.Status.Phase == corev1.PodFailed {
+				job.Status.State = lmesv1alpha1.CompleteJobState
+				job.Status.Reason = lmesv1alpha1.FailedReason
+				job.Status.Message = fmt.Sprintf("pod failed: %s", existingPod.Status.Reason)
+				return r.handleComplete(ctx, log, job)
+			}
 		} else {
 			// Genuine pod creation failure
 			job.Status.State = lmesv1alpha1.CompleteJobState
@@ -686,15 +697,13 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 			job.Status.Message = "job completed (driver exited before status poll)"
 			return r.handleComplete(ctx, log, job)
 		}
-		// Non-zero exit that isContainerFailed didn't catch — treat as failure
-		log.Info("main container terminated with unexpected exit code", "podName", job.GetPodName(), "exitCode", t.ExitCode)
+		// This branch should be unreachable — isContainerFailed catches all non-zero exits
+		log.Error(fmt.Errorf("unreachable code reached"), "main container terminated with unexpected exit code",
+			"podName", job.GetPodName(), "exitCode", t.ExitCode)
 		job.Status.State = lmesv1alpha1.CompleteJobState
 		job.Status.Reason = lmesv1alpha1.FailedReason
 		job.Status.Message = fmt.Sprintf("container terminated with exit code %d", t.ExitCode)
-		if err := r.Status().Update(ctx, job); err != nil {
-			log.Error(err, "unable to update LMEvalJob status for unexpected termination")
-		}
-		return ctrl.Result{}, nil
+		return r.handleComplete(ctx, log, job)
 	} else if pod.Status.ContainerStatuses[mainIdx].State.Running == nil {
 		// All state fields nil — kubelet hasn't synced yet, requeue
 		log.Info("container state unknown, requeueing", "podName", job.GetPodName())
