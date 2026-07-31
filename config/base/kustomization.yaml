@@ -93,6 +93,20 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.evalhub-provider-inspect-image
+  - name: evalhub-provider-deepeval-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-deepeval-image
+  - name: evalhub-provider-ragas-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-ragas-image
   - name: lmes-pod-image
     objref:
       kind: ConfigMap
