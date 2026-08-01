@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/transport"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -73,6 +74,17 @@ const (
 	sidecarContainerName    = "sidecar"
 )
 
+// Job lifecycle label and annotation stamped by the operator on infrastructure failures.
+// The same label is also set by the EvalHub server; the operator checks it to prevent duplicate Events.
+const (
+	labelEvaluationPhase        = "trustyai.opendatahub.io/evaluation-phase"
+	labelEvaluationPhaseFailed  = "Failed"
+	annotationEvaluationStatus  = "trustyai.opendatahub.io/evaluation-status"
+	// eventReasonEvaluationFailed matches the reason used by server-emitted Events; source.component
+	// distinguishes operator vs server (set automatically by the EventRecorder).
+	eventReasonEvaluationFailed = "EvaluationFailed"
+)
+
 // evalHubEvaluationJobFailureControllerName matches ctrl.NewControllerManagedBy(mgr).Named(...) for logs and registration.
 const evalHubEvaluationJobFailureControllerName = "evalhub-evaluation-job-failure"
 
@@ -89,6 +101,7 @@ func failureWatcherLogFields() []any {
 //+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=pods/log,verbs=get
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs,verbs=get;list;watch
 
 // EvalHubEvaluationJobFailureReconciler POSTs a failed benchmark event to EvalHub when init, adapter,
@@ -101,7 +114,8 @@ func failureWatcherLogFields() []any {
 type EvalHubEvaluationJobFailureReconciler struct {
 	client.Client
 	// RESTConfig is used to build an HTTP transport that authenticates like the operator (SA token + cluster CA).
-	RESTConfig *rest.Config
+	RESTConfig    *rest.Config
+	EventRecorder record.EventRecorder
 
 	// tenantNS tracks namespaces labelled evalhub.trustyai.opendatahub.io/tenant (shared with the Kueue workload failure reconciler).
 	tenantNS *evalHubTenantNamespaces
@@ -168,9 +182,10 @@ func registerEvalHubEvaluationJobFailureController(mgr manager.Manager, tenantNS
 	}
 
 	r := &EvalHubEvaluationJobFailureReconciler{
-		Client:     mgr.GetClient(),
-		RESTConfig: rest.CopyConfig(mgr.GetConfig()),
-		tenantNS:   tenantNS,
+		Client:        mgr.GetClient(),
+		RESTConfig:    rest.CopyConfig(mgr.GetConfig()),
+		tenantNS:      tenantNS,
+		EventRecorder: mgr.GetEventRecorderFor("trustyai-service-operator"),
 	}
 
 	labelPred, err := predicate.LabelSelectorPredicate(evalHubJobPodLabelSelector())
@@ -328,6 +343,12 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 		}
 		return ctrl.Result{}, nil
 	}
+	if serverAlreadyHandledFailure(&job) {
+		log.Info("skip: EvalHub server already set failure label",
+			append(failureWatcherLogFields(), "action", "skip_server_handled",
+				"job", job.Name, "namespace", job.Namespace)...)
+		return ctrl.Result{}, nil
+	}
 
 	failed, msg, err := r.detectFailure(ctx, &job)
 	if err != nil {
@@ -409,12 +430,19 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
+	r.EventRecorder.Eventf(&job, corev1.EventTypeWarning, eventReasonEvaluationFailed, "%s", msg)
+
 	promotePatch := client.MergeFrom(job.DeepCopy())
 	if job.Annotations == nil {
 		job.Annotations = map[string]string{}
 	}
+	if job.Labels == nil {
+		job.Labels = map[string]string{}
+	}
 	delete(job.Annotations, annotationFailurePending)
 	job.Annotations[annotationFailureReported] = "true"
+	job.Annotations[annotationEvaluationStatus] = msg
+	job.Labels[labelEvaluationPhase] = labelEvaluationPhaseFailed
 	if err := r.Patch(ctx, &job, promotePatch); err != nil {
 		log.Error(err, "failed to promote failure-reported annotation after successful POST",
 			append(failureWatcherLogFields(), "action", "promote_reported_failed", "job", job.Name)...)
@@ -727,6 +755,16 @@ func failureAlreadyReported(job *batchv1.Job) bool {
 		return false
 	}
 	return job.Annotations[annotationFailureReported] == "true"
+}
+
+// serverAlreadyHandledFailure returns true when the EvalHub server has already set evaluation-phase=Failed
+// on the Job, indicating the server reported the failure via its own event path. Prevents duplicate
+// Events when both the server and operator can detect the same failure.
+func serverAlreadyHandledFailure(job *batchv1.Job) bool {
+	if job.Labels == nil {
+		return false
+	}
+	return job.Labels[labelEvaluationPhase] == labelEvaluationPhaseFailed
 }
 
 func failurePendingReport(job *batchv1.Job) bool {
