@@ -371,8 +371,6 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 	log.Info("operator-only failure detected",
 		append(failureWatcherLogFields(), "action", "failure_detected", "job", job.Name, "namespace", job.Namespace, "detail", detailForLog)...)
 
-	r.EventRecorder.Eventf(&job, corev1.EventTypeWarning, eventReasonEvaluationFailed, "%s", msg)
-
 	baseURL, err := evalHubBaseURLFromJob(ctx, r.Client, &job)
 	if err != nil {
 		if errors.Is(err, ErrMissingEvalHubLabels) {
@@ -431,6 +429,8 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 		}
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
+
+	r.EventRecorder.Eventf(&job, corev1.EventTypeWarning, eventReasonEvaluationFailed, "%s", msg)
 
 	promotePatch := client.MergeFrom(job.DeepCopy())
 	if job.Annotations == nil {
