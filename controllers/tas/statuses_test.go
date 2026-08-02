@@ -51,13 +51,13 @@ func setupAndTestStatusNoComponent(instance *trustyaiopendatahubiov1.TrustyAISer
 	readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 	Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
 	if readyCondition != nil {
-		Expect(statusMatch).To(Equal(corev1.ConditionFalse), "Ready condition should be true")
+		Expect(statusMatch).To(Equal(false), "Ready condition should not be true")
 	}
 
 	availableCondition, statusMatch, err := checkCondition(instance.Status.Conditions, StatusTypeAvailable, corev1.ConditionFalse, true)
 	Expect(err).NotTo(HaveOccurred(), "Error checking Available condition")
 	if availableCondition != nil {
-		Expect(statusMatch).To(Equal(corev1.ConditionFalse), "Available condition should be false")
+		Expect(statusMatch).To(Equal(false), "Available condition should be false")
 	}
 }
 
