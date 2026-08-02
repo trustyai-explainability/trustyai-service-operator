@@ -55,10 +55,15 @@ func (src *TrustyAIService) ConvertTo(dstRaw conversion.Hub) error {
 			message = "No message provided"
 		}
 
+		ltt := srcCondition.LastTransitionTime
+		if ltt.IsZero() {
+			ltt = metav1.Now()
+		}
+
 		dst.Status.Conditions[i] = metav1.Condition{
 			Type:               srcCondition.Type,
 			Status:             status,
-			LastTransitionTime: srcCondition.LastTransitionTime,
+			LastTransitionTime: ltt,
 			Reason:             reason,
 			Message:            message,
 		}
