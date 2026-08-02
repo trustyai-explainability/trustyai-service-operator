@@ -14,11 +14,10 @@ const (
 	// evalHubAppPort is the eval-hub container listen port on loopback (API_HOST=127.0.0.1, PORT in deployment env).
 	// kube-rbac-proxy upstream is http://127.0.0.1:<evalHubAppPort>/ on the pod network (TLS is terminated on servicePort).
 	evalHubAppPort = 8444
-	// evalHubHealthPath is the application health check path exposed via the Route (SAR-protected by kube-rbac-proxy).
-	evalHubHealthPath = "/api/v1/health"
-	// evalHubInternalHealthPath is the cluster-internal health check path served by the main API server on evalHubAppPort.
-	// Kubelet probes reach it via kube-rbac-proxy (servicePort), which bypasses SAR for this path (--ignore-paths).
-	evalHubInternalHealthPath = "/healthz"
+	// evalHubInternalHealthPath is the health check path used for kubelet startup/readiness probes and passed to
+	// kube-rbac-proxy via --ignore-paths so probes are not subject to SAR. The eval-hub service serves this path
+	// without requiring identity headers (X-Tenant / X-User), making it safe for unauthenticated kubelet probes.
+	evalHubInternalHealthPath = "/api/v1/health"
 	// kubeRBACProxyHealthPath is served by kube-rbac-proxy on kubeRBACProxyHealthPort (see --proxy-endpoints-port).
 	kubeRBACProxyHealthPath = "/healthz"
 
