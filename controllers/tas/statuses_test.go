@@ -7,19 +7,29 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
-	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func checkCondition(conditions []common.Condition, conditionType string, expectedStatus corev1.ConditionStatus, allowMissing bool) (*common.Condition, bool, error) {
+func checkCondition(conditions []trustyaiopendatahubiov1.TASCondition, conditionType string, expectedStatus corev1.ConditionStatus, allowMissing bool) (*trustyaiopendatahubiov1.TASCondition, bool, error) {
+	var expectedMetaStatus metav1.ConditionStatus
+	switch expectedStatus {
+	case corev1.ConditionTrue:
+		expectedMetaStatus = metav1.ConditionTrue
+	case corev1.ConditionFalse:
+		expectedMetaStatus = metav1.ConditionFalse
+	default:
+		expectedMetaStatus = metav1.ConditionUnknown
+	}
+
 	for _, cond := range conditions {
 		if cond.Type == conditionType {
-			isExpectedStatus := cond.Status == expectedStatus
+			isExpectedStatus := cond.Status == expectedMetaStatus
 			return &cond, isExpectedStatus, nil
 		}
 	}
@@ -40,13 +50,13 @@ func setupAndTestStatusNoComponent(instance *trustyaiopendatahubiov1.TrustyAISer
 	readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 	Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
 	if readyCondition != nil {
-		Expect(statusMatch).To(Equal(corev1.ConditionFalse), "Ready condition should be true")
+		Expect(statusMatch).To(Equal(false), "Ready condition should not be true")
 	}
 
 	availableCondition, statusMatch, err := checkCondition(instance.Status.Conditions, StatusTypeAvailable, corev1.ConditionFalse, true)
 	Expect(err).NotTo(HaveOccurred(), "Error checking Available condition")
 	if availableCondition != nil {
-		Expect(statusMatch).To(Equal(corev1.ConditionFalse), "Available condition should be false")
+		Expect(statusMatch).To(Equal(false), "Available condition should be false")
 	}
 }
 
@@ -137,7 +147,7 @@ var _ = Describe("Status and condition tests", func() {
 			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 			Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
 			if readyCondition != nil {
-				Expect(statusMatch).To(Equal(corev1.ConditionTrue), "Ready condition should be true")
+				Expect(statusMatch).To(Equal(true), "Ready condition should be true")
 			}
 
 			availableCondition, statusMatch, err := checkCondition(instance.Status.Conditions, StatusTypeAvailable, corev1.ConditionTrue, false)
@@ -201,7 +211,7 @@ var _ = Describe("Status and condition tests", func() {
 			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 			Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
 			if readyCondition != nil {
-				Expect(statusMatch).To(Equal(corev1.ConditionTrue), "Ready condition should be true")
+				Expect(statusMatch).To(Equal(true), "Ready condition should be true")
 			}
 
 			availableCondition, statusMatch, err := checkCondition(instance.Status.Conditions, StatusTypeAvailable, corev1.ConditionTrue, false)
@@ -270,7 +280,7 @@ var _ = Describe("Status and condition tests", func() {
 			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 			Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
 			if readyCondition != nil {
-				Expect(statusMatch).To(Equal(corev1.ConditionTrue), "Ready condition should be true")
+				Expect(statusMatch).To(Equal(true), "Ready condition should be true")
 			}
 
 			availableCondition, statusMatch, err := checkCondition(instance.Status.Conditions, StatusTypeAvailable, corev1.ConditionTrue, false)
@@ -353,7 +363,7 @@ var _ = Describe("Status and condition tests", func() {
 			readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 			Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
 			if readyCondition != nil {
-				Expect(statusMatch).To(Equal(corev1.ConditionTrue), "Ready condition should be true")
+				Expect(statusMatch).To(Equal(true), "Ready condition should be true")
 			}
 
 			availableCondition, statusMatch, err := checkCondition(instance.Status.Conditions, StatusTypeAvailable, corev1.ConditionTrue, false)

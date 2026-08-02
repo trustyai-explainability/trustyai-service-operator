@@ -19,4 +19,24 @@ const (
 	// Phases
 	PhaseReady    = "Ready"
 	PhaseNotReady = "Not Ready"
+
+	// ConfigMap names
+	DSCConfigMapName = "trustyai-dsc-config"
+
+	// ConfigMap keys
+	LMEvalPermitCodeExecutionKey = "eval.lmeval.permitCodeExecution"
+	LMEvalPermitOnlineKey        = "eval.lmeval.permitOnline"
+
+	// SSA Migration
+	// SSAAdoptionAnnotationKey marks whether SSA adoption of in-tree resources is complete
+	SSAAdoptionAnnotationKey = "trustyai.opendatahub.io/ssa-adoption-completed"
+
+	// AdoptedFromAnnotationKey marks resources that were adopted from in-tree component
+	AdoptedFromAnnotationKey = "trustyai.opendatahub.io/adopted-from"
+
+	// FieldManagerModule is the field manager name for SSA operations
+	FieldManagerModule = "trustyai-module-operator"
+
+	// InTreeManagedByLabel is the label used to identify resources managed by in-tree component
+	InTreeManagedByLabel = "opendatahub.io/trustyai-component"
 )
