@@ -168,7 +168,7 @@ EvalHub deployment mode is controlled by `spec.tenancy` on the EvalHub CR (`mult
 - **`multi` (default)**: One EvalHub in a control-plane namespace serves multiple tenant namespaces labelled `evalhub.trustyai.opendatahub.io/tenant`. The operator provisions job ServiceAccounts, ClusterRole RoleBindings, service-CA ConfigMaps, and `evalhub-discovery` ConfigMaps in each tenant namespace — `tenant_namespaces.go`.
 - **`single`**: EvalHub runs in the workload namespace only. No cross-namespace tenant discovery or propagation. The operator creates namespace-scoped convenience Roles — `tenant_roles.go`:
   - `evalhub-tenant-admin` — full CRUD on EvalHub resources + MLflow experiment read
-  - `evalhub-user` — read collections/providers, submit via `evalhubs/proxy`, create status-events
+  - `evalhub-user` — evaluations job lifecycle (get/list/create/update/patch/delete), read collections/providers, submit via `evalhubs/proxy`, create status-events
   - `evalhub-tenant-admin-binding` — binds admin Role to `system:serviceaccounts:<namespace>`
   - Roles are GC'd via owner references; cleaned up on switch back to `multi`.
 

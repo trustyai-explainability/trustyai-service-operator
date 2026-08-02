@@ -55,12 +55,16 @@ import (
 	tasv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/module"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	//+kubebuilder:scaffold:imports
 )
 
-const serviceEvalHub = "EVALHUB"
+const (
+	serviceEvalHub = "EVALHUB"
+	serviceTAS     = "TAS"
+)
 
 var (
 	scheme   = runtime.NewScheme()
@@ -142,16 +146,13 @@ func main() {
 				},
 			},
 		},
-		WebhookServer: ctrlwebhook.NewServer(ctrlwebhook.Options{
-			Port:    9443,
-			TLSOpts: tlsOpts,
-		}),
 		// LeaderElectionReleaseOnCancel: true,
 	}
 
-	if slices.Contains(enabledServices, serviceEvalHub) {
+	if slices.Contains(enabledServices, serviceEvalHub) || slices.Contains(enabledServices, serviceTAS) {
 		mgrOpts.WebhookServer = ctrlwebhook.NewServer(ctrlwebhook.Options{
-			Port: 9443,
+			Port:    9443,
+			TLSOpts: tlsOpts,
 		})
 	}
 
@@ -168,9 +169,11 @@ func main() {
 		}
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).For(&tasv1.TrustyAIService{}).Complete(); err != nil {
-		setupLog.Error(err, "unable to create TrustyAIService conversion webhook")
-		os.Exit(1)
+	if slices.Contains(enabledServices, serviceTAS) {
+		if err := ctrl.NewWebhookManagedBy(mgr).For(&tasv1.TrustyAIService{}).Complete(); err != nil {
+			setupLog.Error(err, "unable to create TrustyAIService conversion webhook")
+			os.Exit(1)
+		}
 	}
 
 	recorder := mgr.GetEventRecorderFor("trustyai-service-operator")
@@ -180,9 +183,19 @@ func main() {
 		setupLog.Error(err, "unable to operator's namespace")
 	}
 
-	if err = controllers.SetupControllers(enabledServices, mgr, ns, configMap, recorder); err != nil {
+	// Setup controllers and collect health checkers
+	healthCheckers, err := controllers.SetupControllers(enabledServices, mgr, ns, configMap, recorder)
+	if err != nil {
 		setupLog.Error(err, "unable to initialize controller(s)")
 		os.Exit(1)
+	}
+
+	// Setup module controller with health checkers (must be done after other controllers)
+	if slices.Contains(enabledServices, module.ServiceName) {
+		if err := module.ControllerSetUp(mgr, ns, configMap, recorder, healthCheckers); err != nil {
+			setupLog.Error(err, "unable to setup module controller")
+			os.Exit(1)
+		}
 	}
 	//+kubebuilder:scaffold:builder
 

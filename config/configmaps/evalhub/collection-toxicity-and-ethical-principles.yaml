@@ -36,7 +36,6 @@ data:
           threshold: 0.85
         parameters:
           num_fewshot: 0
-          limit: 940
       - id: truthfulqa_mc1
         provider_id: lm_evaluation_harness
         weight: 2
@@ -47,7 +46,6 @@ data:
           threshold: 0.60
         parameters:
           num_fewshot: 0
-          limit: 817
           # Optional secondary metric — not required to pass
           secondary_metric: mc2_acc
           secondary_threshold: 0.70

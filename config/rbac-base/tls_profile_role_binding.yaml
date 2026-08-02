@@ -8,5 +8,5 @@ roleRef:
   name: tls-profile-reader
 subjects:
   - kind: ServiceAccount
-    name: trustyai-service-operator
+    name: controller-manager
     namespace: system
