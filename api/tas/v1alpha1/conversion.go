@@ -29,6 +29,7 @@ func (src *TrustyAIService) ConvertTo(dstRaw conversion.Hub) error {
 	dst.Status.Phase = src.Status.Phase
 	dst.Status.Replicas = src.Status.Replicas
 	dst.Status.Ready = src.Status.Ready
+	dst.Status.ObservedGeneration = src.Generation
 
 	// Convert Conditions from common.Condition (v1alpha1 src) to metav1.Condition (v1 dst)
 	dst.Status.Conditions = make([]metav1.Condition, len(src.Status.Conditions))
@@ -66,6 +67,7 @@ func (src *TrustyAIService) ConvertTo(dstRaw conversion.Hub) error {
 			LastTransitionTime: ltt,
 			Reason:             reason,
 			Message:            message,
+			ObservedGeneration: src.Generation,
 		}
 	}
 
