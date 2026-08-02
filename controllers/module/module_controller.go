@@ -163,6 +163,20 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				Message:            "Cannot deploy: " + formatDependencyMessages(dependencyResults),
 				ObservedGeneration: module.Generation,
 			})
+			meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+				Type:               ConditionTypeProvisioningSucceeded,
+				Status:             metav1.ConditionFalse,
+				Reason:             "DependenciesMissing",
+				Message:            "Cannot provision: " + formatDependencyMessages(dependencyResults),
+				ObservedGeneration: module.Generation,
+			})
+			meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+				Type:               ConditionTypeDegraded,
+				Status:             metav1.ConditionFalse,
+				Reason:             "DependenciesMissing",
+				Message:            "Module is not deployed",
+				ObservedGeneration: module.Generation,
+			})
 
 			// Update status and requeue
 			if err := r.Status().Update(ctx, module); err != nil {
