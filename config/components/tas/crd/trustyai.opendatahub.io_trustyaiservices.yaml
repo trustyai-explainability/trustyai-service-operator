@@ -85,62 +85,44 @@ spec:
             description: TrustyAIServiceStatus defines the observed state of TrustyAIService
             properties:
               conditions:
-                description: |-
-                  Conditions represent the latest available observations of the service's state.
-                  Uses metav1.Condition for platform contract compliance (RHOAIENG-67659).
-                  BREAKING CHANGE: Requires lastTransitionTime, reason, and message fields (previously optional in common.Condition).
-                  v1alpha1 conversion provides defaults for backward compatibility.
+                description: Conditions represent the latest available observations
+                  of the service's state.
                 items:
-                  description: Condition contains details for one aspect of the current
-                    state of this API Resource.
+                  description: |-
+                    TASCondition mirrors metav1.Condition for platform contract compliance (RHOAIENG-67659),
+                    but keeps lastTransitionTime, reason, and message optional to preserve backward
+                    compatibility with conditions stored by prior operator versions.
                   properties:
                     lastTransitionTime:
-                      description: |-
-                        lastTransitionTime is the last time the condition transitioned from one status to another.
-                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      description: lastTransitionTime is when the condition last changed
+                        status.
                       format: date-time
                       type: string
                     message:
-                      description: |-
-                        message is a human readable message indicating details about the transition.
-                        This may be an empty string.
-                      maxLength: 32768
+                      description: message is a human-readable description of the
+                        condition.
                       type: string
                     observedGeneration:
-                      description: |-
-                        observedGeneration represents the .metadata.generation that the condition was set based upon.
-                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
-                        with respect to the current state of the instance.
+                      description: observedGeneration is the generation when this
+                        condition was last set.
                       format: int64
-                      minimum: 0
                       type: integer
                     reason:
-                      description: |-
-                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
-                        Producers of specific condition types may define expected values and meanings for this field,
-                        and whether the values are considered a guaranteed API.
-                        The value should be a CamelCase string.
-                        This field may not be empty.
-                      maxLength: 1024
-                      minLength: 1
-                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      description: reason is a CamelCase identifier for the condition's
+                        cause.
                       type: string
                     status:
-                      description: status of the condition, one of True, False, Unknown.
+                      description: 'status is the condition status: True, False, or
+                        Unknown.'
                       enum:
                       - "True"
                       - "False"
                       - Unknown
                       type: string
                     type:
-                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
-                      maxLength: 316
-                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      description: type is the condition type in CamelCase.
                       type: string
                   required:
-                  - lastTransitionTime
-                  - message
-                  - reason
                   - status
                   - type
                   type: object

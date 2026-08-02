@@ -46,6 +46,37 @@ type TrustyAIServiceSpec struct {
 	Metrics  MetricsSpec `json:"metrics"`
 }
 
+// TASCondition mirrors metav1.Condition for platform contract compliance (RHOAIENG-67659),
+// but keeps lastTransitionTime, reason, and message optional to preserve backward
+// compatibility with conditions stored by prior operator versions.
+// +kubebuilder:object:generate=true
+type TASCondition struct {
+	// type is the condition type in CamelCase.
+	// +kubebuilder:validation:Required
+	Type string `json:"type"`
+
+	// status is the condition status: True, False, or Unknown.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=True;False;Unknown
+	Status metav1.ConditionStatus `json:"status"`
+
+	// observedGeneration is the generation when this condition was last set.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// lastTransitionTime is when the condition last changed status.
+	// +optional
+	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
+
+	// reason is a CamelCase identifier for the condition's cause.
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// message is a human-readable description of the condition.
+	// +optional
+	Message string `json:"message,omitempty"`
+}
+
 // TrustyAIServiceStatus defines the observed state of TrustyAIService
 type TrustyAIServiceStatus struct {
 	// ObservedGeneration is the last generation reconciled by the controller
@@ -61,13 +92,10 @@ type TrustyAIServiceStatus struct {
 	Replicas int32 `json:"replicas,omitempty"`
 
 	// Conditions represent the latest available observations of the service's state.
-	// Uses metav1.Condition for platform contract compliance (RHOAIENG-67659).
-	// BREAKING CHANGE: Requires lastTransitionTime, reason, and message fields (previously optional in common.Condition).
-	// v1alpha1 conversion provides defaults for backward compatibility.
 	// +optional
 	// +listType=map
 	// +listMapKey=type
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Conditions []TASCondition `json:"conditions,omitempty"`
 
 	// Ready indicates whether the service is ready
 	// +optional
@@ -114,9 +142,8 @@ func (t *TrustyAIService) IsMigration() bool {
 	}
 }
 
-// SetStatus sets the status of the TrustyAIService using metav1.Condition
+// SetStatus sets the status of the TrustyAIService using TASCondition
 func (t *TrustyAIService) SetStatus(condType, reason, message string, status corev1.ConditionStatus) {
-	// Convert corev1.ConditionStatus to metav1.ConditionStatus
 	metaStatus := metav1.ConditionUnknown
 	switch status {
 	case corev1.ConditionTrue:
@@ -125,7 +152,7 @@ func (t *TrustyAIService) SetStatus(condType, reason, message string, status cor
 		metaStatus = metav1.ConditionFalse
 	}
 
-	condition := metav1.Condition{
+	condition := TASCondition{
 		Type:               condType,
 		Status:             metaStatus,
 		Reason:             reason,
@@ -133,11 +160,9 @@ func (t *TrustyAIService) SetStatus(condType, reason, message string, status cor
 		ObservedGeneration: t.Generation,
 	}
 
-	// Replace or append condition
 	found := false
 	for i, cond := range t.Status.Conditions {
 		if cond.Type == condType {
-			// Only update LastTransitionTime if status actually changed
 			if cond.Status != condition.Status {
 				condition.LastTransitionTime = metav1.Now()
 			} else {
@@ -149,7 +174,6 @@ func (t *TrustyAIService) SetStatus(condType, reason, message string, status cor
 		}
 	}
 	if !found {
-		// New condition, set LastTransitionTime
 		condition.LastTransitionTime = metav1.Now()
 		t.Status.Conditions = append(t.Status.Conditions, condition)
 	}

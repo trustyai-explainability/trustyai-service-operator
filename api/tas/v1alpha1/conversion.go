@@ -31,10 +31,9 @@ func (src *TrustyAIService) ConvertTo(dstRaw conversion.Hub) error {
 	dst.Status.Ready = src.Status.Ready
 	dst.Status.ObservedGeneration = src.Generation
 
-	// Convert Conditions from common.Condition (v1alpha1 src) to metav1.Condition (v1 dst)
-	dst.Status.Conditions = make([]metav1.Condition, len(src.Status.Conditions))
+	// Convert Conditions from common.Condition (v1alpha1) to TASCondition (v1)
+	dst.Status.Conditions = make([]v1.TASCondition, len(src.Status.Conditions))
 	for i, srcCondition := range src.Status.Conditions {
-		// Convert corev1.ConditionStatus to metav1.ConditionStatus
 		var status metav1.ConditionStatus
 		switch srcCondition.Status {
 		case corev1.ConditionTrue:
@@ -45,28 +44,17 @@ func (src *TrustyAIService) ConvertTo(dstRaw conversion.Hub) error {
 			status = metav1.ConditionUnknown
 		}
 
-		// metav1.Condition requires Reason and Message to be non-empty
-		// Provide defaults if missing from v1alpha1 condition
-		reason := srcCondition.Reason
-		if reason == "" {
-			reason = "Unknown"
-		}
-		message := srcCondition.Message
-		if message == "" {
-			message = "No message provided"
-		}
-
 		ltt := srcCondition.LastTransitionTime
 		if ltt.IsZero() {
 			ltt = metav1.Now()
 		}
 
-		dst.Status.Conditions[i] = metav1.Condition{
+		dst.Status.Conditions[i] = v1.TASCondition{
 			Type:               srcCondition.Type,
 			Status:             status,
 			LastTransitionTime: ltt,
-			Reason:             reason,
-			Message:            message,
+			Reason:             srcCondition.Reason,
+			Message:            srcCondition.Message,
 			ObservedGeneration: src.Generation,
 		}
 	}
@@ -97,10 +85,9 @@ func (dst *TrustyAIService) ConvertFrom(srcRaw conversion.Hub) error {
 	dst.Status.Replicas = src.Status.Replicas
 	dst.Status.Ready = src.Status.Ready
 
-	// Convert Conditions from metav1.Condition (v1) to common.Condition (v1alpha1)
+	// Convert Conditions from TASCondition (v1) to common.Condition (v1alpha1)
 	dst.Status.Conditions = make([]Condition, len(src.Status.Conditions))
 	for i, srcCondition := range src.Status.Conditions {
-		// Convert metav1.ConditionStatus to corev1.ConditionStatus
 		var status corev1.ConditionStatus
 		switch srcCondition.Status {
 		case metav1.ConditionTrue:

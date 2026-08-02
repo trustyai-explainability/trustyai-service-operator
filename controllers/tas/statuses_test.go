@@ -16,8 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func checkCondition(conditions []metav1.Condition, conditionType string, expectedStatus corev1.ConditionStatus, allowMissing bool) (*metav1.Condition, bool, error) {
-	// Convert expectedStatus from corev1.ConditionStatus to metav1.ConditionStatus for comparison
+func checkCondition(conditions []trustyaiopendatahubiov1.TASCondition, conditionType string, expectedStatus corev1.ConditionStatus, allowMissing bool) (*trustyaiopendatahubiov1.TASCondition, bool, error) {
 	var expectedMetaStatus metav1.ConditionStatus
 	switch expectedStatus {
 	case corev1.ConditionTrue:
