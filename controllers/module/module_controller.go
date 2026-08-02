@@ -44,7 +44,9 @@ type TrustyAIReconciler struct {
 //+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais/finalizers,verbs=update
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list
+//+kubebuilder:rbac:groups="",resources=configmaps;services,verbs=get;list;patch
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;patch
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings;clusterrolebindings,verbs=get;list;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -80,9 +82,31 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, err
 		}
 		logger.Info("Added finalizer to TrustyAI module")
-		r.EventRecorder.Event(module, "Normal", "FinalizerAdded", "Added finalizer to TrustyAI module")
+		r.EventRecorder.Event(module, "Normal", "FinalizerAdded", "Finalizer added to TrustyAI module")
 		// Requeue to continue reconciliation
 		return ctrl.Result{Requeue: true}, nil
+	}
+
+	// Perform SSA adoption of in-tree resources (one-time migration)
+	if err := r.adoptInTreeResources(ctx, module); err != nil {
+		logger.Error(err, "Failed to adopt in-tree resources")
+		r.EventRecorder.Event(module, "Warning", "MigrationFailed", fmt.Sprintf("SSA adoption failed: %v", err))
+
+		// Update status to reflect migration failure
+		module.Status.Phase = PhaseNotReady
+		meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+			Type:               ConditionTypeProvisioningSucceeded,
+			Status:             metav1.ConditionFalse,
+			Reason:             "MigrationFailed",
+			Message:            fmt.Sprintf("SSA adoption failed: %v", err),
+			ObservedGeneration: module.Generation,
+		})
+
+		if statusErr := r.Status().Update(ctx, module); statusErr != nil {
+			logger.Error(statusErr, "Failed to update status after migration failure")
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	// Update observedGeneration
@@ -153,6 +177,8 @@ func (r *TrustyAIReconciler) handleRemoval(ctx context.Context, module *modulev1
 		Message:            "Module management state is set to Removed",
 		ObservedGeneration: module.Generation,
 	})
+
+	r.EventRecorder.Event(module, "Normal", "ModuleRemoved", "Module management state is set to Removed")
 
 	// Update status
 	if err := r.Status().Update(ctx, module); err != nil {
