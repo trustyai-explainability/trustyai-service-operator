@@ -355,7 +355,6 @@ var _ = Describe("TrustyAI Module Controller", func() {
 			})
 		})
 	})
-})
 
 // mockHealthChecker is a test implementation of ServiceHealthChecker
 type mockHealthChecker struct {
