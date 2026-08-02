@@ -154,9 +154,13 @@ var _ = Describe("TrustyAI Module Controller", func() {
 			module := createModuleInstance("default", modulev1alpha1.ManagementStateRemoved)
 			Expect(k8sClient.Create(ctx, module)).To(Succeed())
 
+			fakeRecorder := reconciler.EventRecorder.(*record.FakeRecorder)
+
 			// First reconcile - adds finalizer
 			_, err := performReconcile(reconciler, "default")
 			Expect(err).NotTo(HaveOccurred())
+			// Drain finalizer-added event
+			Eventually(fakeRecorder.Events, timeout, interval).Should(Receive())
 
 			// Second reconcile - handles removal
 			_, err = performReconcile(reconciler, "default")
@@ -171,6 +175,10 @@ var _ = Describe("TrustyAI Module Controller", func() {
 			Expect(readyCondition).NotTo(BeNil())
 			Expect(readyCondition.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCondition.Reason).To(Equal("ModuleRemoved"))
+
+			var event string
+			Eventually(fakeRecorder.Events, timeout, interval).Should(Receive(&event))
+			Expect(event).To(ContainSubstring(EventReasonRemoved))
 		})
 
 		It("Should remove finalizer on deletion", func() {
@@ -219,9 +227,13 @@ var _ = Describe("TrustyAI Module Controller", func() {
 				module := createModuleInstance("default", modulev1alpha1.ManagementStateUnmanaged)
 				Expect(k8sClient.Create(ctx, module)).To(Succeed())
 
+				fakeRecorder := reconciler.EventRecorder.(*record.FakeRecorder)
+
 				// First reconcile - adds finalizer
 				_, err := performReconcile(reconciler, "default")
 				Expect(err).NotTo(HaveOccurred())
+				// Drain finalizer-added event
+				Eventually(fakeRecorder.Events, timeout, interval).Should(Receive())
 
 				// Second reconcile - handles unmanaged
 				result, err := performReconcile(reconciler, "default")
@@ -245,6 +257,10 @@ var _ = Describe("TrustyAI Module Controller", func() {
 				degradedCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeDegraded)
 				Expect(degradedCondition).NotTo(BeNil())
 				Expect(degradedCondition.Status).To(Equal(metav1.ConditionUnknown))
+
+				var event string
+				Eventually(fakeRecorder.Events, timeout, interval).Should(Receive(&event))
+				Expect(event).To(ContainSubstring(EventReasonUnmanaged))
 			})
 
 			It("Should emit events on status transitions", func() {
@@ -256,14 +272,16 @@ var _ = Describe("TrustyAI Module Controller", func() {
 				// First reconcile - adds finalizer
 				_, err := performReconcile(reconciler, "default")
 				Expect(err).NotTo(HaveOccurred())
+				// Drain finalizer-added event
+				Eventually(fakeRecorder.Events, timeout, interval).Should(Receive())
 
-				// Second reconcile - updates status, should emit event
+				// Second reconcile - updates status, should emit StatusUpdated event
 				_, err = performReconcile(reconciler, "default")
 				Expect(err).NotTo(HaveOccurred())
 
-				Eventually(func() int {
-					return len(fakeRecorder.Events)
-				}, timeout, interval).Should(BeNumerically(">=", 1))
+				var event string
+				Eventually(fakeRecorder.Events, timeout, interval).Should(Receive(&event))
+				Expect(event).To(ContainSubstring(EventReasonStatusUpdated))
 			})
 
 			It("Should report all services healthy when health checkers pass", func() {
