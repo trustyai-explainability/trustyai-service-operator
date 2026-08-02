@@ -7,7 +7,6 @@ import (
 	"time"
 
 	modulev1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/module/v1alpha1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,11 +39,14 @@ type TrustyAIReconciler struct {
 	OperatorConfigMapName string
 	EventRecorder         record.EventRecorder
 	HealthCheckers        []ServiceHealthChecker
+	SkipDependencyChecks  bool // Set to true to skip dependency validation (for testing)
 }
 
-//+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais/finalizers,verbs=update
+//+kubebuilder:rbac:groups=maistra.io,resources=servicemeshcontrolplanes,verbs=get;list
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheuses,verbs=get;list
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;create;update;delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;patch
@@ -125,8 +127,77 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.handleRemoval(ctx, module)
 	}
 
-	// Capture old status to detect changes
-	oldStatus := module.Status.DeepCopy()
+	// Check platform dependencies (unless skipped for testing)
+	if !r.SkipDependencyChecks {
+		dependencyResults, err := r.checkDependencies(ctx)
+		if err != nil {
+			logger.Error(err, "Failed to check dependencies")
+			return ctrl.Result{}, err
+		}
+
+		// Update DependenciesMet condition
+		dependenciesSatisfied := allDependenciesSatisfied(dependencyResults)
+		if dependenciesSatisfied {
+			meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+				Type:               ConditionTypeDependenciesMet,
+				Status:             metav1.ConditionTrue,
+				Reason:             "AllDependenciesMet",
+				Message:            formatDependencyMessages(dependencyResults),
+				ObservedGeneration: module.Generation,
+			})
+		} else {
+			meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+				Type:               ConditionTypeDependenciesMet,
+				Status:             metav1.ConditionFalse,
+				Reason:             "DependenciesMissing",
+				Message:            formatDependencyMessages(dependencyResults),
+				ObservedGeneration: module.Generation,
+			})
+
+			// Set phase to NotReady and block further reconciliation
+			module.Status.Phase = PhaseNotReady
+			meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+				Type:               ConditionTypeReady,
+				Status:             metav1.ConditionFalse,
+				Reason:             "DependenciesMissing",
+				Message:            "Cannot deploy: " + formatDependencyMessages(dependencyResults),
+				ObservedGeneration: module.Generation,
+			})
+			meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+				Type:               ConditionTypeProvisioningSucceeded,
+				Status:             metav1.ConditionFalse,
+				Reason:             "DependenciesMissing",
+				Message:            "Cannot provision: " + formatDependencyMessages(dependencyResults),
+				ObservedGeneration: module.Generation,
+			})
+			meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+				Type:               ConditionTypeDegraded,
+				Status:             metav1.ConditionFalse,
+				Reason:             "DependenciesMissing",
+				Message:            "Module is not deployed",
+				ObservedGeneration: module.Generation,
+			})
+
+			// Update status and requeue
+			if err := r.Status().Update(ctx, module); err != nil {
+				logger.Error(err, "Failed to update status after dependency check")
+				return ctrl.Result{}, err
+			}
+
+			logger.Info("Blocking deployment due to missing dependencies", "message", formatDependencyMessages(dependencyResults))
+			// Requeue after interval to re-check dependencies
+			return ctrl.Result{RequeueAfter: time.Duration(DefaultRequeueInterval) * time.Second}, nil
+		}
+	} else {
+		// Set DependenciesMet=True when checks are skipped (test mode)
+		meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+			Type:               ConditionTypeDependenciesMet,
+			Status:             metav1.ConditionTrue,
+			Reason:             "ChecksSkipped",
+			Message:            "Dependency checks skipped (test mode)",
+			ObservedGeneration: module.Generation,
+		})
+	}
 
 	// Reconcile DSC ConfigMap
 	if err := r.reconcileConfigMap(ctx, module); err != nil {
@@ -143,13 +214,10 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Update releases information
 	r.updateReleases(module)
 
-	// Only update status if it changed
-	if !equality.Semantic.DeepEqual(oldStatus, &module.Status) {
-		if err := r.Status().Update(ctx, module); err != nil {
-			logger.Error(err, "Failed to update TrustyAI module status")
-			return ctrl.Result{}, err
-		}
-		logger.V(1).Info("Updated TrustyAI module status")
+	// Update status
+	if err := r.Status().Update(ctx, module); err != nil {
+		logger.Error(err, "Failed to update TrustyAI module status")
+		return ctrl.Result{}, err
 	}
 
 	// Requeue after interval for periodic health checks
@@ -188,10 +256,7 @@ func (r *TrustyAIReconciler) handleRemoval(ctx context.Context, module *modulev1
 	logger := log.FromContext(ctx)
 	logger.Info("TrustyAI module is in Removed state, skipping reconciliation")
 
-	// Capture old status to detect changes
-	oldStatus := module.Status.DeepCopy()
-
-	// Update phase and reset all conditions
+	// Update phase and conditions
 	module.Status.Phase = PhaseNotReady
 
 	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
@@ -220,17 +285,12 @@ func (r *TrustyAIReconciler) handleRemoval(ctx context.Context, module *modulev1
 
 	r.EventRecorder.Event(module, "Normal", "ModuleRemoved", "Module management state is set to Removed")
 
-	// Only update status if it changed
-	if !equality.Semantic.DeepEqual(oldStatus, &module.Status) {
-		if err := r.Status().Update(ctx, module); err != nil {
-			logger.Error(err, "Failed to update TrustyAI module status")
-			return ctrl.Result{}, err
-		}
-		logger.V(1).Info("Updated TrustyAI module status after removal")
+	if err := r.Status().Update(ctx, module); err != nil {
+		logger.Error(err, "Failed to update TrustyAI module status")
+		return ctrl.Result{}, err
 	}
 
-	// Requeue to handle potential state transitions
-	return ctrl.Result{RequeueAfter: time.Duration(DefaultRequeueInterval) * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 // updateHealthStatus runs health checks and updates status conditions

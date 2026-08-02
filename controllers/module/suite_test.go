@@ -104,6 +104,7 @@ func setupReconciler() *TrustyAIReconciler {
 		Namespace:             "default",
 		OperatorConfigMapName: "test-config",
 		EventRecorder:         eventRecorder,
+		SkipDependencyChecks:  true, // Skip dependency checks in tests by default
 	}
 }
 
