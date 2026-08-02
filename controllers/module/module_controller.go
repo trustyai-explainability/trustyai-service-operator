@@ -178,6 +178,8 @@ func (r *TrustyAIReconciler) handleRemoval(ctx context.Context, module *modulev1
 		ObservedGeneration: module.Generation,
 	})
 
+	r.EventRecorder.Event(module, "Normal", "ModuleRemoved", "Module management state is set to Removed")
+
 	// Update status
 	if err := r.Status().Update(ctx, module); err != nil {
 		logger.Error(err, "Failed to update TrustyAI module status")
