@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -153,9 +154,13 @@ var _ = Describe("TrustyAI Module Controller", func() {
 			module := createModuleInstance("default", modulev1alpha1.ManagementStateRemoved)
 			Expect(k8sClient.Create(ctx, module)).To(Succeed())
 
+			fakeRecorder := reconciler.EventRecorder.(*record.FakeRecorder)
+
 			// First reconcile - adds finalizer
 			_, err := performReconcile(reconciler, "default")
 			Expect(err).NotTo(HaveOccurred())
+			// Drain finalizer-added event
+			Eventually(fakeRecorder.Events, timeout, interval).Should(Receive())
 
 			// Second reconcile - handles removal
 			_, err = performReconcile(reconciler, "default")
@@ -170,6 +175,8 @@ var _ = Describe("TrustyAI Module Controller", func() {
 			Expect(readyCondition).NotTo(BeNil())
 			Expect(readyCondition.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCondition.Reason).To(Equal("ModuleRemoved"))
+
+			Eventually(fakeRecorder.Events, timeout, interval).Should(Receive(ContainSubstring(EventReasonRemoved)))
 		})
 
 		It("Should remove finalizer on deletion", func() {
@@ -214,95 +221,152 @@ var _ = Describe("TrustyAI Module Controller", func() {
 			Expect(updated.Status.Releases[0].Name).To(Equal("trustyai-service-operator"))
 		})
 
-		It("Should report all services healthy when health checkers pass", func() {
-			// Create mock health checkers that return healthy
-			healthyChecker1 := &mockHealthChecker{name: "TAS", healthy: true, reason: "deployment ready"}
-			healthyChecker2 := &mockHealthChecker{name: "LMES", healthy: true, reason: "deployment ready"}
+			It("Should handle Unmanaged management state", func() {
+				module := createModuleInstance("default", modulev1alpha1.ManagementStateUnmanaged)
+				Expect(k8sClient.Create(ctx, module)).To(Succeed())
 
-			reconciler.HealthCheckers = []ServiceHealthChecker{healthyChecker1, healthyChecker2}
+				fakeRecorder := reconciler.EventRecorder.(*record.FakeRecorder)
 
-			module := createModuleInstance("default", modulev1alpha1.ManagementStateManaged)
-			Expect(k8sClient.Create(ctx, module)).To(Succeed())
+				// First reconcile - adds finalizer
+				_, err := performReconcile(reconciler, "default")
+				Expect(err).NotTo(HaveOccurred())
+				// Drain finalizer-added event
+				Eventually(fakeRecorder.Events, timeout, interval).Should(Receive())
 
-			// First reconcile - adds finalizer
-			_, err := performReconcile(reconciler, "default")
-			Expect(err).NotTo(HaveOccurred())
+				// Second reconcile - handles unmanaged
+				result, err := performReconcile(reconciler, "default")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(time.Duration(0)))
+				Expect(result.Requeue).To(BeFalse())
 
-			// Second reconcile - checks health
-			_, err = performReconcile(reconciler, "default")
-			Expect(err).NotTo(HaveOccurred())
+				// Check conditions are Unknown
+				updated := &modulev1alpha1.TrustyAI{}
+				Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, updated)).To(Succeed())
 
-			// Verify status
-			updated := &modulev1alpha1.TrustyAI{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, updated)).To(Succeed())
-			Expect(updated.Status.Phase).To(Equal(PhaseReady))
+				readyCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeReady)
+				Expect(readyCondition).NotTo(BeNil())
+				Expect(readyCondition.Status).To(Equal(metav1.ConditionUnknown))
+				Expect(readyCondition.Reason).To(Equal(ReasonModuleUnmanaged))
 
-			readyCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeReady)
-			Expect(readyCondition).NotTo(BeNil())
-			Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
-			Expect(readyCondition.Reason).To(Equal("AllServicesHealthy"))
+				provisioningCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeProvisioningSucceeded)
+				Expect(provisioningCondition).NotTo(BeNil())
+				Expect(provisioningCondition.Status).To(Equal(metav1.ConditionUnknown))
 
-			degradedCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeDegraded)
-			Expect(degradedCondition).NotTo(BeNil())
-			Expect(degradedCondition.Status).To(Equal(metav1.ConditionFalse))
-		})
+				degradedCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeDegraded)
+				Expect(degradedCondition).NotTo(BeNil())
+				Expect(degradedCondition.Status).To(Equal(metav1.ConditionUnknown))
 
-		It("Should report degraded when some services are unhealthy", func() {
-			// Create mock health checkers with mixed health
-			healthyChecker := &mockHealthChecker{name: "TAS", healthy: true, reason: "deployment ready"}
-			unhealthyChecker := &mockHealthChecker{name: "LMES", healthy: false, reason: "deployment not found"}
+				Eventually(fakeRecorder.Events, timeout, interval).Should(Receive(ContainSubstring(EventReasonUnmanaged)))
+			})
 
-			reconciler.HealthCheckers = []ServiceHealthChecker{healthyChecker, unhealthyChecker}
+			It("Should emit events on status transitions", func() {
+				module := createModuleInstance("default", modulev1alpha1.ManagementStateManaged)
+				Expect(k8sClient.Create(ctx, module)).To(Succeed())
 
-			module := createModuleInstance("default", modulev1alpha1.ManagementStateManaged)
-			Expect(k8sClient.Create(ctx, module)).To(Succeed())
+				fakeRecorder := reconciler.EventRecorder.(*record.FakeRecorder)
 
-			// First reconcile - adds finalizer
-			_, err := performReconcile(reconciler, "default")
-			Expect(err).NotTo(HaveOccurred())
+				// First reconcile - adds finalizer
+				_, err := performReconcile(reconciler, "default")
+				Expect(err).NotTo(HaveOccurred())
+				// Drain finalizer-added event
+				Eventually(fakeRecorder.Events, timeout, interval).Should(Receive())
 
-			// Second reconcile - checks health
-			_, err = performReconcile(reconciler, "default")
-			Expect(err).NotTo(HaveOccurred())
+				// Second reconcile - updates status, should emit StatusUpdated event
+				_, err = performReconcile(reconciler, "default")
+				Expect(err).NotTo(HaveOccurred())
 
-			// Verify status
-			updated := &modulev1alpha1.TrustyAI{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, updated)).To(Succeed())
-			Expect(updated.Status.Phase).To(Equal(PhaseNotReady))
+				Eventually(fakeRecorder.Events, timeout, interval).Should(Receive(ContainSubstring(EventReasonStatusUpdated)))
+			})
 
-			readyCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeReady)
-			Expect(readyCondition).NotTo(BeNil())
-			Expect(readyCondition.Status).To(Equal(metav1.ConditionFalse))
-			Expect(readyCondition.Reason).To(Equal("ServicesUnhealthy"))
-			Expect(readyCondition.Message).To(ContainSubstring("LMES: deployment not found"))
+			It("Should report all services healthy when health checkers pass", func() {
+				// Create mock health checkers that return healthy
+				healthyChecker1 := &mockHealthChecker{name: "TAS", healthy: true, reason: "deployment ready"}
+				healthyChecker2 := &mockHealthChecker{name: "LMES", healthy: true, reason: "deployment ready"}
 
-			degradedCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeDegraded)
-			Expect(degradedCondition).NotTo(BeNil())
-			Expect(degradedCondition.Status).To(Equal(metav1.ConditionTrue))
-			Expect(degradedCondition.Reason).To(Equal("PartialFunctionality"))
-		})
+				reconciler.HealthCheckers = []ServiceHealthChecker{healthyChecker1, healthyChecker2}
 
-		It("Should handle no health checkers gracefully", func() {
-			reconciler.HealthCheckers = []ServiceHealthChecker{}
+				module := createModuleInstance("default", modulev1alpha1.ManagementStateManaged)
+				Expect(k8sClient.Create(ctx, module)).To(Succeed())
 
-			module := createModuleInstance("default", modulev1alpha1.ManagementStateManaged)
-			Expect(k8sClient.Create(ctx, module)).To(Succeed())
+				// First reconcile - adds finalizer
+				_, err := performReconcile(reconciler, "default")
+				Expect(err).NotTo(HaveOccurred())
 
-			// First reconcile - adds finalizer
-			_, err := performReconcile(reconciler, "default")
-			Expect(err).NotTo(HaveOccurred())
+				// Second reconcile - checks health
+				_, err = performReconcile(reconciler, "default")
+				Expect(err).NotTo(HaveOccurred())
 
-			// Second reconcile - with no health checkers
-			_, err = performReconcile(reconciler, "default")
-			Expect(err).NotTo(HaveOccurred())
+				// Verify status
+				updated := &modulev1alpha1.TrustyAI{}
+				Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, updated)).To(Succeed())
+				Expect(updated.Status.Phase).To(Equal(PhaseReady))
 
-			// Verify status (should be ready since no checkers means all pass)
-			updated := &modulev1alpha1.TrustyAI{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, updated)).To(Succeed())
-			Expect(updated.Status.Phase).To(Equal(PhaseReady))
+				readyCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeReady)
+				Expect(readyCondition).NotTo(BeNil())
+				Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
+				Expect(readyCondition.Reason).To(Equal("AllServicesHealthy"))
+
+				degradedCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeDegraded)
+				Expect(degradedCondition).NotTo(BeNil())
+				Expect(degradedCondition.Status).To(Equal(metav1.ConditionFalse))
+			})
+
+			It("Should report degraded when some services are unhealthy", func() {
+				// Create mock health checkers with mixed health
+				healthyChecker := &mockHealthChecker{name: "TAS", healthy: true, reason: "deployment ready"}
+				unhealthyChecker := &mockHealthChecker{name: "LMES", healthy: false, reason: "deployment not found"}
+
+				reconciler.HealthCheckers = []ServiceHealthChecker{healthyChecker, unhealthyChecker}
+
+				module := createModuleInstance("default", modulev1alpha1.ManagementStateManaged)
+				Expect(k8sClient.Create(ctx, module)).To(Succeed())
+
+				// First reconcile - adds finalizer
+				_, err := performReconcile(reconciler, "default")
+				Expect(err).NotTo(HaveOccurred())
+
+				// Second reconcile - checks health
+				_, err = performReconcile(reconciler, "default")
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify status
+				updated := &modulev1alpha1.TrustyAI{}
+				Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, updated)).To(Succeed())
+				Expect(updated.Status.Phase).To(Equal(PhaseNotReady))
+
+				readyCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeReady)
+				Expect(readyCondition).NotTo(BeNil())
+				Expect(readyCondition.Status).To(Equal(metav1.ConditionFalse))
+				Expect(readyCondition.Reason).To(Equal("ServicesUnhealthy"))
+				Expect(readyCondition.Message).To(ContainSubstring("LMES: deployment not found"))
+
+				degradedCondition := meta.FindStatusCondition(updated.Status.Conditions, ConditionTypeDegraded)
+				Expect(degradedCondition).NotTo(BeNil())
+				Expect(degradedCondition.Status).To(Equal(metav1.ConditionTrue))
+				Expect(degradedCondition.Reason).To(Equal("PartialFunctionality"))
+			})
+
+			It("Should handle no health checkers gracefully", func() {
+				reconciler.HealthCheckers = []ServiceHealthChecker{}
+
+				module := createModuleInstance("default", modulev1alpha1.ManagementStateManaged)
+				Expect(k8sClient.Create(ctx, module)).To(Succeed())
+
+				// First reconcile - adds finalizer
+				_, err := performReconcile(reconciler, "default")
+				Expect(err).NotTo(HaveOccurred())
+
+				// Second reconcile - with no health checkers
+				_, err = performReconcile(reconciler, "default")
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify status (should be ready since no checkers means all pass)
+				updated := &modulev1alpha1.TrustyAI{}
+				Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, updated)).To(Succeed())
+				Expect(updated.Status.Phase).To(Equal(PhaseReady))
+			})
 		})
 	})
-})
 
 // mockHealthChecker is a test implementation of ServiceHealthChecker
 type mockHealthChecker struct {

@@ -7,11 +7,14 @@ import (
 	"time"
 
 	modulev1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/module/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -126,6 +129,9 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if module.Spec.ManagementState == modulev1alpha1.ManagementStateRemoved {
 		return r.handleRemoval(ctx, module)
 	}
+	if module.Spec.ManagementState == modulev1alpha1.ManagementStateUnmanaged {
+		return r.handleUnmanaged(ctx, module)
+	}
 
 	// Check platform dependencies (unless skipped for testing)
 	if !r.SkipDependencyChecks {
@@ -205,6 +211,9 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
+	// Capture old status before health checks mutate it
+	oldStatus := module.Status.DeepCopy()
+
 	// Run health checks and update conditions
 	if err := r.updateHealthStatus(ctx, module); err != nil {
 		logger.Error(err, "Failed to update health status")
@@ -214,10 +223,16 @@ func (r *TrustyAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Update releases information
 	r.updateReleases(module)
 
-	// Update status
-	if err := r.Status().Update(ctx, module); err != nil {
-		logger.Error(err, "Failed to update TrustyAI module status")
-		return ctrl.Result{}, err
+	// Only update status if it changed
+	if !equality.Semantic.DeepEqual(oldStatus, &module.Status) {
+		if err := r.updateStatus(ctx, module, func(saved *modulev1alpha1.TrustyAI) {
+			saved.Status = *module.Status.DeepCopy()
+		}); err != nil {
+			logger.Error(err, "Failed to update TrustyAI module status")
+			return ctrl.Result{}, err
+		}
+		r.EventRecorder.Event(module, corev1.EventTypeNormal, EventReasonStatusUpdated,
+			fmt.Sprintf("Module status updated, phase: %s", module.Status.Phase))
 	}
 
 	// Requeue after interval for periodic health checks
@@ -256,6 +271,9 @@ func (r *TrustyAIReconciler) handleRemoval(ctx context.Context, module *modulev1
 	logger := log.FromContext(ctx)
 	logger.Info("TrustyAI module is in Removed state, skipping reconciliation")
 
+	// Capture old status to detect changes
+	oldStatus := module.Status.DeepCopy()
+
 	// Update phase and conditions
 	module.Status.Phase = PhaseNotReady
 
@@ -283,14 +301,80 @@ func (r *TrustyAIReconciler) handleRemoval(ctx context.Context, module *modulev1
 		ObservedGeneration: module.Generation,
 	})
 
-	r.EventRecorder.Event(module, "Normal", "ModuleRemoved", "Module management state is set to Removed")
-
-	if err := r.Status().Update(ctx, module); err != nil {
-		logger.Error(err, "Failed to update TrustyAI module status")
-		return ctrl.Result{}, err
+	// Only update status if it changed
+	if !equality.Semantic.DeepEqual(oldStatus, &module.Status) {
+		if err := r.updateStatus(ctx, module, func(saved *modulev1alpha1.TrustyAI) {
+			saved.Status = *module.Status.DeepCopy()
+		}); err != nil {
+			logger.Error(err, "Failed to update TrustyAI module status")
+			return ctrl.Result{}, err
+		}
+		r.EventRecorder.Event(module, corev1.EventTypeNormal, EventReasonRemoved,
+			"Module management state is Removed; reconciliation skipped")
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// handleUnmanaged handles the unmanaged management state
+func (r *TrustyAIReconciler) handleUnmanaged(ctx context.Context, module *modulev1alpha1.TrustyAI) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+	logger.Info("TrustyAI module is in Unmanaged state, skipping reconciliation")
+
+	oldStatus := module.Status.DeepCopy()
+
+	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+		Type:               ConditionTypeReady,
+		Status:             metav1.ConditionUnknown,
+		Reason:             ReasonModuleUnmanaged,
+		Message:            "Module management state is set to Unmanaged",
+		ObservedGeneration: module.Generation,
+	})
+
+	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+		Type:               ConditionTypeProvisioningSucceeded,
+		Status:             metav1.ConditionUnknown,
+		Reason:             ReasonModuleUnmanaged,
+		Message:            "Module management state is set to Unmanaged",
+		ObservedGeneration: module.Generation,
+	})
+
+	meta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
+		Type:               ConditionTypeDegraded,
+		Status:             metav1.ConditionUnknown,
+		Reason:             ReasonModuleUnmanaged,
+		Message:            "Module management state is set to Unmanaged",
+		ObservedGeneration: module.Generation,
+	})
+
+	if !equality.Semantic.DeepEqual(oldStatus, &module.Status) {
+		if err := r.updateStatus(ctx, module, func(saved *modulev1alpha1.TrustyAI) {
+			saved.Status = *module.Status.DeepCopy()
+		}); err != nil {
+			logger.Error(err, "Failed to update TrustyAI module status")
+			return ctrl.Result{}, err
+		}
+		r.EventRecorder.Event(module, corev1.EventTypeNormal, EventReasonUnmanaged,
+			"Module management state is Unmanaged; reconciliation skipped")
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// updateStatus updates the status of the TrustyAI module with retry-on-conflict
+func (r *TrustyAIReconciler) updateStatus(
+	ctx context.Context,
+	original *modulev1alpha1.TrustyAI,
+	update func(saved *modulev1alpha1.TrustyAI),
+) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		saved := &modulev1alpha1.TrustyAI{}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(original), saved); err != nil {
+			return err
+		}
+		update(saved)
+		return r.Client.Status().Update(ctx, saved)
+	})
 }
 
 // updateHealthStatus runs health checks and updates status conditions
