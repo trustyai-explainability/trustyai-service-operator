@@ -19,6 +19,13 @@ const (
 	PhaseReady    = "Ready"
 	PhaseNotReady = "Not Ready"
 
+	// ConfigMap names
+	DSCConfigMapName = "trustyai-dsc-config"
+
+	// ConfigMap keys
+	LMEvalPermitCodeExecutionKey = "eval.lmeval.permitCodeExecution"
+	LMEvalPermitOnlineKey        = "eval.lmeval.permitOnline"
+
 	// SSA Migration
 	// SSAAdoptionAnnotationKey marks whether SSA adoption of in-tree resources is complete
 	SSAAdoptionAnnotationKey = "trustyai.opendatahub.io/ssa-adoption-completed"
