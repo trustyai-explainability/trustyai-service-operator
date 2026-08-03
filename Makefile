@@ -368,3 +368,5 @@ manifest-gen: kustomize ## Generate deployment manifests. Usage: make manifest-g
 	@echo "  Namespace: $(NAMESPACE)"
 	@echo "  Overlay: $(OVERLAY)"
 	@echo "  Image: $(OPERATOR_IMAGE)"
+
+-include Makefile.trustyai-operator-module.mk

@@ -76,4 +76,3 @@ var _ = Describe("Dependency Validation", func() {
 	// In a real cluster with those CRDs, the dependency checks would work correctly
 	// For now, we test the blocking behavior when dependencies are missing
 })
-
