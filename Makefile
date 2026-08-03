@@ -95,7 +95,7 @@ help: ## Display this help.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role,headerFile="hack/boilerplate.yaml.txt" crd:headerFile="hack/boilerplate.yaml.txt" webhook:headerFile="hack/boilerplate.yaml.txt" paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role,headerFile="hack/boilerplate.yaml.txt" crd:headerFile="hack/boilerplate.yaml.txt" webhook:headerFile="hack/boilerplate.yaml.txt" paths="./api/..." paths="./controllers/..." paths="./cmd/..." paths="./pkg/..." output:crd:artifacts:config=config/crd/bases
 	@$(MAKE) components-generate
 
 .PHONY: components-generate
@@ -120,7 +120,7 @@ list-overlays: ## List available overlays
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..." paths="./controllers/..." paths="./cmd/..." paths="./pkg/..."
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -368,3 +368,5 @@ manifest-gen: kustomize ## Generate deployment manifests. Usage: make manifest-g
 	@echo "  Namespace: $(NAMESPACE)"
 	@echo "  Overlay: $(OVERLAY)"
 	@echo "  Image: $(OPERATOR_IMAGE)"
+
+-include Makefile.trustyai-operator-module.mk
