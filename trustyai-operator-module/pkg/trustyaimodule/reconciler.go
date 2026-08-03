@@ -99,10 +99,10 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if module.Spec.ManagementState == platformv1alpha1.ManagementStateRemoved {
-		return r.handleRemoval(ctx, module)
+		return r.handleRemoval(ctx, module, oldStatus)
 	}
 	if module.Spec.ManagementState == platformv1alpha1.ManagementStateUnmanaged {
-		return r.handleUnmanaged(ctx, module)
+		return r.handleUnmanaged(ctx, module, oldStatus)
 	}
 
 	if !r.SkipDependencyChecks {
@@ -219,11 +219,10 @@ func (r *TrustyAIModuleReconciler) handleDeletion(ctx context.Context, module *p
 	return ctrl.Result{}, nil
 }
 
-func (r *TrustyAIModuleReconciler) handleRemoval(ctx context.Context, module *platformv1alpha1.TrustyAI) (ctrl.Result, error) {
+func (r *TrustyAIModuleReconciler) handleRemoval(ctx context.Context, module *platformv1alpha1.TrustyAI, oldStatus *platformv1alpha1.TrustyAIStatus) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("TrustyAI module is in Removed state, skipping reconciliation")
 
-	oldStatus := module.Status.DeepCopy()
 	module.Status.Phase = PhaseNotReady
 
 	apimeta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
@@ -262,11 +261,9 @@ func (r *TrustyAIModuleReconciler) handleRemoval(ctx context.Context, module *pl
 	return ctrl.Result{}, nil
 }
 
-func (r *TrustyAIModuleReconciler) handleUnmanaged(ctx context.Context, module *platformv1alpha1.TrustyAI) (ctrl.Result, error) {
+func (r *TrustyAIModuleReconciler) handleUnmanaged(ctx context.Context, module *platformv1alpha1.TrustyAI, oldStatus *platformv1alpha1.TrustyAIStatus) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("TrustyAI module is in Unmanaged state, skipping reconciliation")
-
-	oldStatus := module.Status.DeepCopy()
 
 	apimeta.SetStatusCondition(&module.Status.Conditions, metav1.Condition{
 		Type:               ConditionTypeReady,
