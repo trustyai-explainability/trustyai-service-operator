@@ -5,10 +5,14 @@ on:
     paths:
       - 'trustyai-operator-module/**'
       - 'Makefile.trustyai-operator-module.mk'
+      - 'Makefile'
+      - '.github/workflows/trustyai-module-controller-tests.yaml'
   pull_request:
     paths:
       - 'trustyai-operator-module/**'
       - 'Makefile.trustyai-operator-module.mk'
+      - 'Makefile'
+      - '.github/workflows/trustyai-module-controller-tests.yaml'
 
 jobs:
   test:
