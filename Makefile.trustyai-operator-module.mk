@@ -10,6 +10,7 @@ docker-build-tom: ## Build the trustyai-operator-module-controller image
 	$(ENGINE) buildx build \
 		--load \
 		-t $(TRUSTYAI_MODULE_IMG):$(MODULE_TAG) \
+		--build-arg VERSION=$(MODULE_TAG) \
 		-f $(MODULE_DIR)/Dockerfile \
 		$(MODULE_DIR)
 

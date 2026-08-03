@@ -21,6 +21,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+// Version is the operator version, injected at build time via -ldflags.
+var Version = "unknown"
+
 // TrustyAIModuleReconciler reconciles TrustyAI module objects.
 type TrustyAIModuleReconciler struct {
 	client.Client
@@ -438,7 +441,7 @@ func (r *TrustyAIModuleReconciler) updateReleases(module *platformv1alpha1.Trust
 	module.Status.Releases = []platformv1alpha1.ComponentRelease{
 		{
 			Name:    "trustyai-operator-module",
-			Version: "unknown",
+			Version: Version,
 		},
 	}
 }
