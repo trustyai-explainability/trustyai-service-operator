@@ -19,10 +19,9 @@ docker-push-tom: docker-build-tom ## Build and push the trustyai-operator-module
 
 .PHONY: deploy-tom
 deploy-tom: ## Deploy the trustyai-operator-module-controller to the cluster
-	cd $(MODULE_DIR) && \
-		sed -i'' -e 's|trustyai-operator-module-controller:latest|$(TRUSTYAI_MODULE_IMG):$(MODULE_TAG)|g' \
-			config/manager/manager.yaml && \
-		kubectl apply -k config/default --server-side=true
+	cd $(MODULE_DIR)/config/default && \
+		$(KUSTOMIZE) edit set image trustyai-operator-module-controller=$(TRUSTYAI_MODULE_IMG):$(MODULE_TAG)
+	kubectl apply -k $(MODULE_DIR)/config/default --server-side=true
 
 .PHONY: undeploy-tom
 undeploy-tom: ## Remove the trustyai-operator-module-controller from the cluster
