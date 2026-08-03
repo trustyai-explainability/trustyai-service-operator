@@ -343,7 +343,14 @@ func (r *TrustyAIModuleReconciler) buildHealthCheckers(module *platformv1alpha1.
 func (r *TrustyAIModuleReconciler) updateHealthStatus(ctx context.Context, module *platformv1alpha1.TrustyAI) error {
 	logger := log.FromContext(ctx)
 
-	oldReady := apimeta.FindStatusCondition(module.Status.Conditions, ConditionTypeReady)
+	var (
+		oldReadyStatus metav1.ConditionStatus
+		hadReady       bool
+	)
+	if c := apimeta.FindStatusCondition(module.Status.Conditions, ConditionTypeReady); c != nil {
+		oldReadyStatus = c.Status
+		hadReady = true
+	}
 
 	healthCheckers := r.buildHealthCheckers(module)
 	allHealthy := true
@@ -424,7 +431,7 @@ func (r *TrustyAIModuleReconciler) updateHealthStatus(ctx context.Context, modul
 		"ready", apimeta.IsStatusConditionTrue(module.Status.Conditions, ConditionTypeReady))
 
 	newReady := apimeta.FindStatusCondition(module.Status.Conditions, ConditionTypeReady)
-	if oldReady == nil || newReady == nil || oldReady.Status != newReady.Status {
+	if !hadReady || newReady == nil || oldReadyStatus != newReady.Status {
 		if allHealthy {
 			r.EventRecorder.Event(module, "Normal", "HealthCheckPassed", "All enabled services are healthy")
 		} else if partiallyHealthy {
