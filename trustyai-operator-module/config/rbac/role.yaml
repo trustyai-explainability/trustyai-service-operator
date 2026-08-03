@@ -32,6 +32,7 @@ rules:
   - get
   - list
   - patch
+  - watch
 - apiGroups:
   - apps
   resources:
@@ -40,6 +41,7 @@ rules:
   - get
   - list
   - patch
+  - watch
 - apiGroups:
   - components.platform.opendatahub.io
   resources:
@@ -79,9 +81,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - maistra.io
+  - serving.kserve.io
   resources:
-  - servicemeshcontrolplanes
+  - inferenceservices
   verbs:
   - get
   - list
@@ -100,3 +102,4 @@ rules:
   - get
   - list
   - patch
+  - watch
