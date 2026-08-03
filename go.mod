@@ -19,6 +19,8 @@ require (
 	sigs.k8s.io/kueue v0.16.0-devel
 )
 
+require github.com/trustyai-explainability/trustyai-operator-module v0.0.0-00010101000000-000000000000
+
 require (
 	cel.dev/expr v0.25.1 // indirect
 	cloud.google.com/go/auth v0.20.0 // indirect
@@ -179,5 +181,7 @@ require (
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/yaml v1.6.0
 )
+
+replace github.com/trustyai-explainability/trustyai-operator-module => ./trustyai-operator-module
 
 exclude github.com/openshift/api v3.9.0+incompatible
