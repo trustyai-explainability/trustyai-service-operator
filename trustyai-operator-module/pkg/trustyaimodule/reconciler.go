@@ -56,6 +56,8 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	oldStatus := module.Status.DeepCopy()
+
 	logger.Info("Reconciling TrustyAI module", "name", module.Name)
 
 	if module.DeletionTimestamp != nil {
@@ -170,8 +172,6 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		logger.Error(err, "Failed to reconcile DSC ConfigMap")
 		return ctrl.Result{}, err
 	}
-
-	oldStatus := module.Status.DeepCopy()
 
 	if err := r.updateHealthStatus(ctx, module); err != nil {
 		logger.Error(err, "Failed to update health status")
