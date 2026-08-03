@@ -123,6 +123,7 @@ func (r *TrustyAIModuleReconciler) adoptDeployments(ctx context.Context) (int, e
 	return count, nil
 }
 
+// adoptRBACResources adopts RoleBindings managed by the in-tree component.
 func (r *TrustyAIModuleReconciler) adoptRBACResources(ctx context.Context) (int, error) {
 	logger := log.FromContext(ctx)
 	labelSelector := labels.SelectorFromSet(labels.Set{InTreeManagedByLabel: "true"})
@@ -141,22 +142,6 @@ func (r *TrustyAIModuleReconciler) adoptRBACResources(ctx context.Context) (int,
 		logger.Info("Adopting RoleBinding", "name", rb.Name)
 		if err := r.adoptResource(ctx, rb); err != nil {
 			return count, fmt.Errorf("failed to adopt RoleBinding %s: %w", rb.Name, err)
-		}
-		count++
-	}
-
-	clusterRoleBindingList := &rbacv1.ClusterRoleBindingList{}
-	if err := r.List(ctx, clusterRoleBindingList, &client.ListOptions{
-		LabelSelector: labelSelector,
-	}); err != nil {
-		return count, fmt.Errorf("failed to list in-tree ClusterRoleBindings: %w", err)
-	}
-
-	for i := range clusterRoleBindingList.Items {
-		crb := &clusterRoleBindingList.Items[i]
-		logger.Info("Adopting ClusterRoleBinding", "name", crb.Name)
-		if err := r.adoptResource(ctx, crb); err != nil {
-			return count, fmt.Errorf("failed to adopt ClusterRoleBinding %s: %w", crb.Name, err)
 		}
 		count++
 	}
