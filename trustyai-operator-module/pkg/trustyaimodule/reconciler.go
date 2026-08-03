@@ -340,6 +340,8 @@ func (r *TrustyAIModuleReconciler) buildHealthCheckers(module *platformv1alpha1.
 func (r *TrustyAIModuleReconciler) updateHealthStatus(ctx context.Context, module *platformv1alpha1.TrustyAI) error {
 	logger := log.FromContext(ctx)
 
+	oldReady := apimeta.FindStatusCondition(module.Status.Conditions, ConditionTypeReady)
+
 	healthCheckers := r.buildHealthCheckers(module)
 	allHealthy := true
 	partiallyHealthy := false
@@ -418,12 +420,15 @@ func (r *TrustyAIModuleReconciler) updateHealthStatus(ctx context.Context, modul
 	logger.Info("Updated health status", "phase", module.Status.Phase,
 		"ready", apimeta.IsStatusConditionTrue(module.Status.Conditions, ConditionTypeReady))
 
-	if allHealthy {
-		r.EventRecorder.Event(module, "Normal", "HealthCheckPassed", "All enabled services are healthy")
-	} else if partiallyHealthy {
-		r.EventRecorder.Event(module, "Warning", "HealthCheckPartial", "Some services are unhealthy")
-	} else {
-		r.EventRecorder.Event(module, "Warning", "HealthCheckFailed", "All services are unhealthy")
+	newReady := apimeta.FindStatusCondition(module.Status.Conditions, ConditionTypeReady)
+	if oldReady == nil || newReady == nil || oldReady.Status != newReady.Status {
+		if allHealthy {
+			r.EventRecorder.Event(module, "Normal", "HealthCheckPassed", "All enabled services are healthy")
+		} else if partiallyHealthy {
+			r.EventRecorder.Event(module, "Warning", "HealthCheckPartial", "Some services are unhealthy")
+		} else {
+			r.EventRecorder.Event(module, "Warning", "HealthCheckFailed", "All services are unhealthy")
+		}
 	}
 
 	return nil
