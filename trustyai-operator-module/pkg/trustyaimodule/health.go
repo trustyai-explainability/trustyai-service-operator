@@ -1,4 +1,4 @@
-package module
+package trustyaimodule
 
 import (
 	"context"
@@ -15,8 +15,8 @@ type ServiceHealthChecker interface {
 	// Name returns the service name (e.g., "TAS", "LMES", "EVALHUB")
 	Name() string
 
-	// IsHealthy checks if the service's workloads are healthy
-	// Returns: (healthy bool, reason string explaining health status)
+	// IsHealthy checks if the service's workloads are healthy.
+	// Returns: (healthy bool, reason string)
 	IsHealthy(ctx context.Context) (bool, string)
 }
 
@@ -41,11 +41,9 @@ func (r *RunningServiceChecker) Name() string {
 	return r.serviceName
 }
 
-// IsHealthy checks if the service's Deployment has ready replicas
-// Returns (true, "Deployment ready") if ReadyReplicas == Replicas && ReadyReplicas > 0
-// Returns (false, reason) otherwise with specific error details
+// IsHealthy checks if the service's Deployment has ready replicas.
+// Returns (true, "Deployment ready") if ReadyReplicas == Replicas && ReadyReplicas > 0.
 func (r *RunningServiceChecker) IsHealthy(ctx context.Context) (bool, string) {
-	// Try to find deployment by service name label
 	deploymentList := &appsv1.DeploymentList{}
 	labelSelector := labels.SelectorFromSet(labels.Set{
 		"app.kubernetes.io/name": r.serviceName,
@@ -59,25 +57,20 @@ func (r *RunningServiceChecker) IsHealthy(ctx context.Context) (bool, string) {
 	}
 
 	if len(deploymentList.Items) == 0 {
-		// Try alternative: look for deployment with name matching service
 		deployment := &appsv1.Deployment{}
 		err := r.client.Get(ctx, types.NamespacedName{
 			Name:      r.serviceName,
 			Namespace: r.namespace,
 		}, deployment)
-
 		if err != nil {
 			return false, "deployment not found"
 		}
-
 		return r.checkDeploymentHealth(deployment)
 	}
 
-	// Check the first matching deployment
 	return r.checkDeploymentHealth(&deploymentList.Items[0])
 }
 
-// checkDeploymentHealth verifies deployment replica readiness
 func (r *RunningServiceChecker) checkDeploymentHealth(deployment *appsv1.Deployment) (bool, string) {
 	if deployment.Spec.Replicas == nil {
 		return false, "deployment has no replica count specified"
@@ -89,11 +82,9 @@ func (r *RunningServiceChecker) checkDeploymentHealth(deployment *appsv1.Deploym
 	if desiredReplicas == 0 {
 		return false, "deployment scaled to 0 replicas"
 	}
-
 	if readyReplicas == 0 {
 		return false, fmt.Sprintf("0/%d replicas ready", desiredReplicas)
 	}
-
 	if readyReplicas < desiredReplicas {
 		return false, fmt.Sprintf("%d/%d replicas ready", readyReplicas, desiredReplicas)
 	}

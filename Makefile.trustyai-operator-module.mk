@@ -10,8 +10,8 @@ docker-build-tom: ## Build the trustyai-operator-module-controller image
 	$(ENGINE) buildx build \
 		--load \
 		-t $(TRUSTYAI_MODULE_IMG):$(MODULE_TAG) \
-		-f trustyai-operator-module-controller.Dockerfile \
-		.
+		-f $(MODULE_DIR)/Dockerfile \
+		$(MODULE_DIR)
 
 .PHONY: docker-push-tom
 docker-push-tom: docker-build-tom ## Build and push the trustyai-operator-module-controller image
