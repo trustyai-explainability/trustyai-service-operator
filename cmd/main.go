@@ -50,12 +50,10 @@ import (
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
-	modulev1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/module/v1alpha1"
 	tasv1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	tasv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/module"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	//+kubebuilder:scaffold:imports
@@ -78,7 +76,6 @@ func init() {
 	utilruntime.Must(lmesv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(evalhubv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(evalhubv1.AddToScheme(scheme))
-	utilruntime.Must(modulev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 	utilruntime.Must(kservev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(kservev1beta1.AddToScheme(scheme))
@@ -183,19 +180,9 @@ func main() {
 		setupLog.Error(err, "unable to operator's namespace")
 	}
 
-	// Setup controllers and collect health checkers
-	healthCheckers, err := controllers.SetupControllers(enabledServices, mgr, ns, configMap, recorder)
-	if err != nil {
+	if err := controllers.SetupControllers(enabledServices, mgr, ns, configMap, recorder); err != nil {
 		setupLog.Error(err, "unable to initialize controller(s)")
 		os.Exit(1)
-	}
-
-	// Setup module controller with health checkers (must be done after other controllers)
-	if slices.Contains(enabledServices, module.ServiceName) {
-		if err := module.ControllerSetUp(mgr, ns, configMap, recorder, healthCheckers); err != nil {
-			setupLog.Error(err, "unable to setup module controller")
-			os.Exit(1)
-		}
 	}
 	//+kubebuilder:scaffold:builder
 

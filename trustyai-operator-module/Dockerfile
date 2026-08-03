@@ -3,23 +3,27 @@ FROM registry.access.redhat.com/ubi9/go-toolset:1.26 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
+ARG VERSION=unknown
+
 WORKDIR /go/src/github.com/trustyai-explainability/trustyai-operator-module
 
 # Cache module downloads before copying source
-COPY trustyai-operator-module/go.mod trustyai-operator-module/go.sum ./
+COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy source
-COPY trustyai-operator-module/cmd/ cmd/
-COPY trustyai-operator-module/pkg/ pkg/
+COPY cmd/ cmd/
+COPY pkg/ pkg/
 
 USER root
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     GOFLAGS=-mod=readonly \
-    go build -a -o manager ./cmd/trustyai-operator-module
+    go build -a \
+    -ldflags "-X github.com/trustyai-explainability/trustyai-operator-module/pkg/trustyaimodule.Version=${VERSION}" \
+    -o manager ./cmd/trustyai-operator-module
 
 # Bundle manifests template into the image
-COPY trustyai-operator-module/hack/get_trustyai_manifests.sh hack/
+COPY hack/get_trustyai_manifests.sh hack/
 RUN bash hack/get_trustyai_manifests.sh
 
 # Runtime image

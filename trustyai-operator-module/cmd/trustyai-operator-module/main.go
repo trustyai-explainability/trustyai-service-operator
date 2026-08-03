@@ -73,7 +73,9 @@ func main() {
 	if err := (&trustyaimodule.TrustyAIModuleReconciler{
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
+		Namespace:             namespace,
 		ManifestsTemplatePath: manifestsPath,
+		EventRecorder:         mgr.GetEventRecorderFor("trustyai-module"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "TrustyAI")
 		os.Exit(1)

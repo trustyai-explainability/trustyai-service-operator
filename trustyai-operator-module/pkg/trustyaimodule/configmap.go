@@ -1,11 +1,11 @@
-package module
+package trustyaimodule
 
 import (
 	"context"
 	"fmt"
 	"strconv"
 
-	modulev1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/module/v1alpha1"
+	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -13,14 +13,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// reconcileConfigMap creates or updates the DSC ConfigMap with eval settings from the module spec
-func (r *TrustyAIReconciler) reconcileConfigMap(ctx context.Context, module *modulev1alpha1.TrustyAI) error {
+func (r *TrustyAIModuleReconciler) reconcileConfigMap(ctx context.Context, module *platformv1alpha1.TrustyAI) error {
 	logger := log.FromContext(ctx)
 
-	// Build desired ConfigMap
 	desired := r.buildDSCConfigMap(module)
 
-	// Check if ConfigMap already exists
 	existing := &corev1.ConfigMap{}
 	err := r.Get(ctx, types.NamespacedName{
 		Name:      DSCConfigMapName,
@@ -29,7 +26,6 @@ func (r *TrustyAIReconciler) reconcileConfigMap(ctx context.Context, module *mod
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// Create new ConfigMap
 			logger.Info("Creating DSC ConfigMap", "name", DSCConfigMapName, "namespace", r.Namespace)
 			if err := r.Create(ctx, desired); err != nil {
 				r.EventRecorder.Event(module, "Warning", "ConfigMapCreateFailed", "Failed to create DSC ConfigMap")
@@ -41,7 +37,6 @@ func (r *TrustyAIReconciler) reconcileConfigMap(ctx context.Context, module *mod
 		return fmt.Errorf("failed to get DSC ConfigMap: %w", err)
 	}
 
-	// Update existing ConfigMap if data has changed
 	if !configMapDataEqual(existing.Data, desired.Data) {
 		logger.Info("Updating DSC ConfigMap", "name", DSCConfigMapName, "namespace", r.Namespace)
 		existing.Data = desired.Data
@@ -55,32 +50,22 @@ func (r *TrustyAIReconciler) reconcileConfigMap(ctx context.Context, module *mod
 	return nil
 }
 
-// buildDSCConfigMap constructs the DSC ConfigMap from the module spec
-func (r *TrustyAIReconciler) buildDSCConfigMap(module *modulev1alpha1.TrustyAI) *corev1.ConfigMap {
-	data := make(map[string]string)
+func (r *TrustyAIModuleReconciler) buildDSCConfigMap(module *platformv1alpha1.TrustyAI) *corev1.ConfigMap {
+	data := map[string]string{
+		LMEvalPermitCodeExecutionKey: strconv.FormatBool(module.Spec.Eval.LMEval.PermitCodeExecution),
+		LMEvalPermitOnlineKey:        strconv.FormatBool(module.Spec.Eval.LMEval.PermitOnline),
+	}
 
-	// Convert bool values to string
-	data[LMEvalPermitCodeExecutionKey] = strconv.FormatBool(module.Spec.Eval.LMEval.PermitCodeExecution)
-	data[LMEvalPermitOnlineKey] = strconv.FormatBool(module.Spec.Eval.LMEval.PermitOnline)
-
-	cm := &corev1.ConfigMap{
+	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      DSCConfigMapName,
 			Namespace: r.Namespace,
 		},
 		Data: data,
 	}
-
-	// Set owner reference for garbage collection
-	// Note: Module CR is cluster-scoped, ConfigMap is namespaced
-	// We cannot set cross-namespace owner references, so we'll handle cleanup manually
-	// via finalizer instead
-
-	return cm
 }
 
-// deleteDSCConfigMap deletes the DSC ConfigMap during finalizer cleanup
-func (r *TrustyAIReconciler) deleteDSCConfigMap(ctx context.Context) error {
+func (r *TrustyAIModuleReconciler) deleteDSCConfigMap(ctx context.Context) error {
 	logger := log.FromContext(ctx)
 
 	cm := &corev1.ConfigMap{}
@@ -91,7 +76,6 @@ func (r *TrustyAIReconciler) deleteDSCConfigMap(ctx context.Context) error {
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// ConfigMap already deleted, nothing to do
 			return nil
 		}
 		return fmt.Errorf("failed to get DSC ConfigMap for deletion: %w", err)
@@ -105,17 +89,14 @@ func (r *TrustyAIReconciler) deleteDSCConfigMap(ctx context.Context) error {
 	return nil
 }
 
-// configMapDataEqual compares two ConfigMap data maps
 func configMapDataEqual(a, b map[string]string) bool {
 	if len(a) != len(b) {
 		return false
 	}
-
 	for k, v := range a {
 		if b[k] != v {
 			return false
 		}
 	}
-
 	return true
 }

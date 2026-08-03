@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/module"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"slices"
@@ -46,28 +45,21 @@ func registerService(name string, setupf ControllerSetupFunc) {
 	AllTasServices = append(AllTasServices, name)
 }
 
-func SetupControllers(enabledServices []string, mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) ([]module.ServiceHealthChecker, error) {
+func SetupControllers(enabledServices []string, mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) error {
 	var errs []error
-	var healthCheckers []module.ServiceHealthChecker
 
 	for _, service := range enabledServices {
-		// Skip MODULE service - it will be set up separately with health checkers
-		if service == module.ServiceName {
+		setup, ok := TasServices[service]
+		if !ok || setup == nil {
+			errs = append(errs, fmt.Errorf("unsupported service: %s", service))
 			continue
 		}
-
-		// Setup controller
-		if err := TasServices[service](mgr, ns, configmap, recorder); err != nil {
+		if err := setup(mgr, ns, configmap, recorder); err != nil {
 			errs = append(errs, err)
 		}
-
-		// Create health checker for this service
-		healthCheckers = append(healthCheckers, module.NewRunningServiceChecker(
-			service, mgr.GetClient(), ns,
-		))
 	}
 
-	return healthCheckers, errors.Join(errs...)
+	return errors.Join(errs...)
 }
 
 func (es *EnabledServices) Set(services string) error {

@@ -1,0 +1,30 @@
+name: Module Controller Tests
+
+on:
+  push:
+    paths:
+      - 'trustyai-operator-module/**'
+      - 'Makefile.trustyai-operator-module.mk'
+      - 'Makefile'
+      - '.github/workflows/trustyai-module-controller-tests.yaml'
+  pull_request:
+    paths:
+      - 'trustyai-operator-module/**'
+      - 'Makefile.trustyai-operator-module.mk'
+      - 'Makefile'
+      - '.github/workflows/trustyai-module-controller-tests.yaml'
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: trustyai-operator-module/go.mod
+          cache-dependency-path: trustyai-operator-module/go.sum
+      - name: Pre-commit checks (tidy, vet, build)
+        run: make precommit-tom
+      - name: Run tests
+        run: make test-tom

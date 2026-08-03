@@ -10,8 +10,9 @@ docker-build-tom: ## Build the trustyai-operator-module-controller image
 	$(ENGINE) buildx build \
 		--load \
 		-t $(TRUSTYAI_MODULE_IMG):$(MODULE_TAG) \
-		-f trustyai-operator-module-controller.Dockerfile \
-		.
+		--build-arg VERSION=$(MODULE_TAG) \
+		-f $(MODULE_DIR)/Dockerfile \
+		$(MODULE_DIR)
 
 .PHONY: docker-push-tom
 docker-push-tom: docker-build-tom ## Build and push the trustyai-operator-module-controller image
@@ -29,7 +30,9 @@ undeploy-tom: ## Remove the trustyai-operator-module-controller from the cluster
 
 .PHONY: manifests-tom
 manifests-tom: ## Generate CRD manifests for trustyai-operator-module
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./$(MODULE_DIR)/pkg/apis/..." \
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook \
+		paths="./$(MODULE_DIR)/pkg/apis/..." \
+		paths="./$(MODULE_DIR)/pkg/trustyaimodule/..." \
 		output:crd:artifacts:config=$(MODULE_DIR)/config/crd/bases \
 		output:rbac:artifacts:config=$(MODULE_DIR)/config/rbac
 

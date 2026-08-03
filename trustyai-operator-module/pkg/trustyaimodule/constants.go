@@ -1,14 +1,11 @@
-package module
+package trustyaimodule
 
 const (
-	// ServiceName is the name used for service registration
-	ServiceName = "MODULE"
-
 	// FinalizerName is the finalizer added to TrustyAI module resources
 	FinalizerName = "modules.platform.opendatahub.io/finalizer"
 
-	// DefaultRequeueInterval is the interval for periodic health checks
-	DefaultRequeueInterval = 60 // seconds
+	// DefaultRequeueInterval is the interval in seconds for periodic health checks
+	DefaultRequeueInterval = 60
 
 	// Condition types
 	ConditionTypeReady                 = "Ready"
@@ -35,7 +32,6 @@ const (
 	LMEvalPermitCodeExecutionKey = "eval.lmeval.permitCodeExecution"
 	LMEvalPermitOnlineKey        = "eval.lmeval.permitOnline"
 
-	// SSA Migration
 	// SSAAdoptionAnnotationKey marks whether SSA adoption of in-tree resources is complete
 	SSAAdoptionAnnotationKey = "trustyai.opendatahub.io/ssa-adoption-completed"
 
