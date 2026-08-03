@@ -49,7 +49,12 @@ func SetupControllers(enabledServices []string, mgr manager.Manager, ns, configm
 	var errs []error
 
 	for _, service := range enabledServices {
-		if err := TasServices[service](mgr, ns, configmap, recorder); err != nil {
+		setup, ok := TasServices[service]
+		if !ok || setup == nil {
+			errs = append(errs, fmt.Errorf("unsupported service: %s", service))
+			continue
+		}
+		if err := setup(mgr, ns, configmap, recorder); err != nil {
 			errs = append(errs, err)
 		}
 	}
