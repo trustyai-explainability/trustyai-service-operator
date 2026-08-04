@@ -10,7 +10,6 @@ import (
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -94,12 +93,11 @@ var _ = Describe("buildDeploymentSpec", func() {
 	It("builds the expected DeploymentSpec (labels, eval-hub, kube-rbac-proxy, strategy)", func() {
 		// Applications ns must differ from instance.Namespace so this assertion
 		// would fail if the deployment incorrectly used instance.Namespace.
-		applicationsNamespace := "redhat-ods-applications"
+		applicationsNamespace := fmt.Sprintf("evalhub-apps-ns-%d", time.Now().UnixNano())
 		appsNS := createNamespace(applicationsNamespace)
-		err := k8sClient.Create(ctx, appsNS)
-		if err != nil {
-			Expect(apierrors.IsAlreadyExists(err)).To(BeTrue())
-		}
+		Expect(k8sClient.Create(ctx, appsNS)).To(Succeed())
+		DeferCleanup(func() { deleteNamespace(appsNS) })
+
 		appsCM := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      configMapName,
