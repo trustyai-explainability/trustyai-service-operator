@@ -91,6 +91,30 @@ var _ = Describe("buildDeploymentSpec", func() {
 	})
 
 	It("builds the expected DeploymentSpec (labels, eval-hub, kube-rbac-proxy, strategy)", func() {
+		// Applications ns must differ from instance.Namespace so this assertion
+		// would fail if the deployment incorrectly used instance.Namespace.
+		applicationsNamespace := fmt.Sprintf("evalhub-apps-ns-%d", time.Now().UnixNano())
+		appsNS := createNamespace(applicationsNamespace)
+		Expect(k8sClient.Create(ctx, appsNS)).To(Succeed())
+		DeferCleanup(func() { deleteNamespace(appsNS) })
+
+		appsCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      configMapName,
+				Namespace: applicationsNamespace,
+			},
+			Data: map[string]string{
+				configMapEvalHubImageKey:       testBuildEvalHubImage,
+				configMapKubeRBACProxyImageKey: testBuildKubeRBACProxyImage,
+			},
+		}
+		Expect(k8sClient.Create(ctx, appsCM)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, appsCM) })
+
+		originalNS := reconciler.Namespace
+		reconciler.Namespace = applicationsNamespace
+		DeferCleanup(func() { reconciler.Namespace = originalNS })
+
 		deploymentSpec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -136,6 +160,7 @@ var _ = Describe("buildDeploymentSpec", func() {
 		Expect(envVarMap["MAX_RETRY_ATTEMPTS"]).To(Equal("3"))
 		Expect(envVarMap["SERVICE_URL"]).To(Equal(fmt.Sprintf("https://%s.%s.svc.cluster.local:%d", evalHubName, testNamespace, servicePort)))
 		Expect(envVarMap["EVALHUB_INSTANCE_NAME"]).To(Equal(evalHubName))
+		Expect(envVarMap["EVALHUB_HARDWARE_PROFILES_NAMESPACE"]).To(Equal(applicationsNamespace))
 		Expect(envVarMap["CUSTOM_VAR"]).To(Equal("custom-value"))
 		Expect(envVarMap["ANOTHER_VAR"]).To(Equal("another-value"))
 
