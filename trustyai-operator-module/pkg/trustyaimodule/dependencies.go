@@ -25,11 +25,11 @@ func (r *TrustyAIModuleReconciler) checkDependencies(ctx context.Context) ([]Dep
 
 	var results []DependencyCheckResult
 
-	serviceMeshResult, err := r.checkServiceMesh(ctx)
+	inferenceServiceResult, err := r.checkInferenceService(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check Service Mesh: %w", err)
+		return nil, fmt.Errorf("failed to check InferenceService: %w", err)
 	}
-	results = append(results, serviceMeshResult)
+	results = append(results, inferenceServiceResult)
 
 	monitoringResult, err := r.checkMonitoring(ctx)
 	if err != nil {
@@ -40,15 +40,15 @@ func (r *TrustyAIModuleReconciler) checkDependencies(ctx context.Context) ([]Dep
 	return results, nil
 }
 
-func (r *TrustyAIModuleReconciler) checkServiceMesh(ctx context.Context) (DependencyCheckResult, error) {
+func (r *TrustyAIModuleReconciler) checkInferenceService(ctx context.Context) (DependencyCheckResult, error) {
 	logger := log.FromContext(ctx)
 
-	result := DependencyCheckResult{Name: "ServiceMesh"}
+	result := DependencyCheckResult{Name: "InferenceService"}
 
 	gvk := schema.GroupVersionKind{
-		Group:   "maistra.io",
-		Version: "v2",
-		Kind:    "ServiceMeshControlPlane",
+		Group:   "serving.kserve.io",
+		Version: "v1beta1",
+		Kind:    "InferenceService",
 	}
 
 	list := &unstructured.UnstructuredList{}
@@ -57,44 +57,16 @@ func (r *TrustyAIModuleReconciler) checkServiceMesh(ctx context.Context) (Depend
 	if err := r.List(ctx, list); err != nil {
 		if errors.IsNotFound(err) || isNoMatchError(err) {
 			result.Satisfied = false
-			result.Message = "Service Mesh is not installed (ServiceMeshControlPlane CRD not found)"
-			logger.Info("Service Mesh dependency not satisfied", "reason", result.Message)
+			result.Message = "InferenceService CRD not found (KServe is not installed)"
+			logger.Info("InferenceService dependency not satisfied", "reason", result.Message)
 			return result, nil
 		}
-		return result, fmt.Errorf("failed to list ServiceMeshControlPlane: %w", err)
+		return result, fmt.Errorf("failed to list InferenceService: %w", err)
 	}
 
-	if len(list.Items) == 0 {
-		result.Satisfied = false
-		result.Message = "Service Mesh is installed but no ServiceMeshControlPlane instance found"
-		logger.Info("Service Mesh dependency not satisfied", "reason", result.Message)
-		return result, nil
-	}
-
-	for _, item := range list.Items {
-		conditions, found, err := unstructured.NestedSlice(item.Object, "status", "conditions")
-		if err != nil || !found {
-			continue
-		}
-		for _, cond := range conditions {
-			condMap, ok := cond.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			condType, _, _ := unstructured.NestedString(condMap, "type")
-			condStatus, _, _ := unstructured.NestedString(condMap, "status")
-			if condType == "Ready" && condStatus == "True" {
-				result.Satisfied = true
-				result.Message = fmt.Sprintf("Service Mesh is ready (instance: %s)", item.GetName())
-				logger.Info("Service Mesh dependency satisfied", "instance", item.GetName())
-				return result, nil
-			}
-		}
-	}
-
-	result.Satisfied = false
-	result.Message = "Service Mesh instances found but none are ready"
-	logger.Info("Service Mesh dependency not satisfied", "reason", result.Message)
+	result.Satisfied = true
+	result.Message = "InferenceService CRD is available"
+	logger.Info("InferenceService dependency satisfied")
 	return result, nil
 }
 
