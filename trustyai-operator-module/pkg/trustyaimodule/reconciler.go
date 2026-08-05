@@ -88,6 +88,8 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			conditions.WithMessage("SSA adoption failed: %v", err),
 			conditions.WithObservedGeneration(module.Generation),
 		)
+		module.Status.ObservedGeneration = module.Generation
+		condMgr.Sort()
 		desired := module.Status.DeepCopy()
 		if updateErr := statusPkg.Update(ctx, r.Client, module, func(o *platformv1alpha1.TrustyAI) {
 			o.Status = *desired
