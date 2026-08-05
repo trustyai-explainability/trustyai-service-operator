@@ -11,6 +11,7 @@ import (
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/controller/action"
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/controller/conditions"
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/controller/precondition"
+	"github.com/opendatahub-io/odh-platform-utilities/pkg/deploy"
 	statusPkg "github.com/opendatahub-io/odh-platform-utilities/pkg/status"
 	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +33,7 @@ type TrustyAIModuleReconciler struct {
 	Scheme                *runtime.Scheme
 	Namespace             string
 	ManifestsTemplatePath string
+	Deployer              *deploy.Deployer
 	EventRecorder         record.EventRecorder
 	SkipDependencyChecks  bool // set to true in tests to skip external dependency checks
 }
@@ -143,6 +145,19 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			conditions.WithMessage("Dependency checks skipped (test mode)"),
 			conditions.WithObservedGeneration(module.Generation),
 		)
+	}
+
+	if err := r.reconcileComponent(ctx, module, condMgr); err != nil {
+		logger.Error(err, "Failed to deploy workload operator")
+		module.Status.ObservedGeneration = module.Generation
+		condMgr.Sort()
+		desired := module.Status.DeepCopy()
+		if updateErr := statusPkg.Update(ctx, r.Client, module, func(o *platformv1alpha1.TrustyAI) {
+			o.Status = *desired
+		}); updateErr != nil {
+			logger.Error(updateErr, "Failed to update status after deploy failure")
+		}
+		return ctrl.Result{}, err
 	}
 
 	if err := r.reconcileConfigMap(ctx, module); err != nil {
@@ -347,6 +362,53 @@ func (r *TrustyAIModuleReconciler) updateReleases(module *platformv1alpha1.Trust
 		Name:    "trustyai-operator-module",
 		Version: Version,
 	})
+}
+
+// reconcileComponent renders the Kustomize overlay for the trustyai-service-operator
+// and SSA-applies all resources into the cluster. On failure it marks
+// ConditionTypeProvisioningSucceeded False and returns the error so the caller
+// can persist status and requeue. On success it returns nil and lets
+// updateHealthStatus own the condition.
+//
+// When r.Deployer is nil the method is a no-op (test mode or stub manifests).
+func (r *TrustyAIModuleReconciler) reconcileComponent(
+	ctx context.Context,
+	module *platformv1alpha1.TrustyAI,
+	condMgr *conditions.Manager,
+) error {
+	if r.Deployer == nil {
+		return nil
+	}
+
+	objs, err := RenderManifests(ctx, r.ManifestsTemplatePath, r.Namespace)
+	if err != nil {
+		condMgr.MarkFalse(string(common.ConditionTypeProvisioningSucceeded),
+			conditions.WithReason("RenderFailed"),
+			conditions.WithMessage("Failed to render operator manifests: %v", err),
+			conditions.WithObservedGeneration(module.Generation),
+		)
+		return err
+	}
+
+	if len(objs) == 0 {
+		return nil
+	}
+
+	if err := r.Deployer.Deploy(ctx, deploy.DeployInput{
+		Client:    r.Client,
+		Owner:     module,
+		Release:   deploy.ReleaseInfo{Version: Version},
+		Resources: objs,
+	}); err != nil {
+		condMgr.MarkFalse(string(common.ConditionTypeProvisioningSucceeded),
+			conditions.WithReason("DeployFailed"),
+			conditions.WithMessage("Failed to deploy operator resources: %v", err),
+			conditions.WithObservedGeneration(module.Generation),
+		)
+		return err
+	}
+
+	return nil
 }
 
 func (r *TrustyAIModuleReconciler) SetupWithManager(mgr ctrl.Manager) error {
