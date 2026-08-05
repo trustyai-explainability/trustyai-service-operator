@@ -136,6 +136,11 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			conditions.WithMessage("Dependency checks skipped (test mode)"),
 			conditions.WithObservedGeneration(module.Generation),
 		)
+		condMgr.MarkTrue(ConditionTypeKServeAvailable,
+			conditions.WithReason("ChecksSkipped"),
+			conditions.WithMessage("Dependency checks skipped (test mode)"),
+			conditions.WithObservedGeneration(module.Generation),
+		)
 	}
 
 	if err := r.reconcileConfigMap(ctx, module); err != nil {

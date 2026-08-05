@@ -9,9 +9,14 @@ const (
 	// DefaultRequeueInterval is the interval in seconds for periodic health checks
 	DefaultRequeueInterval = 60
 
-	// ConditionTypeDependenciesAvailable is the condition type for dependency gate checks.
+	// ConditionTypeDependenciesAvailable is the condition type for required dependency gate checks.
 	// Alias of precondition.ConditionTypeDependenciesAvailable for local use.
 	ConditionTypeDependenciesAvailable = precondition.ConditionTypeDependenciesAvailable
+
+	// ConditionTypeKServeAvailable is the condition type for the optional KServe InferenceService CRD check.
+	// Kept separate from ConditionTypeDependenciesAvailable so the informational KServe result cannot
+	// overwrite or hide the required Prometheus dependency result during RunAll aggregation.
+	ConditionTypeKServeAvailable = "KServeAvailable"
 
 	// Event reasons
 	EventReasonRemoved       = "Removed"

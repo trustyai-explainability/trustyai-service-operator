@@ -26,7 +26,7 @@ var modulePreConditions = []precondition.PreCondition{
 			Version: "v1beta1",
 			Kind:    "InferenceService",
 		},
-		precondition.WithConditionType(ConditionTypeDependenciesAvailable),
+		precondition.WithConditionType(ConditionTypeKServeAvailable),
 		precondition.WithSeverity(common.ConditionSeverityInfo),
 	),
 	precondition.Custom(
