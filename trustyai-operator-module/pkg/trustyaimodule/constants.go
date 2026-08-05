@@ -1,5 +1,7 @@
 package trustyaimodule
 
+import "github.com/opendatahub-io/odh-platform-utilities/pkg/controller/precondition"
+
 const (
 	// FinalizerName is the finalizer added to TrustyAI module resources
 	FinalizerName = "modules.platform.opendatahub.io/finalizer"
@@ -7,22 +9,12 @@ const (
 	// DefaultRequeueInterval is the interval in seconds for periodic health checks
 	DefaultRequeueInterval = 60
 
-	// Condition types
-	ConditionTypeReady                 = "Ready"
-	ConditionTypeProvisioningSucceeded = "ProvisioningSucceeded"
-	ConditionTypeDegraded              = "Degraded"
-	ConditionTypeDependenciesMet       = "DependenciesMet"
-
-	// Phases
-	PhaseReady    = "Ready"
-	PhaseNotReady = "Not Ready"
-
-	// Reasons
-	ReasonModuleUnmanaged = "ModuleUnmanaged"
+	// ConditionTypeDependenciesAvailable is the condition type for dependency gate checks.
+	// Alias of precondition.ConditionTypeDependenciesAvailable for local use.
+	ConditionTypeDependenciesAvailable = precondition.ConditionTypeDependenciesAvailable
 
 	// Event reasons
 	EventReasonRemoved       = "Removed"
-	EventReasonUnmanaged     = "Unmanaged"
 	EventReasonStatusUpdated = "StatusUpdated"
 
 	// ConfigMap names

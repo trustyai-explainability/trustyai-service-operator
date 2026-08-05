@@ -1,17 +1,8 @@
 package v1alpha1
 
 import (
+	common "github.com/opendatahub-io/odh-platform-utilities/api/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
-
-// ManagementState defines the management state of the module
-// +kubebuilder:validation:Enum=Managed;Removed;Unmanaged
-type ManagementState string
-
-const (
-	ManagementStateManaged   ManagementState = "Managed"
-	ManagementStateRemoved   ManagementState = "Removed"
-	ManagementStateUnmanaged ManagementState = "Unmanaged"
 )
 
 // EnabledServices defines which TrustyAI services are enabled
@@ -46,9 +37,7 @@ type EvalConfig struct {
 
 // TrustyAISpec defines the desired state of TrustyAI module
 type TrustyAISpec struct {
-	// +kubebuilder:default=Managed
-	// +optional
-	ManagementState ManagementState `json:"managementState,omitempty"`
+	common.ManagementSpec `json:",inline"`
 	// +optional
 	EnabledServices EnabledServices `json:"enabledServices,omitempty"`
 	// +optional
@@ -61,26 +50,12 @@ type DistributionInfo struct {
 	Version string `json:"version"`
 }
 
-// ComponentRelease represents information about a component release
-type ComponentRelease struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-}
-
 // TrustyAIStatus defines the observed state of TrustyAI module
 type TrustyAIStatus struct {
-	// +optional
-	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// +optional
-	Phase string `json:"phase,omitempty"`
-	// +optional
-	// +listType=map
-	// +listMapKey=type
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	common.Status                 `json:",inline"`
+	common.ComponentReleaseStatus `json:",inline"`
 	// +optional
 	Distribution DistributionInfo `json:"distribution,omitempty"`
-	// +optional
-	Releases []ComponentRelease `json:"releases,omitempty"`
 }
 
 // TrustyAI is the Schema for the trustyais API
@@ -98,6 +73,29 @@ type TrustyAI struct {
 
 	Spec   TrustyAISpec   `json:"spec,omitempty"`
 	Status TrustyAIStatus `json:"status,omitempty"`
+}
+
+// Compile-time assertion that TrustyAI implements common.PlatformObject.
+var _ common.PlatformObject = (*TrustyAI)(nil)
+
+func (t *TrustyAI) GetStatus() *common.Status {
+	return &t.Status.Status
+}
+
+func (t *TrustyAI) GetConditions() []common.Condition {
+	return t.Status.Status.GetConditions()
+}
+
+func (t *TrustyAI) SetConditions(c []common.Condition) {
+	t.Status.Status.SetConditions(c)
+}
+
+func (t *TrustyAI) GetReleaseStatus() *common.ComponentReleaseStatus {
+	return &t.Status.ComponentReleaseStatus
+}
+
+func (t *TrustyAI) SetReleaseStatus(s common.ComponentReleaseStatus) {
+	t.Status.ComponentReleaseStatus = s
 }
 
 // +kubebuilder:object:root=true
