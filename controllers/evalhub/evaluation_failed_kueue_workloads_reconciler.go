@@ -335,20 +335,21 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
+	// Annotate the Workload first so that retries hit workloadFailedEventAlreadyReported
+	// and never re-POST to EvalHub or re-emit the Event.
+	if err := r.annotateWorkloadReported(ctx, &wl); err != nil {
+		log.Error(err, "patch workload after EvalHub failed-workload event",
+			append(evaluationFailedKueueWorkloadsLogFields(), "action", "patch_workload_failed",
+				"workload", client.ObjectKeyFromObject(&wl))...)
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+
 	r.EventRecorder.Eventf(&job, corev1.EventTypeWarning, eventReasonEvaluationFailed, "%s", failureMsg)
 
 	if err := r.patchJobFailureLabels(ctx, &job, failureMsg); err != nil {
 		log.Error(err, "failed to patch Job failure labels after Kueue workload eviction",
 			append(evaluationFailedKueueWorkloadsLogFields(), "action", "patch_job_labels_failed",
 				"job", job.Name, "namespace", job.Namespace)...)
-		// Non-fatal: the POST to EvalHub succeeded; continue to annotate the Workload.
-	}
-
-	if err := r.annotateWorkloadReported(ctx, &wl); err != nil {
-		log.Error(err, "patch workload after EvalHub failed-workload event",
-			append(evaluationFailedKueueWorkloadsLogFields(), "action", "patch_workload_failed",
-				"workload", client.ObjectKeyFromObject(&wl))...)
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
 	log.Info("posted EvalHub failed status for Kueue workload (via owning Job)",
