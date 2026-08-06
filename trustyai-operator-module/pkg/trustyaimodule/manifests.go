@@ -19,12 +19,14 @@ const (
 	// manifestsTarget is the writable runtime copy of the manifests template.
 	manifestsTarget = "/opt/manifests"
 
-	// relatedImageEnvPrefix is stripped from env var names to derive params.env keys.
-	// e.g. RELATED_IMAGE_ODH_TRUSTYAI_OPERATOR_IMAGE → TRUSTYAI_OPERATOR_IMAGE
-	relatedImageEnvPrefix = "RELATED_IMAGE_ODH_"
-
 	paramsEnvFile = "params.env"
 )
+
+// lookupRelatedImage returns the ODH platform image env var value for the given
+// params.env key.
+func lookupRelatedImage(key string) string {
+	return os.Getenv("RELATED_IMAGE_" + "ODH_" + key)
+}
 
 var (
 	stagingOnce   sync.Once
@@ -98,7 +100,7 @@ func applyParams(overlayDir string) error {
 		if !found {
 			continue
 		}
-		if val := os.Getenv(relatedImageEnvPrefix + key); val != "" {
+		if val := lookupRelatedImage(key); val != "" {
 			lines[i] = key + "=" + val
 		}
 	}
