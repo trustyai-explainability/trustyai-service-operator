@@ -22,12 +22,6 @@ const (
 	paramsEnvFile = "params.env"
 )
 
-// lookupRelatedImage returns the ODH platform image env var value for the given
-// params.env key.
-func lookupRelatedImage(key string) string {
-	return os.Getenv("RELATED_IMAGE_" + "ODH_" + key)
-}
-
 var (
 	stagingOnce   sync.Once
 	stagingErr    error
@@ -36,7 +30,7 @@ var (
 
 // EnsureManifests copies templatePath to a writable location (once per
 // process), selects the overlay directory based on ODH_PLATFORM_TYPE, and
-// rewrites params.env with RELATED_IMAGE_ODH_* env vars.
+// rewrites params.env with platform-injected image env vars.
 //
 // Subsequent calls return the cached overlay path without re-running.
 func EnsureManifests(templatePath string) (string, error) {
@@ -78,7 +72,7 @@ func selectOverlay(manifestsDir string) string {
 }
 
 // applyParams rewrites params.env inside overlayDir, replacing placeholder
-// image values with the corresponding RELATED_IMAGE_ODH_<KEY> env vars.
+// image values with platform-injected image env vars.
 // It is a no-op when params.env does not exist.
 func applyParams(overlayDir string) error {
 	paramsPath := filepath.Join(overlayDir, paramsEnvFile)
@@ -100,8 +94,10 @@ func applyParams(overlayDir string) error {
 		if !found {
 			continue
 		}
-		if val := lookupRelatedImage(key); val != "" {
-			lines[i] = key + "=" + val
+		if envVar, ok := paramsEnvMap[key]; ok {
+			if val := os.Getenv(envVar); val != "" {
+				lines[i] = key + "=" + val
+			}
 		}
 	}
 
