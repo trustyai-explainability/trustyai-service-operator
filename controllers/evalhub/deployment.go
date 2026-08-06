@@ -122,6 +122,12 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			Value: instance.Name,
 		},
 		{
+			Name:  "EVALHUB_HARDWARE_PROFILES_NAMESPACE",
+			// Applications namespace (APPLICATIONS_NAMESPACE): opendatahub on ODH,
+			// redhat-ods-applications on RHOAI. Same source as r.Namespace.
+			Value: r.Namespace,
+		},
+		{
 			Name:  "MLFLOW_CA_CERT_PATH",
 			Value: serviceCAMountPath + "/" + serviceCACertFile,
 		},
@@ -146,7 +152,8 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	// Merge environment variables with CR values taking precedence.
 	// API_HOST and PORT are fixed for the loopback HTTP listener; TLS is terminated by kube-rbac-proxy only.
 	// METRICS_PORT and METRICS_HOST are fixed for the dedicated Prometheus metrics server.
-	env := mergeEnvVars(defaultEnvVars, instance.Spec.Env, "API_HOST", "PORT", "TLS_CERT_FILE", "TLS_KEY_FILE", "METRICS_PORT", "METRICS_HOST")
+	// EVALHUB_HARDWARE_PROFILES_NAMESPACE is fixed to the applications namespace (r.Namespace).
+	env := mergeEnvVars(defaultEnvVars, instance.Spec.Env, "API_HOST", "PORT", "TLS_CERT_FILE", "TLS_KEY_FILE", "METRICS_PORT", "METRICS_HOST", "EVALHUB_HARDWARE_PROFILES_NAMESPACE")
 
 	// Build volume mounts for the evalhub container
 	volumeMounts := []corev1.VolumeMount{

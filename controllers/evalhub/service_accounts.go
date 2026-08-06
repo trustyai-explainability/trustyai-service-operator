@@ -202,6 +202,15 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
+	// Always grant the API SA hardwareprofiles get/list in the applications
+	// namespace (r.Namespace: opendatahub on ODH, redhat-ods-applications on RHOAI),
+	// regardless of where this EvalHub instance is deployed. EvalHub reads profiles
+	// with its own SA token after kube-rbac-proxy (user token is not forwarded).
+	err = r.createApplicationsHardwareProfilesReaderRoleBinding(ctx, instance, serviceAccountName)
+	if err != nil {
+		return err
+	}
+
 	err = r.createServicePodLogsRole(ctx, instance, instance.Namespace)
 	if err != nil {
 		return err
@@ -609,12 +618,54 @@ func (r *EvalHubReconciler) createJobConfigRoleBinding(ctx context.Context, inst
 // createHardwareProfilesReaderRoleBinding creates a RoleBinding for the API SA to
 // the hardware-profiles-reader ClusterRole (hardwareprofiles get,list) in the
 // instance namespace. Tenant namespaces receive a separate binding via reconcileTenantNamespaces.
+// The applications namespace is covered by createApplicationsHardwareProfilesReaderRoleBinding.
 func (r *EvalHubReconciler) createHardwareProfilesReaderRoleBinding(ctx context.Context, instance *evalhubv1.EvalHub, serviceAccountName string) error {
 	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-hardware-profiles-reader-rb", serviceAccountName, rbacv1.RoleRef{
 		Kind:     "ClusterRole",
 		Name:     hardwareProfilesReaderClusterRoleName,
 		APIGroup: rbacv1.GroupName,
 	})
+}
+
+// generateApplicationsHardwareProfilesReaderRBName returns the RoleBinding name used to
+// grant the API SA hardwareprofiles get/list in the applications namespace (r.Namespace).
+func generateApplicationsHardwareProfilesReaderRBName(instance *evalhubv1.EvalHub) string {
+	return normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-apps-ns-hp-reader-rb")
+}
+
+// isApplicationsHardwareProfilesReaderRoleBinding reports whether rb is the
+// applications-namespace hardware-profiles-reader binding for this EvalHub instance.
+func isApplicationsHardwareProfilesReaderRoleBinding(instance *evalhubv1.EvalHub, applicationsNamespace string, rb *rbacv1.RoleBinding) bool {
+	return applicationsNamespace != "" &&
+		rb.Namespace == applicationsNamespace &&
+		rb.Name == generateApplicationsHardwareProfilesReaderRBName(instance)
+}
+
+// createApplicationsHardwareProfilesReaderRoleBinding creates a RoleBinding in the
+// applications namespace (r.Namespace, from APPLICATIONS_NAMESPACE / operator SA ns) for
+// the API SA so EvalHub can read HardwareProfile CRs there even when the instance
+// (and its tenants) live elsewhere.
+//
+// Skipped when r.Namespace is empty or the instance already lives there — the
+// instance-namespace binding from createHardwareProfilesReaderRoleBinding covers that case.
+// Uses job resource labels (not owner refs) because the binding is cross-namespace;
+// cleanup is handled by the finalizer and by exempting this binding from stale-tenant cleanup.
+func (r *EvalHubReconciler) createApplicationsHardwareProfilesReaderRoleBinding(ctx context.Context, instance *evalhubv1.EvalHub, serviceAccountName string) error {
+	if r.Namespace == "" || instance.Namespace == r.Namespace {
+		return nil
+	}
+
+	return r.createJobRoleBinding(ctx, instance,
+		generateApplicationsHardwareProfilesReaderRBName(instance),
+		serviceAccountName,
+		r.Namespace,
+		rbacv1.RoleRef{
+			Kind:     "ClusterRole",
+			Name:     hardwareProfilesReaderClusterRoleName,
+			APIGroup: rbacv1.GroupName,
+		},
+		instance.Namespace,
+	)
 }
 
 // createJobRoleBinding creates a namespace-scoped RoleBinding for job resources.

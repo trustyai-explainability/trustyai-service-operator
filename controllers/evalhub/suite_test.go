@@ -12,6 +12,7 @@ import (
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -336,6 +337,19 @@ func createEvalHubInstanceWithSQLite(name, namespace string) *evalhubv1.EvalHub 
 // cleanupResourcesInNamespace deletes all test resources in a namespace
 func cleanupResourcesInNamespace(_ string, evalHub *evalhubv1.EvalHub, configMap *corev1.ConfigMap) {
 	if evalHub != nil {
+		// Remove the applications-namespace hardware-profiles-reader RoleBinding (no owner ref).
+		// It may live in any namespace (r.Namespace); discover by label + name.
+		rbName := generateApplicationsHardwareProfilesReaderRBName(evalHub)
+		rbList := &rbacv1.RoleBindingList{}
+		_ = k8sClient.List(ctx, rbList, client.MatchingLabels{
+			"eval-hub.trustyai.opendatahub.io": jobResourceInstanceID(evalHub),
+			"app.kubernetes.io/component":      "job",
+		})
+		for i := range rbList.Items {
+			if rbList.Items[i].Name == rbName {
+				_ = k8sClient.Delete(ctx, &rbList.Items[i])
+			}
+		}
 		k8sClient.Delete(ctx, evalHub)
 	}
 	if configMap != nil {

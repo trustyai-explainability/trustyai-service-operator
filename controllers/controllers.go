@@ -19,6 +19,7 @@ package controllers
 import (
 	"errors"
 	"fmt"
+
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"slices"
@@ -46,9 +47,18 @@ func registerService(name string, setupf ControllerSetupFunc) {
 
 func SetupControllers(enabledServices []string, mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) error {
 	var errs []error
+
 	for _, service := range enabledServices {
-		errs = append(errs, TasServices[service](mgr, ns, configmap, recorder))
+		setup, ok := TasServices[service]
+		if !ok || setup == nil {
+			errs = append(errs, fmt.Errorf("unsupported service: %s", service))
+			continue
+		}
+		if err := setup(mgr, ns, configmap, recorder); err != nil {
+			errs = append(errs, err)
+		}
 	}
+
 	return errors.Join(errs...)
 }
 

@@ -38,6 +38,9 @@ func (r *TrustyAIServiceReconciler) updateStatus(ctx context.Context, original *
 		// Update status here
 		update(saved)
 
+		// Set ObservedGeneration to track which generation this status reflects
+		saved.Status.ObservedGeneration = saved.Generation
+
 		// Try to update
 		err = r.Client.Status().Update(ctx, saved)
 		return err
@@ -92,6 +95,12 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 					UpdateDBAvailable(saved)
 				} else {
 					UpdateDBConnectionError(saved)
+					// Don't return early - set standard conditions for inconsistent state
+					saved.Status.Phase = PhaseNotReady
+					saved.Status.Ready = v1.ConditionFalse
+					saved.SetStatus(ConditionTypeReady, "DBNotReady", "Database is not accessible", v1.ConditionFalse)
+					saved.SetStatus(ConditionTypeProvisioningSucceeded, "ProvisioningInProgress", "Service provisioning in progress", v1.ConditionFalse)
+					saved.SetStatus(ConditionTypeDegraded, "PartialFunctionality", "PVC components are ready but database is not accessible", v1.ConditionTrue)
 					return
 				}
 			}
@@ -99,6 +108,11 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 			UpdateTrustyAIServiceAvailable(saved)
 			saved.Status.Phase = PhaseReady
 			saved.Status.Ready = v1.ConditionTrue
+
+			// Set standard platform conditions
+			saved.SetStatus(ConditionTypeReady, "AllComponentsReady", "All service components are ready", v1.ConditionTrue)
+			saved.SetStatus(ConditionTypeProvisioningSucceeded, "ProvisioningComplete", "Service provisioning completed successfully", v1.ConditionTrue)
+			saved.SetStatus(ConditionTypeDegraded, "FullyFunctional", "All components are fully functional", v1.ConditionFalse)
 		})
 		if updateErr != nil {
 			return RequeueWithErrorMessage(ctx, err, "Failed to update status")
@@ -133,6 +147,17 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 			UpdateTrustyAIServiceNotAvailable(saved)
 			saved.Status.Phase = PhaseNotReady
 			saved.Status.Ready = v1.ConditionFalse
+
+			// Set standard platform conditions
+			saved.SetStatus(ConditionTypeReady, "ComponentsNotReady", "Not all service components are ready", v1.ConditionFalse)
+			saved.SetStatus(ConditionTypeProvisioningSucceeded, "ProvisioningInProgress", "Service provisioning in progress", v1.ConditionFalse)
+
+			// Set Degraded based on partial availability
+			if status.DeploymentReady || status.RouteReady || status.PVCReady || status.DBReady {
+				saved.SetStatus(ConditionTypeDegraded, "PartialFunctionality", "Some components are available but service is not fully functional", v1.ConditionTrue)
+			} else {
+				saved.SetStatus(ConditionTypeDegraded, "NoFunctionality", "No components are available", v1.ConditionTrue)
+			}
 		})
 		if updateErr != nil {
 			return RequeueWithErrorMessage(ctx, err, "Failed to update status")

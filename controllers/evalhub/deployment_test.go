@@ -194,6 +194,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(envVars["MAX_RETRY_ATTEMPTS"]).To(Equal("3"))
 			Expect(envVars["SERVICE_URL"]).To(Equal(fmt.Sprintf("https://%s.%s.svc.cluster.local:8443", evalHubName, testNamespace)))
 			Expect(envVars["EVALHUB_INSTANCE_NAME"]).To(Equal(evalHubName))
+			Expect(envVars["EVALHUB_HARDWARE_PROFILES_NAMESPACE"]).To(Equal(testNamespace))
 		})
 
 		It("should include custom environment variables", func() {
@@ -638,6 +639,7 @@ var _ = Describe("EvalHubReconciler reconcileDeployment", func() {
 		Expect(envs["TEST_VAR"]).To(Equal("test-value"))
 		Expect(envs["SERVICE_URL"]).To(Equal(fmt.Sprintf("https://%s.%s.svc.cluster.local:%d", parityEvalHubName, testNamespace, servicePort)))
 		Expect(envs["EVALHUB_INSTANCE_NAME"]).To(Equal(parityEvalHubName))
+		Expect(envs["EVALHUB_HARDWARE_PROFILES_NAMESPACE"]).To(Equal(testNamespace))
 
 		Expect(evalHubC.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("500m")))
 		Expect(evalHubC.Resources.Requests[corev1.ResourceMemory]).To(Equal(resource.MustParse("512Mi")))

@@ -41,6 +41,12 @@ const (
 
 // Status types
 const (
+	// Standard condition types (platform contract)
+	ConditionTypeReady                 = "Ready"
+	ConditionTypeDegraded              = "Degraded"
+	ConditionTypeProvisioningSucceeded = "ProvisioningSucceeded"
+
+	// TrustyAI-specific condition types
 	StatusTypeInferenceServicesPresent = "InferenceServicesPresent"
 	StatusTypePVCAvailable             = "PVCAvailable"
 	StatusTypeRouteAvailable           = "RouteAvailable"

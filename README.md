@@ -12,6 +12,7 @@ The TrustyAI Kubernetes Operator aims at simplifying the deployment and manageme
 inference data to enable model explainability, fairness monitoring, and drift tracking.
 - [FMS-Guardrails](https://github.com/foundation-model-stack/fms-guardrails-orchestrator): A modular framework for guardrailing LLMs
 - [LM-Eval](https://github.com/EleutherAI/lm-evaluation-harness/tree/main): A job-based architecture for deploying and managing LLM evaluations, based on EleutherAI's lm-evaluation-harness library.
+- [EvalHub](https://github.com/eval-hub): A service for orchestrating AI/ML model evaluations, providing a unified API for running benchmarks across multiple evaluation providers and frameworks, with support for multi-tenant and single-tenant deployments.
 
 ## Prerequisites
 - Kubernetes cluster v1.19+ or OpenShift cluster v4.6+
