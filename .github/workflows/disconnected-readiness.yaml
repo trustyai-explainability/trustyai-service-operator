@@ -27,7 +27,7 @@ jobs:
       - name: Clone disconnected-readiness-scorer
         run: |
           git clone https://github.com/opendatahub-io/disconnected-readiness-scorer.git /tmp/scorer
-          git -C /tmp/scorer checkout 64e6c53e17c7528fb41146fce9342d24a831517b # main
+          git -C /tmp/scorer checkout 5c27fa14178e0b38bb4409c06c0f8757362872bb # main
 
       - name: Install scorer dependencies
         run: |
