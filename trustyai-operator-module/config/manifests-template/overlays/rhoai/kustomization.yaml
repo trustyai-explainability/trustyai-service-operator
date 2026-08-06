@@ -8,8 +8,7 @@ configMapGenerator:
   - name: trustyai-images
     envs:
       - params.env
-    options:
-      disableNameSuffixHash: true
+
 # Inject the operator's own image ref (TRUSTYAI_OPERATOR_IMAGE) directly into the Deployment.
 replacements:
   - source:
