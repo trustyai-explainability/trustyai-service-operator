@@ -347,6 +347,9 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 		log.Info("skip: EvalHub server already set failure label",
 			append(failureWatcherLogFields(), "action", "skip_server_handled",
 				"job", job.Name, "namespace", job.Namespace)...)
+		if err := r.deleteEvalHubFailureSyncedJob(ctx, &job); err != nil {
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
 		return ctrl.Result{}, nil
 	}
 
