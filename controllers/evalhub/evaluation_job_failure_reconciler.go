@@ -405,6 +405,8 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 
 	benchmarkIndex := benchmarkIndexFromJob(&job)
 
+	// If failure-pending is already set, the POST succeeded in a prior reconcile but the
+	// promote patch failed. Skip the POST and go straight to the promote patch.
 	if !failurePendingReport(&job) {
 		pendingPatch := client.MergeFrom(job.DeepCopy())
 		if job.Annotations == nil {
@@ -416,24 +418,22 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 				append(failureWatcherLogFields(), "action", "patch_pending_failed", "job", job.Name)...)
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
-	}
 
-	if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, jobID, providerID, benchmarkID, benchmarkIndex, msg, ""); err != nil {
-		log.Error(err, "failed to post EvalHub benchmark failure event",
-			append(failureWatcherLogFields(), "action", "post_events_failed", "job", job.Name, "evalJobID", jobID)...)
-		revert := client.MergeFrom(job.DeepCopy())
-		delete(job.Annotations, annotationFailurePending)
-		if len(job.Annotations) == 0 {
-			job.Annotations = nil
+		if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, jobID, providerID, benchmarkID, benchmarkIndex, msg, ""); err != nil {
+			log.Error(err, "failed to post EvalHub benchmark failure event",
+				append(failureWatcherLogFields(), "action", "post_events_failed", "job", job.Name, "evalJobID", jobID)...)
+			revert := client.MergeFrom(job.DeepCopy())
+			delete(job.Annotations, annotationFailurePending)
+			if len(job.Annotations) == 0 {
+				job.Annotations = nil
+			}
+			if err2 := r.Patch(ctx, &job, revert); err2 != nil {
+				log.Error(err2, "failed to revert failure-pending annotation after POST failure",
+					append(failureWatcherLogFields(), "action", "revert_pending_failed", "job", job.Name)...)
+			}
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
-		if err2 := r.Patch(ctx, &job, revert); err2 != nil {
-			log.Error(err2, "failed to revert failure-pending annotation after POST failure",
-				append(failureWatcherLogFields(), "action", "revert_pending_failed", "job", job.Name)...)
-		}
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
-
-	r.EventRecorder.Eventf(&job, corev1.EventTypeWarning, eventReasonEvaluationFailed, "%s", msg)
 
 	promotePatch := client.MergeFrom(job.DeepCopy())
 	if job.Annotations == nil {
@@ -451,6 +451,8 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 			append(failureWatcherLogFields(), "action", "promote_reported_failed", "job", job.Name)...)
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
+
+	r.EventRecorder.Eventf(&job, corev1.EventTypeWarning, eventReasonEvaluationFailed, "%s", msg)
 
 	if err := r.deleteEvalHubFailureSyncedJob(ctx, &job); err != nil {
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
