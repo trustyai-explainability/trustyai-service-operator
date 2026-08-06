@@ -239,9 +239,7 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if workloadFailedEventAlreadyReported(&wl) {
-		return ctrl.Result{}, nil
-	}
+	alreadyReported := workloadFailedEventAlreadyReported(&wl)
 
 	cond, ok := workloadQuotaReservedInadmissibleCondition(&wl)
 	if !ok {
@@ -289,6 +287,19 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 		log.V(1).Info("skip: EvalHub server already set failure label on Job",
 			append(evaluationFailedKueueWorkloadsLogFields(), "action", "skip_server_handled",
 				"workload", wl.Name, "job", job.Name, "namespace", job.Namespace)...)
+		return ctrl.Result{}, nil
+	}
+
+	// Workload annotation was written but the Job labels were not (partial commit from a
+	// previous reconcile). Retry only the Job patch — skip the POST and Event.
+	if alreadyReported {
+		failureMsg, _ := classifyKueueAdmissionFailure(&job, cond)
+		if err := r.patchJobFailureLabels(ctx, &job, failureMsg); err != nil {
+			log.Error(err, "retry: failed to patch Job failure labels",
+				append(evaluationFailedKueueWorkloadsLogFields(), "action", "retry_patch_job_labels_failed",
+					"job", job.Name, "namespace", job.Namespace)...)
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -350,6 +361,7 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 		log.Error(err, "failed to patch Job failure labels after Kueue workload eviction",
 			append(evaluationFailedKueueWorkloadsLogFields(), "action", "patch_job_labels_failed",
 				"job", job.Name, "namespace", job.Namespace)...)
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
 	log.Info("posted EvalHub failed status for Kueue workload (via owning Job)",
