@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trustyai-service-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: trustyai-service-operator
+  template:
+    metadata:
+      labels:
+        control-plane: trustyai-service-operator
+    spec:
+      serviceAccountName: trustyai-service-operator
+      containers:
+      - name: manager
+        # Image is injected by the overlay via replacements from params.env
+        image: trustyai-service-operator
+        envFrom:
+        - configMapRef:
+            # ConfigMap created by the overlay configMapGenerator from params.env;
+            # provides RELATED_IMAGE_* refs the operator needs for sub-component pods.
+            name: trustyai-images

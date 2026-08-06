@@ -2,3 +2,23 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base
+# Build a ConfigMap from params.env (rewritten by applyParams with RELATED_IMAGE_ODH_* values).
+# The Deployment reads it via envFrom so the operator receives all image refs at runtime.
+configMapGenerator:
+  - name: trustyai-images
+    envs:
+      - params.env
+    options:
+      disableNameSuffixHash: true
+# Inject the operator's own image ref (TRUSTYAI_OPERATOR_IMAGE) directly into the Deployment.
+replacements:
+  - source:
+      kind: ConfigMap
+      name: trustyai-images
+      fieldPath: data.TRUSTYAI_OPERATOR_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: trustyai-service-operator
+        fieldPaths:
+          - spec.template.spec.containers.[name=manager].image
