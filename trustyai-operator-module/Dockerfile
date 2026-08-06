@@ -23,6 +23,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     -o manager ./cmd/trustyai-operator-module
 
 # Bundle manifests template into the image
+COPY config/manifests-template/ config/manifests-template/
 COPY hack/get_trustyai_manifests.sh hack/
 RUN bash hack/get_trustyai_manifests.sh
 

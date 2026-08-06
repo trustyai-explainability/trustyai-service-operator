@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"github.com/opendatahub-io/odh-platform-utilities/pkg/deploy"
 	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-operator-module/pkg/trustyaimodule"
 )
@@ -70,11 +71,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	deployer := deploy.NewDeployer(
+		deploy.WithFieldOwner(trustyaimodule.FieldManagerModule),
+		deploy.WithApplyOrder(),
+	)
+
 	if err := (&trustyaimodule.TrustyAIModuleReconciler{
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
 		Namespace:             namespace,
 		ManifestsTemplatePath: manifestsPath,
+		Deployer:              deployer,
 		EventRecorder:         mgr.GetEventRecorderFor("trustyai-module"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "TrustyAI")
