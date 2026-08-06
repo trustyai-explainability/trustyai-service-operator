@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -58,14 +59,16 @@ func evaluationFailedKueueWorkloadsLogFields() []any {
 }
 
 //+kubebuilder:rbac:groups=kueue.x-k8s.io,resources=workloads,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get
+//+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;patch
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs,verbs=get
 
 // EvalHubEvaluationFailedKueueWorkloadsReconciler POSTs a failed benchmark event to EvalHub when a Kueue
 // Workload has QuotaReserved=False with Reason=Inadmissible and is owned by an EvalHub evaluation Job.
 type EvalHubEvaluationFailedKueueWorkloadsReconciler struct {
 	client.Client
-	RESTConfig *rest.Config
+	RESTConfig    *rest.Config
+	EventRecorder record.EventRecorder
 	// tenantNS is the same instance updated by EvalHubEvaluationJobFailureReconciler's Namespace watch.
 	tenantNS *evalHubTenantNamespaces
 }
@@ -77,9 +80,10 @@ func registerEvalHubEvaluationFailedKueueWorkloadsReconciler(mgr manager.Manager
 		return fmt.Errorf("evalhub failed kueue workloads: tenantNS is nil")
 	}
 	r := &EvalHubEvaluationFailedKueueWorkloadsReconciler{
-		Client:     mgr.GetClient(),
-		RESTConfig: rest.CopyConfig(mgr.GetConfig()),
-		tenantNS:   tenantNS,
+		Client:        mgr.GetClient(),
+		RESTConfig:    rest.CopyConfig(mgr.GetConfig()),
+		tenantNS:      tenantNS,
+		EventRecorder: mgr.GetEventRecorderFor("trustyai-service-operator"),
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(evalHubEvaluationFailedKueueWorkloadsControllerName).
@@ -235,9 +239,7 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if workloadFailedEventAlreadyReported(&wl) {
-		return ctrl.Result{}, nil
-	}
+	alreadyReported := workloadFailedEventAlreadyReported(&wl)
 
 	cond, ok := workloadQuotaReservedInadmissibleCondition(&wl)
 	if !ok {
@@ -279,6 +281,25 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 	}
 
 	if failureAlreadyReported(&job) {
+		return ctrl.Result{}, nil
+	}
+	if serverAlreadyHandledFailure(&job) {
+		log.V(1).Info("skip: EvalHub server already set failure label on Job",
+			append(evaluationFailedKueueWorkloadsLogFields(), "action", "skip_server_handled",
+				"workload", wl.Name, "job", job.Name, "namespace", job.Namespace)...)
+		return ctrl.Result{}, nil
+	}
+
+	// Workload annotation was written but the Job labels were not (partial commit from a
+	// previous reconcile). Retry only the Job patch — skip the POST and Event.
+	if alreadyReported {
+		failureMsg, _ := classifyKueueAdmissionFailure(&job, cond)
+		if err := r.patchJobFailureLabels(ctx, &job, failureMsg); err != nil {
+			log.Error(err, "retry: failed to patch Job failure labels",
+				append(evaluationFailedKueueWorkloadsLogFields(), "action", "retry_patch_job_labels_failed",
+					"job", job.Name, "namespace", job.Namespace)...)
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -325,10 +346,21 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
+	// Annotate the Workload first so that retries hit workloadFailedEventAlreadyReported
+	// and never re-POST to EvalHub or re-emit the Event.
 	if err := r.annotateWorkloadReported(ctx, &wl); err != nil {
 		log.Error(err, "patch workload after EvalHub failed-workload event",
 			append(evaluationFailedKueueWorkloadsLogFields(), "action", "patch_workload_failed",
 				"workload", client.ObjectKeyFromObject(&wl))...)
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+
+	r.EventRecorder.Eventf(&job, corev1.EventTypeWarning, eventReasonEvaluationFailed, "%s", failureMsg)
+
+	if err := r.patchJobFailureLabels(ctx, &job, failureMsg); err != nil {
+		log.Error(err, "failed to patch Job failure labels after Kueue workload eviction",
+			append(evaluationFailedKueueWorkloadsLogFields(), "action", "patch_job_labels_failed",
+				"job", job.Name, "namespace", job.Namespace)...)
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
@@ -350,4 +382,19 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) annotateWorkloadReport
 	}
 	wl.Annotations[annotationKueueFailedWorkloadEventReported] = "true"
 	return r.Patch(ctx, wl, client.MergeFrom(patchBase))
+}
+
+// patchJobFailureLabels stamps the owning Job with evaluation-phase=Failed and sets the evaluation-status
+// annotation so the failure is observable on the Job resource even before it is cleaned up.
+func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) patchJobFailureLabels(ctx context.Context, job *batchv1.Job, statusMsg string) error {
+	base := job.DeepCopy()
+	if job.Labels == nil {
+		job.Labels = map[string]string{}
+	}
+	if job.Annotations == nil {
+		job.Annotations = map[string]string{}
+	}
+	job.Labels[labelEvaluationPhase] = labelEvaluationPhaseFailed
+	job.Annotations[annotationEvaluationStatus] = statusMsg
+	return r.Patch(ctx, job, client.MergeFrom(base))
 }
