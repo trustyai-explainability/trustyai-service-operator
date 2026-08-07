@@ -267,6 +267,10 @@ const (
 	jobsWriterClusterRoleName             = "trustyai-service-operator-evalhub-jobs-writer"
 	jobConfigClusterRoleName              = "trustyai-service-operator-evalhub-job-config"
 	hardwareProfilesReaderClusterRoleName = "trustyai-service-operator-evalhub-hardware-profiles-reader"
+	// evalhubEventsClusterRoleName grants events create/patch in tenant namespaces so the
+	// EvalHub server SA can emit Kubernetes Events on evaluation lifecycle transitions.
+	// Bound per-tenant-namespace via a RoleBinding created by reconcileTenantNamespaces.
+	evalhubEventsClusterRoleName = "trustyai-service-operator-evalhub-events"
 )
 
 // EvalHub API access ClusterRoles for SAR-protected endpoints.

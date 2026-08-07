@@ -105,6 +105,18 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 			return err
 		}
 
+		// Create events RoleBinding for the API SA in the tenant namespace so the
+		// EvalHub server can emit Kubernetes Events on evaluation lifecycle transitions.
+		eventsRBName := normalizeDNS1123LabelValue(instance.Name + "-" + ns + "-events-rb")
+		if err := r.createJobRoleBinding(ctx, instance, eventsRBName, serviceAccountName, ns, rbacv1.RoleRef{
+			Kind:     "ClusterRole",
+			Name:     evalhubEventsClusterRoleName,
+			APIGroup: rbacv1.GroupName,
+		}, instance.Namespace); err != nil {
+			log.Error(err, "Failed to create events RoleBinding in tenant namespace", "namespace", ns)
+			return err
+		}
+
 		// Create pod-logs Role and RoleBinding so the EvalHub service SA can read job pod logs.
 		if err := r.createServicePodLogsRole(ctx, instance, ns); err != nil {
 			log.Error(err, "Failed to create service pod-logs Role in tenant namespace", "namespace", ns)

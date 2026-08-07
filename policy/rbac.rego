@@ -31,7 +31,6 @@ expected_crbs := {
 
 	# --- component: evalhub (prefixed overlays: odh, rhoai, dev, testing) ---
 	"trustyai-service-operator-evalhub-manager-rolebinding": "trustyai-service-operator-evalhub-manager-role",
-	"trustyai-service-operator-evalhub-events-binding": "trustyai-service-operator-evalhub-events",
 	"trustyai-service-operator-evalhub-collections-access-binding": "trustyai-service-operator-evalhub-collections-access",
 	"trustyai-service-operator-evalhub-providers-access-binding": "trustyai-service-operator-evalhub-providers-access",
 	"trustyai-service-operator-evalhub-mlflow-access-binding": "trustyai-service-operator-evalhub-mlflow-access",
@@ -41,7 +40,6 @@ expected_crbs := {
 
 	# --- component: evalhub (un-prefixed overlay: evalhub-only) ---
 	"evalhub-manager-rolebinding": "trustyai-service-operator-evalhub-manager-role",
-	"evalhub-events-binding": "evalhub-events",
 	"evalhub-collections-access-binding": "evalhub-collections-access",
 	"evalhub-providers-access-binding": "evalhub-providers-access",
 	"evalhub-mlflow-access-binding": "evalhub-mlflow-access",
