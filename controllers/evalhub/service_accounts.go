@@ -202,6 +202,11 @@ func (r *EvalHubReconciler) createServiceAccount(ctx context.Context, instance *
 		return err
 	}
 
+	err = r.createEventsRoleBinding(ctx, instance, serviceAccountName)
+	if err != nil {
+		return err
+	}
+
 	// Always grant the API SA hardwareprofiles get/list in the applications
 	// namespace (r.Namespace: opendatahub on ODH, redhat-ods-applications on RHOAI),
 	// regardless of where this EvalHub instance is deployed. EvalHub reads profiles
@@ -267,6 +272,10 @@ const (
 	jobsWriterClusterRoleName             = "trustyai-service-operator-evalhub-jobs-writer"
 	jobConfigClusterRoleName              = "trustyai-service-operator-evalhub-job-config"
 	hardwareProfilesReaderClusterRoleName = "trustyai-service-operator-evalhub-hardware-profiles-reader"
+	// evalhubEventsClusterRoleName grants events create/patch in tenant namespaces so the
+	// EvalHub server SA can emit Kubernetes Events on evaluation lifecycle transitions.
+	// Bound per-tenant-namespace via a RoleBinding created by reconcileTenantNamespaces.
+	evalhubEventsClusterRoleName = "trustyai-service-operator-evalhub-events"
 )
 
 // EvalHub API access ClusterRoles for SAR-protected endpoints.
@@ -623,6 +632,18 @@ func (r *EvalHubReconciler) createHardwareProfilesReaderRoleBinding(ctx context.
 	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-hardware-profiles-reader-rb", serviceAccountName, rbacv1.RoleRef{
 		Kind:     "ClusterRole",
 		Name:     hardwareProfilesReaderClusterRoleName,
+		APIGroup: rbacv1.GroupName,
+	})
+}
+
+// createEventsRoleBinding creates a RoleBinding for the API SA to the evalhub-events
+// ClusterRole (events create,patch) in the instance namespace. This covers single-tenant
+// mode and any transitions where resolveNamespace falls back to the server's own namespace.
+// Tenant namespaces receive a separate binding via reconcileTenantNamespaces.
+func (r *EvalHubReconciler) createEventsRoleBinding(ctx context.Context, instance *evalhubv1.EvalHub, serviceAccountName string) error {
+	return r.createGenericRoleBinding(ctx, instance, instance.Name+"-events-rb", serviceAccountName, rbacv1.RoleRef{
+		Kind:     "ClusterRole",
+		Name:     evalhubEventsClusterRoleName,
 		APIGroup: rbacv1.GroupName,
 	})
 }

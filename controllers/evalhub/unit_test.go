@@ -1986,6 +1986,22 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 		}, cm)
 		require.NoError(t, err)
 		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
+
+		// Verify events RoleBinding was created in the tenant namespace so the
+		// EvalHub server SA can emit Kubernetes Events on lifecycle transitions.
+		eventsRBName := normalizeDNS1123LabelValue(evalHubName + "-" + tenantNamespace + "-events-rb")
+		eventsRB := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      eventsRBName,
+			Namespace: tenantNamespace,
+		}, eventsRB)
+		require.NoError(t, err, "events RoleBinding should exist in tenant namespace")
+		assert.Equal(t, "ClusterRole", eventsRB.RoleRef.Kind)
+		assert.Equal(t, evalhubEventsClusterRoleName, eventsRB.RoleRef.Name)
+		require.Len(t, eventsRB.Subjects, 1)
+		assert.Equal(t, "ServiceAccount", eventsRB.Subjects[0].Kind)
+		assert.Equal(t, evalHubName+"-service", eventsRB.Subjects[0].Name)
+		assert.Equal(t, instanceNamespace, eventsRB.Subjects[0].Namespace)
 	})
 
 	t.Run("should skip terminating tenant namespace", func(t *testing.T) {
