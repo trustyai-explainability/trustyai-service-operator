@@ -79,7 +79,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		result := resultSuccess
 		if err != nil {
 			result = resultError
-			recordReconcileError("evalhub", classifyError(err))
+			recordReconcileError("evalhub", err)
 		} else if res.Requeue || res.RequeueAfter > 0 {
 			result = resultRequeue
 		}
