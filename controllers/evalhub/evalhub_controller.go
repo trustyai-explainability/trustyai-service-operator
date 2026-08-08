@@ -73,12 +73,24 @@ type EvalHubReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, err error) {
+	start := time.Now()
+	defer func() {
+		result := resultSuccess
+		if err != nil {
+			result = resultError
+			recordReconcileError("evalhub", classifyError(err))
+		} else if res.Requeue || res.RequeueAfter > 0 {
+			result = resultRequeue
+		}
+		recordReconcile("evalhub", result, time.Since(start))
+	}()
+
 	log := log.FromContext(ctx)
 
 	// Fetch the EvalHub instance
 	instance := &evalhubv1.EvalHub{}
-	err := r.Get(ctx, req.NamespacedName, instance)
+	err = r.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
