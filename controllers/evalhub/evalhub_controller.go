@@ -334,12 +334,22 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		return RequeueWithError(err)
 	}
 
+	setManagedInstances("evalhub", r.countManagedInstances(ctx))
+
 	// If everything is ready, requeue after a longer delay for periodic checks
 	if instance.IsReady() {
 		return RequeueWithDelay(time.Minute * 5)
 	}
 
 	return RequeueWithDelay(time.Second * 30)
+}
+
+func (r *EvalHubReconciler) countManagedInstances(ctx context.Context) float64 {
+	list := &evalhubv1.EvalHubList{}
+	if err := r.List(ctx, list); err != nil {
+		return 0
+	}
+	return float64(len(list.Items))
 }
 
 // SetupWithManager registers the EvalHub CR reconciler, the evaluation Job failure → EvalHub events controller,
