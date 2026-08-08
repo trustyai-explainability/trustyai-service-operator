@@ -460,6 +460,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 
 	log.Info("posted EvalHub benchmark failure event",
 		append(failureWatcherLogFields(), "action", "post_events_ok", "evalJobID", jobID, "k8sJob", job.Name, "namespace", job.Namespace)...)
+	recordJobFailureEvent(evalHubEvaluationJobFailureControllerName, failureReasonRuntimeFailure)
 	return ctrl.Result{}, nil
 }
 
