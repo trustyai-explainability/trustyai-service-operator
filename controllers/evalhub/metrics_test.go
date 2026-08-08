@@ -82,20 +82,23 @@ func TestRecordReconcile_DurationObserved(t *testing.T) {
 }
 
 func TestRecordReconcileError_AllErrorTypes(t *testing.T) {
-	errorTypes := []string{
-		errorTypeNotFound,
-		errorTypeUpdateFailed,
-		errorTypeStatusUpdateFailed,
-		errorTypeConfigInvalid,
-		errorTypeOther,
+	cases := []struct {
+		err           error
+		expectedLabel string
+	}{
+		{k8serrors.NewNotFound(schema.GroupResource{}, "test"), errorTypeNotFound},
+		{errors.New("status update failed"), errorTypeStatusUpdateFailed},
+		{errors.New("update failed"), errorTypeUpdateFailed},
+		{errors.New("config invalid"), errorTypeConfigInvalid},
+		{errors.New("unknown"), errorTypeOther},
 	}
-	for i, errType := range errorTypes {
+	for i, tc := range cases {
 		ctrl := fmt.Sprintf("test-reconcile-error-%d", i)
-		errType := errType
-		t.Run(errType, func(t *testing.T) {
-			recordReconcileError(ctrl, errType)
+		tc := tc
+		t.Run(tc.expectedLabel, func(t *testing.T) {
+			recordReconcileError(ctrl, tc.err)
 			assert.Equal(t, float64(1),
-				testutil.ToFloat64(reconcileErrors.WithLabelValues(ctrl, errType)),
+				testutil.ToFloat64(reconcileErrors.WithLabelValues(ctrl, tc.expectedLabel)),
 				"reconcile_errors_total counter should be 1 after one call")
 		})
 	}
