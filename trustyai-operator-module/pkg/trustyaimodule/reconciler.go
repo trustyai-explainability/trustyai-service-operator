@@ -3,6 +3,7 @@ package trustyaimodule
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -167,6 +168,7 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	r.updateHealthStatus(ctx, module, condMgr)
 	r.updateReleases(module)
+	r.updateDistribution(module)
 
 	module.Status.ObservedGeneration = module.Generation
 	condMgr.Sort()
@@ -362,6 +364,23 @@ func (r *TrustyAIModuleReconciler) updateReleases(module *platformv1alpha1.Trust
 		Name:    "trustyai-operator-module",
 		Version: Version,
 	})
+}
+
+// updateDistribution populates status.distribution from platform env vars injected
+// by the ODH operator: ODH_PLATFORM_TYPE (name) and ODH_MODULE_OPERATOR_PLATFORM_VERSION (version).
+func (r *TrustyAIModuleReconciler) updateDistribution(module *platformv1alpha1.TrustyAI) {
+	name := os.Getenv("ODH_PLATFORM_TYPE")
+	if name == "" {
+		name = "OpenDataHub"
+	}
+	version := os.Getenv("ODH_MODULE_OPERATOR_PLATFORM_VERSION")
+	if version == "" {
+		version = "unknown"
+	}
+	module.Status.Distribution = platformv1alpha1.DistributionInfo{
+		Name:    name,
+		Version: version,
+	}
 }
 
 // reconcileComponent renders the Kustomize overlay for the trustyai-service-operator

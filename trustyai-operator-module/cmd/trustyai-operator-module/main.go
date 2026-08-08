@@ -11,6 +11,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -58,6 +59,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Applications namespace is where the workload operator is deployed.
+	// Defaults to the operator namespace when not explicitly set.
+	applicationsNamespace := os.Getenv("APPLICATIONS_NAMESPACE")
+	if applicationsNamespace == "" {
+		applicationsNamespace = namespace
+	}
+
+	// Scope the cache to the namespaces we actually care about. Cluster-scoped
+	// resources (e.g. the TrustyAI CR itself) are always watched cluster-wide
+	// regardless of this setting.
+	watchNamespaces := map[string]cache.Config{
+		namespace:              {},
+		applicationsNamespace:  {},
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                  scheme,
 		Metrics:                 metricsserver.Options{BindAddress: metricsAddr},
@@ -65,6 +81,7 @@ func main() {
 		LeaderElectionID:        "trustyai-operator-module-controller-manager",
 		LeaderElectionNamespace: namespace,
 		HealthProbeBindAddress:  probeAddr,
+		Cache:                   cache.Options{DefaultNamespaces: watchNamespaces},
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
