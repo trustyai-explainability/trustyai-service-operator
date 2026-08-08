@@ -78,13 +78,32 @@ func init() {
 	)
 }
 
-func recordReconcile(controller, result string, duration time.Duration) {
-	reconcileTotal.WithLabelValues(controller, result).Inc()
-	reconcileDuration.WithLabelValues(controller, result).Observe(duration.Seconds())
+func normalizeResult(result string) string {
+	switch result {
+	case resultSuccess, resultRequeue, resultError:
+		return result
+	default:
+		return resultError
+	}
 }
 
-func recordReconcileError(controller, errorType string) {
-	reconcileErrors.WithLabelValues(controller, errorType).Inc()
+func normalizeFailureReason(reason string) string {
+	switch reason {
+	case failureReasonRuntimeFailure, failureReasonQueueError, failureReasonOther:
+		return reason
+	default:
+		return failureReasonOther
+	}
+}
+
+func recordReconcile(controller, result string, duration time.Duration) {
+	r := normalizeResult(result)
+	reconcileTotal.WithLabelValues(controller, r).Inc()
+	reconcileDuration.WithLabelValues(controller, r).Observe(duration.Seconds())
+}
+
+func recordReconcileError(controller string, err error) {
+	reconcileErrors.WithLabelValues(controller, classifyError(err)).Inc()
 }
 
 func setManagedInstances(controller string, count float64) {
@@ -92,7 +111,7 @@ func setManagedInstances(controller string, count float64) {
 }
 
 func recordJobFailureEvent(controller, reason string) {
-	jobFailureEvents.WithLabelValues(controller, reason).Inc()
+	jobFailureEvents.WithLabelValues(controller, normalizeFailureReason(reason)).Inc()
 }
 
 // classifyError maps an error to a fixed enum to prevent unbounded label cardinality.
