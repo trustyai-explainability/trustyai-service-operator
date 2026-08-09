@@ -35,9 +35,9 @@ type EvalConfig struct {
 	LMEval LMEvalConfig `json:"lmeval,omitempty"`
 }
 
-// TrustyAISpec defines the desired state of TrustyAI module
-type TrustyAISpec struct {
-	common.ManagementSpec `json:",inline"`
+// TrustyAICommonSpec holds the user-facing configuration shared between the
+// module CR spec and the DSC stanza in the ODH operator.
+type TrustyAICommonSpec struct {
 	// +optional
 	EnabledServices EnabledServices `json:"enabledServices,omitempty"`
 	// +optional
@@ -46,6 +46,12 @@ type TrustyAISpec struct {
 	// using a dedicated Kustomize overlay. Mutually exclusive with other enabledServices flags.
 	// +optional
 	MCPGuardrailsMode bool `json:"mcpGuardrailsMode,omitempty"`
+}
+
+// TrustyAISpec defines the desired state of TrustyAI module
+type TrustyAISpec struct {
+	common.ManagementSpec `json:",inline"`
+	TrustyAICommonSpec    `json:",inline"`
 }
 
 // DistributionInfo represents distribution information
