@@ -11,6 +11,7 @@ import (
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/cluster"
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/controller/action"
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/controller/conditions"
+	odhgc "github.com/opendatahub-io/odh-platform-utilities/pkg/controller/gc"
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/controller/precondition"
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/deploy"
 	statusPkg "github.com/opendatahub-io/odh-platform-utilities/pkg/status"
@@ -18,12 +19,19 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+// gcRunner is the interface satisfied by odhgc.Collector, extracted for testing.
+type gcRunner interface {
+	Run(context.Context, odhgc.RunParams) error
+}
 
 // Version is the operator version, injected at build time via -ldflags.
 var Version = "unknown"
@@ -36,6 +44,9 @@ type TrustyAIModuleReconciler struct {
 	ApplicationsNamespace  string
 	ManifestsTemplatePath  string
 	Deployer               *deploy.Deployer
+	DynamicClient          dynamic.Interface
+	DiscoveryClient        discovery.DiscoveryInterface
+	GarbageCollector       gcRunner
 	EventRecorder          record.EventRecorder
 	SkipDependencyChecks   bool // set to true in tests to skip external dependency checks
 }
@@ -448,7 +459,32 @@ func (r *TrustyAIModuleReconciler) reconcileComponent(
 		return err
 	}
 
+	// GC must be the last action: collect resources that were previously
+	// deployed but are no longer in the current rendered set.
+	if err := r.runGC(ctx, module); err != nil {
+		condMgr.MarkFalse(string(common.ConditionTypeProvisioningSucceeded),
+			conditions.WithReason("GCFailed"),
+			conditions.WithMessage("Garbage collection failed: %v", err),
+			conditions.WithObservedGeneration(module.Generation),
+		)
+		return err
+	}
+
 	return nil
+}
+
+func (r *TrustyAIModuleReconciler) runGC(ctx context.Context, module *platformv1alpha1.TrustyAI) error {
+	if r.GarbageCollector == nil {
+		return nil
+	}
+	return r.GarbageCollector.Run(ctx, odhgc.RunParams{
+		Client:          r.Client,
+		DynamicClient:   r.DynamicClient,
+		DiscoveryClient: r.DiscoveryClient,
+		Owner:           module,
+		Version:         Version,
+		PlatformType:    os.Getenv("ODH_PLATFORM_TYPE"),
+	})
 }
 
 func (r *TrustyAIModuleReconciler) SetupWithManager(mgr ctrl.Manager) error {
