@@ -1,0 +1,73 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: trustyai-service-operator-manager-role
+rules:
+  # TLS profile — read cluster APIServer config to determine TLS cipher suites.
+  - apiGroups: [config.openshift.io]
+    resources: [apiservers]
+    verbs: [get]
+  # Core resources managed by the workload operator.
+  - apiGroups: [""]
+    resources: [configmaps, events, namespaces, persistentvolumeclaims, pods, secrets, serviceaccounts, services]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets, statefulsets]
+    verbs: [create, delete, get, list, patch, update, watch]
+  # Own CRDs (TrustyAIService, LMEvalJob, EvalHub, GuardrailsOrchestrator, NemoGuardrail).
+  - apiGroups: [trustyai.opendatahub.io]
+    resources: ["*"]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [lmes.trustyai.opendatahub.io]
+    resources: ["*"]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [evalhub.trustyai.opendatahub.io]
+    resources: ["*"]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [gorch.trustyai.opendatahub.io]
+    resources: ["*"]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [nemoguardrails.trustyai.opendatahub.io]
+    resources: ["*"]
+    verbs: [create, delete, get, list, patch, update, watch]
+  # RBAC for sub-component service accounts.
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterroles, clusterrolebindings, roles, rolebindings]
+    verbs: [create, delete, get, list, patch, update, watch]
+  # Monitoring.
+  - apiGroups: [monitoring.coreos.com]
+    resources: [prometheusrules, servicemonitors]
+    verbs: [create, delete, get, list, patch, update, watch]
+  # Networking.
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [create, delete, get, list, patch, update, watch]
+  # KServe InferenceService (optional integration).
+  - apiGroups: [serving.kserve.io]
+    resources: [inferenceservices]
+    verbs: [get, list, watch]
+  # OpenShift Route.
+  - apiGroups: [route.openshift.io]
+    resources: [routes]
+    verbs: [create, delete, get, list, patch, update, watch]
+  # Leader election.
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [create, delete, get, list, patch, update, watch]
+  # CRD presence checks (TAS checks for Istio/KServe CRDs).
+  - apiGroups: [apiextensions.k8s.io]
+    resources: [customresourcedefinitions]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: trustyai-service-operator-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: trustyai-service-operator-manager-role
+subjects:
+  - kind: ServiceAccount
+    name: trustyai-service-operator
+    namespace: system

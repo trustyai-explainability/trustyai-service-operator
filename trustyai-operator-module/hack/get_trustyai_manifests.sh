@@ -9,7 +9,7 @@
 set -euo pipefail
 
 MANIFESTS_DIR="${MANIFESTS_DIR:-/opt/manifests-template}"
-TEMPLATE_SRC="${TEMPLATE_SRC:-config/manifests-template}"
+TEMPLATE_SRC="${TEMPLATE_SRC:-manifests-template}"
 
 echo "get_trustyai_manifests.sh: staging ${TEMPLATE_SRC} → ${MANIFESTS_DIR}"
 mkdir -p "${MANIFESTS_DIR}"

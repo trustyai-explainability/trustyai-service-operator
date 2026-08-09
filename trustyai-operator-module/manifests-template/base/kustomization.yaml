@@ -3,3 +3,7 @@ kind: Kustomization
 resources:
   - serviceaccount.yaml
   - deployment.yaml
+  - clusterrole.yaml
+  - webhook-service.yaml
+  - operator-configmap.yaml
+  - crds/
