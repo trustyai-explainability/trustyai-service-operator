@@ -111,6 +111,10 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return r.handleRemoval(ctx, module)
 	}
 
+	// Populate distribution before any early-exit that persists status, so
+	// status.distribution is always set regardless of which branch returns.
+	r.updateDistribution(module)
+
 	// Build the condition manager for this reconcile cycle.
 	condMgr := r.newConditionManager(module)
 
@@ -168,7 +172,6 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	r.updateHealthStatus(ctx, module, condMgr)
 	r.updateReleases(module)
-	r.updateDistribution(module)
 
 	module.Status.ObservedGeneration = module.Generation
 	condMgr.Sort()
