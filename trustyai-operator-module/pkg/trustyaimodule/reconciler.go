@@ -402,7 +402,7 @@ func (r *TrustyAIModuleReconciler) reconcileComponent(
 		return nil
 	}
 
-	objs, err := RenderManifests(ctx, r.ManifestsTemplatePath, r.Namespace)
+	objs, err := RenderManifests(ctx, r.ManifestsTemplatePath, r.Namespace, module.Spec.MCPGuardrailsMode)
 	if err != nil {
 		condMgr.MarkFalse(string(common.ConditionTypeProvisioningSucceeded),
 			conditions.WithReason("RenderFailed"),
