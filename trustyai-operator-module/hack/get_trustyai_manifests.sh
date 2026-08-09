@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# Assemble TrustyAI operator manifests into /opt/manifests-template/.
+# Assemble TrustyAI workload operator manifests into /opt/manifests-template/.
 #
-# In production this script will download the official operator manifests
-# bundle and unpack them into MANIFESTS_DIR. For now it copies the
-# checked-in placeholder overlay structure so the module controller has a
-# valid Kustomize tree to render at runtime.
+# The workload operator's kustomize tree (config/) is copied from the build
+# context into trustyai-operator/config/ inside the image. The module
+# controller's selectOverlay() points directly at the real overlay paths, so
+# no shim kustomization files are needed.
+#
+# Build context must be the repo root (trustyai-service-operator/) and the
+# Dockerfile must COPY config/ as workload-config/ before calling this script.
 
 set -euo pipefail
 
 MANIFESTS_DIR="${MANIFESTS_DIR:-/opt/manifests-template}"
-TEMPLATE_SRC="${TEMPLATE_SRC:-manifests-template}"
+WORKLOAD_CONFIG="${WORKLOAD_CONFIG:-workload-config}"
 
-echo "get_trustyai_manifests.sh: staging ${TEMPLATE_SRC} → ${MANIFESTS_DIR}"
-mkdir -p "${MANIFESTS_DIR}"
-cp -rT "${TEMPLATE_SRC}" "${MANIFESTS_DIR}"
-
-# TODO: replace the cp above with a download of the real operator manifests:
-#   curl -sSL "${TRUSTYAI_MANIFESTS_URL}" | tar xz -C "${MANIFESTS_DIR}"
+echo "get_trustyai_manifests.sh: copying workload config ${WORKLOAD_CONFIG} → ${MANIFESTS_DIR}/trustyai-operator/config"
+mkdir -p "${MANIFESTS_DIR}/trustyai-operator"
+cp -R "${WORKLOAD_CONFIG}" "${MANIFESTS_DIR}/trustyai-operator/config"
 
 echo "get_trustyai_manifests.sh: done"

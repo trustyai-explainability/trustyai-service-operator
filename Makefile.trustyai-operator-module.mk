@@ -6,13 +6,13 @@ MODULE_TAG         ?= latest
 ENGINE             ?= $(BUILD_TOOL)
 
 .PHONY: docker-build-tom
-docker-build-tom: ## Build the trustyai-operator-module-controller image
+docker-build-tom: ## Build the trustyai-operator-module-controller image (build context: repo root)
 	$(ENGINE) buildx build \
 		--load \
 		-t $(TRUSTYAI_MODULE_IMG):$(MODULE_TAG) \
 		--build-arg VERSION=$(MODULE_TAG) \
 		-f $(MODULE_DIR)/Dockerfile \
-		$(MODULE_DIR)
+		.
 
 .PHONY: docker-push-tom
 docker-push-tom: docker-build-tom ## Build and push the trustyai-operator-module-controller image

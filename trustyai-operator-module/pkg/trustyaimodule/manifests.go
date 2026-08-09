@@ -61,18 +61,21 @@ func EnsureManifests(templatePath string, mcpMode bool) (string, error) {
 
 // selectOverlay returns the kustomize overlay directory path for the current
 // platform and mode. MCPGuardrailsMode takes priority over ODH_PLATFORM_TYPE:
-// when true it always selects overlays/mcp-guardrails regardless of platform.
+// when true it always selects the mcp-guardrails overlay regardless of platform.
 // Otherwise the platform is derived from ODH_PLATFORM_TYPE; defaults to ODH.
+//
+// Overlays live in the workload operator's config tree, copied into the image
+// at build time under trustyai-operator/config/overlays/.
 func selectOverlay(manifestsDir string, mcpMode bool) string {
 	if mcpMode {
-		return filepath.Join(manifestsDir, "overlays/mcp-guardrails")
+		return filepath.Join(manifestsDir, "trustyai-operator/config/overlays/mcp-guardrails")
 	}
 	platform := strings.ToLower(os.Getenv("ODH_PLATFORM_TYPE"))
-	sub := "overlays/odh"
+	sub := "trustyai-operator/config/overlays/odh"
 	if strings.Contains(platform, "rhoai") ||
 		strings.Contains(platform, "self-managed") ||
 		strings.Contains(platform, "cloud") {
-		sub = "overlays/rhoai"
+		sub = "trustyai-operator/config/overlays/rhoai"
 	}
 	return filepath.Join(manifestsDir, sub)
 }
