@@ -262,31 +262,20 @@ func (r *TrustyAIModuleReconciler) handleRemoval(ctx context.Context, module *pl
 	return ctrl.Result{}, nil
 }
 
-func (r *TrustyAIModuleReconciler) buildHealthCheckers(module *platformv1alpha1.TrustyAI) []ServiceHealthChecker {
-	var checkers []ServiceHealthChecker
-	es := module.Spec.EnabledServices
-	if es.TAS {
-		checkers = append(checkers, NewRunningServiceChecker("TAS", r.Client, r.Namespace))
+func (r *TrustyAIModuleReconciler) buildHealthCheckers() []ServiceHealthChecker {
+	// The module operator's operand is the workload operator Deployment it deploys.
+	// Individual service instances (TAS, LMES, EvalHub, etc.) are created by the
+	// workload operator in response to user CRs and are not this module's operands.
+	// enabledServices drives future Kustomize overlay wiring, not health reporting.
+	return []ServiceHealthChecker{
+		NewRunningServiceChecker("trustyai-service-operator", r.Client, r.Namespace),
 	}
-	if es.LMES {
-		checkers = append(checkers, NewRunningServiceChecker("LMES", r.Client, r.Namespace))
-	}
-	if es.EvalHub {
-		checkers = append(checkers, NewRunningServiceChecker("EVALHUB", r.Client, r.Namespace))
-	}
-	if es.GORCH {
-		checkers = append(checkers, NewRunningServiceChecker("GORCH", r.Client, r.Namespace))
-	}
-	if es.NemoGuardrails {
-		checkers = append(checkers, NewRunningServiceChecker("NEMO_GUARDRAILS", r.Client, r.Namespace))
-	}
-	return checkers
 }
 
 func (r *TrustyAIModuleReconciler) updateHealthStatus(ctx context.Context, module *platformv1alpha1.TrustyAI, condMgr *conditions.Manager) {
 	logger := log.FromContext(ctx)
 
-	healthCheckers := r.buildHealthCheckers(module)
+	healthCheckers := r.buildHealthCheckers()
 	allHealthy := true
 	partiallyHealthy := false
 	var unhealthyReasons []string
