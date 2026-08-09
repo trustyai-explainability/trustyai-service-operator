@@ -42,6 +42,10 @@ type TrustyAISpec struct {
 	EnabledServices EnabledServices `json:"enabledServices,omitempty"`
 	// +optional
 	Eval EvalConfig `json:"eval,omitempty"`
+	// MCPGuardrailsMode deploys TrustyAI with only the NemoGuardrails service enabled,
+	// using a dedicated Kustomize overlay. Mutually exclusive with other enabledServices flags.
+	// +optional
+	MCPGuardrailsMode bool `json:"mcpGuardrailsMode,omitempty"`
 }
 
 // DistributionInfo represents distribution information
