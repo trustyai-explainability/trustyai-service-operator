@@ -3,21 +3,16 @@ kind: ConfigMap
 metadata:
   name: trustyai-service-operator-config
 data:
+  # Image overrides — managed by the Kustomize overlay (replacements from params.env).
+  # User-configurable settings (batch sizes, code-execution policy, etc.) are written
+  # by the module operator into this ConfigMap from the TrustyAI CR spec at runtime.
   trustyaiServiceImage: quay.io/trustyai/trustyai-service:latest
   trustyaiOperatorImage: quay.io/trustyai/trustyai-service-operator:latest
   evalHubImage: quay.io/evalhub/evalhub:latest
   evalHubMCPImage: quay.io/evalhub/evalhub:latest
   kube-rbac-proxy: quay.io/opendatahub/odh-kube-rbac-proxy:odh-stable
-  kServeServerless: enabled
   lmes-driver-image: quay.io/trustyai/ta-lmes-driver:latest
   lmes-pod-image: quay.io/opendatahub/ta-lmes-job:odh-3.4-final
-  lmes-pod-checking-interval: 10s
-  lmes-image-pull-policy: Always
-  lmes-max-batch-size: "24"
-  lmes-default-batch-size: "8"
-  lmes-detect-device: "true"
-  lmes-allow-online: "true"
-  lmes-allow-code-execution: "true"
   guardrails-orchestrator-image: quay.io/trustyai/ta-guardrails-orchestrator:latest
   guardrails-built-in-detector-image: quay.io/trustyai/guardrails-detector-built-in:latest
   guardrails-sidecar-gateway-image: quay.io/trustyai/guardrails-sidecar-gateway:latest
@@ -29,3 +24,5 @@ data:
   evalhub-provider-deepeval-image: quay.io/evalhub/community-deepeval:latest
   evalhub-provider-ragas-image: quay.io/evalhub/community-ragas:latest
   evalhub-provider-inspect-image: quay.io/evalhub/community-inspect:latest
+  # Internal controller flag — operator polling interval, not user-configurable.
+  lmes-pod-checking-interval: 10s

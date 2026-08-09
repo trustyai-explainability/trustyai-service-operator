@@ -174,6 +174,11 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	if err := r.reconcileWorkloadConfigMap(ctx, module); err != nil {
+		logger.Error(err, "Failed to reconcile workload ConfigMap")
+		return ctrl.Result{}, err
+	}
+
 	r.updateHealthStatus(ctx, module, condMgr)
 	r.updateReleases(module)
 
