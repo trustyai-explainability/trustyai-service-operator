@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	odhLabels "github.com/opendatahub-io/odh-platform-utilities/pkg/metadata/labels"
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/render/kustomize"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -127,8 +128,24 @@ func RenderManifests(ctx context.Context, templatePath, namespace string, mcpMod
 		return nil, fmt.Errorf("rendering kustomize overlay %s: %w", overlay, err)
 	}
 
+	applyPlatformLabels(objs)
 	logger.Info("Rendered manifests", "count", len(objs))
 	return objs, nil
+}
+
+// applyPlatformLabels stamps every rendered resource with the ODH platform
+// labels required by MC-22: ManagedBy identifies the module operator that owns
+// the resource; PlatformPartOf identifies the component (used by GC selectors).
+func applyPlatformLabels(objs []unstructured.Unstructured) {
+	for i := range objs {
+		lbls := objs[i].GetLabels()
+		if lbls == nil {
+			lbls = make(map[string]string)
+		}
+		lbls[odhLabels.ManagedBy] = FieldManagerModule
+		lbls[odhLabels.PlatformPartOf] = "trustyai"
+		objs[i].SetLabels(lbls)
+	}
 }
 
 func clearDirContents(dir string) error {
