@@ -10,12 +10,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/dynamic"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"github.com/opendatahub-io/odh-platform-utilities/pkg/controller/gc"
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/deploy"
 	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-operator-module/pkg/trustyaimodule"
@@ -74,7 +77,9 @@ func main() {
 		applicationsNamespace:  {},
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	restConfig := ctrl.GetConfigOrDie()
+
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme:                  scheme,
 		Metrics:                 metricsserver.Options{BindAddress: metricsAddr},
 		LeaderElection:          enableLeaderElection,
@@ -88,9 +93,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	dynamicCli, err := dynamic.NewForConfig(restConfig)
+	if err != nil {
+		setupLog.Error(err, "unable to create dynamic client")
+		os.Exit(1)
+	}
+
+	discoveryCli, err := discovery.NewDiscoveryClientForConfig(restConfig)
+	if err != nil {
+		setupLog.Error(err, "unable to create discovery client")
+		os.Exit(1)
+	}
+
 	deployer := deploy.NewDeployer(
 		deploy.WithFieldOwner(trustyaimodule.FieldManagerModule),
 		deploy.WithApplyOrder(),
+	)
+
+	garbageCollector := gc.New(
+		gc.InNamespace(applicationsNamespace),
 	)
 
 	if err := (&trustyaimodule.TrustyAIModuleReconciler{
@@ -100,6 +121,9 @@ func main() {
 		ApplicationsNamespace: applicationsNamespace,
 		ManifestsTemplatePath: manifestsPath,
 		Deployer:              deployer,
+		DynamicClient:         dynamicCli,
+		DiscoveryClient:       discoveryCli,
+		GarbageCollector:      garbageCollector,
 		EventRecorder:         mgr.GetEventRecorderFor("trustyai-module"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "TrustyAI")
