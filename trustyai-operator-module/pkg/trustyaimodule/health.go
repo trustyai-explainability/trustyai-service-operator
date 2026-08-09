@@ -46,7 +46,7 @@ func (r *RunningServiceChecker) Name() string {
 func (r *RunningServiceChecker) IsHealthy(ctx context.Context) (bool, string) {
 	deploymentList := &appsv1.DeploymentList{}
 	labelSelector := labels.SelectorFromSet(labels.Set{
-		"app.kubernetes.io/name": r.serviceName,
+		"control-plane": r.serviceName,
 	})
 
 	if err := r.client.List(ctx, deploymentList, &client.ListOptions{

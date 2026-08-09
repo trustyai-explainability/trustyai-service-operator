@@ -97,6 +97,7 @@ func main() {
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
 		Namespace:             namespace,
+		ApplicationsNamespace: applicationsNamespace,
 		ManifestsTemplatePath: manifestsPath,
 		Deployer:              deployer,
 		EventRecorder:         mgr.GetEventRecorderFor("trustyai-module"),

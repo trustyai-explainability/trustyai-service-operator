@@ -31,12 +31,13 @@ var Version = "unknown"
 // TrustyAIModuleReconciler reconciles TrustyAI module objects.
 type TrustyAIModuleReconciler struct {
 	client.Client
-	Scheme                *runtime.Scheme
-	Namespace             string
-	ManifestsTemplatePath string
-	Deployer              *deploy.Deployer
-	EventRecorder         record.EventRecorder
-	SkipDependencyChecks  bool // set to true in tests to skip external dependency checks
+	Scheme                 *runtime.Scheme
+	Namespace              string
+	ApplicationsNamespace  string
+	ManifestsTemplatePath  string
+	Deployer               *deploy.Deployer
+	EventRecorder          record.EventRecorder
+	SkipDependencyChecks   bool // set to true in tests to skip external dependency checks
 }
 
 // +kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais,verbs=get;list;watch;create;update;patch;delete
@@ -139,6 +140,9 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			logger.Info("Blocking deployment due to missing dependencies")
 			return ctrl.Result{RequeueAfter: time.Duration(DefaultRequeueInterval) * time.Second}, nil
 		}
+		// odh-platform-utilities does not set reason/message on True conditions;
+		// fill them in so the CRD validation (which requires non-empty strings) is satisfied.
+		fillPassedPreconditionConditions(condMgr, module.Generation)
 	} else {
 		condMgr.MarkTrue(ConditionTypeDependenciesAvailable,
 			conditions.WithReason("ChecksSkipped"),
@@ -197,7 +201,27 @@ func (r *TrustyAIModuleReconciler) newConditionManager(module *platformv1alpha1.
 		string(common.ConditionTypeProvisioningSucceeded),
 		string(common.ConditionTypeDegraded),
 		ConditionTypeDependenciesAvailable,
+		ConditionTypeKServeAvailable,
 	)
+}
+
+// fillPassedPreconditionConditions backfills reason and message on any precondition
+// condition that RunAll left with ConditionTrue but without reason/message.
+// odh-platform-utilities only sets reason/message on failure; the TrustyAI CRD
+// requires non-empty values on all conditions regardless of status.
+func fillPassedPreconditionConditions(condMgr *conditions.Manager, generation int64) {
+	preconditionTypes := []string{ConditionTypeDependenciesAvailable, ConditionTypeKServeAvailable}
+	for _, ct := range preconditionTypes {
+		c := condMgr.GetCondition(ct)
+		if c == nil || c.Reason != "" {
+			continue
+		}
+		condMgr.MarkTrue(ct,
+			conditions.WithReason("Available"),
+			conditions.WithMessage("Dependency check passed"),
+			conditions.WithObservedGeneration(generation),
+		)
+	}
 }
 
 func (r *TrustyAIModuleReconciler) handleDeletion(ctx context.Context, module *platformv1alpha1.TrustyAI) (ctrl.Result, error) {
@@ -268,7 +292,7 @@ func (r *TrustyAIModuleReconciler) buildHealthCheckers() []ServiceHealthChecker 
 	// workload operator in response to user CRs and are not this module's operands.
 	// enabledServices drives future Kustomize overlay wiring, not health reporting.
 	return []ServiceHealthChecker{
-		NewRunningServiceChecker("trustyai-service-operator", r.Client, r.Namespace),
+		NewRunningServiceChecker("trustyai-service-operator", r.Client, r.ApplicationsNamespace),
 	}
 }
 
@@ -391,7 +415,7 @@ func (r *TrustyAIModuleReconciler) reconcileComponent(
 		return nil
 	}
 
-	objs, err := RenderManifests(ctx, r.ManifestsTemplatePath, r.Namespace, module.Spec.MCPGuardrailsMode)
+	objs, err := RenderManifests(ctx, r.ManifestsTemplatePath, r.ApplicationsNamespace, module.Spec.MCPGuardrailsMode)
 	if err != nil {
 		condMgr.MarkFalse(string(common.ConditionTypeProvisioningSucceeded),
 			conditions.WithReason("RenderFailed"),

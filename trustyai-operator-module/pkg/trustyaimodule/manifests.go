@@ -35,8 +35,14 @@ var (
 // the live CR) take effect without restarting the operator.
 func EnsureManifests(templatePath string, mcpMode bool) (string, error) {
 	copyOnce.Do(func() {
-		if err := os.RemoveAll(manifestsTarget); err != nil && !os.IsNotExist(err) {
+		// Clear contents without removing the directory itself — it may be an
+		// EmptyDir mount point that the OS won't let us unlink.
+		if err := clearDirContents(manifestsTarget); err != nil {
 			copyErr = fmt.Errorf("clearing manifests target %s: %w", manifestsTarget, err)
+			return
+		}
+		if err := os.MkdirAll(manifestsTarget, 0o755); err != nil {
+			copyErr = fmt.Errorf("creating manifests target %s: %w", manifestsTarget, err)
 			return
 		}
 		copyErr = copyDir(templatePath, manifestsTarget)
@@ -123,6 +129,22 @@ func RenderManifests(ctx context.Context, templatePath, namespace string, mcpMod
 
 	logger.Info("Rendered manifests", "count", len(objs))
 	return objs, nil
+}
+
+func clearDirContents(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func copyDir(src, dst string) error {
