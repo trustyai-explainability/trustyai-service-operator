@@ -23,9 +23,11 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 // gcRunner is the interface satisfied by odhgc.Collector, extracted for testing.
@@ -448,7 +450,7 @@ func (r *TrustyAIModuleReconciler) reconcileComponent(
 	if err := r.Deployer.Deploy(ctx, deploy.DeployInput{
 		Client:    r.Client,
 		Owner:     module,
-		Release:   deploy.ReleaseInfo{Version: Version},
+		Release:   deploy.ReleaseInfo{Version: Version, Type: resolvePlatformType()},
 		Resources: objs,
 	}); err != nil {
 		condMgr.MarkFalse(string(common.ConditionTypeProvisioningSucceeded),
@@ -483,12 +485,21 @@ func (r *TrustyAIModuleReconciler) runGC(ctx context.Context, module *platformv1
 		DiscoveryClient: r.DiscoveryClient,
 		Owner:           module,
 		Version:         Version,
-		PlatformType:    os.Getenv("ODH_PLATFORM_TYPE"),
+		PlatformType:    resolvePlatformType(),
 	})
+}
+
+// resolvePlatformType returns the ODH platform type, defaulting to "OpenDataHub"
+// when the environment variable is not set (matching OGX/Spark conventions).
+func resolvePlatformType() string {
+	if pt := os.Getenv("ODH_PLATFORM_TYPE"); pt != "" {
+		return pt
+	}
+	return "OpenDataHub"
 }
 
 func (r *TrustyAIModuleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&platformv1alpha1.TrustyAI{}).
+		For(&platformv1alpha1.TrustyAI{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Complete(r)
 }
