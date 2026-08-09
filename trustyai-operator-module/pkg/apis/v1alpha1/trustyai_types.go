@@ -21,12 +21,33 @@ type EnabledServices struct {
 
 // LMEvalConfig defines LMEval-specific configuration
 type LMEvalConfig struct {
+	// PermitCodeExecution controls whether code execution is allowed during evaluations.
 	// +kubebuilder:default=false
 	// +optional
 	PermitCodeExecution bool `json:"permitCodeExecution,omitempty"`
+	// PermitOnline controls whether online access is allowed during evaluations.
 	// +kubebuilder:default=false
 	// +optional
 	PermitOnline bool `json:"permitOnline,omitempty"`
+	// MaxBatchSize is the maximum number of evaluation requests processed in a single batch.
+	// +kubebuilder:default=24
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MaxBatchSize int `json:"maxBatchSize,omitempty"`
+	// DefaultBatchSize is the default number of evaluation requests processed in a single batch.
+	// +kubebuilder:default=8
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	DefaultBatchSize int `json:"defaultBatchSize,omitempty"`
+	// DetectDevice controls whether the evaluation driver auto-detects available compute devices (CPU/GPU).
+	// +kubebuilder:default=true
+	// +optional
+	DetectDevice bool `json:"detectDevice,omitempty"`
+	// ImagePullPolicy is the image pull policy for LMES job pods.
+	// +kubebuilder:default=Always
+	// +kubebuilder:validation:Enum=Always;IfNotPresent;Never
+	// +optional
+	ImagePullPolicy string `json:"imagePullPolicy,omitempty"`
 }
 
 // EvalConfig defines evaluation-related configuration
@@ -42,6 +63,10 @@ type TrustyAICommonSpec struct {
 	EnabledServices EnabledServices `json:"enabledServices,omitempty"`
 	// +optional
 	Eval EvalConfig `json:"eval,omitempty"`
+	// KServeServerless controls whether KServe serverless mode is enabled for TrustyAI services.
+	// +kubebuilder:default=true
+	// +optional
+	KServeServerless bool `json:"kServeServerless,omitempty"`
 	// MCPGuardrailsMode deploys TrustyAI with only the NemoGuardrails service enabled,
 	// using a dedicated Kustomize overlay. Mutually exclusive with other enabledServices flags.
 	// +optional
