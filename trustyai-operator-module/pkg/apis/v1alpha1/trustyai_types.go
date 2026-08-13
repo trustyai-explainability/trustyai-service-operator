@@ -5,6 +5,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// TrustyAIInstanceName is the only metadata.name accepted for a TrustyAI
+// resource, enforced by the CEL validation on the TrustyAI type below.
+const TrustyAIInstanceName = "default"
+
 // EnabledServices defines which TrustyAI services are enabled
 type EnabledServices struct {
 	// +optional
