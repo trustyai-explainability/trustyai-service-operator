@@ -1,3 +1,6 @@
+// Package v1alpha1 tests use stdlib testing, not Ginkgo/Gomega, because
+// odh-platform-utilities' validation.ValidatePlatformObject takes a concrete
+// *testing.T (Ginkgo's GinkgoT() returns an incompatible interface type).
 package v1alpha1
 
 import (
