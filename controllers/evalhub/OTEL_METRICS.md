@@ -2,7 +2,9 @@
 
 This document describes how OpenTelemetry (OTEL) **metrics** are exported for the **TrustyAI Service Operator** when running the EvalHub controller.
 
-**Related work:** [RHAI-241](https://redhat.atlassian.net/browse/RHAI-241) (controller tracing, PR #877), [RHAI-240](https://redhat.atlassian.net/browse/RHAI-240) (Prometheus metrics on `:8080`), PR #878 (OTLP metrics).
+**Related work:** [RHAI-241](https://redhat.atlassian.net/browse/RHAI-241) (controller tracing, PR #877), [RHAI-240](https://redhat.atlassian.net/browse/RHAI-240) (Prometheus metrics on `:8080`), PR #878 (OTLP metrics), PR #879 (Prometheus bridge).
+
+**PR stack (merge order):** #877 tracing → #878 OTLP metrics → #879 Prometheus bridge on `:8080/metrics`.
 
 ---
 
@@ -17,6 +19,14 @@ This document describes how OpenTelemetry (OTEL) **metrics** are exported for th
 | **EvalHub server** (workload) | OTLP traces/metrics/logs | Push from EvalHub process | `spec.otel` on EvalHub CR |
 
 EvalHub controller metrics are recorded via the OTEL SDK and exposed to Prometheus through the [OTEL Prometheus exporter](https://pkg.go.dev/go.opentelemetry.io/otel/exporters/prometheus), registered with the controller-runtime metrics registry. The existing ServiceMonitor on port 8080 scrapes them at `/metrics` with no manifest changes.
+
+**RHAI-240 note:** [RHAI-240](https://redhat.atlassian.net/browse/RHAI-240) specifies Prometheus delivery on `:8080`. The Prometheus bridge (#879) satisfies that scrape path using OTEL instrumentation from #878. OTLP push remains an optional parallel export path, not a replacement for scrape.
+
+---
+
+## Zero-configuration Prometheus scrape
+
+When the operator runs with EvalHub enabled, reconcile metrics are recorded automatically. **No environment variables are required** for Prometheus scraping — the bridge is on by default. After deployment, trigger an EvalHub reconcile and scrape `:8080/metrics` (via kube-rbac-proxy in production) to confirm `evalhub_controller_*` series appear.
 
 ---
 
@@ -73,6 +83,31 @@ kubectl patch deployment trustyai-service-operator-controller-manager -n opendat
 ### Example: both Prometheus scrape and OTLP push
 
 Leave `OTEL_METRICS_PROMETHEUS_DISABLED` unset and set `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` (or shared `OTEL_EXPORTER_OTLP_ENDPOINT`). Metrics are scraped from `:8080/metrics` and pushed to the collector.
+
+### Verifying Prometheus metrics
+
+1. Port-forward or curl through kube-rbac-proxy to the operator metrics endpoint (for example `https://<operator-service>:8443/metrics` in-cluster, or the path your ServiceMonitor uses).
+2. Create or update an EvalHub CR to trigger reconciliation.
+3. Search the `/metrics` output for `evalhub_controller` (OTEL instrument dots are translated to underscores by the exporter).
+4. To confirm the noop path, set `OTEL_METRICS_PROMETHEUS_DISABLED=true` and `OTEL_SDK_DISABLED=true` — EvalHub custom series should disappear while controller-runtime metrics remain.
+
+### Example PromQL queries
+
+Exact series names may include OTEL exporter suffixes (for example `_total`, `_bucket`). Verify names in your `/metrics` output before writing alerts.
+
+```promql
+# Reconcile error rate
+rate(evalhub_controller_reconcile_total{result="error"}[5m])
+
+# p99 reconcile latency
+histogram_quantile(0.99, rate(evalhub_controller_reconcile_duration_bucket[5m]))
+
+# Managed EvalHub instances (may reset on operator restart — see below)
+evalhub_controller_managed_instances
+
+# Job failure events by reason
+rate(evalhub_controller_job_failure_events_total[5m])
+```
 
 ---
 
