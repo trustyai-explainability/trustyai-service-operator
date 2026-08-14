@@ -2,7 +2,7 @@
 
 This document describes how to enable OpenTelemetry (OTEL) tracing for the **TrustyAI Service Operator** when running the EvalHub controller, and how the instrumentation is implemented.
 
-**Related work:** [RHAI-241](https://redhat.atlassian.net/browse/RHAI-241) (controller tracing), sibling [RHAI-240](https://redhat.atlassian.net/browse/RHAI-240) (Prometheus metrics).
+**Related work:** [RHAI-241](https://redhat.atlassian.net/browse/RHAI-241) (controller tracing), [OTEL_METRICS.md](OTEL_METRICS.md) (controller OTLP metrics), sibling [RHAI-240](https://redhat.atlassian.net/browse/RHAI-240) (Prometheus metrics on `:8080`).
 
 ---
 

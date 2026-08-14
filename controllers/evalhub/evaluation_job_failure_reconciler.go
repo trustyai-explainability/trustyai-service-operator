@@ -344,8 +344,9 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 		attribute.String("k8s.namespace", job.Namespace),
 		attribute.String("evalhub.job.name", job.Name),
 	)
+	reconcileStart := time.Now()
 	defer func() {
-		finishEvalHubReconcileSpan(span, result, err)
+		finishEvalHubReconcileSpan(span, metricControllerJobFailure, reconcileStart, result, err)
 		span.End()
 	}()
 
@@ -470,6 +471,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 			}
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
+		recordJobFailureEvent(msg)
 	}
 
 	promotePatch := client.MergeFrom(job.DeepCopy())

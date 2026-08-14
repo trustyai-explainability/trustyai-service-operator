@@ -95,17 +95,23 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 
 	// Handle deletion first to avoid blocking removal with status init.
 	if instance.DeletionTimestamp != nil {
+		reconcileStart := time.Now()
 		ctx, span := startEvalHubReconcileSpan(ctx, spanReconcileDeletion, instance.Namespace, instance.Name, int64(instance.Generation))
 		defer func() {
-			finishEvalHubReconcileSpan(span, result, err)
+			finishEvalHubReconcileSpan(span, metricControllerDeletion, reconcileStart, result, err)
 			span.End()
 		}()
-		return r.handleDeletion(ctx, instance)
+		res, delErr := r.handleDeletion(ctx, instance)
+		if delErr == nil {
+			recordManagedInstanceDelta(-1)
+		}
+		return res, delErr
 	}
 
+	reconcileStart := time.Now()
 	ctx, span := startEvalHubReconcileSpan(ctx, spanReconcile, instance.Namespace, instance.Name, int64(instance.Generation))
 	defer func() {
-		finishEvalHubReconcileSpan(span, result, err)
+		finishEvalHubReconcileSpan(span, metricControllerEvalHub, reconcileStart, result, err)
 		span.End()
 	}()
 
@@ -128,6 +134,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 			log.Error(err, "Failed to add finalizer")
 			return RequeueWithError(err)
 		}
+		recordManagedInstanceDelta(1)
 		return RequeueWithDelay(time.Second * 5)
 	}
 
