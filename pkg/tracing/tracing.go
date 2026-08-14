@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
@@ -30,6 +31,8 @@ import (
 const defaultServiceName = "trustyai-service-operator"
 
 type tracerScopeKey struct{}
+
+var explicitReconcileOutcomes sync.Map
 
 // Setup initializes the global TracerProvider. When OTLP is not configured, a noop provider is used.
 func Setup(ctx context.Context) (func(context.Context) error, error) {
@@ -111,6 +114,23 @@ func SetReconcileOutcome(span trace.Span, requeue bool, requeueAfter time.Durati
 func SetSpanOutcome(span trace.Span, outcome string) {
 	span.SetAttributes(attribute.String("reconcile.outcome", outcome))
 	span.SetStatus(codes.Ok, "")
+	if sc := span.SpanContext(); sc.IsValid() {
+		explicitReconcileOutcomes.Store(spanContextKey(sc), struct{}{})
+	}
+}
+
+// FinishReconcileOutcome records reconcile result unless SetSpanOutcome already set an explicit outcome.
+func FinishReconcileOutcome(span trace.Span, requeue bool, requeueAfter time.Duration, err error) {
+	if sc := span.SpanContext(); sc.IsValid() {
+		if _, explicit := explicitReconcileOutcomes.LoadAndDelete(spanContextKey(sc)); explicit {
+			return
+		}
+	}
+	SetReconcileOutcome(span, requeue, requeueAfter, err)
+}
+
+func spanContextKey(sc trace.SpanContext) string {
+	return sc.TraceID().String() + "\x00" + sc.SpanID().String()
 }
 
 func tracerFromContext(ctx context.Context) trace.Tracer {
@@ -147,8 +167,15 @@ func serviceName() string {
 	return defaultServiceName
 }
 
+func otlpProtocol() string {
+	if protocol := strings.TrimSpace(strings.ToLower(os.Getenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"))); protocol != "" {
+		return protocol
+	}
+	return strings.TrimSpace(strings.ToLower(os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")))
+}
+
 func newOTLPExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
-	protocol := strings.TrimSpace(strings.ToLower(os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")))
+	protocol := otlpProtocol()
 	if protocol == "http/protobuf" || protocol == "http" {
 		return otlptracehttp.New(ctx)
 	}

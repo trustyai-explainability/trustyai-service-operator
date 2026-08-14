@@ -482,10 +482,6 @@ func RequeueWithDelay(delay time.Duration) (ctrl.Result, error) {
 	return ctrl.Result{RequeueAfter: delay}, nil
 }
 
-func Requeue() (ctrl.Result, error) {
-	return ctrl.Result{Requeue: true}, nil
-}
-
 // handleDeletion handles the deletion of EvalHub resources
 func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhubv1.EvalHub) (ctrl.Result, error) {
 	log := log.FromContext(ctx)

@@ -11,18 +11,24 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/pkg/tracing"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace/noop"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 func TestEvalHubReconcileSpanAttributes(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
 	otel.SetTracerProvider(tp)
-	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+	t.Cleanup(func() {
+		otel.SetTracerProvider(noop.NewTracerProvider())
+		_ = tp.Shutdown(context.Background())
+	})
 
 	ctx, span := startEvalHubReconcileSpan(context.Background(), spanReconcile, "ns-1", "hub-1", 7)
 	span.End()
@@ -41,7 +47,10 @@ func TestEvalHubReconcilePhaseSpanOnFailure(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
 	otel.SetTracerProvider(tp)
-	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+	t.Cleanup(func() {
+		otel.SetTracerProvider(noop.NewTracerProvider())
+		_ = tp.Shutdown(context.Background())
+	})
 
 	ctx, parent := startEvalHubReconcileSpan(context.Background(), spanReconcile, "ns-1", "hub-1", 1)
 	phaseErr := errors.New("deployment unavailable")
@@ -80,8 +89,35 @@ func TestExitCodeFromPod(t *testing.T) {
 func TestTruncateFailureReason(t *testing.T) {
 	long := strings.Repeat("a", 600)
 	truncated := truncateFailureReason(long)
-	assert.LessOrEqual(t, len(truncated), 515)
+	assert.LessOrEqual(t, len([]rune(truncated)), maxFailureReasonRunes+1)
 	assert.True(t, strings.HasSuffix(truncated, "…"))
+
+	unicodeLong := strings.Repeat("é", 600)
+	truncatedUnicode := truncateFailureReason(unicodeLong)
+	assert.Equal(t, maxFailureReasonRunes+1, len([]rune(truncatedUnicode)))
+	assert.True(t, strings.HasSuffix(truncatedUnicode, "…"))
+	withinLimit := strings.Repeat("é", maxFailureReasonRunes)
+	assert.Equal(t, withinLimit, truncateFailureReason(withinLimit))
+}
+
+func TestFinishEvalHubReconcileSpanPreservesExplicitOutcome(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(noop.NewTracerProvider())
+		_ = tp.Shutdown(context.Background())
+	})
+
+	_, span := startEvalHubReconcileSpan(context.Background(), spanReconcile, "ns-1", "hub-1", 1)
+	tracing.SetSpanOutcome(span, "validation_error")
+	finishEvalHubReconcileSpan(span, ctrl.Result{}, errors.New("ignored"))
+	span.End()
+
+	spans := exporter.GetSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "validation_error", attrString(spans[0].Attributes, "reconcile.outcome"))
+	assert.Equal(t, codes.Ok, spans[0].Status.Code)
 }
 
 func attrString(attrs []attribute.KeyValue, key string) string {
@@ -134,7 +170,10 @@ func TestJobFailureSpanExitCodeAttribute(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
 	otel.SetTracerProvider(tp)
-	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+	t.Cleanup(func() {
+		otel.SetTracerProvider(noop.NewTracerProvider())
+		_ = tp.Shutdown(context.Background())
+	})
 
 	_, span := tracing.StartReconcileSpan(context.Background(), evalHubTracerName, spanJobFailureReconcile,
 		attribute.String("k8s.namespace", "tenant-ns"),

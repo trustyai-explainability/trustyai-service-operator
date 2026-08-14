@@ -76,6 +76,29 @@ func TestSetReconcileOutcome(t *testing.T) {
 	assert.Equal(t, "30s", attrValue(spans[0].Attributes, "reconcile.requeue_after"))
 }
 
+func TestOtlpProtocolTraceSpecificWins(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "http/protobuf")
+	t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+	assert.Equal(t, "http/protobuf", otlpProtocol())
+}
+
+func TestFinishReconcileOutcomePreservesExplicitOutcome(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	_, span := Tracer("test").Start(context.Background(), "reconcile")
+	SetSpanOutcome(span, "invalid_placement")
+	FinishReconcileOutcome(span, true, 0, errors.New("ignored"))
+	span.End()
+
+	spans := exporter.GetSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "invalid_placement", attrValue(spans[0].Attributes, "reconcile.outcome"))
+	assert.Equal(t, codes.Ok, spans[0].Status.Code)
+}
+
 func attrValue(attrs []attribute.KeyValue, key string) string {
 	for _, a := range attrs {
 		if string(a.Key) == key {

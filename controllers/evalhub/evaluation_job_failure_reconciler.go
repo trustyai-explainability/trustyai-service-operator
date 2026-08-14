@@ -449,6 +449,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 		if err := r.Patch(ctx, &job, pendingPatch); err != nil {
 			log.Error(err, "failed to annotate job pending EvalHub failure sync",
 				append(failureWatcherLogFields(), "action", "patch_pending_failed", "job", job.Name)...)
+			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}

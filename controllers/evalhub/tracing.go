@@ -37,12 +37,15 @@ func startEvalHubReconcileSpan(ctx context.Context, spanName, namespace, name st
 }
 
 func finishEvalHubReconcileSpan(span trace.Span, result ctrl.Result, err error) {
-	tracing.SetReconcileOutcome(span, result.Requeue, result.RequeueAfter, err)
+	tracing.FinishReconcileOutcome(span, !result.IsZero(), result.RequeueAfter, err)
 }
 
+const maxFailureReasonRunes = 512
+
 func truncateFailureReason(msg string) string {
-	if len(msg) <= 512 {
+	runes := []rune(msg)
+	if len(runes) <= maxFailureReasonRunes {
 		return msg
 	}
-	return msg[:512] + "…"
+	return string(runes[:maxFailureReasonRunes]) + "…"
 }
