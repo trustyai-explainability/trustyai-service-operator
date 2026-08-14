@@ -55,6 +55,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	"github.com/trustyai-explainability/trustyai-service-operator/pkg/tracing"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	//+kubebuilder:scaffold:imports
 )
@@ -107,6 +108,17 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	traceShutdown, err := tracing.Setup(context.Background())
+	if err != nil {
+		setupLog.Error(err, "unable to set up OpenTelemetry tracing")
+		os.Exit(1)
+	}
+	defer func() {
+		if err := traceShutdown(context.Background()); err != nil {
+			setupLog.Error(err, "problem shutting down OpenTelemetry tracing")
+		}
+	}()
 
 	if enabledServices.Empty() {
 		setupLog.Error(fmt.Errorf("no service is specified"), "please specify at least one service")
