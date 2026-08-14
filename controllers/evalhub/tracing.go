@@ -2,6 +2,7 @@ package evalhub
 
 import (
 	"context"
+	"time"
 
 	"github.com/trustyai-explainability/trustyai-service-operator/pkg/tracing"
 	"go.opentelemetry.io/otel/attribute"
@@ -36,8 +37,8 @@ func startEvalHubReconcileSpan(ctx context.Context, spanName, namespace, name st
 	return tracing.StartReconcileSpan(ctx, evalHubTracerName, spanName, evalHubReconcileAttrs(namespace, name, generation)...)
 }
 
-func finishEvalHubReconcileSpan(span trace.Span, result ctrl.Result, err error) {
-	tracing.FinishReconcileOutcome(span, !result.IsZero(), result.RequeueAfter, err)
+func finishEvalHubReconcileSpan(span trace.Span, controller string, start time.Time, result ctrl.Result, err error) {
+	finishEvalHubReconcile(span, controller, start, result, err)
 }
 
 const maxFailureReasonRunes = 512
