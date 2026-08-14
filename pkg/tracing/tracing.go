@@ -5,14 +5,14 @@
 //   - OTEL_EXPORTER_OTLP_PROTOCOL (optional: grpc default, or http/protobuf)
 //   - OTEL_EXPORTER_OTLP_TRACES_PROTOCOL (optional, overrides OTEL_EXPORTER_OTLP_PROTOCOL for traces)
 //
-// Metrics are disabled unless OTLP metrics export is configured via:
-//   - OTEL_EXPORTER_OTLP_ENDPOINT (or OTEL_EXPORTER_OTLP_METRICS_ENDPOINT)
-//   - OTEL_EXPORTER_OTLP_PROTOCOL (optional)
+// Metrics can be exported two ways (independently or together):
+//   - Prometheus scrape on the operator :8080/metrics endpoint via the OTEL Prometheus exporter
+//     (enabled by default; set OTEL_METRICS_PROMETHEUS_DISABLED=true to disable)
+//   - OTLP push when OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_METRICS_ENDPOINT is set
 //   - OTEL_EXPORTER_OTLP_METRICS_PROTOCOL (optional, overrides OTEL_EXPORTER_OTLP_PROTOCOL for metrics)
-//
-// Shared configuration:
 //   - OTEL_SERVICE_NAME (optional, default: trustyai-service-operator)
 //   - OTEL_SDK_DISABLED=true disables tracing and metrics even when endpoints are set
+//   - OTEL_METRICS_PROMETHEUS_DISABLED=true disables the Prometheus bridge on :8080/metrics
 package tracing
 
 import (
@@ -32,6 +32,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -40,6 +41,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 const defaultServiceName = "trustyai-service-operator"
@@ -199,20 +201,31 @@ func setupTracing(ctx context.Context) (func(context.Context) error, error) {
 }
 
 func setupMetrics(ctx context.Context) (func(context.Context) error, error) {
-	exporter, err := newOTLPMetricExporter(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("create OTLP metric exporter: %w", err)
-	}
-
 	res, err := otelResource()
 	if err != nil {
 		return nil, err
 	}
 
-	mp := sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
-		sdkmetric.WithResource(res),
-	)
+	var providerOpts []sdkmetric.Option
+	providerOpts = append(providerOpts, sdkmetric.WithResource(res))
+
+	if prometheusMetricsEnabled() {
+		promExporter, err := otelprom.New(otelprom.WithRegisterer(ctrlmetrics.Registry))
+		if err != nil {
+			return nil, fmt.Errorf("create Prometheus metric exporter: %w", err)
+		}
+		providerOpts = append(providerOpts, sdkmetric.WithReader(promExporter))
+	}
+
+	if otlpMetricsEndpoint() != "" {
+		otlpExporter, err := newOTLPMetricExporter(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("create OTLP metric exporter: %w", err)
+		}
+		providerOpts = append(providerOpts, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(otlpExporter)))
+	}
+
+	mp := sdkmetric.NewMeterProvider(providerOpts...)
 	otel.SetMeterProvider(mp)
 	return mp.Shutdown, nil
 }
@@ -243,7 +256,15 @@ func metricsEnabled() bool {
 	if sdkDisabled() {
 		return false
 	}
-	return otlpMetricsEndpoint() != ""
+	return prometheusMetricsEnabled() || otlpMetricsEndpoint() != ""
+}
+
+func prometheusMetricsEnabled() bool {
+	if sdkDisabled() {
+		return false
+	}
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("OTEL_METRICS_PROMETHEUS_DISABLED")))
+	return v != "true" && v != "1"
 }
 
 func sdkDisabled() bool {

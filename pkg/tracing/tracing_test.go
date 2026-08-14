@@ -19,6 +19,7 @@ func TestSetupWithoutEndpointUsesNoopProvider(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
 	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "")
+	t.Setenv("OTEL_METRICS_PROMETHEUS_DISABLED", "true")
 	t.Setenv("OTEL_SDK_DISABLED", "")
 
 	shutdown, err := Setup(context.Background())
@@ -32,6 +33,20 @@ func TestSetupWithoutEndpointUsesNoopProvider(t *testing.T) {
 	counter, err := Meter("test").Int64Counter("noop.counter")
 	require.NoError(t, err)
 	counter.Add(context.Background(), 1)
+}
+
+func TestPrometheusMetricsEnabledByDefault(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "")
+	t.Setenv("OTEL_METRICS_PROMETHEUS_DISABLED", "")
+	t.Setenv("OTEL_SDK_DISABLED", "")
+	assert.True(t, prometheusMetricsEnabled())
+	assert.True(t, metricsEnabled())
+}
+
+func TestPrometheusMetricsDisabledEnv(t *testing.T) {
+	t.Setenv("OTEL_METRICS_PROMETHEUS_DISABLED", "true")
+	assert.False(t, prometheusMetricsEnabled())
 }
 
 func TestReconcileOutcome(t *testing.T) {

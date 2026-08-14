@@ -1,8 +1,8 @@
 # EvalHub controller OTLP metrics
 
-This document describes how to enable OpenTelemetry (OTEL) **metrics** export for the **TrustyAI Service Operator** when running the EvalHub controller.
+This document describes how OpenTelemetry (OTEL) **metrics** are exported for the **TrustyAI Service Operator** when running the EvalHub controller.
 
-**Related work:** [RHAI-241](https://redhat.atlassian.net/browse/RHAI-241) (controller tracing, PR #877), [RHAI-240](https://redhat.atlassian.net/browse/RHAI-240) (Prometheus metrics on `:8080` — separate delivery path).
+**Related work:** [RHAI-241](https://redhat.atlassian.net/browse/RHAI-241) (controller tracing, PR #877), [RHAI-240](https://redhat.atlassian.net/browse/RHAI-240) (Prometheus metrics on `:8080`), PR #878 (OTLP metrics).
 
 ---
 
@@ -10,31 +10,42 @@ This document describes how to enable OpenTelemetry (OTEL) **metrics** export fo
 
 | Layer | Signal | Delivery | Configuration |
 | ----- | ------ | -------- | ------------- |
-| **Operator controller** (this document) | OTLP metrics | Push to OTLP collector | `OTEL_EXPORTER_OTLP_METRICS_*` env vars on operator Deployment |
+| **Operator controller** (this document) | EvalHub OTEL metrics → Prometheus | Scrape existing `:8080/metrics` via OTEL Prometheus bridge | Enabled by default; `OTEL_METRICS_PROMETHEUS_DISABLED=true` to disable |
+| **Operator controller** | EvalHub OTEL metrics → OTLP | Push to OTLP collector | `OTEL_EXPORTER_OTLP_METRICS_*` env vars |
 | **Operator controller** | OTLP traces | Push to OTLP collector | `OTEL_EXPORTER_OTLP_TRACES_*` env vars — see [OTEL_TRACING.md](OTEL_TRACING.md) |
-| **Operator controller** | Prometheus metrics | Scrape `:8080/metrics` | controller-runtime defaults (RHAI-240 scope) |
+| **Operator controller** | controller-runtime metrics | Scrape `:8080/metrics` | Built-in (workqueue, webhook, etc.) |
 | **EvalHub server** (workload) | OTLP traces/metrics/logs | Push from EvalHub process | `spec.otel` on EvalHub CR |
 
-Traces and OTLP metrics can be enabled independently. Configuring `spec.otel` on an EvalHub instance does **not** enable operator controller metrics.
+EvalHub controller metrics are recorded via the OTEL SDK and exposed to Prometheus through the [OTEL Prometheus exporter](https://pkg.go.dev/go.opentelemetry.io/otel/exporters/prometheus), registered with the controller-runtime metrics registry. The existing ServiceMonitor on port 8080 scrapes them at `/metrics` with no manifest changes.
 
 ---
 
-## Enabling operator OTLP metrics
+## Prometheus bridge (default)
 
-Metrics export is **opt-in**. By default the operator uses a noop meter and exports nothing. Metrics are pushed outbound to an OTLP collector; no new ports are opened on the operator pod.
+The OTEL Prometheus bridge is **on by default**. EvalHub reconcile metrics appear on the operator's existing `:8080/metrics` endpoint alongside controller-runtime metrics. No OTLP collector is required for Prometheus scraping.
 
-### Required configuration
+To disable the bridge (OTLP-only or fully disabled metrics):
 
-Set at least one of these on the operator manager container:
+```bash
+OTEL_METRICS_PROMETHEUS_DISABLED=true
+```
+
+When `OTEL_SDK_DISABLED=true`, both the Prometheus bridge and OTLP export are disabled.
+
+---
+
+## OTLP push (optional)
+
+Set at least one of these on the operator manager container to **also** push metrics to an OTLP collector (in addition to Prometheus scrape when the bridge is enabled):
 
 | Variable | Required | Description |
 | -------- | -------- | ----------- |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Yes* | Shared OTLP collector host:port (e.g. `otel-collector.openshift-operators.svc:4317`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Yes* | Shared OTLP collector host:port |
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | Yes* | Metrics-specific endpoint; takes precedence over `OTEL_EXPORTER_OTLP_ENDPOINT` when set |
 
-\*Metrics export stays disabled when neither endpoint variable is set.
+\*OTLP push stays disabled when neither endpoint variable is set.
 
-### Optional configuration
+### Optional OTLP configuration
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
@@ -42,8 +53,9 @@ Set at least one of these on the operator manager container:
 | `OTEL_EXPORTER_OTLP_METRICS_PROTOCOL` | falls back to `OTEL_EXPORTER_OTLP_PROTOCOL` | Metrics-specific protocol (`grpc` or `http/protobuf`) |
 | `OTEL_SERVICE_NAME` | `trustyai-service-operator` | `service.name` resource attribute |
 | `OTEL_SDK_DISABLED` | unset | Set to `true` or `1` to disable metrics and traces |
+| `OTEL_METRICS_PROMETHEUS_DISABLED` | unset | Set to `true` or `1` to disable Prometheus bridge on `:8080/metrics` |
 
-### Example: patch the operator Deployment
+### Example: OTLP push only (no Prometheus bridge)
 
 ```bash
 kubectl patch deployment trustyai-service-operator-controller-manager -n opendatahub --type='json' -p='[
@@ -52,13 +64,15 @@ kubectl patch deployment trustyai-service-operator-controller-manager -n opendat
     "value": "otel-collector.openshift-operators.svc:4317"
   }},
   {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {
-    "name": "OTEL_SERVICE_NAME",
-    "value": "trustyai-service-operator"
+    "name": "OTEL_METRICS_PROMETHEUS_DISABLED",
+    "value": "true"
   }}
 ]'
 ```
 
-To export both traces and metrics to the same collector, set `OTEL_EXPORTER_OTLP_ENDPOINT` once (or set trace- and metrics-specific endpoints separately).
+### Example: both Prometheus scrape and OTLP push
+
+Leave `OTEL_METRICS_PROMETHEUS_DISABLED` unset and set `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` (or shared `OTEL_EXPORTER_OTLP_ENDPOINT`). Metrics are scraped from `:8080/metrics` and pushed to the collector.
 
 ---
 
@@ -66,8 +80,10 @@ To export both traces and metrics to the same collector, set `OTEL_EXPORTER_OTLP
 
 Instrumentation scope: `evalhub-controller`.
 
-| Instrument | Type | Attributes | When recorded |
-| ---------- | ---- | ---------- | ------------- |
+Prometheus names are derived from OTEL instrument names by the exporter (dots become underscores, e.g. `evalhub_controller_reconcile_total`).
+
+| OTEL instrument | Type | Attributes | When recorded |
+| ----------------- | ---- | ---------- | ------------- |
 | `evalhub.controller.reconcile.duration` | Histogram (seconds) | `controller`, `result` | End of each reconcile cycle (includes initial resource fetch) |
 | `evalhub.controller.reconcile.total` | Counter | `controller`, `result` | End of each reconcile cycle (includes initial resource fetch) |
 | `evalhub.controller.reconcile.errors` | Counter | `controller`, `error_type` | Reconcile cycles with `result=error` |
@@ -100,7 +116,7 @@ Instrumentation scope: `evalhub-controller`.
 
 | File | Role |
 | ---- | ---- |
-| [`pkg/tracing/tracing.go`](../../pkg/tracing/tracing.go) | Shared OTEL bootstrap for traces and metrics |
+| [`pkg/tracing/tracing.go`](../../pkg/tracing/tracing.go) | OTEL bootstrap: Prometheus bridge on `metrics.Registry` + optional OTLP push |
 | [`controllers/evalhub/metrics.go`](metrics.go) | EvalHub OTEL instruments and recording helpers |
 | [`controllers/evalhub/tracing.go`](tracing.go) | Shared reconcile completion (`finishEvalHubReconcileSpan`) |
 | [`controllers/evalhub/evalhub_controller.go`](evalhub_controller.go) | Reconcile timing and managed-instance tracking |
