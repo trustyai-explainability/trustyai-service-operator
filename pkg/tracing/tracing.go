@@ -47,12 +47,25 @@ import (
 const defaultServiceName = "trustyai-service-operator"
 
 type tracerScopeKey struct{}
+type phaseSpanKey struct{}
 
 var explicitReconcileOutcomes sync.Map
 
+var setupOnce sync.Once
+var setupShutdown func(context.Context) error
+var setupErr error
+
 // Setup initializes global TracerProvider and MeterProvider.
 // When OTLP is not configured for a signal, a noop provider is used for that signal.
+// Safe to call multiple times; only the first invocation takes effect.
 func Setup(ctx context.Context) (func(context.Context) error, error) {
+	setupOnce.Do(func() {
+		setupShutdown, setupErr = doSetup(ctx)
+	})
+	return setupShutdown, setupErr
+}
+
+func doSetup(ctx context.Context) (func(context.Context) error, error) {
 	var shutdowns []func(context.Context) error
 
 	if tracingEnabled() {
@@ -68,11 +81,7 @@ func Setup(ctx context.Context) (func(context.Context) error, error) {
 	if metricsEnabled() {
 		metricsShutdown, err := setupMetrics(ctx)
 		if err != nil {
-			for _, shutdown := range shutdowns {
-				if shutdownErr := shutdown(ctx); shutdownErr != nil {
-					err = errors.Join(err, shutdownErr)
-				}
-			}
+			_ = runShutdowns(ctx, shutdowns)
 			return nil, err
 		}
 		shutdowns = append(shutdowns, metricsShutdown)
@@ -81,14 +90,26 @@ func Setup(ctx context.Context) (func(context.Context) error, error) {
 	}
 
 	return func(ctx context.Context) error {
-		var errs []error
-		for _, shutdown := range shutdowns {
-			if err := shutdown(ctx); err != nil {
-				errs = append(errs, err)
-			}
-		}
-		return errors.Join(errs...)
+		return runShutdowns(ctx, shutdowns)
 	}, nil
+}
+
+// ResetForTest resets the Setup sync.Once so tests can call Setup multiple times.
+// Must only be used in tests.
+func ResetForTest() {
+	setupOnce = sync.Once{}
+	setupShutdown = nil
+	setupErr = nil
+}
+
+func runShutdowns(ctx context.Context, shutdowns []func(context.Context) error) error {
+	var errs []error
+	for _, shutdown := range shutdowns {
+		if err := shutdown(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // Tracer returns a named tracer from the global TracerProvider.
@@ -114,12 +135,26 @@ func WithPhase(ctx context.Context, spanName string, fn func(context.Context) er
 	ctx, span := tracer.Start(ctx, spanName)
 	defer span.End()
 
+	ctx = context.WithValue(ctx, phaseSpanKey{}, span)
 	if err := fn(ctx); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 	return nil
+}
+
+// RecordPhaseError records a non-fatal error on the active WithPhase span.
+func RecordPhaseError(ctx context.Context, err error) {
+	if err == nil {
+		return
+	}
+	span, _ := ctx.Value(phaseSpanKey{}).(trace.Span)
+	if span == nil {
+		return
+	}
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
 }
 
 // ReconcileOutcome derives the reconcile result label from controller-runtime result and error.
@@ -307,18 +342,49 @@ func otlpMetricsProtocol() string {
 	return strings.TrimSpace(strings.ToLower(os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")))
 }
 
-func newOTLPTraceExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
-	protocol := otlpTraceProtocol()
-	if protocol == "http/protobuf" || protocol == "http" {
-		return otlptracehttp.New(ctx)
+type otlpExporterKind int
+
+const (
+	otlpExporterGRPC otlpExporterKind = iota
+	otlpExporterHTTP
+)
+
+func resolveOTLPProtocol(protocol string) (otlpExporterKind, error) {
+	switch strings.TrimSpace(strings.ToLower(protocol)) {
+	case "", "grpc":
+		return otlpExporterGRPC, nil
+	case "http", "http/protobuf":
+		return otlpExporterHTTP, nil
+	default:
+		return 0, fmt.Errorf(
+			"unsupported OTLP protocol %q (supported: grpc, http/protobuf)",
+			protocol,
+		)
 	}
-	return otlptracegrpc.New(ctx)
+}
+
+func newOTLPTraceExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
+	kind, err := resolveOTLPProtocol(otlpTraceProtocol())
+	if err != nil {
+		return nil, err
+	}
+	switch kind {
+	case otlpExporterHTTP:
+		return otlptracehttp.New(ctx)
+	default:
+		return otlptracegrpc.New(ctx)
+	}
 }
 
 func newOTLPMetricExporter(ctx context.Context) (sdkmetric.Exporter, error) {
-	protocol := otlpMetricsProtocol()
-	if protocol == "http/protobuf" || protocol == "http" {
-		return otlpmetrichttp.New(ctx)
+	kind, err := resolveOTLPProtocol(otlpMetricsProtocol())
+	if err != nil {
+		return nil, err
 	}
-	return otlpmetricgrpc.New(ctx)
+	switch kind {
+	case otlpExporterHTTP:
+		return otlpmetrichttp.New(ctx)
+	default:
+		return otlpmetricgrpc.New(ctx)
+	}
 }

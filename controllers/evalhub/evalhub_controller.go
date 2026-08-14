@@ -299,6 +299,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		if r.isServiceMonitorSupported() {
 			if err := r.reconcileServiceMonitor(ctx, instance); err != nil {
 				log.Error(err, "Failed to reconcile ServiceMonitor")
+				tracing.RecordPhaseError(ctx, err)
 				instance.SetStatus("MonitoringDegraded", "ServiceMonitorFailed", fmt.Sprintf("Failed to reconcile ServiceMonitor: %v", err), corev1.ConditionTrue)
 			} else {
 				instance.SetStatus("MonitoringDegraded", "MonitoringReady", "", corev1.ConditionFalse)
@@ -315,6 +316,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 	_ = tracing.WithPhase(ctx, spanReconcileRoute, func(ctx context.Context) error {
 		if err := r.reconcileRoute(ctx, instance); err != nil {
 			log.Error(err, "Failed to reconcile Route")
+			tracing.RecordPhaseError(ctx, err)
 		}
 		return nil
 	})
@@ -519,10 +521,14 @@ func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhu
 	}
 
 	// Remove finalizer
+	hadFinalizer := controllerutil.ContainsFinalizer(instance, evalhubv1.FinalizerName)
 	controllerutil.RemoveFinalizer(instance, evalhubv1.FinalizerName)
 	if err := r.Update(ctx, instance); err != nil {
 		log.Error(err, "Failed to remove finalizer")
 		return RequeueWithError(err)
+	}
+	if hadFinalizer {
+		recordManagedInstanceDelta(-1)
 	}
 
 	return DoNotRequeue()

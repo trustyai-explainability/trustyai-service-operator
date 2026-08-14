@@ -68,6 +68,51 @@ func TestOtlpTraceProtocolSpecificWins(t *testing.T) {
 	assert.Equal(t, "http/protobuf", otlpTraceProtocol())
 }
 
+func TestResolveOTLPProtocol(t *testing.T) {
+	tests := []struct {
+		name    string
+		protocol string
+		want    otlpExporterKind
+		wantErr bool
+	}{
+		{name: "empty defaults to grpc", protocol: "", want: otlpExporterGRPC},
+		{name: "grpc", protocol: "grpc", want: otlpExporterGRPC},
+		{name: "grpc trimmed and lowercased", protocol: "  GRPC  ", want: otlpExporterGRPC},
+		{name: "http alias", protocol: "http", want: otlpExporterHTTP},
+		{name: "http/protobuf", protocol: "http/protobuf", want: otlpExporterHTTP},
+		{name: "http/json", protocol: "http/json", want: otlpExporterHTTP},
+		{name: "invalid protocol", protocol: "ftp", wantErr: true},
+		{name: "unknown http variant", protocol: "http/xml", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveOTLPProtocol(tt.protocol)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "unsupported OTLP protocol")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestNewOTLPTraceExporterInvalidProtocol(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "ftp")
+	_, err := newOTLPTraceExporter(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported OTLP protocol")
+}
+
+func TestNewOTLPMetricExporterInvalidProtocol(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "ftp")
+	_, err := newOTLPMetricExporter(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported OTLP protocol")
+}
+
 func TestWithPhaseRecordsErrorStatus(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
@@ -97,6 +142,40 @@ func TestWithPhaseRecordsErrorStatus(t *testing.T) {
 	require.NotNil(t, child)
 	assert.Equal(t, codes.Error, child.Status.Code)
 	assert.Contains(t, child.Status.Description, "deployment failed")
+}
+
+func TestRecordPhaseErrorOnNonFatalPhase(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	prevTP := otel.GetTracerProvider()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() {
+		_ = tp.Shutdown(context.Background())
+		otel.SetTracerProvider(prevTP)
+	})
+
+	ctx, parent := StartReconcileSpan(context.Background(), "test-controller", "parent")
+	softErr := errors.New("route unavailable")
+	err := WithPhase(ctx, "child.phase", func(ctx context.Context) error {
+		RecordPhaseError(ctx, softErr)
+		return nil
+	})
+	require.NoError(t, err)
+	parent.End()
+
+	spans := exporter.GetSpans()
+	require.Len(t, spans, 2)
+
+	var child *tracetest.SpanStub
+	for i := range spans {
+		if spans[i].Name == "child.phase" {
+			child = &spans[i]
+			break
+		}
+	}
+	require.NotNil(t, child)
+	assert.Equal(t, codes.Error, child.Status.Code)
+	assert.Contains(t, child.Status.Description, "route unavailable")
 }
 
 func TestSetReconcileOutcome(t *testing.T) {
