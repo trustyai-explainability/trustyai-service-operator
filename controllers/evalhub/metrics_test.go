@@ -8,15 +8,23 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 func resetEvalHubMetricsForTest() {
 	evalHubMetricsOnce = sync.Once{}
 	evalHubMetricsErr = nil
+	managedEvalHubListerMu.Lock()
+	managedEvalHubLister = nil
+	managedEvalHubListerMu.Unlock()
 }
 
 func setupEvalHubMetricsTest(t *testing.T) *sdkmetric.ManualReader {
@@ -37,17 +45,26 @@ func collectMetrics(t *testing.T, reader *sdkmetric.ManualReader) metricdata.Res
 	return metrics
 }
 
+func metricByName(t *testing.T, metrics metricdata.ResourceMetrics, name string) metricdata.Metrics {
+	t.Helper()
+	require.Len(t, metrics.ScopeMetrics, 1)
+	for _, m := range metrics.ScopeMetrics[0].Metrics {
+		if m.Name == name {
+			return m
+		}
+	}
+	t.Fatalf("metric %q not found", name)
+	return metricdata.Metrics{}
+}
+
 func TestRecordEvalHubReconcileMetrics(t *testing.T) {
 	reader := setupEvalHubMetricsTest(t)
 
 	recordEvalHubReconcileMetrics(metricControllerEvalHub, "success", nil, 250*time.Millisecond)
 
 	metrics := collectMetrics(t, reader)
-	require.Len(t, metrics.ScopeMetrics, 1)
-	scopeMetrics := metrics.ScopeMetrics[0].Metrics
-	require.Len(t, scopeMetrics, 2)
 
-	durationMetric := findMetricByName(t, scopeMetrics, metricReconcileDuration)
+	durationMetric := metricByName(t, metrics, metricReconcileDuration)
 	histogram, ok := durationMetric.Data.(metricdata.Histogram[float64])
 	require.True(t, ok)
 	require.Len(t, histogram.DataPoints, 1)
@@ -56,7 +73,7 @@ func TestRecordEvalHubReconcileMetrics(t *testing.T) {
 	assert.Equal(t, "success", attributeValue(attrs, "result"))
 	assert.Equal(t, uint64(1), histogram.DataPoints[0].Count)
 
-	totalMetric := findMetricByName(t, scopeMetrics, metricReconcileTotal)
+	totalMetric := metricByName(t, metrics, metricReconcileTotal)
 	total, ok := totalMetric.Data.(metricdata.Sum[int64])
 	require.True(t, ok)
 	require.Len(t, total.DataPoints, 1)
@@ -69,10 +86,8 @@ func TestRecordEvalHubReconcileErrorMetrics(t *testing.T) {
 	recordEvalHubReconcileMetrics(metricControllerEvalHub, "error", assert.AnError, time.Second)
 
 	metrics := collectMetrics(t, reader)
-	scopeMetrics := metrics.ScopeMetrics[0].Metrics
-	require.Len(t, scopeMetrics, 3)
 
-	errorsMetric := findMetricByName(t, scopeMetrics, metricReconcileErrors)
+	errorsMetric := metricByName(t, metrics, metricReconcileErrors)
 	errorsSum, ok := errorsMetric.Data.(metricdata.Sum[int64])
 	require.True(t, ok)
 	require.Len(t, errorsSum.DataPoints, 1)
@@ -93,42 +108,72 @@ func TestRecordJobFailureEvent(t *testing.T) {
 	recordJobFailureEvent("sidecar container failed")
 
 	metrics := collectMetrics(t, reader)
-	scopeMetrics := metrics.ScopeMetrics[0].Metrics
-	require.Len(t, scopeMetrics, 1)
-	assert.Equal(t, metricJobFailureEvents, scopeMetrics[0].Name)
+	jobFailureMetric := metricByName(t, metrics, metricJobFailureEvents)
+	assert.Equal(t, metricJobFailureEvents, jobFailureMetric.Name)
 
-	sum, ok := scopeMetrics[0].Data.(metricdata.Sum[int64])
+	sum, ok := jobFailureMetric.Data.(metricdata.Sum[int64])
 	require.True(t, ok)
 	require.Len(t, sum.DataPoints, 1)
 	assert.Equal(t, failureReasonSidecar, attributeValue(sum.DataPoints[0].Attributes, "failure_reason"))
 }
 
-func TestManagedInstancesGauge(t *testing.T) {
+func TestObserveManagedEvalHubCount(t *testing.T) {
 	reader := setupEvalHubMetricsTest(t)
 
-	instanceCount := int64(3)
-	err := registerManagedInstancesGauge(func(_ context.Context) (int64, error) {
-		return instanceCount, nil
-	})
+	managed := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "managed",
+			Namespace:  "default",
+			Finalizers: []string{evalhubv1.FinalizerName},
+		},
+	}
+	unmanaged := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "unmanaged",
+			Namespace: "default",
+		},
+	}
+	scheme := runtime.NewScheme()
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+	SetManagedEvalHubLister(fake.NewClientBuilder().WithScheme(scheme).WithObjects(managed, unmanaged).Build())
+	t.Cleanup(func() { SetManagedEvalHubLister(nil) })
+
+	_, err := getEvalHubMetrics()
 	require.NoError(t, err)
 
 	metrics := collectMetrics(t, reader)
-	gaugeMetric := findMetricByName(t, metrics.ScopeMetrics[0].Metrics, metricManagedInstances)
+	gaugeMetric := metricByName(t, metrics, metricManagedInstances)
+	assert.Equal(t, metricManagedInstances, gaugeMetric.Name)
+
 	gauge, ok := gaugeMetric.Data.(metricdata.Gauge[int64])
 	require.True(t, ok)
 	require.Len(t, gauge.DataPoints, 1)
-	assert.Equal(t, int64(3), gauge.DataPoints[0].Value)
+	assert.Equal(t, int64(1), gauge.DataPoints[0].Value)
 }
 
-func findMetricByName(t *testing.T, scopeMetrics []metricdata.Metrics, name string) metricdata.Metrics {
-	t.Helper()
-	for _, m := range scopeMetrics {
-		if m.Name == name {
-			return m
-		}
+func TestCountManagedEvalHubs(t *testing.T) {
+	managed := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "managed",
+			Namespace:  "default",
+			Finalizers: []string{evalhubv1.FinalizerName},
+		},
 	}
-	t.Fatalf("metric %q not found in scope metrics", name)
-	return metricdata.Metrics{}
+	withoutFinalizer := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pending",
+			Namespace: "default",
+		},
+	}
+	scheme := runtime.NewScheme()
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+	SetManagedEvalHubLister(fake.NewClientBuilder().WithScheme(scheme).WithObjects(managed, withoutFinalizer).Build())
+	t.Cleanup(func() { SetManagedEvalHubLister(nil) })
+
+	count, err := countManagedEvalHubs(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+	assert.True(t, controllerutil.ContainsFinalizer(managed, evalhubv1.FinalizerName))
 }
 
 func attributeValue(attrs attribute.Set, key string) string {
