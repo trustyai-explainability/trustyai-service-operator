@@ -224,6 +224,14 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return RequeueWithError(err)
 	}
 
+	// Reconcile MLflow CA bundle ConfigMap (merged trust store for the eval-hub -> MLflow connection)
+	if err := r.reconcileMLflowCABundleConfigMap(ctx, instance); err != nil {
+		log.Error(err, "Failed to reconcile MLflow CA bundle ConfigMap")
+		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile MLflow CA bundle ConfigMap: %v", err), corev1.ConditionFalse)
+		r.Status().Update(ctx, instance)
+		return RequeueWithError(err)
+	}
+
 	// Reconcile Provider ConfigMaps (copy system CMs from operator namespace to instance namespace)
 	providerCMNames, err := r.reconcileProviderConfigMaps(ctx, instance)
 	if err != nil {
