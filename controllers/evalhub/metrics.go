@@ -6,12 +6,15 @@ import (
 	"sync"
 	"time"
 
+	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/pkg/tracing"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -58,7 +61,16 @@ var (
 	evalHubMetrics     evalHubOTelMetrics
 	evalHubMetricsOnce sync.Once
 	evalHubMetricsErr  error
+	managedEvalHubListerMu sync.RWMutex
+	managedEvalHubLister   client.Reader
 )
+
+// SetManagedEvalHubLister provides the API reader used to report current managed EvalHub inventory.
+func SetManagedEvalHubLister(reader client.Reader) {
+	managedEvalHubListerMu.Lock()
+	defer managedEvalHubListerMu.Unlock()
+	managedEvalHubLister = reader
+}
 
 func getEvalHubMetrics() (evalHubOTelMetrics, error) {
 	evalHubMetricsOnce.Do(func() {
@@ -89,6 +101,15 @@ func getEvalHubMetrics() (evalHubOTelMetrics, error) {
 			return
 		}
 
+		_, evalHubMetricsErr = meter.Int64ObservableGauge(
+			metricManagedInstances,
+			metric.WithDescription("Current number of EvalHub custom resources with the operator finalizer"),
+			metric.WithInt64Callback(observeManagedEvalHubCount),
+		)
+		if evalHubMetricsErr != nil {
+			return
+		}
+
 		evalHubMetrics.jobFailureEvents, evalHubMetricsErr = meter.Int64Counter(
 			metricJobFailureEvents,
 			metric.WithDescription("Evaluation job failure events handled by the operator"),
@@ -100,6 +121,11 @@ func getEvalHubMetrics() (evalHubOTelMetrics, error) {
 func finishEvalHubReconcile(span trace.Span, controller string, start time.Time, result ctrl.Result, err error) {
 	outcome := tracing.FinishReconcileOutcome(span, !result.IsZero(), result.RequeueAfter, err)
 	recordEvalHubReconcileMetrics(controller, outcome, err, time.Since(start))
+}
+
+func recordEvalHubReconcileOnExit(controller string, start time.Time, result *ctrl.Result, err *error) {
+	outcome := tracing.ReconcileOutcome(!result.IsZero(), result.RequeueAfter, *err)
+	recordEvalHubReconcileMetrics(controller, outcome, *err, time.Since(start))
 }
 
 func recordEvalHubReconcileMetrics(controller, outcome string, reconcileErr error, duration time.Duration) {
@@ -124,28 +150,35 @@ func recordEvalHubReconcileMetrics(controller, outcome string, reconcileErr erro
 	}
 }
 
-// ManagedInstanceCounter is a function that returns the current count of managed EvalHub instances.
-type ManagedInstanceCounter func(ctx context.Context) (int64, error)
+func observeManagedEvalHubCount(ctx context.Context, observer metric.Int64Observer) error {
+	count, err := countManagedEvalHubs(ctx)
+	if err != nil {
+		return err
+	}
+	observer.Observe(count)
+	return nil
+}
 
-// registerManagedInstancesGauge registers an observable gauge that reports the
-// current number of managed EvalHub CRs. The callback queries the cluster on
-// each metrics collection, so the value is always accurate regardless of
-// operator restarts.
-func registerManagedInstancesGauge(counter ManagedInstanceCounter) error {
-	meter := tracing.Meter(evalHubTracerName)
-	_, err := meter.Int64ObservableGauge(
-		metricManagedInstances,
-		metric.WithDescription("Current number of EvalHub custom resources managed by the operator"),
-		metric.WithInt64Callback(func(ctx context.Context, o metric.Int64Observer) error {
-			count, err := counter(ctx)
-			if err != nil {
-				return nil
-			}
-			o.Observe(count)
-			return nil
-		}),
-	)
-	return err
+func countManagedEvalHubs(ctx context.Context) (int64, error) {
+	managedEvalHubListerMu.RLock()
+	lister := managedEvalHubLister
+	managedEvalHubListerMu.RUnlock()
+	if lister == nil {
+		return 0, nil
+	}
+
+	var list evalhubv1.EvalHubList
+	if err := lister.List(ctx, &list); err != nil {
+		return 0, err
+	}
+
+	var count int64
+	for i := range list.Items {
+		if controllerutil.ContainsFinalizer(&list.Items[i], evalhubv1.FinalizerName) {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func recordJobFailureEvent(failureReason string) {

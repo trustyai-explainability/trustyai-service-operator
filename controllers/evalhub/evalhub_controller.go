@@ -29,6 +29,7 @@ import (
 )
 
 func ControllerSetUp(mgr manager.Manager, ns, operatorConfigMapName string, recorder record.EventRecorder) error {
+	SetManagedEvalHubLister(mgr.GetClient())
 	return (&EvalHubReconciler{
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
@@ -82,6 +83,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 	instance := &evalhubv1.EvalHub{}
 	err = r.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
+		defer recordEvalHubReconcileOnExit(metricControllerEvalHub, reconcileStart, &result, &err)
 		if errors.IsNotFound(err) {
 			log.Info("EvalHub resource not found. Ignoring since object must be deleted")
 			return DoNotRequeue()
@@ -521,14 +523,10 @@ func (r *EvalHubReconciler) handleDeletion(ctx context.Context, instance *evalhu
 	}
 
 	// Remove finalizer
-	hadFinalizer := controllerutil.ContainsFinalizer(instance, evalhubv1.FinalizerName)
 	controllerutil.RemoveFinalizer(instance, evalhubv1.FinalizerName)
 	if err := r.Update(ctx, instance); err != nil {
 		log.Error(err, "Failed to remove finalizer")
 		return RequeueWithError(err)
-	}
-	if hadFinalizer {
-		recordManagedInstanceDelta(-1)
 	}
 
 	return DoNotRequeue()

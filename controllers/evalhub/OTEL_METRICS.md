@@ -102,7 +102,7 @@ rate(evalhub_controller_reconcile_total{result="error"}[5m])
 # p99 reconcile latency
 histogram_quantile(0.99, rate(evalhub_controller_reconcile_duration_bucket[5m]))
 
-# Managed EvalHub instances (may reset on operator restart — see below)
+# Managed EvalHub instances (current inventory)
 evalhub_controller_managed_instances
 
 # Job failure events by reason
@@ -119,10 +119,10 @@ Prometheus names are derived from OTEL instrument names by the exporter (dots be
 
 | OTEL instrument | Type | Attributes | When recorded |
 | ----------------- | ---- | ---------- | ------------- |
-| `evalhub.controller.reconcile.duration` | Histogram (seconds) | `controller`, `result` | End of each reconcile cycle (includes initial resource fetch) |
-| `evalhub.controller.reconcile.total` | Counter | `controller`, `result` | End of each reconcile cycle (includes initial resource fetch) |
-| `evalhub.controller.reconcile.errors` | Counter | `controller`, `error_type` | Reconcile cycles with `result=error` |
-| `evalhub.controller.managed_instances` | Gauge | — | Each metrics collection (lists EvalHub CRs with active finalizers) |
+| `evalhub.controller.reconcile.duration` | Histogram (seconds) | `controller`, `result` | End of each EvalHub reconcile invocation (including failed `Get`) |
+| `evalhub.controller.reconcile.total` | Counter | `controller`, `result` | End of each EvalHub reconcile invocation (including failed `Get`) |
+| `evalhub.controller.reconcile.errors` | Counter | `controller`, `error_type` | EvalHub reconcile invocations with `result=error` |
+| `evalhub.controller.managed_instances` | Observable gauge | — | Current count of EvalHub CRs with the operator finalizer (scraped/collect time) |
 | `evalhub.controller.job_failure.events` | Counter | `failure_reason` | After successful EvalHub failure POST |
 
 ### Controller labels
@@ -157,9 +157,11 @@ Prometheus names are derived from OTEL instrument names by the exporter (dots be
 | [`controllers/evalhub/evalhub_controller.go`](evalhub_controller.go) | Reconcile timing and managed-instance tracking |
 | [`controllers/evalhub/evaluation_job_failure_reconciler.go`](evaluation_job_failure_reconciler.go) | Job failure event counter |
 
-### Managed instances counter
+### Managed instances gauge
 
-The managed-instances gauge uses an observable callback that lists EvalHub CRs with the finalizer present on each metrics collection interval. This always reports the accurate current count regardless of operator restarts — no delta tracking or baseline initialization required.
+`evalhub.controller.managed_instances` is an observable gauge that reports the **current inventory** of EvalHub custom resources carrying the operator finalizer. On each scrape or OTLP collection the operator lists EvalHub CRs cluster-wide and counts those with `trustyai.opendatahub.io/evalhub-finalizer`, so existing resources establish the baseline after a controller restart and the value cannot underflow below zero. Deletions are reflected on the next collection once the finalizer is removed.
+
+`SetManagedEvalHubLister` is wired during controller setup with the manager client.
 
 ### Tests
 
