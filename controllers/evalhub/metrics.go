@@ -161,7 +161,7 @@ func classifyReconcileError(err error) string {
 	if apierrors.IsConflict(err) {
 		return errorTypeConflict
 	}
-	if apierrors.IsTimeout(err) {
+	if apierrors.IsTimeout(err) || apierrors.IsServerTimeout(err) || apierrors.IsTooManyRequests(err) {
 		return errorTypeTimeout
 	}
 
