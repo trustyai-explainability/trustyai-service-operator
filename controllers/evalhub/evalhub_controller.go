@@ -7,6 +7,7 @@ import (
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
+	"github.com/trustyai-explainability/trustyai-service-operator/pkg/tracing"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -73,12 +74,12 @@ type EvalHubReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	log := log.FromContext(ctx)
 
 	// Fetch the EvalHub instance
 	instance := &evalhubv1.EvalHub{}
-	err := r.Get(ctx, req.NamespacedName, instance)
+	err = r.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
@@ -94,8 +95,19 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// Handle deletion first to avoid blocking removal with status init.
 	if instance.DeletionTimestamp != nil {
+		ctx, span := startEvalHubReconcileSpan(ctx, spanReconcileDeletion, instance.Namespace, instance.Name, int64(instance.Generation))
+		defer func() {
+			finishEvalHubReconcileSpan(span, result, err)
+			span.End()
+		}()
 		return r.handleDeletion(ctx, instance)
 	}
+
+	ctx, span := startEvalHubReconcileSpan(ctx, spanReconcile, instance.Namespace, instance.Name, int64(instance.Generation))
+	defer func() {
+		finishEvalHubReconcileSpan(span, result, err)
+		span.End()
+	}()
 
 	// Set initial status if not set
 	if instance.Status.Phase == "" {
@@ -130,6 +142,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		r.Status().Update(ctx, instance)
 		r.EventRecorder.Event(instance, corev1.EventTypeWarning, "DatabaseConfigMissing",
 			"Database configuration is required but not provided in spec.database")
+		tracing.SetSpanOutcome(span, "validation_error")
 		return RequeueWithError(fmt.Errorf("spec.database is required: the operator does not assume a default database"))
 	}
 
@@ -143,6 +156,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		r.Status().Update(ctx, instance)
 		r.EventRecorder.Event(instance, corev1.EventTypeWarning, "DatabaseConfigInvalid",
 			"PostgreSQL database type requires spec.database.secret to reference a Secret with a db-url key")
+		tracing.SetSpanOutcome(span, "validation_error")
 		return RequeueWithError(fmt.Errorf("spec.database.secret is required for postgresql"))
 	}
 
@@ -168,157 +182,159 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			}
 			r.EventRecorder.Event(instance, corev1.EventTypeWarning, invalidPlacementReason,
 				"multi-tenant EvalHub placed in a tenant namespace; deployment halted")
+			tracing.SetSpanOutcome(span, "invalid_placement")
 			return DoNotRequeue()
 		}
 	}
 
-	// Create ServiceAccount for EvalHub
-	err = r.createServiceAccount(ctx, instance)
-	if err != nil {
-		log.Error(err, "Failed to create ServiceAccount")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to create ServiceAccount: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
+	var providerCMNames, collectionCMNames, tenantProviderCMNames, tenantCollectionCMNames []string
 
-	// Create ServiceAccount for jobs in the instance namespace.
-	err = r.createJobsServiceAccount(ctx, instance, instance.Namespace)
-	if err != nil {
-		log.Error(err, "Failed to create job ServiceAccount")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to create job ServiceAccount: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-
-	// Reconcile tenant namespaces: create job SAs and API SA bindings in any
-	// namespace labelled with evalhub.trustyai.opendatahub.io/tenant.
-	// In single mode this is a no-op except for cleaning up any stale cross-ns resources.
-	if err := r.reconcileTenantNamespaces(ctx, instance); err != nil {
-		log.Error(err, "Failed to reconcile tenant namespaces")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile tenant namespaces: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-
-	// Reconcile single-tenancy convenience Roles (create in single mode, clean up in multi mode).
-	if err := r.reconcileSingleTenancyRoles(ctx, instance); err != nil {
-		log.Error(err, "Failed to reconcile single-tenancy roles")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile single-tenancy roles: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-
-	// Reconcile ConfigMap
-	if err := r.reconcileConfigMap(ctx, instance); err != nil {
-		log.Error(err, "Failed to reconcile ConfigMap")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile ConfigMap: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-
-	// Reconcile Service CA ConfigMap (for jobs to mount service CA certificate)
-	if err := r.reconcileServiceCAConfigMap(ctx, instance); err != nil {
-		log.Error(err, "Failed to reconcile Service CA ConfigMap")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Service CA ConfigMap: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-
-	// Reconcile Provider ConfigMaps (copy system CMs from operator namespace to instance namespace)
-	providerCMNames, err := r.reconcileProviderConfigMaps(ctx, instance)
-	if err != nil {
-		log.Error(err, "Failed to reconcile Provider ConfigMaps")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Provider ConfigMaps: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-	instance.Status.ActiveProviders = instance.Spec.Providers
-
-	// Reconcile Collection ConfigMaps (copy system CMs from operator namespace to instance namespace)
-	collectionCMNames, err := r.reconcileCollectionConfigMaps(ctx, instance)
-	if err != nil {
-		log.Error(err, "Failed to reconcile Collection ConfigMaps")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Collection ConfigMaps: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-	instance.Status.ActiveCollections = instance.Spec.Collections
-
-	// Discover tenant-labeled provider/collection ConfigMaps in the instance namespace.
-	// These are additional CMs provided by the namespace admin and mount at /providers/tenant/ and /collections/tenant/.
-	tenantProviderCMNames, err := r.reconcileTenantProviderConfigMaps(ctx, instance)
-	if err != nil {
-		log.Error(err, "Failed to reconcile tenant Provider ConfigMaps")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile tenant Provider ConfigMaps: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-	tenantCollectionCMNames, err := r.reconcileTenantCollectionConfigMaps(ctx, instance)
-	if err != nil {
-		log.Error(err, "Failed to reconcile tenant Collection ConfigMaps")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile tenant Collection ConfigMaps: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-
-	// Reconcile Deployment
-	if err := r.reconcileDeployment(ctx, instance, providerCMNames, collectionCMNames, tenantProviderCMNames, tenantCollectionCMNames); err != nil {
-		log.Error(err, "Failed to reconcile Deployment")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Deployment: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-
-	// Reconcile Service
-	if err := r.reconcileService(ctx, instance); err != nil {
-		log.Error(err, "Failed to reconcile Service")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Service: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-
-	// Reconcile metrics Service (dedicated ClusterIP for Prometheus scraping on metricsPort)
-	if err := r.reconcileMetricsService(ctx, instance); err != nil {
-		log.Error(err, "Failed to reconcile metrics Service")
-		instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile metrics Service: %v", err), corev1.ConditionFalse)
-		r.Status().Update(ctx, instance)
-		return RequeueWithError(err)
-	}
-
-	// Reconcile monitoring resources (ServiceMonitor).
-	// Monitoring failures are non-fatal: log, set a degraded condition, and continue.
-	// The condition is set in memory only — updateStatus() at the end of the loop
-	// persists the full status in a single write, avoiding mid-reconcile status
-	// updates that would trigger unnecessary re-reconciles.
-	if r.isServiceMonitorSupported() {
-		if err := r.reconcileServiceMonitor(ctx, instance); err != nil {
-			log.Error(err, "Failed to reconcile ServiceMonitor")
-			instance.SetStatus("MonitoringDegraded", "ServiceMonitorFailed", fmt.Sprintf("Failed to reconcile ServiceMonitor: %v", err), corev1.ConditionTrue)
-		} else {
-			instance.SetStatus("MonitoringDegraded", "MonitoringReady", "", corev1.ConditionFalse)
+	err = tracing.WithPhase(ctx, spanReconcileRBAC, func(ctx context.Context) error {
+		if err := r.createServiceAccount(ctx, instance); err != nil {
+			log.Error(err, "Failed to create ServiceAccount")
+			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to create ServiceAccount: %v", err), corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+			return err
 		}
-	} else {
-		log.Info("ServiceMonitor CRD not available on this cluster, skipping monitoring reconciliation")
+		if err := r.createJobsServiceAccount(ctx, instance, instance.Namespace); err != nil {
+			log.Error(err, "Failed to create job ServiceAccount")
+			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to create job ServiceAccount: %v", err), corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+			return err
+		}
+		if err := r.reconcileTenantNamespaces(ctx, instance); err != nil {
+			log.Error(err, "Failed to reconcile tenant namespaces")
+			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile tenant namespaces: %v", err), corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+			return err
+		}
+		if err := r.reconcileSingleTenancyRoles(ctx, instance); err != nil {
+			log.Error(err, "Failed to reconcile single-tenancy roles")
+			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile single-tenancy roles: %v", err), corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return RequeueWithError(err)
 	}
 
-	// Reconcile Route (if on OpenShift and enabled)
-	if err := r.reconcileRoute(ctx, instance); err != nil {
-		log.Error(err, "Failed to reconcile Route")
-		// Log warning but don't update status - Route is optional (OpenShift only)
-		// The Ready status will be determined by updateStatus based on deployment readiness
-		// Route errors are not fatal, continue
+	err = tracing.WithPhase(ctx, spanReconcileConfigMap, func(ctx context.Context) error {
+		if err := r.reconcileConfigMap(ctx, instance); err != nil {
+			log.Error(err, "Failed to reconcile ConfigMap")
+			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile ConfigMap: %v", err), corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+			return err
+		}
+		if err := r.reconcileServiceCAConfigMap(ctx, instance); err != nil {
+			log.Error(err, "Failed to reconcile Service CA ConfigMap")
+			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Service CA ConfigMap: %v", err), corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+			return err
+		}
+		var reconcileErr error
+		providerCMNames, reconcileErr = r.reconcileProviderConfigMaps(ctx, instance)
+		if reconcileErr != nil {
+			log.Error(reconcileErr, "Failed to reconcile Provider ConfigMaps")
+			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Provider ConfigMaps: %v", reconcileErr), corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+			return reconcileErr
+		}
+		instance.Status.ActiveProviders = instance.Spec.Providers
+		collectionCMNames, reconcileErr = r.reconcileCollectionConfigMaps(ctx, instance)
+		if reconcileErr != nil {
+			log.Error(reconcileErr, "Failed to reconcile Collection ConfigMaps")
+			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Collection ConfigMaps: %v", reconcileErr), corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+			return reconcileErr
+		}
+		instance.Status.ActiveCollections = instance.Spec.Collections
+		tenantProviderCMNames, reconcileErr = r.reconcileTenantProviderConfigMaps(ctx, instance)
+		if reconcileErr != nil {
+			log.Error(reconcileErr, "Failed to reconcile tenant Provider ConfigMaps")
+			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile tenant Provider ConfigMaps: %v", reconcileErr), corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+			return reconcileErr
+		}
+		tenantCollectionCMNames, reconcileErr = r.reconcileTenantCollectionConfigMaps(ctx, instance)
+		if reconcileErr != nil {
+			log.Error(reconcileErr, "Failed to reconcile tenant Collection ConfigMaps")
+			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile tenant Collection ConfigMaps: %v", reconcileErr), corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+			return reconcileErr
+		}
+		return nil
+	})
+	if err != nil {
+		return RequeueWithError(err)
 	}
 
-	// Reconcile optional MCP resources. Failures are recorded on status.mcp only; EvalHub API
-	// readiness is determined from the main deployment in updateStatus.
+	err = tracing.WithPhase(ctx, spanReconcileDeployment, func(ctx context.Context) error {
+		if err := r.reconcileDeployment(ctx, instance, providerCMNames, collectionCMNames, tenantProviderCMNames, tenantCollectionCMNames); err != nil {
+			log.Error(err, "Failed to reconcile Deployment")
+			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Deployment: %v", err), corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return RequeueWithError(err)
+	}
+
+	err = tracing.WithPhase(ctx, spanReconcileService, func(ctx context.Context) error {
+		if err := r.reconcileService(ctx, instance); err != nil {
+			log.Error(err, "Failed to reconcile Service")
+			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Service: %v", err), corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+			return err
+		}
+		if err := r.reconcileMetricsService(ctx, instance); err != nil {
+			log.Error(err, "Failed to reconcile metrics Service")
+			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile metrics Service: %v", err), corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+			return err
+		}
+		if r.isServiceMonitorSupported() {
+			if err := r.reconcileServiceMonitor(ctx, instance); err != nil {
+				log.Error(err, "Failed to reconcile ServiceMonitor")
+				instance.SetStatus("MonitoringDegraded", "ServiceMonitorFailed", fmt.Sprintf("Failed to reconcile ServiceMonitor: %v", err), corev1.ConditionTrue)
+			} else {
+				instance.SetStatus("MonitoringDegraded", "MonitoringReady", "", corev1.ConditionFalse)
+			}
+		} else {
+			log.Info("ServiceMonitor CRD not available on this cluster, skipping monitoring reconciliation")
+		}
+		return nil
+	})
+	if err != nil {
+		return RequeueWithError(err)
+	}
+
+	_ = tracing.WithPhase(ctx, spanReconcileRoute, func(ctx context.Context) error {
+		if err := r.reconcileRoute(ctx, instance); err != nil {
+			log.Error(err, "Failed to reconcile Route")
+		}
+		return nil
+	})
+
 	mcpReconcileOK := true
 	if instance.Spec.IsMCPEnabled() {
-		mcpReconcileOK = r.reconcileMCPServer(ctx, instance)
+		_ = tracing.WithPhase(ctx, spanReconcileMCP, func(ctx context.Context) error {
+			mcpReconcileOK = r.reconcileMCPServer(ctx, instance)
+			return nil
+		})
 	}
 
-	// Check deployment status and update EvalHub status
-	if err := r.updateStatus(ctx, instance, mcpReconcileOK); err != nil {
-		log.Error(err, "Failed to update EvalHub status")
+	err = tracing.WithPhase(ctx, spanReconcileStatus, func(ctx context.Context) error {
+		if err := r.updateStatus(ctx, instance, mcpReconcileOK); err != nil {
+			log.Error(err, "Failed to update EvalHub status")
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		return RequeueWithError(err)
 	}
 
@@ -464,10 +480,6 @@ func RequeueWithError(err error) (ctrl.Result, error) {
 
 func RequeueWithDelay(delay time.Duration) (ctrl.Result, error) {
 	return ctrl.Result{RequeueAfter: delay}, nil
-}
-
-func Requeue() (ctrl.Result, error) {
-	return ctrl.Result{Requeue: true}, nil
 }
 
 // handleDeletion handles the deletion of EvalHub resources

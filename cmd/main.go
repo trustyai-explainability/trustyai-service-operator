@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
@@ -55,6 +56,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	"github.com/trustyai-explainability/trustyai-service-operator/pkg/tracing"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	//+kubebuilder:scaffold:imports
 )
@@ -88,6 +90,10 @@ func init() {
 }
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
@@ -108,16 +114,29 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
+	traceShutdown, err := tracing.Setup(context.Background())
+	if err != nil {
+		setupLog.Error(err, "unable to set up OpenTelemetry tracing")
+		return 1
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := traceShutdown(ctx); err != nil {
+			setupLog.Error(err, "problem shutting down OpenTelemetry tracing")
+		}
+	}()
+
 	if enabledServices.Empty() {
 		setupLog.Error(fmt.Errorf("no service is specified"), "please specify at least one service")
-		os.Exit(1)
+		return 1
 	}
 
 	cfg := ctrl.GetConfigOrDie()
 	tlsResult, err := pkgtls.Resolve(context.Background(), cfg)
 	if err != nil {
 		setupLog.Error(err, "unable to resolve TLS configuration")
-		os.Exit(1)
+		return 1
 	}
 	tlsOpts := tlsResult.TLSOpts
 
@@ -156,20 +175,20 @@ func main() {
 	mgr, err := ctrl.NewManager(cfg, mgrOpts)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
+		return 1
 	}
 
 	if slices.Contains(enabledServices, serviceEvalHub) {
 		if err := ctrl.NewWebhookManagedBy(mgr).For(&evalhubv1.EvalHub{}).Complete(); err != nil {
 			setupLog.Error(err, "unable to create EvalHub conversion webhook")
-			os.Exit(1)
+			return 1
 		}
 	}
 
 	if slices.Contains(enabledServices, serviceTAS) {
 		if err := ctrl.NewWebhookManagedBy(mgr).For(&tasv1.TrustyAIService{}).Complete(); err != nil {
 			setupLog.Error(err, "unable to create TrustyAIService conversion webhook")
-			os.Exit(1)
+			return 1
 		}
 	}
 
@@ -182,22 +201,24 @@ func main() {
 
 	if err := controllers.SetupControllers(enabledServices, mgr, ns, configMap, recorder); err != nil {
 		setupLog.Error(err, "unable to initialize controller(s)")
-		os.Exit(1)
+		return 1
 	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
-		os.Exit(1)
+		return 1
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
-		os.Exit(1)
+		return 1
 	}
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
+		return 1
 	}
+
+	return 0
 }
