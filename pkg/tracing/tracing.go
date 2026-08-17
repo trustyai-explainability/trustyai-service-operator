@@ -66,6 +66,11 @@ func Setup(ctx context.Context) (func(context.Context) error, error) {
 	if metricsEnabled() {
 		metricsShutdown, err := setupMetrics(ctx)
 		if err != nil {
+			for _, shutdown := range shutdowns {
+				if shutdownErr := shutdown(ctx); shutdownErr != nil {
+					err = errors.Join(err, shutdownErr)
+				}
+			}
 			return nil, err
 		}
 		shutdowns = append(shutdowns, metricsShutdown)

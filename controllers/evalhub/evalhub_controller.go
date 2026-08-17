@@ -76,18 +76,18 @@ type EvalHubReconciler struct {
 // move the current state of the cluster closer to the desired state.
 func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	log := log.FromContext(ctx)
+	reconcileStart := time.Now()
 
 	// Fetch the EvalHub instance
 	instance := &evalhubv1.EvalHub{}
 	err = r.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// Request object not found, could have been deleted after reconcile request.
 			log.Info("EvalHub resource not found. Ignoring since object must be deleted")
 			return DoNotRequeue()
 		}
-		// Error reading the object - requeue the request.
 		log.Error(err, "Failed to get EvalHub")
+		recordEvalHubReconcileMetrics(metricControllerEvalHub, "error", err, time.Since(reconcileStart))
 		return RequeueWithError(err)
 	}
 
@@ -95,20 +95,19 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 
 	// Handle deletion first to avoid blocking removal with status init.
 	if instance.DeletionTimestamp != nil {
-		reconcileStart := time.Now()
 		ctx, span := startEvalHubReconcileSpan(ctx, spanReconcileDeletion, instance.Namespace, instance.Name, int64(instance.Generation))
 		defer func() {
 			finishEvalHubReconcileSpan(span, metricControllerDeletion, reconcileStart, result, err)
 			span.End()
 		}()
 		res, delErr := r.handleDeletion(ctx, instance)
-		if delErr == nil {
+		if delErr == nil && res.IsZero() &&
+			!controllerutil.ContainsFinalizer(instance, evalhubv1.FinalizerName) {
 			recordManagedInstanceDelta(-1)
 		}
 		return res, delErr
 	}
 
-	reconcileStart := time.Now()
 	ctx, span := startEvalHubReconcileSpan(ctx, spanReconcile, instance.Namespace, instance.Name, int64(instance.Generation))
 	defer func() {
 		finishEvalHubReconcileSpan(span, metricControllerEvalHub, reconcileStart, result, err)
