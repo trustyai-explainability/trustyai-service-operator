@@ -195,6 +195,21 @@ func TestManagedInstancesGaugeRegisteredOnIdleCluster(t *testing.T) {
 	assert.Equal(t, int64(0), gauge.DataPoints[0].Value)
 }
 
+func TestGaugeInitializedAtStartupBeforeReconciliation(t *testing.T) {
+	reader := setupEvalHubMetricsTest(t)
+
+	_, err := getEvalHubMetrics()
+	require.NoError(t, err, "getEvalHubMetrics should succeed even with nil lister")
+
+	metrics := collectMetrics(t, reader)
+	gaugeMetric := metricByName(t, metrics, metricManagedInstances)
+	gauge, ok := gaugeMetric.Data.(metricdata.Gauge[int64])
+	require.True(t, ok, "managed_instances should be a gauge")
+	require.Len(t, gauge.DataPoints, 1)
+	assert.Equal(t, int64(0), gauge.DataPoints[0].Value,
+		"gauge should report 0 when no lister is configured (pre-reconciliation startup)")
+}
+
 func attributeValue(attrs attribute.Set, key string) string {
 	value, ok := attrs.Value(attribute.Key(key))
 	if !ok {
