@@ -47,8 +47,8 @@ func TestRecordEvalHubReconcileMetrics(t *testing.T) {
 	scopeMetrics := metrics.ScopeMetrics[0].Metrics
 	require.Len(t, scopeMetrics, 2)
 
-	assert.Equal(t, metricReconcileDuration, scopeMetrics[0].Name)
-	histogram, ok := scopeMetrics[0].Data.(metricdata.Histogram[float64])
+	durationMetric := findMetricByName(t, scopeMetrics, metricReconcileDuration)
+	histogram, ok := durationMetric.Data.(metricdata.Histogram[float64])
 	require.True(t, ok)
 	require.Len(t, histogram.DataPoints, 1)
 	attrs := histogram.DataPoints[0].Attributes
@@ -56,8 +56,8 @@ func TestRecordEvalHubReconcileMetrics(t *testing.T) {
 	assert.Equal(t, "success", attributeValue(attrs, "result"))
 	assert.Equal(t, uint64(1), histogram.DataPoints[0].Count)
 
-	assert.Equal(t, metricReconcileTotal, scopeMetrics[1].Name)
-	total, ok := scopeMetrics[1].Data.(metricdata.Sum[int64])
+	totalMetric := findMetricByName(t, scopeMetrics, metricReconcileTotal)
+	total, ok := totalMetric.Data.(metricdata.Sum[int64])
 	require.True(t, ok)
 	require.Len(t, total.DataPoints, 1)
 	assert.Equal(t, int64(1), total.DataPoints[0].Value)
@@ -72,8 +72,8 @@ func TestRecordEvalHubReconcileErrorMetrics(t *testing.T) {
 	scopeMetrics := metrics.ScopeMetrics[0].Metrics
 	require.Len(t, scopeMetrics, 3)
 
-	assert.Equal(t, metricReconcileErrors, scopeMetrics[2].Name)
-	errorsSum, ok := scopeMetrics[2].Data.(metricdata.Sum[int64])
+	errorsMetric := findMetricByName(t, scopeMetrics, metricReconcileErrors)
+	errorsSum, ok := errorsMetric.Data.(metricdata.Sum[int64])
 	require.True(t, ok)
 	require.Len(t, errorsSum.DataPoints, 1)
 	assert.Equal(t, errorTypeOther, attributeValue(errorsSum.DataPoints[0].Attributes, "error_type"))
@@ -114,6 +114,17 @@ func TestRecordManagedInstanceDelta(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, sum.DataPoints, 1)
 	assert.Equal(t, int64(0), sum.DataPoints[0].Value)
+}
+
+func findMetricByName(t *testing.T, scopeMetrics []metricdata.Metrics, name string) metricdata.Metrics {
+	t.Helper()
+	for _, m := range scopeMetrics {
+		if m.Name == name {
+			return m
+		}
+	}
+	t.Fatalf("metric %q not found in scope metrics", name)
+	return metricdata.Metrics{}
 }
 
 func attributeValue(attrs attribute.Set, key string) string {
