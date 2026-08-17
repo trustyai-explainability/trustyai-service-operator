@@ -103,17 +103,21 @@ func TestRecordJobFailureEvent(t *testing.T) {
 	assert.Equal(t, failureReasonSidecar, attributeValue(sum.DataPoints[0].Attributes, "failure_reason"))
 }
 
-func TestRecordManagedInstanceDelta(t *testing.T) {
+func TestManagedInstancesGauge(t *testing.T) {
 	reader := setupEvalHubMetricsTest(t)
 
-	recordManagedInstanceDelta(1)
-	recordManagedInstanceDelta(-1)
+	instanceCount := int64(3)
+	err := registerManagedInstancesGauge(func(_ context.Context) (int64, error) {
+		return instanceCount, nil
+	})
+	require.NoError(t, err)
 
 	metrics := collectMetrics(t, reader)
-	sum, ok := metrics.ScopeMetrics[0].Metrics[0].Data.(metricdata.Sum[int64])
+	gaugeMetric := findMetricByName(t, metrics.ScopeMetrics[0].Metrics, metricManagedInstances)
+	gauge, ok := gaugeMetric.Data.(metricdata.Gauge[int64])
 	require.True(t, ok)
-	require.Len(t, sum.DataPoints, 1)
-	assert.Equal(t, int64(0), sum.DataPoints[0].Value)
+	require.Len(t, gauge.DataPoints, 1)
+	assert.Equal(t, int64(3), gauge.DataPoints[0].Value)
 }
 
 func findMetricByName(t *testing.T, scopeMetrics []metricdata.Metrics, name string) metricdata.Metrics {

@@ -51,7 +51,6 @@ type evalHubOTelMetrics struct {
 	reconcileDuration metric.Float64Histogram
 	reconcileTotal    metric.Int64Counter
 	reconcileErrors   metric.Int64Counter
-	managedInstances  metric.Int64UpDownCounter
 	jobFailureEvents  metric.Int64Counter
 }
 
@@ -85,14 +84,6 @@ func getEvalHubMetrics() (evalHubOTelMetrics, error) {
 		evalHubMetrics.reconcileErrors, evalHubMetricsErr = meter.Int64Counter(
 			metricReconcileErrors,
 			metric.WithDescription("Total EvalHub controller reconcile errors by type"),
-		)
-		if evalHubMetricsErr != nil {
-			return
-		}
-
-		evalHubMetrics.managedInstances, evalHubMetricsErr = meter.Int64UpDownCounter(
-			metricManagedInstances,
-			metric.WithDescription("Number of EvalHub custom resources managed by the operator"),
 		)
 		if evalHubMetricsErr != nil {
 			return
@@ -133,12 +124,28 @@ func recordEvalHubReconcileMetrics(controller, outcome string, reconcileErr erro
 	}
 }
 
-func recordManagedInstanceDelta(delta int64) {
-	metrics, err := getEvalHubMetrics()
-	if err != nil {
-		return
-	}
-	metrics.managedInstances.Add(context.Background(), delta)
+// ManagedInstanceCounter is a function that returns the current count of managed EvalHub instances.
+type ManagedInstanceCounter func(ctx context.Context) (int64, error)
+
+// registerManagedInstancesGauge registers an observable gauge that reports the
+// current number of managed EvalHub CRs. The callback queries the cluster on
+// each metrics collection, so the value is always accurate regardless of
+// operator restarts.
+func registerManagedInstancesGauge(counter ManagedInstanceCounter) error {
+	meter := tracing.Meter(evalHubTracerName)
+	_, err := meter.Int64ObservableGauge(
+		metricManagedInstances,
+		metric.WithDescription("Current number of EvalHub custom resources managed by the operator"),
+		metric.WithInt64Callback(func(ctx context.Context, o metric.Int64Observer) error {
+			count, err := counter(ctx)
+			if err != nil {
+				return nil
+			}
+			o.Observe(count)
+			return nil
+		}),
+	)
+	return err
 }
 
 func recordJobFailureEvent(failureReason string) {

@@ -71,7 +71,7 @@ Instrumentation scope: `evalhub-controller`.
 | `evalhub.controller.reconcile.duration` | Histogram (seconds) | `controller`, `result` | End of each reconcile cycle (includes initial resource fetch) |
 | `evalhub.controller.reconcile.total` | Counter | `controller`, `result` | End of each reconcile cycle (includes initial resource fetch) |
 | `evalhub.controller.reconcile.errors` | Counter | `controller`, `error_type` | Reconcile cycles with `result=error` |
-| `evalhub.controller.managed_instances` | UpDownCounter | — | Finalizer added (+1) / removed on successful deletion (-1) |
+| `evalhub.controller.managed_instances` | Gauge | — | Each metrics collection (lists EvalHub CRs with active finalizers) |
 | `evalhub.controller.job_failure.events` | Counter | `failure_reason` | After successful EvalHub failure POST |
 
 ### Controller labels
@@ -108,7 +108,7 @@ Instrumentation scope: `evalhub-controller`.
 
 ### Managed instances counter
 
-The managed-instances UpDownCounter increments when the EvalHub finalizer is first added and decrements only after successful finalizer removal (guarded by `res.IsZero()` and absence of the finalizer to prevent double-decrement on multi-step deletion). It may reset to zero on operator restart until reconciles run again; use cluster-level EvalHub CR counts for authoritative inventory if needed.
+The managed-instances gauge uses an observable callback that lists EvalHub CRs with the finalizer present on each metrics collection interval. This always reports the accurate current count regardless of operator restarts — no delta tracking or baseline initialization required.
 
 ### Tests
 
