@@ -100,12 +100,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 			finishEvalHubReconcileSpan(span, metricControllerDeletion, reconcileStart, result, err)
 			span.End()
 		}()
-		res, delErr := r.handleDeletion(ctx, instance)
-		if delErr == nil && res.IsZero() &&
-			!controllerutil.ContainsFinalizer(instance, evalhubv1.FinalizerName) {
-			recordManagedInstanceDelta(-1)
-		}
-		return res, delErr
+		return r.handleDeletion(ctx, instance)
 	}
 
 	ctx, span := startEvalHubReconcileSpan(ctx, spanReconcile, instance.Namespace, instance.Name, int64(instance.Generation))
@@ -133,7 +128,6 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 			log.Error(err, "Failed to add finalizer")
 			return RequeueWithError(err)
 		}
-		recordManagedInstanceDelta(1)
 		return RequeueWithDelay(time.Second * 5)
 	}
 
@@ -374,6 +368,11 @@ func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := b.Complete(r); err != nil {
 		return err
 	}
+
+	if err := registerManagedInstancesGauge(r.countManagedInstances); err != nil {
+		return fmt.Errorf("evalhub: register managed_instances gauge: %w", err)
+	}
+
 	tenantNS := newEvalHubTenantNamespaces()
 	if err := tenantNS.bootstrap(context.Background(), mgr.GetAPIReader()); err != nil {
 		return fmt.Errorf("evalhub: bootstrap tenant namespaces: %w", err)
@@ -486,6 +485,20 @@ func RequeueWithError(err error) (ctrl.Result, error) {
 
 func RequeueWithDelay(delay time.Duration) (ctrl.Result, error) {
 	return ctrl.Result{RequeueAfter: delay}, nil
+}
+
+func (r *EvalHubReconciler) countManagedInstances(ctx context.Context) (int64, error) {
+	list := &evalhubv1.EvalHubList{}
+	if err := r.List(ctx, list); err != nil {
+		return 0, err
+	}
+	var count int64
+	for i := range list.Items {
+		if controllerutil.ContainsFinalizer(&list.Items[i], evalhubv1.FinalizerName) {
+			count++
+		}
+	}
+	return count, nil
 }
 
 // handleDeletion handles the deletion of EvalHub resources
