@@ -176,6 +176,25 @@ func TestCountManagedEvalHubs(t *testing.T) {
 	assert.True(t, controllerutil.ContainsFinalizer(managed, evalhubv1.FinalizerName))
 }
 
+func TestManagedInstancesGaugeRegisteredOnIdleCluster(t *testing.T) {
+	reader := setupEvalHubMetricsTest(t)
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+	SetManagedEvalHubLister(fake.NewClientBuilder().WithScheme(scheme).Build())
+	t.Cleanup(func() { SetManagedEvalHubLister(nil) })
+
+	_, err := getEvalHubMetrics()
+	require.NoError(t, err)
+
+	metrics := collectMetrics(t, reader)
+	gaugeMetric := metricByName(t, metrics, metricManagedInstances)
+	gauge, ok := gaugeMetric.Data.(metricdata.Gauge[int64])
+	require.True(t, ok)
+	require.Len(t, gauge.DataPoints, 1)
+	assert.Equal(t, int64(0), gauge.DataPoints[0].Value)
+}
+
 func attributeValue(attrs attribute.Set, key string) string {
 	value, ok := attrs.Value(attribute.Key(key))
 	if !ok {

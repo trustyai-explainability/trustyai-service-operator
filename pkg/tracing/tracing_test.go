@@ -80,7 +80,7 @@ func TestResolveOTLPProtocol(t *testing.T) {
 		{name: "grpc trimmed and lowercased", protocol: "  GRPC  ", want: otlpExporterGRPC},
 		{name: "http alias", protocol: "http", want: otlpExporterHTTP},
 		{name: "http/protobuf", protocol: "http/protobuf", want: otlpExporterHTTP},
-		{name: "http/json", protocol: "http/json", want: otlpExporterHTTP},
+		{name: "http/json rejected", protocol: "http/json", wantErr: true},
 		{name: "invalid protocol", protocol: "ftp", wantErr: true},
 		{name: "unknown http variant", protocol: "http/xml", wantErr: true},
 	}
