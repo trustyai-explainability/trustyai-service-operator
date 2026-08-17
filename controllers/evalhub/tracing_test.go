@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -111,7 +112,7 @@ func TestFinishEvalHubReconcileSpanPreservesExplicitOutcome(t *testing.T) {
 
 	_, span := startEvalHubReconcileSpan(context.Background(), spanReconcile, "ns-1", "hub-1", 1)
 	tracing.SetSpanOutcome(span, "validation_error")
-	finishEvalHubReconcileSpan(span, ctrl.Result{}, errors.New("ignored"))
+	finishEvalHubReconcileSpan(span, metricControllerEvalHub, time.Now(), ctrl.Result{}, errors.New("ignored"))
 	span.End()
 
 	spans := exporter.GetSpans()

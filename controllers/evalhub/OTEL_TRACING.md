@@ -2,7 +2,7 @@
 
 This document describes how to enable OpenTelemetry (OTEL) tracing for the **TrustyAI Service Operator** when running the EvalHub controller, and how the instrumentation is implemented.
 
-**Related work:** [RHAI-241](https://redhat.atlassian.net/browse/RHAI-241) (controller tracing), sibling [RHAI-240](https://redhat.atlassian.net/browse/RHAI-240) (Prometheus metrics).
+**Related work:** [RHAI-241](https://redhat.atlassian.net/browse/RHAI-241) (controller tracing), [OTEL_METRICS.md](OTEL_METRICS.md) (controller OTLP metrics), sibling [RHAI-240](https://redhat.atlassian.net/browse/RHAI-240) (Prometheus metrics on `:8080`).
 
 ---
 
@@ -29,8 +29,8 @@ Set at least one of these on the operator manager container:
 
 | Variable | Required | Description |
 | -------- | -------- | ----------- |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Yes* | OTLP collector host:port (e.g. `otel-collector.openshift-operators.svc:4317`) |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Yes* | Trace-specific endpoint; takes precedence over `OTEL_EXPORTER_OTLP_ENDPOINT` when set |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Yes* | OTLP collector URL (e.g. `http://otel-collector.openshift-operators.svc:4317` for in-cluster plaintext gRPC; use `https://` for TLS — see below) |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Yes* | Trace-specific endpoint; takes precedence over `OTEL_EXPORTER_OTLP_ENDPOINT` when set (for OTLP/HTTP use the full path, e.g. `http://otel-collector.openshift-operators.svc:4318/v1/traces`) |
 
 \*Tracing stays disabled when neither endpoint variable is set.
 
@@ -44,6 +44,8 @@ Set at least one of these on the operator manager container:
 
 Standard [OTEL SDK environment variables](https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/) for headers, TLS, and timeouts are also respected by the OTLP exporters.
 
+**TLS endpoints:** When the collector requires TLS, use `https://` in the endpoint URL and set `OTEL_EXPORTER_OTLP_CERTIFICATE` to the path of the CA bundle (e.g. a mounted Secret or the OpenShift service-CA). For mTLS, also set `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE` and `OTEL_EXPORTER_OTLP_CLIENT_KEY`.
+
 ### Example: patch the operator Deployment
 
 After deploying the operator (for example into `opendatahub`):
@@ -52,7 +54,7 @@ After deploying the operator (for example into `opendatahub`):
 kubectl patch deployment trustyai-service-operator-controller-manager -n opendatahub --type='json' -p='[
   {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {
     "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
-    "value": "otel-collector.openshift-operators.svc:4317"
+    "value": "http://otel-collector.openshift-operators.svc:4317"
   }},
   {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {
     "name": "OTEL_SERVICE_NAME",
@@ -76,12 +78,19 @@ spec:
         - name: manager
           env:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "otel-collector.example.svc:4317"
+              value: "http://otel-collector.example.svc:4317"
             - name: OTEL_SERVICE_NAME
               value: "trustyai-service-operator"
             # For OTLP/HTTP collectors:
             # - name: OTEL_EXPORTER_OTLP_PROTOCOL
             #   value: "http/protobuf"
+            # - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            #   value: "http://otel-collector.example.svc:4318"
+            # For TLS (https://) collectors, configure certificate trust:
+            # - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            #   value: "https://otel-collector.example.svc:4317"
+            # - name: OTEL_EXPORTER_OTLP_CERTIFICATE
+            #   value: "/var/run/secrets/otel/ca.crt"
 ```
 
 ### Verifying traces

@@ -18,6 +18,7 @@ import (
 func TestSetupWithoutEndpointUsesNoopProvider(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "")
 	t.Setenv("OTEL_SDK_DISABLED", "")
 
 	shutdown, err := Setup(context.Background())
@@ -27,6 +28,29 @@ func TestSetupWithoutEndpointUsesNoopProvider(t *testing.T) {
 	_, span := Tracer("test").Start(context.Background(), "noop-span")
 	span.End()
 	assert.False(t, span.SpanContext().IsValid())
+
+	counter, err := Meter("test").Int64Counter("noop.counter")
+	require.NoError(t, err)
+	counter.Add(context.Background(), 1)
+}
+
+func TestReconcileOutcome(t *testing.T) {
+	assert.Equal(t, "success", ReconcileOutcome(false, 0, nil))
+	assert.Equal(t, "requeue", ReconcileOutcome(true, 0, nil))
+	assert.Equal(t, "requeue", ReconcileOutcome(false, time.Second, nil))
+	assert.Equal(t, "error", ReconcileOutcome(false, 0, errors.New("boom")))
+}
+
+func TestOtlpMetricsProtocolSpecificWins(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "http/protobuf")
+	t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+	assert.Equal(t, "http/protobuf", otlpMetricsProtocol())
+}
+
+func TestOtlpTraceProtocolSpecificWins(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "http/protobuf")
+	t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+	assert.Equal(t, "http/protobuf", otlpTraceProtocol())
 }
 
 func TestWithPhaseRecordsErrorStatus(t *testing.T) {
@@ -79,7 +103,7 @@ func TestSetReconcileOutcome(t *testing.T) {
 func TestOtlpProtocolTraceSpecificWins(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "http/protobuf")
 	t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
-	assert.Equal(t, "http/protobuf", otlpProtocol())
+	assert.Equal(t, "http/protobuf", otlpTraceProtocol())
 }
 
 func TestFinishReconcileOutcomePreservesExplicitOutcome(t *testing.T) {
@@ -90,8 +114,10 @@ func TestFinishReconcileOutcomePreservesExplicitOutcome(t *testing.T) {
 
 	_, span := Tracer("test").Start(context.Background(), "reconcile")
 	SetSpanOutcome(span, "invalid_placement")
-	FinishReconcileOutcome(span, true, 0, errors.New("ignored"))
+	outcome := FinishReconcileOutcome(span, true, 0, errors.New("ignored"))
 	span.End()
+
+	assert.Equal(t, "invalid_placement", outcome)
 
 	spans := exporter.GetSpans()
 	require.Len(t, spans, 1)
