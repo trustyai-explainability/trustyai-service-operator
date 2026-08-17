@@ -30,9 +30,6 @@ import (
 
 func ControllerSetUp(mgr manager.Manager, ns, operatorConfigMapName string, recorder record.EventRecorder) error {
 	SetManagedEvalHubLister(mgr.GetClient())
-	if _, err := getEvalHubMetrics(); err != nil {
-		return fmt.Errorf("evalhub: register metrics: %w", err)
-	}
 	return (&EvalHubReconciler{
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
@@ -373,6 +370,10 @@ func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	if err := b.Complete(r); err != nil {
 		return err
+	}
+
+	if _, err := getEvalHubMetrics(); err != nil {
+		return fmt.Errorf("register evalhub metrics: %w", err)
 	}
 
 	tenantNS := newEvalHubTenantNamespaces()
