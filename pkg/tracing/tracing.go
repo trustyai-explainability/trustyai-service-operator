@@ -268,8 +268,7 @@ func setupMetrics(ctx context.Context) (func(context.Context) error, error) {
 func otelResource() (*resource.Resource, error) {
 	res, err := resource.Merge(
 		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
+		resource.NewSchemaless(
 			semconv.ServiceName(serviceName()),
 			semconv.ServiceVersion(constants.Version),
 		),

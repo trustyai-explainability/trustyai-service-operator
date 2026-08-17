@@ -78,8 +78,18 @@ jobs:
 
       - name: Wait for operator to be ready
         run: |
-          kubectl wait --for=condition=available --timeout=120s \
-            deployment/trustyai-service-operator-controller-manager -n system
+          if ! kubectl wait --for=condition=available --timeout=120s \
+            deployment/trustyai-service-operator-controller-manager -n system; then
+            echo "::group::Operator pod diagnostics"
+            kubectl get pods -n system -o wide
+            kubectl describe pod -l control-plane=trustyai-service-operator -n system
+            echo "--- Operator logs ---"
+            kubectl logs -l control-plane=trustyai-service-operator -n system --tail=200 || true
+            echo "--- Events ---"
+            kubectl get events -n system --sort-by='.lastTimestamp' || true
+            echo "::endgroup::"
+            exit 1
+          fi
           echo "Operator deployment is ready"
           kubectl get pods -n system
           kubectl wait --for=condition=ready --timeout=60s \
