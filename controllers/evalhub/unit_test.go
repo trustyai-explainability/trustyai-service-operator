@@ -2055,6 +2055,88 @@ func TestEvalHubReconciler_createTenantServiceCAConfigMap(t *testing.T) {
 	})
 }
 
+// TestEvalHubReconciler_createTenantMLFlowCABundleConfigMap verifies that the merged
+// MLflow CA bundle is copied from the instance namespace into tenant namespaces so
+// evaluation job sidecars can mount the same trust store as the EvalHub API.
+func TestEvalHubReconciler_createTenantMLFlowCABundleConfigMap(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, evalhubv1.AddToScheme(scheme))
+
+	ctx := context.Background()
+	instanceNamespace := "opendatahub"
+	tenantNamespace := "team-a"
+	evalHubName := "evalhub"
+	cmName := evalHubName + mlflowCABundleCMSuffix
+
+	evalHub := &evalhubv1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evalHubName,
+			Namespace: instanceNamespace,
+			UID:       "test-uid-mlflow-ca",
+		},
+	}
+
+	sourceCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      cmName,
+			Namespace: instanceNamespace,
+		},
+		Data: map[string]string{mlflowCABundleFile: "MERGED-CA-PEM"},
+	}
+
+	t.Run("copies bundle from instance namespace into tenant namespace", func(t *testing.T) {
+		tenantNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: tenantNamespace}}
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, tenantNS, sourceCM).
+			Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		require.NoError(t, reconciler.createTenantMLFlowCABundleConfigMap(ctx, evalHub, tenantNamespace))
+
+		cm := &corev1.ConfigMap{}
+		require.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: cmName, Namespace: tenantNamespace}, cm))
+		assert.Equal(t, "MERGED-CA-PEM", cm.Data[mlflowCABundleFile])
+		assert.Equal(t, "job", cm.Labels["app.kubernetes.io/component"])
+		assert.Empty(t, cm.OwnerReferences)
+	})
+
+	t.Run("updates tenant copy when instance bundle rotates", func(t *testing.T) {
+		tenantNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: tenantNamespace}}
+		existing := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: tenantNamespace},
+			Data:       map[string]string{mlflowCABundleFile: "STALE-PEM"},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, tenantNS, sourceCM, existing).
+			Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		require.NoError(t, reconciler.createTenantMLFlowCABundleConfigMap(ctx, evalHub, tenantNamespace))
+
+		cm := &corev1.ConfigMap{}
+		require.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: cmName, Namespace: tenantNamespace}, cm))
+		assert.Equal(t, "MERGED-CA-PEM", cm.Data[mlflowCABundleFile])
+	})
+
+	t.Run("skips when instance bundle ConfigMap is missing", func(t *testing.T) {
+		tenantNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: tenantNamespace}}
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, tenantNS).
+			Build()
+		reconciler := &EvalHubReconciler{Client: fakeClient, Scheme: scheme, EventRecorder: record.NewFakeRecorder(10)}
+
+		require.NoError(t, reconciler.createTenantMLFlowCABundleConfigMap(ctx, evalHub, tenantNamespace))
+
+		cm := &corev1.ConfigMap{}
+		err := fakeClient.Get(ctx, types.NamespacedName{Name: cmName, Namespace: tenantNamespace}, cm)
+		assert.True(t, errors.IsNotFound(err))
+	})
+}
+
 // TestEvalHubReconciler_reconcileTenantNamespaces verifies that tenant namespace
 // reconciliation creates the job SA, RBAC bindings, and service CA ConfigMap.
 func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
@@ -2085,10 +2167,17 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 				},
 			},
 		}
+		mlflowCABundleCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      evalHubName + mlflowCABundleCMSuffix,
+				Namespace: instanceNamespace,
+			},
+			Data: map[string]string{mlflowCABundleFile: "MERGED-CA-PEM"},
+		}
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(evalHub, tenantNS).
+			WithObjects(evalHub, tenantNS, mlflowCABundleCM).
 			Build()
 
 		reconciler := &EvalHubReconciler{
@@ -2109,6 +2198,15 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 		}, cm)
 		require.NoError(t, err)
 		assert.Equal(t, "true", cm.Annotations["service.beta.openshift.io/inject-cabundle"])
+
+		// Verify merged MLflow CA bundle was copied into the tenant namespace
+		bundleCM := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName + mlflowCABundleCMSuffix,
+			Namespace: tenantNamespace,
+		}, bundleCM)
+		require.NoError(t, err)
+		assert.Equal(t, "MERGED-CA-PEM", bundleCM.Data[mlflowCABundleFile])
 
 		// Verify events RoleBinding was created in the tenant namespace so the
 		// EvalHub server SA can emit Kubernetes Events on lifecycle transitions.
