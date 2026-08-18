@@ -29,6 +29,7 @@ import (
 )
 
 func ControllerSetUp(mgr manager.Manager, ns, operatorConfigMapName string, recorder record.EventRecorder) error {
+	SetManagedEvalHubLister(mgr.GetClient())
 	return (&EvalHubReconciler{
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
@@ -82,12 +83,12 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 	instance := &evalhubv1.EvalHub{}
 	err = r.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
+		defer recordEvalHubReconcileOnExit(metricControllerEvalHub, reconcileStart, &result, &err)
 		if errors.IsNotFound(err) {
 			log.Info("EvalHub resource not found. Ignoring since object must be deleted")
 			return DoNotRequeue()
 		}
 		log.Error(err, "Failed to get EvalHub")
-		recordEvalHubReconcileMetrics(metricControllerEvalHub, "error", err, time.Since(reconcileStart))
 		return RequeueWithError(err)
 	}
 
@@ -299,6 +300,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		if r.isServiceMonitorSupported() {
 			if err := r.reconcileServiceMonitor(ctx, instance); err != nil {
 				log.Error(err, "Failed to reconcile ServiceMonitor")
+				tracing.RecordPhaseError(ctx, err)
 				instance.SetStatus("MonitoringDegraded", "ServiceMonitorFailed", fmt.Sprintf("Failed to reconcile ServiceMonitor: %v", err), corev1.ConditionTrue)
 			} else {
 				instance.SetStatus("MonitoringDegraded", "MonitoringReady", "", corev1.ConditionFalse)
@@ -315,6 +317,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 	_ = tracing.WithPhase(ctx, spanReconcileRoute, func(ctx context.Context) error {
 		if err := r.reconcileRoute(ctx, instance); err != nil {
 			log.Error(err, "Failed to reconcile Route")
+			tracing.RecordPhaseError(ctx, err)
 		}
 		return nil
 	})
@@ -369,8 +372,8 @@ func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
-	if err := registerManagedInstancesGauge(r.countManagedInstances); err != nil {
-		return fmt.Errorf("evalhub: register managed_instances gauge: %w", err)
+	if _, err := getEvalHubMetrics(); err != nil {
+		return fmt.Errorf("register evalhub metrics: %w", err)
 	}
 
 	tenantNS := newEvalHubTenantNamespaces()
@@ -485,20 +488,6 @@ func RequeueWithError(err error) (ctrl.Result, error) {
 
 func RequeueWithDelay(delay time.Duration) (ctrl.Result, error) {
 	return ctrl.Result{RequeueAfter: delay}, nil
-}
-
-func (r *EvalHubReconciler) countManagedInstances(ctx context.Context) (int64, error) {
-	list := &evalhubv1.EvalHubList{}
-	if err := r.List(ctx, list); err != nil {
-		return 0, err
-	}
-	var count int64
-	for i := range list.Items {
-		if controllerutil.ContainsFinalizer(&list.Items[i], evalhubv1.FinalizerName) {
-			count++
-		}
-	}
-	return count, nil
 }
 
 // handleDeletion handles the deletion of EvalHub resources

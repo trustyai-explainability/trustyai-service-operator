@@ -701,8 +701,10 @@ var _ = Describe("LMEvalJob re-run after spec change", func() {
 			return k8sClient.Update(ctx, job)
 		}, defaultTimeout, defaultPolling).Should(Succeed(), "failed to update HTTPS job spec")
 
-		// Wait for the job to be reset and re-scheduled
-		WaitFor(func() error {
+		// Wait for the job to be reset and re-scheduled.
+		// Use a longer timeout: the re-run path involves multiple reconciliation
+		// cycles and envtest pod-gone detection can require retries.
+		Eventually(func() error {
 			if err := k8sClient.Get(ctx, types.NamespacedName{
 				Name: "test-rerun-ca", Namespace: testNamespace,
 			}, job); err != nil {
@@ -712,7 +714,8 @@ var _ = Describe("LMEvalJob re-run after spec change", func() {
 				return fmt.Errorf("expected Scheduled after re-run, got %s", job.Status.State)
 			}
 			return nil
-		}, "job was not re-scheduled after spec change")
+		}, 30*time.Second, defaultPolling).Should(Succeed(),
+			"job was not re-scheduled after spec change")
 
 		// Verify the merged ConfigMap still exists with correct data after re-run
 		Expect(k8sClient.Get(ctx, types.NamespacedName{
