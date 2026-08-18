@@ -2,7 +2,9 @@
 
 This document describes how to enable OpenTelemetry (OTEL) tracing for the **TrustyAI Service Operator** when running the EvalHub controller, and how the instrumentation is implemented.
 
-**Related work:** [RHAI-241](https://redhat.atlassian.net/browse/RHAI-241) (controller tracing), [OTEL_METRICS.md](OTEL_METRICS.md) (controller OTLP metrics), sibling [RHAI-240](https://redhat.atlassian.net/browse/RHAI-240) (Prometheus metrics on `:8080`).
+**Related work:** [RHAI-241](https://redhat.atlassian.net/browse/RHAI-241) (controller tracing, PR #877), [OTEL_METRICS.md](OTEL_METRICS.md) (controller metrics + Prometheus bridge, PRs #878/#879), sibling [RHAI-240](https://redhat.atlassian.net/browse/RHAI-240) (Prometheus metrics on `:8080`).
+
+**PR stack (merge order):** #877 tracing → #878 OTLP metrics → #879 Prometheus bridge. See [OTEL_METRICS.md](OTEL_METRICS.md) for metrics configuration.
 
 ---
 
@@ -39,8 +41,9 @@ Set at least one of these on the operator manager container:
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` | Use `http/protobuf` or `http` for OTLP/HTTP |
+| `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` | falls back to `OTEL_EXPORTER_OTLP_PROTOCOL` | Trace-specific protocol; takes precedence when set |
 | `OTEL_SERVICE_NAME` | `trustyai-service-operator` | `service.name` resource attribute in exported traces |
-| `OTEL_SDK_DISABLED` | unset | Set to `true` or `1` to force tracing off even when an endpoint is configured |
+| `OTEL_SDK_DISABLED` | unset | Set to `true` or `1` to force tracing and metrics off even when endpoints are configured |
 
 Standard [OTEL SDK environment variables](https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/) for headers, TLS, and timeouts are also respected by the OTLP exporters.
 
@@ -156,33 +159,38 @@ A failing phase span is marked with OTEL error status and `RecordError` so SREs 
 
 ```golang
 cmd/main.go
-  └── tracing.Setup()          # global TracerProvider (OTLP or noop)
-        └── EvalHub controllers
-              ├── evalhub_controller.go     # parent + phase spans via tracing.WithPhase
-              └── evaluation_job_failure_reconciler.go
+  └── tracing.Setup()          # global TracerProvider + MeterProvider
+        ├── Traces: OTLP push when OTEL_EXPORTER_OTLP_TRACES_* / OTEL_EXPORTER_OTLP_ENDPOINT set
+        └── Metrics: Prometheus bridge on metrics.Registry (default) + optional OTLP push
+              └── EvalHub controllers
+                    ├── evalhub_controller.go     # parent + phase spans via tracing.WithPhase
+                    └── evaluation_job_failure_reconciler.go
 ```
+
+`cmd/main.go` calls `tracing.Setup()` during startup inside `run()`, with deferred shutdown on all exit paths so trace and metric exporters flush cleanly.
 
 ### Key packages and files
 
 | File | Role |
 | ---- | ---- |
-| [`pkg/tracing/tracing.go`](../../pkg/tracing/tracing.go) | Shared OTEL bootstrap, `StartReconcileSpan`, `WithPhase`, outcome helpers |
-| [`cmd/main.go`](../../cmd/main.go) | Calls `tracing.Setup()` at startup; `Shutdown` on exit |
+| [`pkg/tracing/tracing.go`](../../pkg/tracing/tracing.go) | Shared OTEL bootstrap (traces + metrics), `StartReconcileSpan`, `WithPhase`, outcome helpers |
+| [`cmd/main.go`](../../cmd/main.go) | Calls `tracing.Setup()` at startup in `run()`; deferred shutdown on exit |
 | [`controllers/evalhub/tracing.go`](tracing.go) | EvalHub span name constants and reconcile attribute helpers |
 | [`controllers/evalhub/evalhub_controller.go`](evalhub_controller.go) | Phase instrumentation in `Reconcile()` |
 | [`controllers/evalhub/evaluation_job_failure_reconciler.go`](evaluation_job_failure_reconciler.go) | Job failure span and exit-code extraction |
 
 ### Bootstrap behaviour
 
-1. On startup, `tracing.Setup()` checks `OTEL_SDK_DISABLED` and whether an OTLP endpoint env var is set.
-2. If disabled or unset → installs `noop.NewTracerProvider()` (negligible overhead per reconcile).
-3. If enabled → creates an OTLP trace exporter (gRPC by default, HTTP when `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`), batches spans, and sets resource attributes (`service.name`, `service.version` from operator build constants).
-4. Instrumentation scope for EvalHub spans: `evalhub-controller`.
+1. On startup, `tracing.Setup()` in `run()` checks `OTEL_SDK_DISABLED` and per-signal endpoint configuration.
+2. **Tracing:** If disabled or no OTLP trace endpoint → `noop.NewTracerProvider()`. If enabled → OTLP trace exporter (gRPC by default; HTTP when `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` or `OTEL_EXPORTER_OTLP_PROTOCOL` is `http/protobuf`), batched spans, resource attributes (`service.name`, `service.version`).
+3. **Metrics:** If not disabled → Prometheus bridge registers an OTEL exporter with controller-runtime's `metrics.Registry` by default (see [OTEL_METRICS.md](OTEL_METRICS.md)). Optional OTLP metrics push when `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Set `OTEL_METRICS_PROMETHEUS_DISABLED=true` to skip the bridge.
+4. Shutdown runs via `defer` in `run()` so exporters flush on normal exit and startup failures after `Setup()` succeeds.
+5. Instrumentation scope for EvalHub spans: `evalhub-controller`.
 
 ### Design notes
 
 - **No new CLI flags** — configuration follows the standard OTEL environment-variable pattern used by other platform components.
-- **No new exposed ports** — traces egress to the collector; nothing listens for trace ingestion on the operator pod.
+- **No new exposed ports for traces** — trace spans egress to the collector. Metrics use the existing `:8080/metrics` scrape endpoint via the Prometheus bridge (no new listen port).
 - **Reusable for other controllers** — `pkg/tracing` is controller-agnostic; TAS/LMES can adopt the same helpers in future work.
 - **Distinct from `spec.otel`** — workload OTEL remains configured per EvalHub instance via the CR and [`configmap.go`](configmap.go).
 

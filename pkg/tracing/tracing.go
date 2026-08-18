@@ -5,14 +5,14 @@
 //   - OTEL_EXPORTER_OTLP_PROTOCOL (optional: grpc default, or http/protobuf)
 //   - OTEL_EXPORTER_OTLP_TRACES_PROTOCOL (optional, overrides OTEL_EXPORTER_OTLP_PROTOCOL for traces)
 //
-// Metrics are disabled unless OTLP metrics export is configured via:
-//   - OTEL_EXPORTER_OTLP_ENDPOINT (or OTEL_EXPORTER_OTLP_METRICS_ENDPOINT)
-//   - OTEL_EXPORTER_OTLP_PROTOCOL (optional)
+// Metrics can be exported two ways (independently or together):
+//   - Prometheus scrape on the operator :8080/metrics endpoint via the OTEL Prometheus exporter
+//     (enabled by default; set OTEL_METRICS_PROMETHEUS_DISABLED=true to disable)
+//   - OTLP push when OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_METRICS_ENDPOINT is set
 //   - OTEL_EXPORTER_OTLP_METRICS_PROTOCOL (optional, overrides OTEL_EXPORTER_OTLP_PROTOCOL for metrics)
-//
-// Shared configuration:
 //   - OTEL_SERVICE_NAME (optional, default: trustyai-service-operator)
 //   - OTEL_SDK_DISABLED=true disables tracing and metrics even when endpoints are set
+//   - OTEL_METRICS_PROMETHEUS_DISABLED=true disables the Prometheus bridge on :8080/metrics
 package tracing
 
 import (
@@ -32,6 +32,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -40,17 +41,31 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 const defaultServiceName = "trustyai-service-operator"
 
 type tracerScopeKey struct{}
+type phaseSpanKey struct{}
 
 var explicitReconcileOutcomes sync.Map
 
+var setupOnce sync.Once
+var setupShutdown func(context.Context) error
+var setupErr error
+
 // Setup initializes global TracerProvider and MeterProvider.
 // When OTLP is not configured for a signal, a noop provider is used for that signal.
+// Safe to call multiple times; only the first invocation takes effect.
 func Setup(ctx context.Context) (func(context.Context) error, error) {
+	setupOnce.Do(func() {
+		setupShutdown, setupErr = doSetup(ctx)
+	})
+	return setupShutdown, setupErr
+}
+
+func doSetup(ctx context.Context) (func(context.Context) error, error) {
 	var shutdowns []func(context.Context) error
 
 	if tracingEnabled() {
@@ -66,11 +81,7 @@ func Setup(ctx context.Context) (func(context.Context) error, error) {
 	if metricsEnabled() {
 		metricsShutdown, err := setupMetrics(ctx)
 		if err != nil {
-			for _, shutdown := range shutdowns {
-				if shutdownErr := shutdown(ctx); shutdownErr != nil {
-					err = errors.Join(err, shutdownErr)
-				}
-			}
+			_ = runShutdowns(ctx, shutdowns)
 			return nil, err
 		}
 		shutdowns = append(shutdowns, metricsShutdown)
@@ -79,14 +90,26 @@ func Setup(ctx context.Context) (func(context.Context) error, error) {
 	}
 
 	return func(ctx context.Context) error {
-		var errs []error
-		for _, shutdown := range shutdowns {
-			if err := shutdown(ctx); err != nil {
-				errs = append(errs, err)
-			}
-		}
-		return errors.Join(errs...)
+		return runShutdowns(ctx, shutdowns)
 	}, nil
+}
+
+// ResetForTest resets the Setup sync.Once so tests can call Setup multiple times.
+// Must only be used in tests.
+func ResetForTest() {
+	setupOnce = sync.Once{}
+	setupShutdown = nil
+	setupErr = nil
+}
+
+func runShutdowns(ctx context.Context, shutdowns []func(context.Context) error) error {
+	var errs []error
+	for _, shutdown := range shutdowns {
+		if err := shutdown(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // Tracer returns a named tracer from the global TracerProvider.
@@ -112,12 +135,26 @@ func WithPhase(ctx context.Context, spanName string, fn func(context.Context) er
 	ctx, span := tracer.Start(ctx, spanName)
 	defer span.End()
 
+	ctx = context.WithValue(ctx, phaseSpanKey{}, span)
 	if err := fn(ctx); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 	return nil
+}
+
+// RecordPhaseError records a non-fatal error on the active WithPhase span.
+func RecordPhaseError(ctx context.Context, err error) {
+	if err == nil {
+		return
+	}
+	span, _ := ctx.Value(phaseSpanKey{}).(trace.Span)
+	if span == nil {
+		return
+	}
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
 }
 
 // ReconcileOutcome derives the reconcile result label from controller-runtime result and error.
@@ -199,20 +236,31 @@ func setupTracing(ctx context.Context) (func(context.Context) error, error) {
 }
 
 func setupMetrics(ctx context.Context) (func(context.Context) error, error) {
-	exporter, err := newOTLPMetricExporter(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("create OTLP metric exporter: %w", err)
-	}
-
 	res, err := otelResource()
 	if err != nil {
 		return nil, err
 	}
 
-	mp := sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
-		sdkmetric.WithResource(res),
-	)
+	var providerOpts []sdkmetric.Option
+	providerOpts = append(providerOpts, sdkmetric.WithResource(res))
+
+	if prometheusMetricsEnabled() {
+		promExporter, err := otelprom.New(otelprom.WithRegisterer(ctrlmetrics.Registry))
+		if err != nil {
+			return nil, fmt.Errorf("create Prometheus metric exporter: %w", err)
+		}
+		providerOpts = append(providerOpts, sdkmetric.WithReader(promExporter))
+	}
+
+	if otlpMetricsEndpoint() != "" {
+		otlpExporter, err := newOTLPMetricExporter(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("create OTLP metric exporter: %w", err)
+		}
+		providerOpts = append(providerOpts, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(otlpExporter)))
+	}
+
+	mp := sdkmetric.NewMeterProvider(providerOpts...)
 	otel.SetMeterProvider(mp)
 	return mp.Shutdown, nil
 }
@@ -220,8 +268,7 @@ func setupMetrics(ctx context.Context) (func(context.Context) error, error) {
 func otelResource() (*resource.Resource, error) {
 	res, err := resource.Merge(
 		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
+		resource.NewSchemaless(
 			semconv.ServiceName(serviceName()),
 			semconv.ServiceVersion(constants.Version),
 		),
@@ -243,7 +290,15 @@ func metricsEnabled() bool {
 	if sdkDisabled() {
 		return false
 	}
-	return otlpMetricsEndpoint() != ""
+	return prometheusMetricsEnabled() || otlpMetricsEndpoint() != ""
+}
+
+func prometheusMetricsEnabled() bool {
+	if sdkDisabled() {
+		return false
+	}
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("OTEL_METRICS_PROMETHEUS_DISABLED")))
+	return v != "true" && v != "1"
 }
 
 func sdkDisabled() bool {
@@ -286,18 +341,49 @@ func otlpMetricsProtocol() string {
 	return strings.TrimSpace(strings.ToLower(os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")))
 }
 
-func newOTLPTraceExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
-	protocol := otlpTraceProtocol()
-	if protocol == "http/protobuf" || protocol == "http" {
-		return otlptracehttp.New(ctx)
+type otlpExporterKind int
+
+const (
+	otlpExporterGRPC otlpExporterKind = iota
+	otlpExporterHTTP
+)
+
+func resolveOTLPProtocol(protocol string) (otlpExporterKind, error) {
+	switch strings.TrimSpace(strings.ToLower(protocol)) {
+	case "", "grpc":
+		return otlpExporterGRPC, nil
+	case "http", "http/protobuf":
+		return otlpExporterHTTP, nil
+	default:
+		return 0, fmt.Errorf(
+			"unsupported OTLP protocol %q (supported: grpc, http/protobuf)",
+			protocol,
+		)
 	}
-	return otlptracegrpc.New(ctx)
+}
+
+func newOTLPTraceExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
+	kind, err := resolveOTLPProtocol(otlpTraceProtocol())
+	if err != nil {
+		return nil, err
+	}
+	switch kind {
+	case otlpExporterHTTP:
+		return otlptracehttp.New(ctx)
+	default:
+		return otlptracegrpc.New(ctx)
+	}
 }
 
 func newOTLPMetricExporter(ctx context.Context) (sdkmetric.Exporter, error) {
-	protocol := otlpMetricsProtocol()
-	if protocol == "http/protobuf" || protocol == "http" {
-		return otlpmetrichttp.New(ctx)
+	kind, err := resolveOTLPProtocol(otlpMetricsProtocol())
+	if err != nil {
+		return nil, err
 	}
-	return otlpmetricgrpc.New(ctx)
+	switch kind {
+	case otlpExporterHTTP:
+		return otlpmetrichttp.New(ctx)
+	default:
+		return otlpmetricgrpc.New(ctx)
+	}
 }
