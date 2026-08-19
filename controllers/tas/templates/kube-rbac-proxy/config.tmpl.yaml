@@ -20,7 +20,7 @@ data:
         verb: "get"
         apiGroup: ""
     upstreamConfig:
-      url: "http://127.0.0.1:8080"
+      url: "http://127.0.0.1:8081"
       proxyTimeout: "30s"
     tlsConfig:
       minVersion: "VersionTLS12"
