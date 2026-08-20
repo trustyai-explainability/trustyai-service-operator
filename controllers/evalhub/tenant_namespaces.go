@@ -139,6 +139,13 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 			return err
 		}
 
+		// Copy the merged MLflow CA bundle into the tenant namespace so job sidecars
+		// can mount the same trust store as the EvalHub API deployment.
+		if err := r.createTenantMLFlowCABundleConfigMap(ctx, instance, ns); err != nil {
+			log.Error(err, "Failed to create MLflow CA bundle ConfigMap in tenant namespace", "namespace", ns)
+			return err
+		}
+
 		// Inject this instance's service URL into the shared discovery ConfigMap so clients
 		// can resolve it from within the tenant namespace without cross-namespace lookups.
 		if err := r.reconcileDiscoveryConfigMap(ctx, instance, ns); err != nil {
@@ -283,6 +290,57 @@ func (r *EvalHubReconciler) createTenantServiceCAConfigMap(ctx context.Context, 
 		Data: map[string]string{},
 	}
 	log.Info("Creating service CA ConfigMap in tenant namespace", "namespace", namespace, "name", cmName)
+	return r.Create(ctx, cm)
+}
+
+// createTenantMLFlowCABundleConfigMap copies the instance-namespace merged MLflow CA
+// bundle ConfigMap into the tenant namespace so evaluation job sidecars can mount the
+// same trust store (service-serving CA + ODH trusted CA + optional user CA).
+func (r *EvalHubReconciler) createTenantMLFlowCABundleConfigMap(ctx context.Context, instance *evalhubv1.EvalHub, namespace string) error {
+	log := log.FromContext(ctx)
+	cmName := instance.Name + mlflowCABundleCMSuffix
+
+	src := &corev1.ConfigMap{}
+	if err := r.Get(ctx, client.ObjectKey{Name: cmName, Namespace: instance.Namespace}, src); err != nil {
+		if errors.IsNotFound(err) {
+			// Instance reconcile creates the bundle first; skip until it exists.
+			log.Info("MLflow CA bundle ConfigMap not yet present in instance namespace; skipping tenant copy",
+				"name", cmName, "instanceNamespace", instance.Namespace, "tenantNamespace", namespace)
+			return nil
+		}
+		return fmt.Errorf("reading MLflow CA bundle ConfigMap %q from instance namespace: %w", cmName, err)
+	}
+	data, ok := src.Data[mlflowCABundleFile]
+	if !ok {
+		data = ""
+	}
+
+	cm := &corev1.ConfigMap{}
+	err := r.Get(ctx, client.ObjectKey{Name: cmName, Namespace: namespace}, cm)
+	if err == nil {
+		if cm.Data == nil {
+			cm.Data = make(map[string]string)
+		}
+		if cm.Data[mlflowCABundleFile] == data {
+			return nil
+		}
+		cm.Data[mlflowCABundleFile] = data
+		log.Info("Updating MLflow CA bundle ConfigMap in tenant namespace", "namespace", namespace, "name", cmName)
+		return r.Update(ctx, cm)
+	}
+	if !errors.IsNotFound(err) {
+		return err
+	}
+
+	cm = &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      cmName,
+			Namespace: namespace,
+			Labels:    jobResourceLabels(instance, cmName),
+		},
+		Data: map[string]string{mlflowCABundleFile: data},
+	}
+	log.Info("Creating MLflow CA bundle ConfigMap in tenant namespace", "namespace", namespace, "name", cmName)
 	return r.Create(ctx, cm)
 }
 
