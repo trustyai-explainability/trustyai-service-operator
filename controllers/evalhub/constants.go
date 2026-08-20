@@ -70,6 +70,20 @@ const (
 	serviceCAMountPath  = "/etc/evalhub/ca"
 	serviceCACertFile   = "service-ca.crt"
 
+	// MLflow CA bundle configuration.
+	// The operator merges the in-cluster service-serving CA, the ODH trusted CA bundle, and an
+	// optional user-provided CA (spec.mlflow.tls.caBundle) into a single ConfigMap that
+	// MLFLOW_CA_CERT_PATH points at, so MLFLOW_TRACKING_URI can target either the internal
+	// Service hostname or the public Route.
+	mlflowCABundleVolumeName = "mlflow-ca-bundle"
+	mlflowCABundleMountPath  = "/etc/evalhub/mlflow-ca"
+	mlflowCABundleFile       = "ca-bundle.crt"
+	mlflowCABundleCMSuffix   = "-mlflow-ca-bundle"
+
+	// Well-known source ConfigMaps (present in every namespace on ODH/RHOAI) merged into the bundle.
+	odhTrustedCABundleCMName = "odh-trusted-ca-bundle"
+	openshiftServiceCACMName = "openshift-service-ca.crt"
+
 	// MLFlow projected token configuration
 	mlflowTokenVolumeName = "mlflow-token"
 	mlflowTokenMountPath  = "/var/run/secrets/mlflow"

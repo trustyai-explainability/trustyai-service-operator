@@ -791,3 +791,91 @@ func (r *EvalHubReconciler) reconcileServiceCAConfigMap(ctx context.Context, ins
 		return r.Update(ctx, configMap)
 	}
 }
+
+// reconcileMLflowCABundleConfigMap builds the merged CA bundle that the eval-hub container
+// trusts when connecting to the MLflow tracking server. It concatenates, from the instance
+// namespace, the ODH trusted CA bundle (public/system + DSCI-provided CAs), the OpenShift
+// service-serving CA (internal *.svc trust), and an optional user-provided CA referenced by
+// spec.mlflow.tls.caBundle. MLFLOW_CA_CERT_PATH points at the resulting ConfigMap, so
+// MLFLOW_TRACKING_URI can target either the internal Service hostname or the public Route.
+// The bundle is regenerated on every reconcile, so CA rotations are picked up automatically.
+func (r *EvalHubReconciler) reconcileMLflowCABundleConfigMap(ctx context.Context, instance *evalhubv1.EvalHub) error {
+	log := log.FromContext(ctx)
+	log.Info("Reconciling MLflow CA bundle ConfigMap", "name", instance.Name)
+
+	var pemBlocks []string
+
+	// Source 1: ODH trusted CA bundle (public/system CAs + any DSCI trustedCABundle additions).
+	odhCM := &corev1.ConfigMap{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: odhTrustedCABundleCMName}, odhCM); err == nil {
+		for _, key := range []string{"ca-bundle.crt", "odh-ca-bundle.crt"} {
+			if data, ok := odhCM.Data[key]; ok && strings.TrimSpace(data) != "" {
+				pemBlocks = append(pemBlocks, data)
+			}
+		}
+	} else if !errors.IsNotFound(err) {
+		return fmt.Errorf("reading %s ConfigMap: %w", odhTrustedCABundleCMName, err)
+	}
+
+	// Source 2: OpenShift service-serving CA (trust for the in-cluster MLflow *.svc hostname).
+	svcCM := &corev1.ConfigMap{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: openshiftServiceCACMName}, svcCM); err == nil {
+		if data, ok := svcCM.Data[serviceCACertFile]; ok && strings.TrimSpace(data) != "" {
+			pemBlocks = append(pemBlocks, data)
+		}
+	} else if !errors.IsNotFound(err) {
+		return fmt.Errorf("reading %s ConfigMap: %w", openshiftServiceCACMName, err)
+	}
+
+	// Source 3: optional user-provided CA (e.g. the CA signing the MLflow public Route).
+	if ref := instance.Spec.MLflowCABundleRef(); ref != nil {
+		key := ref.Key
+		if key == "" {
+			key = mlflowCABundleFile
+		}
+		userCM := &corev1.ConfigMap{}
+		if err := r.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: ref.Name}, userCM); err != nil {
+			// The admin explicitly referenced this ConfigMap, so a missing/unreadable one is an error.
+			return fmt.Errorf("reading user MLflow CA bundle ConfigMap %q: %w", ref.Name, err)
+		}
+		data, ok := userCM.Data[key]
+		if !ok || strings.TrimSpace(data) == "" {
+			return fmt.Errorf("user MLflow CA bundle ConfigMap %q has no PEM data at key %q", ref.Name, key)
+		}
+		pemBlocks = append(pemBlocks, data)
+	}
+
+	if len(pemBlocks) == 0 {
+		// No CA sources found (e.g. non-OpenShift cluster). Still create an (empty) bundle so the
+		// deployment's MLFLOW_CA_CERT_PATH mount is always satisfiable; log so this is diagnosable.
+		log.Info("No CA sources found for MLflow CA bundle; creating empty bundle", "name", instance.Name)
+	}
+	merged := strings.Join(pemBlocks, "\n")
+
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name + mlflowCABundleCMSuffix,
+			Namespace: instance.Namespace,
+		},
+	}
+
+	getErr := r.Get(ctx, client.ObjectKeyFromObject(configMap), configMap)
+	if getErr != nil && !errors.IsNotFound(getErr) {
+		return getErr
+	}
+
+	if errors.IsNotFound(getErr) {
+		configMap.Data = map[string]string{mlflowCABundleFile: merged}
+		if instance.UID != "" {
+			if err := controllerutil.SetControllerReference(instance, configMap, r.Scheme); err != nil {
+				return err
+			}
+		}
+		log.Info("Creating MLflow CA bundle ConfigMap", "name", configMap.Name)
+		return r.Create(ctx, configMap)
+	}
+
+	configMap.Data = map[string]string{mlflowCABundleFile: merged}
+	log.Info("Updating MLflow CA bundle ConfigMap", "name", configMap.Name)
+	return r.Update(ctx, configMap)
+}

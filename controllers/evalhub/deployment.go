@@ -122,14 +122,14 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			Value: instance.Name,
 		},
 		{
-			Name:  "EVALHUB_HARDWARE_PROFILES_NAMESPACE",
+			Name: "EVALHUB_HARDWARE_PROFILES_NAMESPACE",
 			// Applications namespace (APPLICATIONS_NAMESPACE): opendatahub on ODH,
 			// redhat-ods-applications on RHOAI. Same source as r.Namespace.
 			Value: r.Namespace,
 		},
 		{
 			Name:  "MLFLOW_CA_CERT_PATH",
-			Value: serviceCAMountPath + "/" + serviceCACertFile,
+			Value: mlflowCABundleMountPath + "/" + mlflowCABundleFile,
 		},
 		{
 			Name:  "MLFLOW_WORKSPACE",
@@ -165,6 +165,11 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		{
 			Name:      serviceCAVolumeName,
 			MountPath: serviceCAMountPath,
+			ReadOnly:  true,
+		},
+		{
+			Name:      mlflowCABundleVolumeName,
+			MountPath: mlflowCABundleMountPath,
 			ReadOnly:  true,
 		},
 		{
@@ -346,6 +351,16 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: instance.Name + "-service-ca",
+					},
+				},
+			},
+		},
+		{
+			Name: mlflowCABundleVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: instance.Name + mlflowCABundleCMSuffix,
 					},
 				},
 			},

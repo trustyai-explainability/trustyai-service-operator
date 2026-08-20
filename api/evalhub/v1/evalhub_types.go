@@ -165,6 +165,36 @@ type EvalHubMCPStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+// MLFlowSpec configures how EvalHub connects to the MLflow tracking server.
+type MLFlowSpec struct {
+	// TLS configures trust for the MLflow tracking server's TLS certificate.
+	// +optional
+	TLS *MLFlowTLSSpec `json:"tls,omitempty"`
+}
+
+// MLFlowTLSSpec configures which CA certificate(s) EvalHub trusts when connecting to MLflow.
+type MLFlowTLSSpec struct {
+	// CABundle optionally references a ConfigMap in the EvalHub instance namespace holding
+	// additional PEM-encoded CA certificate(s) to trust for the MLflow tracking server
+	// connection (for example, the CA that signs the MLflow public Route). It is merged with
+	// the in-cluster service-serving CA and the ODH trusted CA bundle, so EvalHub can reach
+	// MLflow over either its internal Service hostname or its public Route. Optional: when
+	// omitted, only the service-serving CA and the ODH trusted CA bundle are trusted.
+	// +optional
+	CABundle *CABundleReference `json:"caBundle,omitempty"`
+}
+
+// CABundleReference references a ConfigMap key containing PEM-encoded CA certificate(s).
+type CABundleReference struct {
+	// Name of the ConfigMap in the EvalHub instance namespace.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// Key within the ConfigMap that holds the PEM-encoded CA certificate(s).
+	// +kubebuilder:default:="ca-bundle.crt"
+	// +optional
+	Key string `json:"key,omitempty"`
+}
+
 // EvalHubSpec defines the desired state of EvalHub
 type EvalHubSpec struct {
 	// Number of replicas for the eval-hub deployment
@@ -205,6 +235,10 @@ type EvalHubSpec struct {
 	// MCP optionally enables an MCP server deployment connected to this EvalHub instance.
 	// +optional
 	MCP *EvalHubMCPSpec `json:"mcp,omitempty"`
+
+	// MLFlow optionally configures how EvalHub connects to the MLflow tracking server.
+	// +optional
+	MLFlow *MLFlowSpec `json:"mlflow,omitempty"`
 
 	// Tenancy controls the deployment mode of this EvalHub instance.
 	// "multi" (default): serves multiple tenant namespaces labelled with evalhub.trustyai.opendatahub.io/tenant.
@@ -292,6 +326,15 @@ func (e *EvalHub) SetStatus(condType, reason, message string, status corev1.Cond
 // IsReady returns true if the EvalHub is ready
 func (e *EvalHub) IsReady() bool {
 	return e.Status.Ready == corev1.ConditionTrue
+}
+
+// MLflowCABundleRef returns the optional user-provided MLflow CA bundle reference,
+// or nil when spec.mlflow.tls.caBundle is not configured.
+func (e *EvalHubSpec) MLflowCABundleRef() *CABundleReference {
+	if e == nil || e.MLFlow == nil || e.MLFlow.TLS == nil {
+		return nil
+	}
+	return e.MLFlow.TLS.CABundle
 }
 
 // GetReplicas returns the number of replicas, defaulting to 1
