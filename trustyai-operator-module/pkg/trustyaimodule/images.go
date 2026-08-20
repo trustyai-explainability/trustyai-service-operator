@@ -4,7 +4,7 @@ package trustyaimodule
 // variable injected by the ODH platform into the module controller pod.
 var paramsEnvMap = map[string]string{
 	"TRUSTYAI_OPERATOR_IMAGE":                  "RELATED_IMAGE_ODH_TRUSTYAI_OPERATOR_IMAGE",
-	"TRUSTYAI_SERVICE_IMAGE":                   "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_IMAGE",
+	"TRUSTYAI_SERVICE_IMAGE":                   "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_PY_IMAGE",
 	"EVAL_HUB_IMAGE":                           "RELATED_IMAGE_ODH_EVAL_HUB_IMAGE",
 	"KUBE_RBAC_PROXY_IMAGE":                    "RELATED_IMAGE_ODH_KUBE_RBAC_PROXY_IMAGE",
 	"TA_LMES_JOB_IMAGE":                        "RELATED_IMAGE_ODH_TA_LMES_JOB_IMAGE",
