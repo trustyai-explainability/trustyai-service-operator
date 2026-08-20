@@ -26,7 +26,7 @@ const (
 
 // Operand image env vars injected by the ODH platform operator at deploy time
 const (
-	RelatedImageTrustyAIService         = "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_IMAGE"
+	RelatedImageTrustyAIService         = "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_PY_IMAGE"
 	RelatedImageEvalHub                 = "RELATED_IMAGE_ODH_EVAL_HUB_IMAGE"
 	RelatedImageKubeRBACProxy           = "RELATED_IMAGE_ODH_KUBE_RBAC_PROXY_IMAGE"
 	RelatedImageLMESJob                 = "RELATED_IMAGE_ODH_TA_LMES_JOB_IMAGE"
