@@ -58,12 +58,17 @@ type TrustyAIStatus struct {
 	Distribution DistributionInfo `json:"distribution,omitempty"`
 }
 
+const (
+	// TrustyAIInstanceName is the singleton CR name enforced by the CEL validation rule.
+	TrustyAIInstanceName = "default-trustyai"
+)
+
 // TrustyAI is the Schema for the trustyais API
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,shortName=tai
 // +kubebuilder:storageversion
-// +kubebuilder:validation:XValidation:rule="self.metadata.name == 'default'",message="TrustyAI resource must be named 'default'"
+// +kubebuilder:validation:XValidation:rule="self.metadata.name == 'default-trustyai'",message="TrustyAI resource must be named 'default-trustyai'"
 // +kubebuilder:printcolumn:name="Management State",type=string,JSONPath=`.spec.managementState`
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`

@@ -183,8 +183,8 @@ spec:
             type: object
         type: object
         x-kubernetes-validations:
-        - message: TrustyAI resource must be named 'default'
-          rule: self.metadata.name == 'default'
+        - message: TrustyAI resource must be named 'default-trustyai'
+          rule: self.metadata.name == 'default-trustyai'
     served: true
     storage: true
     subresources:
