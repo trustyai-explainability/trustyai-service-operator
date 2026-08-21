@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	odhLabels "github.com/opendatahub-io/odh-platform-utilities/pkg/metadata/labels"
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/render/kustomize"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -23,34 +24,35 @@ const (
 )
 
 var (
-	stagingOnce   sync.Once
-	stagingErr    error
-	stagedOverlay string
+	copyOnce sync.Once
+	copyErr  error
 )
 
-// EnsureManifests copies templatePath to a writable location (once per
-// process), selects the overlay directory based on ODH_PLATFORM_TYPE, and
-// rewrites params.env with platform-injected image env vars.
+// EnsureManifests copies templatePath to a writable location (once per process),
+// then selects and prepares the overlay directory for the current platform and mode.
 //
-// Subsequent calls return the cached overlay path without re-running.
-func EnsureManifests(templatePath string) (string, error) {
-	stagingOnce.Do(func() {
-		overlay, err := stageManifests(templatePath, manifestsTarget)
-		stagedOverlay = overlay
-		stagingErr = err
+// The file copy is performed only once; overlay selection and params rewriting
+// happen on every call so that mode changes (e.g. MCPGuardrailsMode toggled on
+// the live CR) take effect without restarting the operator.
+func EnsureManifests(templatePath string, mcpMode bool) (string, error) {
+	copyOnce.Do(func() {
+		// Clear contents without removing the directory itself — it may be an
+		// EmptyDir mount point that the OS won't let us unlink.
+		if err := clearDirContents(manifestsTarget); err != nil {
+			copyErr = fmt.Errorf("clearing manifests target %s: %w", manifestsTarget, err)
+			return
+		}
+		if err := os.MkdirAll(manifestsTarget, 0o755); err != nil {
+			copyErr = fmt.Errorf("creating manifests target %s: %w", manifestsTarget, err)
+			return
+		}
+		copyErr = copyDir(templatePath, manifestsTarget)
 	})
-	return stagedOverlay, stagingErr
-}
-
-func stageManifests(src, dst string) (string, error) {
-	if err := os.RemoveAll(dst); err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("clearing manifests target %s: %w", dst, err)
-	}
-	if err := copyDir(src, dst); err != nil {
-		return "", fmt.Errorf("copying manifests from %s to %s: %w", src, dst, err)
+	if copyErr != nil {
+		return "", copyErr
 	}
 
-	overlay := selectOverlay(dst)
+	overlay := selectOverlay(manifestsTarget, mcpMode)
 	if err := applyParams(overlay); err != nil {
 		return "", fmt.Errorf("applying image params to overlay %s: %w", overlay, err)
 	}
@@ -58,15 +60,22 @@ func stageManifests(src, dst string) (string, error) {
 }
 
 // selectOverlay returns the kustomize overlay directory path for the current
-// platform, derived from the ODH_PLATFORM_TYPE environment variable.
-// Defaults to the ODH overlay when the variable is absent or unrecognised.
-func selectOverlay(manifestsDir string) string {
+// platform and mode. MCPGuardrailsMode takes priority over ODH_PLATFORM_TYPE:
+// when true it always selects the mcp-guardrails overlay regardless of platform.
+// Otherwise the platform is derived from ODH_PLATFORM_TYPE; defaults to ODH.
+//
+// Overlays live in the workload operator's config tree, copied into the image
+// at build time under trustyai-operator/config/overlays/.
+func selectOverlay(manifestsDir string, mcpMode bool) string {
+	if mcpMode {
+		return filepath.Join(manifestsDir, "trustyai-operator/config/overlays/mcp-guardrails")
+	}
 	platform := strings.ToLower(os.Getenv("ODH_PLATFORM_TYPE"))
-	sub := "overlays/odh"
+	sub := "trustyai-operator/config/overlays/odh"
 	if strings.Contains(platform, "rhoai") ||
 		strings.Contains(platform, "self-managed") ||
 		strings.Contains(platform, "cloud") {
-		sub = "overlays/rhoai"
+		sub = "trustyai-operator/config/overlays/rhoai"
 	}
 	return filepath.Join(manifestsDir, sub)
 }
@@ -107,10 +116,10 @@ func applyParams(overlayDir string) error {
 // RenderManifests stages the manifests (once) and renders the selected
 // Kustomize overlay into a list of unstructured resources, injecting
 // namespace into all namespaced resources.
-func RenderManifests(ctx context.Context, templatePath, namespace string) ([]unstructured.Unstructured, error) {
+func RenderManifests(ctx context.Context, templatePath, namespace string, mcpMode bool) ([]unstructured.Unstructured, error) {
 	logger := log.FromContext(ctx)
 
-	overlay, err := EnsureManifests(templatePath)
+	overlay, err := EnsureManifests(templatePath, mcpMode)
 	if err != nil {
 		return nil, fmt.Errorf("staging manifests: %w", err)
 	}
@@ -122,8 +131,40 @@ func RenderManifests(ctx context.Context, templatePath, namespace string) ([]uns
 		return nil, fmt.Errorf("rendering kustomize overlay %s: %w", overlay, err)
 	}
 
+	applyPlatformLabels(objs)
 	logger.Info("Rendered manifests", "count", len(objs))
 	return objs, nil
+}
+
+// applyPlatformLabels stamps every rendered resource with the ODH platform
+// labels required by MC-22: ManagedBy identifies the module operator that owns
+// the resource; PlatformPartOf identifies the component (used by GC selectors).
+func applyPlatformLabels(objs []unstructured.Unstructured) {
+	for i := range objs {
+		lbls := objs[i].GetLabels()
+		if lbls == nil {
+			lbls = make(map[string]string)
+		}
+		lbls[odhLabels.ManagedBy] = FieldManagerModule
+		lbls[odhLabels.PlatformPartOf] = "trustyai"
+		objs[i].SetLabels(lbls)
+	}
+}
+
+func clearDirContents(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func copyDir(src, dst string) error {

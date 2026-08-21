@@ -1,4 +1,7 @@
-# Build the trustyai-operator-module-controller binary
+# Build the trustyai-operator-module-controller binary.
+# Expected build context layout (assembled by Makefile or CI):
+#   go.mod, go.sum, cmd/, pkg/, hack/   ← module sources at context root
+#   config/                              ← workload operator kustomize tree
 FROM registry.access.redhat.com/ubi9/go-toolset:1.26 AS builder
 ARG TARGETOS
 ARG TARGETARCH
@@ -11,7 +14,7 @@ WORKDIR /go/src/github.com/trustyai-explainability/trustyai-operator-module
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source
+# Copy module source
 COPY cmd/ cmd/
 COPY pkg/ pkg/
 
@@ -22,9 +25,12 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     -ldflags "-X github.com/trustyai-explainability/trustyai-operator-module/pkg/trustyaimodule.Version=${VERSION}" \
     -o manager ./cmd/trustyai-operator-module
 
-# Bundle manifests template into the image
-COPY config/manifests-template/ config/manifests-template/
+# Bundle workload operator manifests into the image.
+# config/ is the workload operator's kustomize tree; get_trustyai_manifests.sh
+# copies it into /opt/manifests-template/trustyai-operator/config/ so the
+# module controller can render the real overlays at runtime.
 COPY hack/get_trustyai_manifests.sh hack/
+COPY config/ workload-config/
 RUN bash hack/get_trustyai_manifests.sh
 
 # Runtime image

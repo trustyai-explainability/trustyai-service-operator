@@ -7,14 +7,19 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/dynamic"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"github.com/opendatahub-io/odh-platform-utilities/pkg/controller/gc"
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/deploy"
 	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-operator-module/pkg/trustyaimodule"
@@ -28,6 +33,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(platformv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(extv1.AddToScheme(scheme))
 }
 
 func main() {
@@ -58,16 +64,46 @@ func main() {
 		os.Exit(1)
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	// Applications namespace is where the workload operator is deployed.
+	// Defaults to the operator namespace when not explicitly set.
+	applicationsNamespace := os.Getenv("APPLICATIONS_NAMESPACE")
+	if applicationsNamespace == "" {
+		applicationsNamespace = namespace
+	}
+
+	// Scope the cache to the namespaces we actually care about. Cluster-scoped
+	// resources (e.g. the TrustyAI CR itself) are always watched cluster-wide
+	// regardless of this setting.
+	watchNamespaces := map[string]cache.Config{
+		namespace:              {},
+		applicationsNamespace:  {},
+	}
+
+	restConfig := ctrl.GetConfigOrDie()
+
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme:                  scheme,
 		Metrics:                 metricsserver.Options{BindAddress: metricsAddr},
 		LeaderElection:          enableLeaderElection,
 		LeaderElectionID:        "trustyai-operator-module-controller-manager",
 		LeaderElectionNamespace: namespace,
 		HealthProbeBindAddress:  probeAddr,
+		Cache:                   cache.Options{DefaultNamespaces: watchNamespaces},
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+
+	dynamicCli, err := dynamic.NewForConfig(restConfig)
+	if err != nil {
+		setupLog.Error(err, "unable to create dynamic client")
+		os.Exit(1)
+	}
+
+	discoveryCli, err := discovery.NewDiscoveryClientForConfig(restConfig)
+	if err != nil {
+		setupLog.Error(err, "unable to create discovery client")
 		os.Exit(1)
 	}
 
@@ -76,12 +112,20 @@ func main() {
 		deploy.WithApplyOrder(),
 	)
 
+	garbageCollector := gc.New(
+		gc.InNamespace(applicationsNamespace),
+	)
+
 	if err := (&trustyaimodule.TrustyAIModuleReconciler{
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
 		Namespace:             namespace,
+		ApplicationsNamespace: applicationsNamespace,
 		ManifestsTemplatePath: manifestsPath,
 		Deployer:              deployer,
+		DynamicClient:         dynamicCli,
+		DiscoveryClient:       discoveryCli,
+		GarbageCollector:      garbageCollector,
 		EventRecorder:         mgr.GetEventRecorderFor("trustyai-module"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "TrustyAI")

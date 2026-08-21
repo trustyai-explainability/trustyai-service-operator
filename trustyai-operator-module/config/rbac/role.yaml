@@ -8,6 +8,10 @@ rules:
   - ""
   resources:
   - configmaps
+  - events
+  - serviceaccounts
+  - services
+  - secrets
   verbs:
   - create
   - delete
@@ -17,30 +21,16 @@ rules:
   - update
   - watch
 - apiGroups:
-  - ""
-  resources:
-  - events
-  verbs:
-  - create
-  - patch
-  - update
-- apiGroups:
-  - ""
-  resources:
-  - services
-  verbs:
-  - get
-  - list
-  - patch
-  - watch
-- apiGroups:
   - apps
   resources:
   - deployments
   verbs:
+  - create
+  - delete
   - get
   - list
   - patch
+  - update
   - watch
 - apiGroups:
   - components.platform.opendatahub.io
@@ -69,9 +59,63 @@ rules:
   - patch
   - update
 - apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterroles
+  - clusterrolebindings
+  - roles
+  - rolebindings
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - validatingwebhookconfigurations
+  - mutatingwebhookconfigurations
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - coordination.k8s.io
   resources:
   - leases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - prometheuses
+  - prometheusrules
+  - servicemonitors
   verbs:
   - create
   - delete
@@ -88,18 +132,14 @@ rules:
   - get
   - list
 - apiGroups:
-  - monitoring.coreos.com
+  - authentication.k8s.io
   resources:
-  - prometheuses
+  - tokenreviews
   verbs:
-  - get
-  - list
+  - create
 - apiGroups:
-  - rbac.authorization.k8s.io
+  - authorization.k8s.io
   resources:
-  - rolebindings
+  - subjectaccessreviews
   verbs:
-  - get
-  - list
-  - patch
-  - watch
+  - create

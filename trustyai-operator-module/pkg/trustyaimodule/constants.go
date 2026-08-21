@@ -23,9 +23,19 @@ const (
 	EventReasonStatusUpdated = "StatusUpdated"
 
 	// ConfigMap names
-	DSCConfigMapName = "trustyai-dsc-config"
+	DSCConfigMapName      = "trustyai-dsc-config"
+	WorkloadConfigMapName = "trustyai-service-operator-config"
 
-	// ConfigMap keys
+	// Workload ConfigMap keys — user-configurable settings written from the TrustyAI spec.
+	WorkloadKeyKServeServerless       = "kServeServerless"
+	WorkloadKeyLMEvalPermitCodeExec   = "lmes-allow-code-execution"
+	WorkloadKeyLMEvalPermitOnline     = "lmes-allow-online"
+	WorkloadKeyLMEvalMaxBatchSize     = "lmes-max-batch-size"
+	WorkloadKeyLMEvalDefaultBatchSize = "lmes-default-batch-size"
+	WorkloadKeyLMEvalDetectDevice     = "lmes-detect-device"
+	WorkloadKeyLMEvalImagePullPolicy  = "lmes-image-pull-policy"
+
+	// Legacy ConfigMap keys kept for the module's own DSC ConfigMap.
 	LMEvalPermitCodeExecutionKey = "eval.lmeval.permitCodeExecution"
 	LMEvalPermitOnlineKey        = "eval.lmeval.permitOnline"
 

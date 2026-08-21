@@ -87,6 +87,12 @@ spec:
                 - Removed
                 - Unmanaged
                 type: string
+              mcpGuardrailsMode:
+                description: |-
+                  MCPGuardrailsMode deploys TrustyAI with only the NemoGuardrails service
+                  enabled, using a dedicated Kustomize overlay. Mutually exclusive with
+                  other enabledServices flags.
+                type: boolean
             type: object
           status:
             description: TrustyAIStatus defines the observed state of TrustyAI module
@@ -183,8 +189,8 @@ spec:
             type: object
         type: object
         x-kubernetes-validations:
-        - message: TrustyAI resource must be named 'default'
-          rule: self.metadata.name == 'default'
+        - message: TrustyAI resource must be named 'default-trustyai'
+          rule: self.metadata.name == 'default-trustyai'
     served: true
     storage: true
     subresources:

@@ -21,12 +21,33 @@ type EnabledServices struct {
 
 // LMEvalConfig defines LMEval-specific configuration
 type LMEvalConfig struct {
+	// PermitCodeExecution controls whether code execution is allowed during evaluations.
 	// +kubebuilder:default=false
 	// +optional
 	PermitCodeExecution bool `json:"permitCodeExecution,omitempty"`
+	// PermitOnline controls whether online access is allowed during evaluations.
 	// +kubebuilder:default=false
 	// +optional
 	PermitOnline bool `json:"permitOnline,omitempty"`
+	// MaxBatchSize is the maximum number of evaluation requests processed in a single batch.
+	// +kubebuilder:default=24
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MaxBatchSize int `json:"maxBatchSize,omitempty"`
+	// DefaultBatchSize is the default number of evaluation requests processed in a single batch.
+	// +kubebuilder:default=8
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	DefaultBatchSize int `json:"defaultBatchSize,omitempty"`
+	// DetectDevice controls whether the evaluation driver auto-detects available compute devices (CPU/GPU).
+	// +kubebuilder:default=true
+	// +optional
+	DetectDevice bool `json:"detectDevice,omitempty"`
+	// ImagePullPolicy is the image pull policy for LMES job pods.
+	// +kubebuilder:default=Always
+	// +kubebuilder:validation:Enum=Always;IfNotPresent;Never
+	// +optional
+	ImagePullPolicy string `json:"imagePullPolicy,omitempty"`
 }
 
 // EvalConfig defines evaluation-related configuration
@@ -35,13 +56,27 @@ type EvalConfig struct {
 	LMEval LMEvalConfig `json:"lmeval,omitempty"`
 }
 
-// TrustyAISpec defines the desired state of TrustyAI module
-type TrustyAISpec struct {
-	common.ManagementSpec `json:",inline"`
+// TrustyAICommonSpec holds the user-facing configuration shared between the
+// module CR spec and the DSC stanza in the ODH operator.
+type TrustyAICommonSpec struct {
 	// +optional
 	EnabledServices EnabledServices `json:"enabledServices,omitempty"`
 	// +optional
 	Eval EvalConfig `json:"eval,omitempty"`
+	// KServeServerless controls whether KServe serverless mode is enabled for TrustyAI services.
+	// +kubebuilder:default=true
+	// +optional
+	KServeServerless bool `json:"kServeServerless,omitempty"`
+	// MCPGuardrailsMode deploys TrustyAI with only the NemoGuardrails service enabled,
+	// using a dedicated Kustomize overlay. Mutually exclusive with other enabledServices flags.
+	// +optional
+	MCPGuardrailsMode bool `json:"mcpGuardrailsMode,omitempty"`
+}
+
+// TrustyAISpec defines the desired state of TrustyAI module
+type TrustyAISpec struct {
+	common.ManagementSpec `json:",inline"`
+	TrustyAICommonSpec    `json:",inline"`
 }
 
 // DistributionInfo represents distribution information
@@ -58,12 +93,17 @@ type TrustyAIStatus struct {
 	Distribution DistributionInfo `json:"distribution,omitempty"`
 }
 
+const (
+	// TrustyAIInstanceName is the singleton CR name enforced by the CEL validation rule.
+	TrustyAIInstanceName = "default-trustyai"
+)
+
 // TrustyAI is the Schema for the trustyais API
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,shortName=tai
 // +kubebuilder:storageversion
-// +kubebuilder:validation:XValidation:rule="self.metadata.name == 'default'",message="TrustyAI resource must be named 'default'"
+// +kubebuilder:validation:XValidation:rule="self.metadata.name == 'default-trustyai'",message="TrustyAI resource must be named 'default-trustyai'"
 // +kubebuilder:printcolumn:name="Management State",type=string,JSONPath=`.spec.managementState`
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`

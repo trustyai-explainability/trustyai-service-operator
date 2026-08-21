@@ -7,12 +7,18 @@ ENGINE             ?= $(BUILD_TOOL)
 
 .PHONY: docker-build-tom
 docker-build-tom: ## Build the trustyai-operator-module-controller image
+	$(eval TOM_CTX := $(shell mktemp -d))
+	cp $(MODULE_DIR)/go.mod $(MODULE_DIR)/go.sum $(MODULE_DIR)/Dockerfile $(TOM_CTX)/
+	cp -r $(MODULE_DIR)/cmd $(MODULE_DIR)/pkg $(MODULE_DIR)/hack $(TOM_CTX)/
+	@test -d $(MODULE_DIR)/manifests-template && cp -r $(MODULE_DIR)/manifests-template $(TOM_CTX)/ || true
+	cp -r config $(TOM_CTX)/config
 	$(ENGINE) buildx build \
 		--load \
 		-t $(TRUSTYAI_MODULE_IMG):$(MODULE_TAG) \
 		--build-arg VERSION=$(MODULE_TAG) \
-		-f $(MODULE_DIR)/Dockerfile \
-		$(MODULE_DIR)
+		-f $(TOM_CTX)/Dockerfile \
+		$(TOM_CTX)
+	rm -rf $(TOM_CTX)
 
 .PHONY: docker-push-tom
 docker-push-tom: docker-build-tom ## Build and push the trustyai-operator-module-controller image

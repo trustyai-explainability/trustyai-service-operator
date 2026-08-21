@@ -3,6 +3,7 @@ package trustyaimodule
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -10,19 +11,33 @@ import (
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/cluster"
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/controller/action"
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/controller/conditions"
+	odhgc "github.com/opendatahub-io/odh-platform-utilities/pkg/controller/gc"
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/controller/precondition"
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/deploy"
 	statusPkg "github.com/opendatahub-io/odh-platform-utilities/pkg/status"
 	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	admissionv1 "k8s.io/api/admissionregistration/v1"
+	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
+
+// gcRunner is the interface satisfied by odhgc.Collector, extracted for testing.
+type gcRunner interface {
+	Run(context.Context, odhgc.RunParams) error
+}
 
 // Version is the operator version, injected at build time via -ldflags.
 var Version = "unknown"
@@ -30,24 +45,30 @@ var Version = "unknown"
 // TrustyAIModuleReconciler reconciles TrustyAI module objects.
 type TrustyAIModuleReconciler struct {
 	client.Client
-	Scheme                *runtime.Scheme
-	Namespace             string
-	ManifestsTemplatePath string
-	Deployer              *deploy.Deployer
-	EventRecorder         record.EventRecorder
-	SkipDependencyChecks  bool // set to true in tests to skip external dependency checks
+	Scheme                 *runtime.Scheme
+	Namespace              string
+	ApplicationsNamespace  string
+	ManifestsTemplatePath  string
+	Deployer               *deploy.Deployer
+	DynamicClient          dynamic.Interface
+	DiscoveryClient        discovery.DiscoveryInterface
+	GarbageCollector       gcRunner
+	EventRecorder          record.EventRecorder
+	SkipDependencyChecks   bool // set to true in tests to skip external dependency checks
 }
 
 // +kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=trustyais/finalizers,verbs=update
 // +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=get;list
-// +kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheuses,verbs=get;list
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
-// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;patch
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;patch
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;patch
+// +kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheuses;prometheusrules;servicemonitors,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=configmaps;events;serviceaccounts;services;secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings;roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations;mutatingwebhookconfigurations,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=authentication.k8s.io,resources=tokenreviews,verbs=create
+// +kubebuilder:rbac:groups=authorization.k8s.io,resources=subjectaccessreviews,verbs=create
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
 func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -110,6 +131,10 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return r.handleRemoval(ctx, module)
 	}
 
+	// Populate distribution before any early-exit that persists status, so
+	// status.distribution is always set regardless of which branch returns.
+	r.updateDistribution(module)
+
 	// Build the condition manager for this reconcile cycle.
 	condMgr := r.newConditionManager(module)
 
@@ -134,6 +159,9 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			logger.Info("Blocking deployment due to missing dependencies")
 			return ctrl.Result{RequeueAfter: time.Duration(DefaultRequeueInterval) * time.Second}, nil
 		}
+		// odh-platform-utilities does not set reason/message on True conditions;
+		// fill them in so the CRD validation (which requires non-empty strings) is satisfied.
+		fillPassedPreconditionConditions(condMgr, module.Generation)
 	} else {
 		condMgr.MarkTrue(ConditionTypeDependenciesAvailable,
 			conditions.WithReason("ChecksSkipped"),
@@ -165,6 +193,11 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	if err := r.reconcileWorkloadConfigMap(ctx, module); err != nil {
+		logger.Error(err, "Failed to reconcile workload ConfigMap")
+		return ctrl.Result{}, err
+	}
+
 	r.updateHealthStatus(ctx, module, condMgr)
 	r.updateReleases(module)
 
@@ -192,7 +225,27 @@ func (r *TrustyAIModuleReconciler) newConditionManager(module *platformv1alpha1.
 		string(common.ConditionTypeProvisioningSucceeded),
 		string(common.ConditionTypeDegraded),
 		ConditionTypeDependenciesAvailable,
+		ConditionTypeKServeAvailable,
 	)
+}
+
+// fillPassedPreconditionConditions backfills reason and message on any precondition
+// condition that RunAll left with ConditionTrue but without reason/message.
+// odh-platform-utilities only sets reason/message on failure; the TrustyAI CRD
+// requires non-empty values on all conditions regardless of status.
+func fillPassedPreconditionConditions(condMgr *conditions.Manager, generation int64) {
+	preconditionTypes := []string{ConditionTypeDependenciesAvailable, ConditionTypeKServeAvailable}
+	for _, ct := range preconditionTypes {
+		c := condMgr.GetCondition(ct)
+		if c == nil || c.Reason != "" {
+			continue
+		}
+		condMgr.MarkTrue(ct,
+			conditions.WithReason("Available"),
+			conditions.WithMessage("Dependency check passed"),
+			conditions.WithObservedGeneration(generation),
+		)
+	}
 }
 
 func (r *TrustyAIModuleReconciler) handleDeletion(ctx context.Context, module *platformv1alpha1.TrustyAI) (ctrl.Result, error) {
@@ -257,31 +310,20 @@ func (r *TrustyAIModuleReconciler) handleRemoval(ctx context.Context, module *pl
 	return ctrl.Result{}, nil
 }
 
-func (r *TrustyAIModuleReconciler) buildHealthCheckers(module *platformv1alpha1.TrustyAI) []ServiceHealthChecker {
-	var checkers []ServiceHealthChecker
-	es := module.Spec.EnabledServices
-	if es.TAS {
-		checkers = append(checkers, NewRunningServiceChecker("TAS", r.Client, r.Namespace))
+func (r *TrustyAIModuleReconciler) buildHealthCheckers() []ServiceHealthChecker {
+	// The module operator's operand is the workload operator Deployment it deploys.
+	// Individual service instances (TAS, LMES, EvalHub, etc.) are created by the
+	// workload operator in response to user CRs and are not this module's operands.
+	// enabledServices drives future Kustomize overlay wiring, not health reporting.
+	return []ServiceHealthChecker{
+		NewRunningServiceChecker("trustyai-service-operator", r.Client, r.ApplicationsNamespace),
 	}
-	if es.LMES {
-		checkers = append(checkers, NewRunningServiceChecker("LMES", r.Client, r.Namespace))
-	}
-	if es.EvalHub {
-		checkers = append(checkers, NewRunningServiceChecker("EVALHUB", r.Client, r.Namespace))
-	}
-	if es.GORCH {
-		checkers = append(checkers, NewRunningServiceChecker("GORCH", r.Client, r.Namespace))
-	}
-	if es.NemoGuardrails {
-		checkers = append(checkers, NewRunningServiceChecker("NEMO_GUARDRAILS", r.Client, r.Namespace))
-	}
-	return checkers
 }
 
 func (r *TrustyAIModuleReconciler) updateHealthStatus(ctx context.Context, module *platformv1alpha1.TrustyAI, condMgr *conditions.Manager) {
 	logger := log.FromContext(ctx)
 
-	healthCheckers := r.buildHealthCheckers(module)
+	healthCheckers := r.buildHealthCheckers()
 	allHealthy := true
 	partiallyHealthy := false
 	var unhealthyReasons []string
@@ -364,6 +406,23 @@ func (r *TrustyAIModuleReconciler) updateReleases(module *platformv1alpha1.Trust
 	})
 }
 
+// updateDistribution populates status.distribution from platform env vars injected
+// by the ODH operator: ODH_PLATFORM_TYPE (name) and ODH_MODULE_OPERATOR_PLATFORM_VERSION (version).
+func (r *TrustyAIModuleReconciler) updateDistribution(module *platformv1alpha1.TrustyAI) {
+	name := os.Getenv("ODH_PLATFORM_TYPE")
+	if name == "" {
+		name = "OpenDataHub"
+	}
+	version := os.Getenv("ODH_MODULE_OPERATOR_PLATFORM_VERSION")
+	if version == "" {
+		version = "unknown"
+	}
+	module.Status.Distribution = platformv1alpha1.DistributionInfo{
+		Name:    name,
+		Version: version,
+	}
+}
+
 // reconcileComponent renders the Kustomize overlay for the trustyai-service-operator
 // and SSA-applies all resources into the cluster. On failure it marks
 // ConditionTypeProvisioningSucceeded False and returns the error so the caller
@@ -380,7 +439,7 @@ func (r *TrustyAIModuleReconciler) reconcileComponent(
 		return nil
 	}
 
-	objs, err := RenderManifests(ctx, r.ManifestsTemplatePath, r.Namespace)
+	objs, err := RenderManifests(ctx, r.ManifestsTemplatePath, r.ApplicationsNamespace, module.Spec.MCPGuardrailsMode)
 	if err != nil {
 		condMgr.MarkFalse(string(common.ConditionTypeProvisioningSucceeded),
 			conditions.WithReason("RenderFailed"),
@@ -397,7 +456,7 @@ func (r *TrustyAIModuleReconciler) reconcileComponent(
 	if err := r.Deployer.Deploy(ctx, deploy.DeployInput{
 		Client:    r.Client,
 		Owner:     module,
-		Release:   deploy.ReleaseInfo{Version: Version},
+		Release:   deploy.ReleaseInfo{Version: Version, Type: resolvePlatformType()},
 		Resources: objs,
 	}); err != nil {
 		condMgr.MarkFalse(string(common.ConditionTypeProvisioningSucceeded),
@@ -408,11 +467,55 @@ func (r *TrustyAIModuleReconciler) reconcileComponent(
 		return err
 	}
 
+	// GC must be the last action: collect resources that were previously
+	// deployed but are no longer in the current rendered set.
+	if err := r.runGC(ctx, module); err != nil {
+		condMgr.MarkFalse(string(common.ConditionTypeProvisioningSucceeded),
+			conditions.WithReason("GCFailed"),
+			conditions.WithMessage("Garbage collection failed: %v", err),
+			conditions.WithObservedGeneration(module.Generation),
+		)
+		return err
+	}
+
 	return nil
+}
+
+func (r *TrustyAIModuleReconciler) runGC(ctx context.Context, module *platformv1alpha1.TrustyAI) error {
+	if r.GarbageCollector == nil {
+		return nil
+	}
+	return r.GarbageCollector.Run(ctx, odhgc.RunParams{
+		Client:          r.Client,
+		DynamicClient:   r.DynamicClient,
+		DiscoveryClient: r.DiscoveryClient,
+		Owner:           module,
+		Version:         Version,
+		PlatformType:    resolvePlatformType(),
+	})
+}
+
+// resolvePlatformType returns the ODH platform type, defaulting to "OpenDataHub"
+// when the environment variable is not set (matching OGX/Spark conventions).
+func resolvePlatformType() string {
+	if pt := os.Getenv("ODH_PLATFORM_TYPE"); pt != "" {
+		return pt
+	}
+	return "OpenDataHub"
 }
 
 func (r *TrustyAIModuleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&platformv1alpha1.TrustyAI{}).
+		For(&platformv1alpha1.TrustyAI{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Owns(&appsv1.Deployment{}).
+		Owns(&corev1.ConfigMap{}).
+		Owns(&corev1.Service{}).
+		Owns(&corev1.ServiceAccount{}).
+		Owns(&rbacv1.Role{}).
+		Owns(&rbacv1.RoleBinding{}).
+		Owns(&rbacv1.ClusterRole{}).
+		Owns(&rbacv1.ClusterRoleBinding{}).
+		Owns(&admissionv1.ValidatingWebhookConfiguration{}).
+		Owns(&extv1.CustomResourceDefinition{}).
 		Complete(r)
 }
