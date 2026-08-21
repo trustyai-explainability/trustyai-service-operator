@@ -51,8 +51,10 @@ var _ = Describe("Service Monitor Reconciliation", func() {
 			Expect(endpoint.HonorLabels).To(BeTrue())
 
 			Expect(endpoint.Path).To(Equal("/q/metrics"))
-			Expect(endpoint.Port).To(Equal("http"))
-			Expect(endpoint.Scheme).To(Equal("http"))
+			Expect(endpoint.Port).To(Equal("direct-https"))
+			Expect(endpoint.Scheme).To(Equal("https"))
+			Expect(endpoint.TLSConfig).ToNot(BeNil())
+			Expect(endpoint.TLSConfig.InsecureSkipVerify).To(BeTrue())
 			Expect(endpoint.Params["match[]"]).To(ConsistOf("{__name__= \"trustyai_spd\"}", "{__name__= \"trustyai_dir\"}"))
 
 		})
@@ -91,8 +93,10 @@ var _ = Describe("Service Monitor Reconciliation", func() {
 			Expect(endpoint.HonorLabels).To(BeTrue())
 
 			Expect(endpoint.Path).To(Equal("/q/metrics"))
-			Expect(endpoint.Port).To(Equal("http"))
-			Expect(endpoint.Scheme).To(Equal("http"))
+			Expect(endpoint.Port).To(Equal("direct-https"))
+			Expect(endpoint.Scheme).To(Equal("https"))
+			Expect(endpoint.TLSConfig).ToNot(BeNil())
+			Expect(endpoint.TLSConfig.InsecureSkipVerify).To(BeTrue())
 			Expect(endpoint.Params["match[]"]).To(ConsistOf("{__name__= \"trustyai_spd\"}", "{__name__= \"trustyai_dir\"}"))
 
 		})

@@ -21,8 +21,10 @@ spec:
                   - '{__name__= "trustyai_spd"}'
                   - '{__name__= "trustyai_dir"}'
           path: /q/metrics
-          port: http
-          scheme: http
+          port: direct-https
+          scheme: https
+          tlsConfig:
+              insecureSkipVerify: true
     namespaceSelector:
         matchNames:
             - {{ .Namespace }}
