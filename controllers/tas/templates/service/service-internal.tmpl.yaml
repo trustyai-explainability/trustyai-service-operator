@@ -20,7 +20,7 @@ spec:
           protocol: TCP
           port: 80
           targetPort: 8080
-        - name: https
+        - name: direct-https
           protocol: TCP
           port: 443
           targetPort: 4443
