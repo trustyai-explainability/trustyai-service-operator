@@ -65,10 +65,10 @@ func readyEvalHubCR(name, ns, url string) *evalhubv1.EvalHub {
 // extra is merged into the label map (use it to add instance/phase labels per test).
 func evalHubEvaluationJob(name, ns string, extra map[string]string) *batchv1.Job {
 	labels := map[string]string{
-		evalHubAppLabel:       evalHubAppValue,
-		evalHubComponentLabel: evalHubComponentValue,
-		evalHubJobIDLabel:     "jid-" + name,
-		evalHubProviderIDLabel: "provider-1",
+		evalHubAppLabel:         evalHubAppValue,
+		evalHubComponentLabel:   evalHubComponentValue,
+		evalHubJobIDLabel:       "jid-" + name,
+		evalHubProviderIDLabel:  "provider-1",
 		evalHubBenchmarkIDLabel: "bench-1",
 	}
 	for k, v := range extra {

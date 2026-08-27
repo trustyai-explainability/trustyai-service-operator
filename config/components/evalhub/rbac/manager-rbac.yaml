@@ -5,6 +5,53 @@ metadata:
   name: evalhub-manager-role
 rules:
 - apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - get
+  - list
+  - watch
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - evalhubs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - trustyai.opendatahub.io
   resources:
   - evalhubs
@@ -242,49 +289,10 @@ rules:
   - jobs
   verbs:
   - get
-- apiGroups:
-  - trustyai.opendatahub.io
-  resources:
-  - evalhubs
-  verbs:
-  - get
-- apiGroups:
-  - batch
-  resources:
-  - jobs
-  verbs:
-  - get
-  - list
-  - watch
   - patch
-  - delete
-- apiGroups:
-  - ""
-  resources:
-  - namespaces
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - pods
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - pods/log
-  verbs:
-  - get
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
   - evalhubs
   verbs:
   - get
-  - list
-  - watch

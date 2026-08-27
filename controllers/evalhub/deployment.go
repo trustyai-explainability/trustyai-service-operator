@@ -122,7 +122,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			Value: instance.Name,
 		},
 		{
-			Name:  "EVALHUB_HARDWARE_PROFILES_NAMESPACE",
+			Name: "EVALHUB_HARDWARE_PROFILES_NAMESPACE",
 			// Applications namespace (APPLICATIONS_NAMESPACE): opendatahub on ODH,
 			// redhat-ods-applications on RHOAI. Same source as r.Namespace.
 			Value: r.Namespace,

@@ -58,9 +58,9 @@ type evalHubOTelMetrics struct {
 }
 
 var (
-	evalHubMetrics     evalHubOTelMetrics
-	evalHubMetricsOnce sync.Once
-	evalHubMetricsErr  error
+	evalHubMetrics         evalHubOTelMetrics
+	evalHubMetricsOnce     sync.Once
+	evalHubMetricsErr      error
 	managedEvalHubListerMu sync.RWMutex
 	managedEvalHubLister   client.Reader
 )

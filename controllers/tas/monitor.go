@@ -17,11 +17,11 @@ import (
 )
 
 const (
-	centralServiceMonitorTemplatePath      = "service/service-monitor-central.tmpl.yaml"
-	localServiceMonitorTemplatePath        = "service/service-monitor-local.tmpl.yaml"
-	metricsCABundleConfigMapTemplatePath   = "service/service-metrics-ca-bundle-configmap.tmpl.yaml"
-	metricsCABundleConfigMapSuffix         = "-metrics-ca-bundle"
-	metricsCABundleConfigMapKey            = "service-ca.crt"
+	centralServiceMonitorTemplatePath    = "service/service-monitor-central.tmpl.yaml"
+	localServiceMonitorTemplatePath      = "service/service-monitor-local.tmpl.yaml"
+	metricsCABundleConfigMapTemplatePath = "service/service-metrics-ca-bundle-configmap.tmpl.yaml"
+	metricsCABundleConfigMapSuffix       = "-metrics-ca-bundle"
+	metricsCABundleConfigMapKey          = "service-ca.crt"
 )
 
 type ServiceMonitorConfig struct {

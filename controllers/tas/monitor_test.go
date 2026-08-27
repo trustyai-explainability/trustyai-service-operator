@@ -74,6 +74,18 @@ var _ = Describe("Service Monitor Reconciliation", func() {
 				return reconciler.ensureLocalServiceMonitor(instance, ctx)
 			}, "failed to create local ServiceMonitor")
 
+			// Populate the CA bundle ConfigMap with a test certificate (in real OpenShift,
+			// the service-CA operator does this automatically via inject-cabundle annotation)
+			caBundleConfigMap := &corev1.ConfigMap{}
+			caBundleConfigMap.Name = instance.Name + metricsCABundleConfigMapSuffix
+			caBundleConfigMap.Namespace = instance.Namespace
+			caBundleConfigMap.Data = map[string]string{
+				metricsCABundleConfigMapKey: "-----BEGIN CERTIFICATE-----\nMIID...\n-----END CERTIFICATE-----",
+			}
+			WaitFor(func() error {
+				return k8sClient.Create(ctx, caBundleConfigMap)
+			}, "failed to populate CA bundle ConfigMap")
+
 			// Define the ServiceMonitor object and fetch from the cluster
 			serviceMonitor := &monitoringv1.ServiceMonitor{}
 			err := k8sClient.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, serviceMonitor)
