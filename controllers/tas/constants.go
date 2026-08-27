@@ -72,9 +72,13 @@ const (
 
 // Event reasons
 const (
-	EventReasonPVCCreated                 = "PVCCreated"
-	EventReasonInferenceServiceConfigured = "InferenceServiceConfigured"
-	EventReasonServiceMonitorCreated      = "ServiceMonitorCreated"
+	EventReasonPVCCreated                    = "PVCCreated"
+	EventReasonInferenceServiceConfigured    = "InferenceServiceConfigured"
+	EventReasonServiceMonitorCreated         = "ServiceMonitorCreated"
+	EventReasonMetricsReaderSACreated        = "MetricsReaderServiceAccountCreated"
+	EventReasonMetricsCABundleConfigMapCreated = "MetricsCABundleConfigMapCreated"
+	EventReasonMetricsRoleCreated            = "MetricsRoleCreated"
+	EventReasonMetricsRoleBindingCreated     = "MetricsRoleBindingCreated"
 )
 
 const (

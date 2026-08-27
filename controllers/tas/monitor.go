@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -112,7 +112,7 @@ func (r *TrustyAIServiceReconciler) ensureLocalServiceMonitor(cr *trustyaiopenda
 	}
 
 	// Set TrustyAIService instance as the owner and controller
-	err = ctrl.SetControllerReference(cr, serviceMonitor, r.Scheme)
+	err = controllerutil.SetControllerReference(cr, serviceMonitor, r.Scheme)
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func (r *TrustyAIServiceReconciler) ensureMetricsCABundleConfigMap(cr *trustyaio
 		},
 	}
 
-	if err := ctrl.SetControllerReference(cr, cm, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(cr, cm, r.Scheme); err != nil {
 		return err
 	}
 
@@ -172,7 +172,11 @@ func (r *TrustyAIServiceReconciler) ensureMetricsCABundleConfigMap(cr *trustyaio
 	err := r.Get(ctx, types.NamespacedName{Name: cmName, Namespace: cr.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
 		log.FromContext(ctx).Info("Creating metrics CA bundle ConfigMap", "Namespace", cr.Namespace, "Name", cmName)
-		return r.Create(ctx, cm)
+		if err = r.Create(ctx, cm); err != nil {
+			return err
+		}
+		r.eventMetricsCABundleConfigMapCreated(cr)
+		return nil
 	}
 	return err
 }
@@ -193,7 +197,7 @@ func (r *TrustyAIServiceReconciler) ensureMetricsReaderServiceAccount(cr *trusty
 		},
 	}
 
-	if err := ctrl.SetControllerReference(cr, sa, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(cr, sa, r.Scheme); err != nil {
 		return err
 	}
 
@@ -204,6 +208,7 @@ func (r *TrustyAIServiceReconciler) ensureMetricsReaderServiceAccount(cr *trusty
 		if err = r.Create(ctx, sa); err != nil {
 			return err
 		}
+		r.eventMetricsReaderSACreated(cr)
 	} else if err != nil {
 		return err
 	}
@@ -222,7 +227,7 @@ func (r *TrustyAIServiceReconciler) ensureMetricsReaderServiceAccount(cr *trusty
 		Type: corev1.SecretTypeServiceAccountToken,
 	}
 
-	if err := ctrl.SetControllerReference(cr, secret, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(cr, secret, r.Scheme); err != nil {
 		return err
 	}
 
@@ -266,7 +271,7 @@ func (r *TrustyAIServiceReconciler) ensurePrometheusRBAC(cr *trustyaiopendatahub
 		},
 	}
 
-	if err := ctrl.SetControllerReference(cr, desiredRole, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(cr, desiredRole, r.Scheme); err != nil {
 		return err
 	}
 
@@ -277,6 +282,7 @@ func (r *TrustyAIServiceReconciler) ensurePrometheusRBAC(cr *trustyaiopendatahub
 		if err = r.Create(ctx, desiredRole); err != nil {
 			return err
 		}
+		r.eventMetricsRoleCreated(cr)
 	} else if err != nil {
 		return err
 	} else if !reflect.DeepEqual(foundRole.Rules, desiredRole.Rules) {
@@ -308,7 +314,7 @@ func (r *TrustyAIServiceReconciler) ensurePrometheusRBAC(cr *trustyaiopendatahub
 		},
 	}
 
-	if err := ctrl.SetControllerReference(cr, desiredBinding, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(cr, desiredBinding, r.Scheme); err != nil {
 		return err
 	}
 
@@ -319,6 +325,7 @@ func (r *TrustyAIServiceReconciler) ensurePrometheusRBAC(cr *trustyaiopendatahub
 		if err = r.Create(ctx, desiredBinding); err != nil {
 			return err
 		}
+		r.eventMetricsRoleBindingCreated(cr)
 	} else if err != nil {
 		return err
 	} else if !reflect.DeepEqual(foundBinding.RoleRef, desiredBinding.RoleRef) {
@@ -329,6 +336,7 @@ func (r *TrustyAIServiceReconciler) ensurePrometheusRBAC(cr *trustyaiopendatahub
 		if err = r.Create(ctx, desiredBinding); err != nil {
 			return err
 		}
+		r.eventMetricsRoleBindingCreated(cr)
 	} else if !reflect.DeepEqual(foundBinding.Subjects, desiredBinding.Subjects) {
 		foundBinding.Subjects = desiredBinding.Subjects
 		if err = r.Update(ctx, foundBinding); err != nil {
