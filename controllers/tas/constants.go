@@ -75,9 +75,8 @@ const (
 	EventReasonPVCCreated                    = "PVCCreated"
 	EventReasonInferenceServiceConfigured    = "InferenceServiceConfigured"
 	EventReasonServiceMonitorCreated         = "ServiceMonitorCreated"
-	EventReasonMetricsReaderSACreated        = "MetricsReaderServiceAccountCreated"
-	EventReasonMetricsCABundleConfigMapCreated = "MetricsCABundleConfigMapCreated"
-	EventReasonMetricsRoleCreated            = "MetricsRoleCreated"
+	EventReasonMetricsReaderSACreated = "MetricsReaderServiceAccountCreated"
+	EventReasonMetricsRoleCreated     = "MetricsRoleCreated"
 	EventReasonMetricsRoleBindingCreated     = "MetricsRoleBindingCreated"
 )
 

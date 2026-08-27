@@ -245,12 +245,6 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	// Metrics CA bundle ConfigMap (must exist before the local ServiceMonitor references it)
-	err = r.ensureMetricsCABundleConfigMap(instance, ctx)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
 	// Prometheus RBAC for metrics scraping through kube-rbac-proxy
 	err = r.ensurePrometheusRBAC(instance, ctx)
 	if err != nil {
