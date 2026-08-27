@@ -82,7 +82,7 @@ func TestCreateKubeRBACProxyConfigMapObject(t *testing.T) {
 		"resourceAttributes:",
 		"namespace: \"test-namespace\"",
 		"resource: \"services\"",
-		"resourceName: \"test-service\"",
+		"name: \"test-service\"",
 		"verb: \"get\"",
 		"upstreamConfig:",
 		"url: \"http://127.0.0.1:8081\"",

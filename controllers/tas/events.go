@@ -25,10 +25,6 @@ func (r *TrustyAIServiceReconciler) eventMetricsReaderSACreated(instance *trusty
 	r.EventRecorder.Event(instance, corev1.EventTypeNormal, EventReasonMetricsReaderSACreated, "Metrics reader ServiceAccount created")
 }
 
-func (r *TrustyAIServiceReconciler) eventMetricsCABundleConfigMapCreated(instance *trustyaiopendatahubiov1.TrustyAIService) {
-	r.EventRecorder.Event(instance, corev1.EventTypeNormal, EventReasonMetricsCABundleConfigMapCreated, "Metrics CA bundle ConfigMap created")
-}
-
 func (r *TrustyAIServiceReconciler) eventMetricsRoleCreated(instance *trustyaiopendatahubiov1.TrustyAIService) {
 	r.EventRecorder.Event(instance, corev1.EventTypeNormal, EventReasonMetricsRoleCreated, "Metrics reader Role created")
 }
