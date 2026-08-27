@@ -25,7 +25,11 @@ spec:
           port: https
           scheme: https
           tlsConfig:
-              insecureSkipVerify: true
+              ca:
+                  configMap:
+                      name: {{ .CABundleConfigMapName }}
+                      key: service-ca.crt
+              serverName: {{ .ServiceName }}-tls.{{ .Namespace }}.svc
     namespaceSelector:
         matchNames:
             - {{ .Namespace }}
