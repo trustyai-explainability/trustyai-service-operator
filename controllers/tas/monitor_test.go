@@ -152,7 +152,7 @@ var _ = Describe("Service Monitor Reconciliation", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(role.Rules).To(HaveLen(2))
 			Expect(role.Rules[0].Resources).To(ContainElement("services"))
-			Expect(role.Rules[0].ResourceNames).To(BeEmpty())
+			Expect(role.Rules[0].ResourceNames).To(ContainElement(instance.Name))
 			Expect(role.Rules[0].Verbs).To(ContainElement("get"))
 			Expect(role.Rules[1].Resources).To(ContainElement("secrets"))
 			Expect(role.Rules[1].ResourceNames).To(ContainElement(instance.Name + metricsReaderTokenSuffix))
