@@ -263,9 +263,14 @@ func (r *TrustyAIServiceReconciler) ensurePrometheusRBAC(cr *trustyaiopendatahub
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
+				APIGroups: []string{""},
+				Resources: []string{"services"},
+				Verbs:     []string{"get"},
+			},
+			{
 				APIGroups:     []string{""},
-				Resources:     []string{"services"},
-				ResourceNames: []string{cr.Name},
+				Resources:     []string{"secrets"},
+				ResourceNames: []string{cr.Name + metricsReaderTokenSuffix},
 				Verbs:         []string{"get"},
 			},
 		},
@@ -305,6 +310,11 @@ func (r *TrustyAIServiceReconciler) ensurePrometheusRBAC(cr *trustyaiopendatahub
 				Kind:      "ServiceAccount",
 				Name:      saName,
 				Namespace: cr.Namespace,
+			},
+			{
+				Kind:      "ServiceAccount",
+				Name:      "prometheus-user-workload",
+				Namespace: "openshift-user-workload-monitoring",
 			},
 		},
 		RoleRef: rbacv1.RoleRef{
