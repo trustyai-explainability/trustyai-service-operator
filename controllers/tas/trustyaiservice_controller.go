@@ -75,6 +75,8 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;create;update
 //+kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules,verbs=create;list;watch;get;update;patch;delete
 //+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=create;list;watch;get;update;patch;delete
@@ -235,6 +237,24 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err != nil {
 		// handle error
 		return RequeueWithError(err)
+	}
+
+	// Metrics reader ServiceAccount + token (must exist before ServiceMonitor references it)
+	err = r.ensureMetricsReaderServiceAccount(instance, ctx)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Metrics CA bundle ConfigMap (must exist before the local ServiceMonitor references it)
+	err = r.ensureMetricsCABundleConfigMap(instance, ctx)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Prometheus RBAC for metrics scraping through kube-rbac-proxy
+	err = r.ensurePrometheusRBAC(instance, ctx)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Local Service Monitor
