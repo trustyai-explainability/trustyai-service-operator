@@ -96,7 +96,11 @@ var _ = Describe("Service Monitor Reconciliation", func() {
 			Expect(endpoint.Port).To(Equal("https"))
 			Expect(endpoint.Scheme).To(Equal("https"))
 			Expect(endpoint.TLSConfig).ToNot(BeNil())
-			Expect(endpoint.TLSConfig.InsecureSkipVerify).To(BeTrue())
+			Expect(endpoint.TLSConfig.InsecureSkipVerify).To(BeFalse())
+			Expect(endpoint.TLSConfig.CA.ConfigMap).ToNot(BeNil())
+			Expect(endpoint.TLSConfig.CA.ConfigMap.Name).To(Equal(instance.Name + metricsCABundleConfigMapSuffix))
+			Expect(endpoint.TLSConfig.CA.ConfigMap.Key).To(Equal(metricsCABundleConfigMapKey))
+			Expect(endpoint.TLSConfig.ServerName).To(Equal(instance.Name + "-tls." + namespace + ".svc"))
 			Expect(endpoint.Params["match[]"]).To(ConsistOf("{__name__= \"trustyai_spd\"}", "{__name__= \"trustyai_dir\"}"))
 
 		})

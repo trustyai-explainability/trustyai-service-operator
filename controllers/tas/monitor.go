@@ -22,14 +22,17 @@ const (
 )
 
 const (
-	metricsReaderSuffix      = "-metrics-reader"
-	metricsReaderTokenSuffix = "-metrics-reader-token"
+	metricsCABundleConfigMapSuffix = "-metrics-ca-bundle"
+	metricsCABundleConfigMapKey    = "service-ca.crt"
+	metricsReaderSuffix            = "-metrics-reader"
+	metricsReaderTokenSuffix       = "-metrics-reader-token"
 )
 
 type ServiceMonitorConfig struct {
-	Namespace     string
-	ComponentName string
-	ServiceName   string
+	Namespace             string
+	ComponentName         string
+	ServiceName           string
+	CABundleConfigMapName string
 	TokenSecretName       string
 }
 
@@ -85,8 +88,9 @@ func createLocalServiceMonitorObject(ctx context.Context, deploymentNamespace st
 	config := ServiceMonitorConfig{
 		Namespace:             deploymentNamespace,
 		ComponentName:         componentName,
-		ServiceName:     serviceMonitorName,
-		TokenSecretName: serviceMonitorName + metricsReaderTokenSuffix,
+		ServiceName:           serviceMonitorName,
+		CABundleConfigMapName: serviceMonitorName + metricsCABundleConfigMapSuffix,
+		TokenSecretName:       serviceMonitorName + metricsReaderTokenSuffix,
 	}
 
 	var serviceMonitor *monitoringv1.ServiceMonitor
@@ -139,6 +143,42 @@ func (r *TrustyAIServiceReconciler) ensureLocalServiceMonitor(cr *trustyaiopenda
 	}
 
 	return nil
+}
+
+// ensureMetricsCABundleConfigMap creates an empty ConfigMap annotated so that
+// the OpenShift service-CA operator injects the cluster CA bundle into it.
+// The local ServiceMonitor references this ConfigMap for TLS verification.
+func (r *TrustyAIServiceReconciler) ensureMetricsCABundleConfigMap(cr *trustyaiopendatahubiov1.TrustyAIService, ctx context.Context) error {
+	cmName := cr.Name + metricsCABundleConfigMapSuffix
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      cmName,
+			Namespace: cr.Namespace,
+			Annotations: map[string]string{
+				"service.beta.openshift.io/inject-cabundle": "true",
+			},
+			Labels: map[string]string{
+				"app.kubernetes.io/part-of": componentName,
+			},
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(cr, cm, r.Scheme); err != nil {
+		return err
+	}
+
+	found := &corev1.ConfigMap{}
+	err := r.Get(ctx, types.NamespacedName{Name: cmName, Namespace: cr.Namespace}, found)
+	if err != nil && errors.IsNotFound(err) {
+		log.FromContext(ctx).Info("Creating metrics CA bundle ConfigMap", "Namespace", cr.Namespace, "Name", cmName)
+		if err = r.Create(ctx, cm); err != nil {
+			return err
+		}
+		r.eventMetricsCABundleConfigMapCreated(cr)
+		return nil
+	}
+	return err
 }
 
 // ensureMetricsReaderServiceAccount creates a dedicated ServiceAccount and a
@@ -275,7 +315,7 @@ func (r *TrustyAIServiceReconciler) ensurePrometheusRBAC(cr *trustyaiopendatahub
 			{
 				Kind:      "ServiceAccount",
 				Name:      "prometheus-user-workload",
-				Namespace: "openshift-user-workload-monitoring",
+				Namespace: prometheusUserWorkloadNamespace,
 			},
 		},
 		RoleRef: rbacv1.RoleRef{
