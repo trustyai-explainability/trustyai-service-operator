@@ -8,7 +8,8 @@ metadata:
 spec:
     endpoints:
         - bearerTokenSecret:
-              key: ''
+              name: {{ .TokenSecretName }}
+              key: token
           honorLabels: true
           interval: 4s
           metricRelabelings:
@@ -21,11 +22,18 @@ spec:
                   - '{__name__= "trustyai_spd"}'
                   - '{__name__= "trustyai_dir"}'
           path: /q/metrics
-          port: http
-          scheme: http
+          port: https
+          scheme: https
+          tlsConfig:
+              ca:
+                  configMap:
+                      name: {{ .CABundleConfigMapName }}
+                      key: service-ca.crt
+              serverName: {{ .ServiceName }}-tls.{{ .Namespace }}.svc
     namespaceSelector:
         matchNames:
             - {{ .Namespace }}
     selector:
         matchLabels:
             app.kubernetes.io/part-of: {{ .ComponentName }}
+            trustyai-service-name: {{ .ServiceName }}
