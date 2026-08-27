@@ -24,7 +24,11 @@ spec:
           port: direct-https
           scheme: https
           tlsConfig:
-              insecureSkipVerify: true
+              ca:
+                  configMap:
+                      name: {{ .CABundleConfigMapName }}
+                      key: service-ca.crt
+              serverName: {{ .ServiceName }}.{{ .Namespace }}.svc
     namespaceSelector:
         matchNames:
             - {{ .Namespace }}

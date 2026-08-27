@@ -6,7 +6,10 @@ import (
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -14,14 +17,18 @@ import (
 )
 
 const (
-	centralServiceMonitorTemplatePath = "service/service-monitor-central.tmpl.yaml"
-	localServiceMonitorTemplatePath   = "service/service-monitor-local.tmpl.yaml"
+	centralServiceMonitorTemplatePath      = "service/service-monitor-central.tmpl.yaml"
+	localServiceMonitorTemplatePath        = "service/service-monitor-local.tmpl.yaml"
+	metricsCABundleConfigMapTemplatePath   = "service/service-metrics-ca-bundle-configmap.tmpl.yaml"
+	metricsCABundleConfigMapSuffix         = "-metrics-ca-bundle"
+	metricsCABundleConfigMapKey            = "service-ca.crt"
 )
 
 type ServiceMonitorConfig struct {
-	Namespace     string
-	ComponentName string
-	ServiceName   string
+	Namespace             string
+	ComponentName         string
+	ServiceName           string
+	CABundleConfigMapName string
 }
 
 // createCentralServiceMonitorObject generates the ServiceMonitor spec for central ServiceMonitor
@@ -70,13 +77,39 @@ func (r *TrustyAIServiceReconciler) ensureCentralServiceMonitor(ctx context.Cont
 	return nil
 }
 
+// ensureMetricsCABundleConfigMap creates the ConfigMap that OpenShift's service-CA operator
+// will populate with the cluster service-CA certificate (key: "service-ca.crt"), which the
+// local ServiceMonitor uses for TLS verification of scrape targets.
+//
+// The ConfigMap is created once and never updated: after creation, the service-CA operator
+// owns the data field, and overwriting it on reconcile would wipe the injected certificate.
+func (r *TrustyAIServiceReconciler) ensureMetricsCABundleConfigMap(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) error {
+	cmName := instance.Name + metricsCABundleConfigMapSuffix
+
+	existing := &corev1.ConfigMap{}
+	err := r.Get(ctx, types.NamespacedName{Name: cmName, Namespace: instance.Namespace}, existing)
+	if err == nil {
+		return nil
+	}
+	if !errors.IsNotFound(err) {
+		return err
+	}
+
+	cm, err := utils.DefineConfigMap(ctx, r.Client, instance, cmName, constants.Version, metricsCABundleConfigMapTemplatePath, templateParser.ParseResource)
+	if err != nil {
+		return err
+	}
+	return r.Create(ctx, cm)
+}
+
 // createLocalServiceMonitorObject generates the ServiceMonitor spec for a local ServiceMonitor
 func createLocalServiceMonitorObject(ctx context.Context, deploymentNamespace string, serviceMonitorName string) (*monitoringv1.ServiceMonitor, error) {
 
 	config := ServiceMonitorConfig{
-		Namespace:     deploymentNamespace,
-		ComponentName: componentName,
-		ServiceName:   serviceMonitorName,
+		Namespace:             deploymentNamespace,
+		ComponentName:         componentName,
+		ServiceName:           serviceMonitorName,
+		CABundleConfigMapName: serviceMonitorName + metricsCABundleConfigMapSuffix,
 	}
 
 	var serviceMonitor *monitoringv1.ServiceMonitor
@@ -92,6 +125,9 @@ func createLocalServiceMonitorObject(ctx context.Context, deploymentNamespace st
 
 // ensureLocalServiceMonitor ensures that the local ServiceMonitor is created
 func (r *TrustyAIServiceReconciler) ensureLocalServiceMonitor(cr *trustyaiopendatahubiov1.TrustyAIService, ctx context.Context) error {
+	if err := r.ensureMetricsCABundleConfigMap(ctx, cr); err != nil {
+		return err
+	}
 	serviceMonitor, err := createLocalServiceMonitorObject(ctx, cr.Namespace, cr.Name)
 	if err != nil {
 		return err

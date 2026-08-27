@@ -1,0 +1,14 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+    name: {{ .Name }}
+    namespace: {{ .Owner.Namespace }}
+    annotations:
+        service.beta.openshift.io/inject-cabundle: "true"
+    labels:
+        app: {{ .Owner.Name }}
+        app.kubernetes.io/instance: {{ .Owner.Name }}
+        app.kubernetes.io/name: {{ .Owner.Name }}
+        app.kubernetes.io/part-of: trustyai
+        app.kubernetes.io/version: {{ .Version }}
+data: {}

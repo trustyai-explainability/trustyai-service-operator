@@ -23,6 +23,11 @@ spec:
           path: /q/metrics
           port: direct-https
           scheme: https
+          # insecureSkipVerify is required here because this ServiceMonitor scrapes
+          # TrustyAI services across all namespaces, so there is no single static
+          # serverName that matches the service-CA-issued cert SAN
+          # (<service>.<namespace>.svc) for every target.  The local ServiceMonitor
+          # (one per TrustyAI instance) uses proper CA + serverName validation instead.
           tlsConfig:
               insecureSkipVerify: true
     namespaceSelector:
