@@ -20,3 +20,19 @@ func (r *TrustyAIServiceReconciler) eventPVCCreated(instance *trustyaiopendatahu
 func (r *TrustyAIServiceReconciler) eventLocalServiceMonitorCreated(instance *trustyaiopendatahubiov1.TrustyAIService) {
 	r.EventRecorder.Event(instance, corev1.EventTypeNormal, EventReasonServiceMonitorCreated, "Local ServiceMonitor created")
 }
+
+func (r *TrustyAIServiceReconciler) eventMetricsReaderSACreated(instance *trustyaiopendatahubiov1.TrustyAIService) {
+	r.EventRecorder.Event(instance, corev1.EventTypeNormal, EventReasonMetricsReaderSACreated, "Metrics reader ServiceAccount created")
+}
+
+func (r *TrustyAIServiceReconciler) eventMetricsCABundleConfigMapCreated(instance *trustyaiopendatahubiov1.TrustyAIService) {
+	r.EventRecorder.Event(instance, corev1.EventTypeNormal, EventReasonMetricsCABundleConfigMapCreated, "Metrics CA bundle ConfigMap created")
+}
+
+func (r *TrustyAIServiceReconciler) eventMetricsRoleCreated(instance *trustyaiopendatahubiov1.TrustyAIService) {
+	r.EventRecorder.Event(instance, corev1.EventTypeNormal, EventReasonMetricsRoleCreated, "Metrics reader Role created")
+}
+
+func (r *TrustyAIServiceReconciler) eventMetricsRoleBindingCreated(instance *trustyaiopendatahubiov1.TrustyAIService) {
+	r.EventRecorder.Event(instance, corev1.EventTypeNormal, EventReasonMetricsRoleBindingCreated, "Metrics reader RoleBinding created")
+}
