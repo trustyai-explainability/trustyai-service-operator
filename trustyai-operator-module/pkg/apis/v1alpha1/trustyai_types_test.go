@@ -75,6 +75,18 @@ func TestConditionsRoundTrip(t *testing.T) {
 		if c.Status != conds[i].Status {
 			t.Errorf("condition[%d].Status = %q, want %q", i, c.Status, conds[i].Status)
 		}
+		if c.Reason != conds[i].Reason {
+			t.Errorf("condition[%d].Reason = %q, want %q", i, c.Reason, conds[i].Reason)
+		}
+		if c.Message != conds[i].Message {
+			t.Errorf("condition[%d].Message = %q, want %q", i, c.Message, conds[i].Message)
+		}
+		if !c.LastTransitionTime.Equal(&conds[i].LastTransitionTime) {
+			t.Errorf("condition[%d].LastTransitionTime = %v, want %v", i, c.LastTransitionTime, conds[i].LastTransitionTime)
+		}
+		if c.ObservedGeneration != conds[i].ObservedGeneration {
+			t.Errorf("condition[%d].ObservedGeneration = %d, want %d", i, c.ObservedGeneration, conds[i].ObservedGeneration)
+		}
 	}
 }
 
