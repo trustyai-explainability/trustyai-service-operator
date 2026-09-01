@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-const trustyAIInstanceName = "default"
+const trustyAIInstanceName = "default-trustyai"
 
 var _ = Describe("TrustyAI Module Reconciler", func() {
 	const testNamespace = "default"
@@ -55,20 +55,20 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 	})
 
 	Context("singleton enforcement", func() {
-		It("admits a TrustyAI resource named 'default'", func() {
+		It("admits a TrustyAI resource named 'default-trustyai'", func() {
 			module := &platformv1alpha1.TrustyAI{
 				ObjectMeta: metav1.ObjectMeta{Name: trustyAIInstanceName},
 			}
 			Expect(k8sClient.Create(ctx, module)).To(Succeed())
 		})
 
-		It("rejects a TrustyAI resource not named 'default'", func() {
+		It("rejects a TrustyAI resource not named 'default-trustyai'", func() {
 			module := &platformv1alpha1.TrustyAI{
-				ObjectMeta: metav1.ObjectMeta{Name: "not-default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "not-default-trustyai"},
 			}
 			err := k8sClient.Create(ctx, module)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("must be named 'default'"))
+			Expect(err.Error()).To(ContainSubstring("must be named 'default-trustyai'"))
 		})
 	})
 
