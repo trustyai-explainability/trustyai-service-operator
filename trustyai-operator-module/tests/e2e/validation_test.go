@@ -23,12 +23,12 @@ func TestValidation(t *testing.T) {
 		g.Expect(requireDeploymentReady(ctx, OperatorNamespace, DeploymentName)).To(gomega.Succeed())
 	})
 
-	t.Run("rejects a TrustyAI resource not named 'default'", func(t *testing.T) {
+	t.Run("rejects a TrustyAI resource not named 'default-trustyai'", func(t *testing.T) {
 		g := gomega.NewWithT(t)
 		invalid := newManagedTrustyAI("not-" + InstanceName)
 		err := k8sClient.Create(ctx, invalid)
 		g.Expect(err).To(gomega.HaveOccurred())
-		g.Expect(err.Error()).To(gomega.ContainSubstring("must be named 'default'"))
+		g.Expect(err.Error()).To(gomega.ContainSubstring("must be named 'default-trustyai'"))
 	})
 
 	t.Run("no stale singleton CR left over from a previous run", func(t *testing.T) {

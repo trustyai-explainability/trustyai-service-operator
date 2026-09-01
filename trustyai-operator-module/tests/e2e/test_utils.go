@@ -33,7 +33,7 @@ const (
 	DeploymentName = "trustyai-operator-module-controller-manager"
 
 	// InstanceName is the only name the singleton CRD's CEL rule accepts.
-	InstanceName = "default"
+	InstanceName = "default-trustyai"
 
 	pollInterval = 2 * time.Second
 	pollTimeout  = 2 * time.Minute
