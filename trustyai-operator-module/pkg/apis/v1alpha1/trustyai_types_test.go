@@ -117,7 +117,7 @@ func TestReleaseStatusRoundTrip(t *testing.T) {
 }
 
 func TestSingletonInstanceName(t *testing.T) {
-	if TrustyAIInstanceName != "default" {
-		t.Errorf("TrustyAIInstanceName = %q, want %q", TrustyAIInstanceName, "default")
+	if TrustyAIInstanceName != "default-trustyai" {
+		t.Errorf("TrustyAIInstanceName = %q, want %q", TrustyAIInstanceName, "default-trustyai")
 	}
 }
