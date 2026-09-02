@@ -46,5 +46,5 @@ precommit-tom: ## Run pre-commit checks for trustyai-operator-module
 	cd $(MODULE_DIR) && go mod tidy && go vet ./... && go build ./...
 
 .PHONY: test-tom
-test-tom: ## Run tests for trustyai-operator-module
-	cd $(MODULE_DIR) && go test ./... -v
+test-tom: envtest ## Run tests for trustyai-operator-module
+	cd $(MODULE_DIR) && KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -v
