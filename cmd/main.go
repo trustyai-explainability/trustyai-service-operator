@@ -25,6 +25,7 @@ import (
 
 	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
+	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
@@ -44,6 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	ctrlwebhook "sigs.k8s.io/controller-runtime/pkg/webhook"
 
@@ -81,6 +83,7 @@ func init() {
 	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 	utilruntime.Must(kservev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(kservev1beta1.AddToScheme(scheme))
+	utilruntime.Must(configv1.Install(scheme))
 	utilruntime.Must(routev1.AddToScheme(scheme))
 	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
 	utilruntime.Must(kueuev1beta1.AddToScheme(scheme))
@@ -99,7 +102,15 @@ func run() int {
 	var probeAddr string
 	var configMap string
 	var enabledServices controllers.EnabledServices
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address and port the metric endpoint binds to.")
+	var secureMetrics bool
+	var metricsCertPath string
+	var metricsCertName string
+	var metricsCertKey string
+	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8443", "The address and port the metric endpoint binds to.")
+	flag.BoolVar(&secureMetrics, "metrics-secure", true, "Serve metrics via HTTPS")
+	flag.StringVar(&metricsCertPath, "metrics-cert-path", "", "Directory with TLS cert for metrics server. When empty, controller-runtime auto-generates self-signed certs.")
+	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "TLS certificate filename for metrics server")
+	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "TLS key filename for metrics server")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
@@ -140,9 +151,23 @@ func run() int {
 	}
 	tlsOpts := tlsResult.TLSOpts
 
+	metricsOpts := server.Options{
+		BindAddress:   metricsAddr,
+		SecureServing: secureMetrics,
+		TLSOpts:       tlsOpts,
+	}
+	if secureMetrics {
+		metricsOpts.FilterProvider = filters.WithAuthenticationAndAuthorization
+	}
+	if len(metricsCertPath) > 0 {
+		metricsOpts.CertDir = metricsCertPath
+		metricsOpts.CertName = metricsCertName
+		metricsOpts.KeyName = metricsCertKey
+	}
+
 	mgrOpts := ctrl.Options{
 		Scheme:                 scheme,
-		Metrics:                server.Options{BindAddress: metricsAddr, TLSOpts: tlsOpts},
+		Metrics:                metricsOpts,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "b7e9931f.trustyai.opendatahub.io",
@@ -215,7 +240,21 @@ func run() int {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
+	defer cancel()
+
+	if tlsResult.APIAvailable {
+		watcher := pkgtls.NewProfileWatcher(mgr.GetClient(), tlsResult.ProfileSpec, func() {
+			setupLog.Info("TLS security profile changed, shutting down for restart")
+			cancel()
+		})
+		if err := watcher.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to set up TLS security profile watcher; profile changes will not trigger a restart")
+			return 1
+		}
+	}
+
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		return 1
 	}

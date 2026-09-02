@@ -3,6 +3,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base
+  - rbac/tls
 
 components:
   - ../../components/webhook
@@ -30,6 +31,53 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/args/-
         value: "TAS,LMES,GORCH,NEMO_GUARDRAILS,EVALHUB"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--metrics-cert-path=/etc/metrics-certs"
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: metrics-certs
+          mountPath: /etc/metrics-certs
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: metrics-certs
+          secret:
+            secretName: trustyai-service-operator-metrics-tls
+  - target:
+      kind: Service
+      name: metrics-service
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          service.beta.openshift.io/serving-cert-secret-name: trustyai-service-operator-metrics-tls
+      - op: replace
+        path: /spec/ports/0
+        value:
+          name: https
+          port: 8443
+          protocol: TCP
+          targetPort: 8443
+  - target:
+      kind: ServiceMonitor
+      name: service-monitor
+    patch: |-
+      - op: replace
+        path: /spec/endpoints/0
+        value:
+          path: /metrics
+          port: https
+          scheme: https
+          bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          tlsConfig:
+            serverName: trustyai-service-operator-metrics-service.opendatahub.svc
+            ca:
+              configMap:
+                name: openshift-service-ca.crt
+                key: service-ca.crt
 
 configMapGenerator:
   - env: params.env

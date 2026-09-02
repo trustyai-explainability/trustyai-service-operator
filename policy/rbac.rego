@@ -22,6 +22,9 @@ expected_crbs := {
 	"trustyai-service-operator-proxy-rolebinding": "trustyai-service-operator-proxy-role",
 	"trustyai-service-operator-tls-profile-reader-binding": "trustyai-service-operator-tls-profile-reader",
 
+	# --- overlay: odh/rhoai TLS metrics auth ---
+	"trustyai-service-operator-metrics-auth": "trustyai-service-operator-metrics-auth",
+
 	# --- component: tas ---
 	"trustyai-service-operator-tas-manager-rolebinding": "trustyai-service-operator-tas-manager-role",
 

@@ -46,6 +46,7 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.55.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.55.0 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
+	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
@@ -73,10 +74,12 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/btree v1.1.3 // indirect
+	github.com/google/cel-go v0.26.0 // indirect
 	github.com/google/gnostic-models v0.7.1 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-7 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kedacore/keda/v2 v2.18.3 // indirect
 	github.com/kubeflow/mpi-operator v0.7.0 // indirect
 	github.com/kubeflow/trainer/v2 v2.1.0 // indirect
@@ -100,7 +103,9 @@ require (
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
+	github.com/spf13/cobra v1.10.1 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.7.0 // indirect
+	github.com/stoewer/go-strcase v1.3.1 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
@@ -119,6 +124,7 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	k8s.io/apiserver v0.34.5 // indirect
 	k8s.io/component-helpers v0.34.5 // indirect
+	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.33.0 // indirect
 	sigs.k8s.io/gateway-api v1.4.2-0.20260116062110-0d0ca872766e // indirect
 	sigs.k8s.io/gateway-api-inference-extension v1.3.1 // indirect
 	sigs.k8s.io/jobset v0.11.0-devel // indirect

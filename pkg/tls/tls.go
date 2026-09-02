@@ -68,7 +68,9 @@ var tlsVersionMap = map[configv1.TLSProtocolVersion]uint16{
 
 // Result holds the resolved TLS configuration.
 type Result struct {
-	TLSOpts []func(*tls.Config)
+	TLSOpts      []func(*tls.Config)
+	APIAvailable bool
+	ProfileSpec  *configv1.TLSSecurityProfile
 }
 
 // Resolve reads the cluster TLS profile from apiservers.config.openshift.io/cluster
@@ -98,23 +100,28 @@ func Resolve(ctx context.Context, cfg *rest.Config) (Result, error) {
 	if err := k8sClient.Get(fetchCtx, client.ObjectKey{Name: "cluster"}, apiServer); err != nil {
 		switch {
 		case meta.IsNoMatchError(err):
-			log.Info("TLS profile not available, using hardened defaults (non-OpenShift cluster)")
+			log.Info("TLS profile not available (non-OpenShift cluster)")
 		case apierrors.IsNotFound(err):
 			log.Info("APIServer resource not found, using hardened defaults")
-		case apierrors.IsServiceUnavailable(err):
-			log.Info("API server unavailable, using hardened defaults", "error", err)
-		case apierrors.IsTimeout(err), apierrors.IsServerTimeout(err):
-			log.Info("API server request timed out, using hardened defaults", "error", err)
-		case apierrors.IsTooManyRequests(err):
-			log.Info("API server throttled request, using hardened defaults", "error", err)
-		case errors.Is(err, context.DeadlineExceeded):
-			log.Info("API server request deadline exceeded, using hardened defaults", "error", err)
+		case apierrors.IsServiceUnavailable(err),
+			apierrors.IsTimeout(err),
+			apierrors.IsServerTimeout(err),
+			apierrors.IsTooManyRequests(err),
+			errors.Is(err, context.DeadlineExceeded):
+			log.Info("Transient API error reading TLS profile, using hardened defaults", "error", err)
+			result.APIAvailable = true
+		case apierrors.IsForbidden(err), apierrors.IsUnauthorized(err):
+			log.Info("Permission denied reading TLS profile, using hardened defaults; watcher will retry", "error", err)
+			result.APIAvailable = true
 		default:
 			return result, fmt.Errorf("failed to read APIServer TLS profile: %w", err)
 		}
 		result.TLSOpts = append(result.TLSOpts, intermediateWithALPN)
 		return result, nil //nolint:nilerr // intentional fail-open: use hardened defaults for transient/expected errors
 	}
+
+	result.APIAvailable = true
+	result.ProfileSpec = apiServer.Spec.TLSSecurityProfile
 
 	minVersion, ciphers := parseProfile(apiServer.Spec.TLSSecurityProfile)
 	if ciphers != nil && len(ciphers) == 0 {
