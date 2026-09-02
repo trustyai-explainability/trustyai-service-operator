@@ -2,6 +2,7 @@ package trustyaimodule
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -21,9 +22,24 @@ import (
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
+// defaultEnvtestK8sVersion mirrors ENVTEST_K8S_VERSION in the repo root Makefile.
+// Kept in sync manually since this file may also run outside the Makefile (e.g.
+// `go test` invoked directly, without KUBEBUILDER_ASSETS set).
+const defaultEnvtestK8sVersion = "1.29.0"
+
 var cfg *rest.Config
 var k8sClient client.Client
 var testEnv *envtest.Environment
+
+// envtestK8sVersion returns ENVTEST_K8S_VERSION if set (matching the repo root
+// Makefile's env var of the same name), falling back to defaultEnvtestK8sVersion
+// otherwise.
+func envtestK8sVersion() string {
+	if v := os.Getenv("ENVTEST_K8S_VERSION"); v != "" {
+		return v
+	}
+	return defaultEnvtestK8sVersion
+}
 
 func TestTrustyAIModule(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -47,9 +63,11 @@ var _ = BeforeSuite(func() {
 		// default path defined in controller-runtime which is /usr/local/kubebuilder/.
 		// This reuses the envtest binaries downloaded for the main operator module via
 		// `make envtest` at the repo root, since both modules test against the same
-		// Kubernetes version.
+		// Kubernetes version. Overridden by the KUBEBUILDER_ASSETS env var when set
+		// (e.g. by `make test-tom`), so a Makefile ENVTEST_K8S_VERSION bump only
+		// affects direct `go test` runs, not the normal make-driven test run.
 		BinaryAssetsDirectory: filepath.Join("..", "..", "..", "bin", "k8s",
-			fmt.Sprintf("1.29.0-%s-%s", runtime.GOOS, runtime.GOARCH)),
+			fmt.Sprintf("%s-%s-%s", envtestK8sVersion(), runtime.GOOS, runtime.GOARCH)),
 	}
 
 	var err error
