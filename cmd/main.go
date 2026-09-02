@@ -250,6 +250,7 @@ func run() int {
 		})
 		if err := watcher.SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "Failed to set up TLS security profile watcher; profile changes will not trigger a restart")
+			return 1
 		}
 	}
 
