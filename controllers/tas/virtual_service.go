@@ -31,7 +31,7 @@ type VirtualServiceConfig struct {
 func (r *TrustyAIServiceReconciler) isVirtualServiceCRDPresent(ctx context.Context) (bool, error) {
 	crd := &apiextensionsv1.CustomResourceDefinition{}
 
-	err := r.Get(ctx, types.NamespacedName{Name: virtualServiceCDRName}, crd)
+	err := r.crdReader().Get(ctx, types.NamespacedName{Name: virtualServiceCDRName}, crd)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return false, fmt.Errorf("error getting "+virtualServiceCDRName+" CRD: %v", err)

@@ -163,6 +163,32 @@ func (r *TrustyAIServiceReconciler) updateDeployment(ctx context.Context, cr *tr
 		log.FromContext(ctx).Error(err, "Error setting TrustyAIService as owner of Deployment.")
 		return err
 	}
+
+	existing := &appsv1.Deployment{}
+	err = r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, existing)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			log.FromContext(ctx).Info("Deployment not found during update, creating it.")
+			return r.Create(ctx, deployment)
+		}
+		return err
+	}
+
+	if !reflect.DeepEqual(existing.Spec.Selector, deployment.Spec.Selector) {
+		// spec.selector is immutable — recover by deleting and recreating the Deployment
+		log.FromContext(ctx).Info("Deployment selector changed, deleting and recreating Deployment.", "Deployment", deployment.Name)
+		if err := r.Delete(ctx, existing); err != nil {
+			log.FromContext(ctx).Error(err, "Error deleting Deployment with stale selector.")
+			return err
+		}
+		if err := r.Create(ctx, deployment); err != nil {
+			log.FromContext(ctx).Error(err, "Error recreating Deployment after selector change.")
+			return err
+		}
+		return nil
+	}
+
+	deployment.ResourceVersion = existing.ResourceVersion
 	log.FromContext(ctx).Info("Updating Deployment.")
 	err = r.Update(ctx, deployment)
 	if err != nil {

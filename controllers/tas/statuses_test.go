@@ -9,6 +9,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -64,10 +65,13 @@ var _ = Describe("Status and condition tests", func() {
 
 	BeforeEach(func() {
 		operatorCM := createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage)
+		inferenceServiceCRD := &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{Name: inferenceServiceCRDName},
+		}
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).WithStatusSubresource(
 			&routev1.Route{},
 			&trustyaiopendatahubiov1.TrustyAIService{},
-		).WithObjects(operatorCM).Build()
+		).WithObjects(operatorCM, inferenceServiceCRD).Build()
 		recorder = record.NewFakeRecorder(10)
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
