@@ -8,4 +8,5 @@ const (
 
 	userMappingProxyMountPath  = "/config/user-mapping"
 	userMappingProxyListenPort = 8001
+	userMappingVolumeName      = "user-mapping-volume"
 )

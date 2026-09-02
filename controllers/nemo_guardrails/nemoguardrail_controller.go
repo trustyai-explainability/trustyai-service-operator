@@ -160,11 +160,13 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 			// if the configmap already existed on the system, make sure it has the correct values
 			if !newlyCreated && existingCM != nil {
-				if utils.CompareAndUpdateConfigmap(ctx, r.Client, existingCM, configUserMappingCM) != nil {
+				err = utils.CompareAndUpdateConfigmap(ctx, r.Client, existingCM, configUserMappingCM)
+				if err != nil {
 					utils.LogErrorUpdating(ctx, err, "configMap", nemoGuardrails.Name+"-user-mapping", nemoGuardrails.Namespace)
+					return ctrl.Result{}, err
 				}
 			}
-			// existingCM == configUserMappingCM if newlyCreated == true, or if CompareAndUpdate was called
+			// existingCM will equal configUserMappingCM if newlyCreated is true, or if CompareAndUpdate was called
 			userMappingCM = existingCM
 		}
 	}

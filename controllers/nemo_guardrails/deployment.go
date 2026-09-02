@@ -249,13 +249,12 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 	// === Add user mapping config and proxy sidecar to deployment, if needed ==================
 	hasher := sha256.New()
 	if deploymentConfig.UserMappingProxyImage != "" && userMappingConfig != nil {
-		volumeName := userMappingConfig.Name + "-volume"
-		if err := r.mountUserMappingConfig(userMappingConfig, volumeName, deployment, hasher); err != nil {
+		if err := r.mountUserMappingConfig(userMappingConfig, userMappingVolumeName, deployment, hasher); err != nil {
 			return nil, err
 		}
 		deployment.Spec.Template.Spec.Containers = append(
 			deployment.Spec.Template.Spec.Containers,
-			buildUserMappingProxyContainer(deploymentConfig.UserMappingProxyImage, volumeName, nemoGuardrails.Namespace),
+			buildUserMappingProxyContainer(deploymentConfig.UserMappingProxyImage, userMappingVolumeName, nemoGuardrails.Namespace),
 		)
 	}
 
