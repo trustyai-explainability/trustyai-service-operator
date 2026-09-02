@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"hash"
 	"reflect"
 	"sort"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -25,10 +27,11 @@ type ContainerImages struct {
 }
 
 type DeploymentConfig struct {
-	NemoGuardrails      *nemoguardrailsv1alpha1.NemoGuardrails
-	ContainerImages     ContainerImages
-	UseAuthProxy        bool
-	KubeRbacProxyConfig *utils.KubeRBACProxyConfig
+	NemoGuardrails        *nemoguardrailsv1alpha1.NemoGuardrails
+	ContainerImages       ContainerImages
+	UseAuthProxy          bool
+	KubeRbacProxyConfig   *utils.KubeRBACProxyConfig
+	UserMappingProxyImage string
 }
 
 const deploymentTemplateFilename = "deployment.tmpl.yaml"
@@ -61,15 +64,53 @@ func (r *NemoGuardrailsReconciler) setAuthConfig(ctx context.Context, nemoGuardr
 	return nil
 }
 
+func (r *NemoGuardrailsReconciler) mountUserMappingConfig(userMappingConfig *corev1.ConfigMap, volumeName string, deployment *appsv1.Deployment, hasher hash.Hash) error {
+	hasher.Write([]byte(userMappingConfig.Name))
+	keys := make([]string, 0, len(userMappingConfig.Data))
+	for k := range userMappingConfig.Data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		hasher.Write([]byte(k))
+		hasher.Write([]byte(userMappingConfig.Data[k]))
+	}
+	utils.MountConfigMapToDeployment(userMappingConfig, volumeName, deployment)
+	return nil
+}
+
+func buildUserMappingProxyContainer(image, volumeName, namespace string) corev1.Container {
+	return corev1.Container{
+		Name:  "nemo-reverse-proxy",
+		Image: image,
+		Args: []string{
+			"--namespace=" + namespace,
+		},
+		Ports: []corev1.ContainerPort{
+			{ContainerPort: userMappingProxyListenPort, Name: "http-internal", Protocol: corev1.ProtocolTCP},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: volumeName, MountPath: userMappingProxyMountPath, ReadOnly: true},
+		},
+		Resources: corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("64Mi"),
+			},
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("50m"),
+				corev1.ResourceMemory: resource.MustParse("32Mi"),
+			},
+		},
+	}
+}
+
 // mountNemoConfigs will take all configmaps specified inside the nemoGuardrails.NemoConfig section of the CR and mount them to the deployment in the specified directories
 // this is where user guardrail config files (actions.py, flows.co, etc) are placed into the container
-func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, deployment *appsv1.Deployment) error {
+func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, deployment *appsv1.Deployment, hasher hash.Hash) error {
 	// Mount configuration configmaps
 	var defaultConfig string
 	defaultAlreadyChosen := false
-
-	// Accumulate a hash of all ConfigMap names and data to detect content changes
-	hasher := sha256.New()
 
 	for idx, nemoConfig := range nemoGuardrails.Spec.NemoConfigs {
 		// Take the first config as default for now. If any config manually specifies default-ness, we'll override this
@@ -147,7 +188,7 @@ func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGua
 	return nil
 }
 
-func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, caBundleInitContainerConfig utils.CABundleInitContainerConfig, configMapsToMount []corev1.ConfigMap) (*appsv1.Deployment, error) {
+func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, caBundleInitContainerConfig utils.CABundleInitContainerConfig, configMapsToMount []corev1.ConfigMap, userMappingConfig *corev1.ConfigMap) (*appsv1.Deployment, error) {
 	var containerImages ContainerImages
 
 	// ==== get nemo guardrails image from env var or configmap ===========================================================
@@ -170,10 +211,22 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 		ContainerImages: containerImages,
 		UseAuthProxy:    utils.RequiresAuth(nemoGuardrails),
 	}
+
 	// === configure kube-rbac-proxy if needed ========
 	if deploymentConfig.UseAuthProxy {
 		if err := r.setAuthConfig(ctx, nemoGuardrails, &deploymentConfig); err != nil {
 			return nil, err
+		}
+		// When user mapping is active the proxy sits between kube-rbac-proxy and
+		// nemo-guardrails, so redirect the rbac-proxy upstream to the proxy port.
+		if userMappingConfig != nil {
+			proxyImage, err := images.GetImageFromConfigMap(ctx, r.Client, images.NemoGuardrailsReverseProxyImageKey, constants.ConfigMap, r.Namespace)
+			if err != nil {
+				utils.LogErrorRetrieving(ctx, err, "nemo-guardrails reverse proxy image from configmap", constants.ConfigMap, r.Namespace)
+				return nil, err
+			}
+			deploymentConfig.UserMappingProxyImage = proxyImage
+			deploymentConfig.KubeRbacProxyConfig.UpstreamPort = userMappingProxyListenPort
 		}
 	}
 
@@ -193,8 +246,21 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 		deployment.Spec.Replicas = nemoGuardrails.Spec.Replicas
 	}
 
+	// === Add user mapping config and proxy sidecar to deployment, if needed ==================
+	hasher := sha256.New()
+	if deploymentConfig.UserMappingProxyImage != "" && userMappingConfig != nil {
+		volumeName := userMappingConfig.Name + "-volume"
+		if err := r.mountUserMappingConfig(userMappingConfig, volumeName, deployment, hasher); err != nil {
+			return nil, err
+		}
+		deployment.Spec.Template.Spec.Containers = append(
+			deployment.Spec.Template.Spec.Containers,
+			buildUserMappingProxyContainer(deploymentConfig.UserMappingProxyImage, volumeName, nemoGuardrails.Namespace),
+		)
+	}
+
 	// Add user guardrail configs to deployment
-	err = r.mountNemoConfigs(ctx, nemoGuardrails, deployment)
+	err = r.mountNemoConfigs(ctx, nemoGuardrails, deployment, hasher)
 	if err != nil {
 		return nil, err
 	}

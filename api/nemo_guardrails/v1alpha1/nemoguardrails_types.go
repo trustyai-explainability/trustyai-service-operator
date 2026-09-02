@@ -34,6 +34,11 @@ type NemoConfig struct {
 	ConfigMaps []string `json:"configMaps,omitempty"`
 	//The Default flag determines whether config is treated as the default config for the nemo-server. If no config is set to default, the first entry in NemoConfigs will be used as the default
 	Default bool `json:"default,omitempty"`
+	// If specified, the Users flag will ensure that matching `x-remote-user` names are mandatorily routed to this config.
+	// To use this functionality, authentication must be enabled by setting the "security.opendatahub.io/enable-auth: 'true'" annotation on the NemoGuardrails Custom Resource
+	// A username will be assigned to the first matching config in the nemoConfigs list. If a username does not exist in any listed config, it will be assigned to the *default* config.
+	// +optional
+	Usernames []string `json:"usernames,omitempty"`
 }
 
 // MCPGatewayConfig holds the name and namespace of the MCPGatewayExtension resource

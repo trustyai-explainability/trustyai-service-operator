@@ -5,4 +5,7 @@ const (
 	nemoGuardrailsImageKey         = "nemo-guardrails-image"
 	configMapKubeRBACProxyImageKey = "kube-rbac-proxy"
 	finalizerName                  = "trustyai.opendatahub.io/nemo-guardrails-finalizer"
+
+	userMappingProxyMountPath  = "/config/user-mapping"
+	userMappingProxyListenPort = 8001
 )
