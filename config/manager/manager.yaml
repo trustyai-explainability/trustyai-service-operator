@@ -58,6 +58,8 @@ spec:
               value: $(garak-provider-image)
             - name: RELATED_IMAGE_ODH_TRUSTYAI_NEMO_GUARDRAILS_SERVER_IMAGE
               value: $(nemo-guardrails-image)
+            - name: RELATED_IMAGE_ODH_TRUSTYAI_NEMO_GUARDRAILS_REVERSE_PROXY_IMAGE
+              value: $(nemo-guardrails-reverse-proxy-image)
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

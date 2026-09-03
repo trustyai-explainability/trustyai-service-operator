@@ -250,6 +250,14 @@ spec:
                         underscores.
                       pattern: ^[a-zA-Z0-9_-]+$
                       type: string
+                    usernames:
+                      description: |-
+                        If specified, the Users flag will ensure that matching `x-remote-user` names are mandatorily routed to this config.
+                        To use this functionality, authentication must be enabled by setting the "security.opendatahub.io/enable-auth: 'true'" annotation on the NemoGuardrails Custom Resource
+                        A username will be assigned to the first matching config in the nemoConfigs list. If a username does not exist in any listed config, it will be assigned to the *default* config.
+                      items:
+                        type: string
+                      type: array
                   type: object
                 type: array
               replicas:

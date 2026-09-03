@@ -2,6 +2,7 @@
         image: {{ .KubeRBACProxyImage}}
         args:
           - --secure-listen-address=0.0.0.0:{{ .DownstreamPort }}
+          - --auth-header-fields-enabled
           - --upstream={{ .UpstreamProtocol }}://{{ .UpstreamHost }}:{{ .UpstreamPort }}/
           - --config-file=/etc/kube-rbac-proxy/config.yaml
           - --tls-cert-file=/etc/tls/private/tls.crt
