@@ -31,7 +31,7 @@ type DestinationRuleConfig struct {
 func (r *TrustyAIServiceReconciler) isDestinationRuleCRDPresent(ctx context.Context) (bool, error) {
 	crd := &apiextensionsv1.CustomResourceDefinition{}
 
-	err := r.Get(ctx, types.NamespacedName{Name: destinationRuleCDRName}, crd)
+	err := r.crdReader().Get(ctx, types.NamespacedName{Name: destinationRuleCDRName}, crd)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return false, fmt.Errorf("error getting "+destinationRuleCDRName+" CRD: %v", err)

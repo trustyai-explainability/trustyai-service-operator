@@ -17,7 +17,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -723,6 +726,121 @@ var _ = Describe("TrustyAI operator", func() {
 
 		})
 
+	})
+
+	Context("When the existing Deployment has a stale immutable selector", func() {
+		var instance *trustyaiopendatahubiov1.TrustyAIService
+		It("deletes and recreates the Deployment instead of failing to update it", func() {
+			namespace := "trusty-ns-a-5-stale-selector"
+			instance = createDefaultPVCCustomResource(namespace)
+
+			// Intercept Delete/Update calls for the Deployment to prove the code
+			// takes the delete+recreate path rather than attempting a plain Update
+			// (which a real API server would reject for an immutable field change).
+			var deploymentDeleted, deploymentUpdated bool
+			trackingClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+				Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					if _, ok := obj.(*appsv1.Deployment); ok {
+						deploymentDeleted = true
+					}
+					return c.Delete(ctx, obj, opts...)
+				},
+				Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+					if _, ok := obj.(*appsv1.Deployment); ok {
+						deploymentUpdated = true
+					}
+					return c.Update(ctx, obj, opts...)
+				},
+			}).Build()
+			k8sClient = trackingClient
+			reconciler = &TrustyAIServiceReconciler{
+				Client:        trackingClient,
+				Scheme:        scheme.Scheme,
+				EventRecorder: recorder,
+				Namespace:     operatorNamespace,
+			}
+
+			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
+			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
+
+			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
+			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
+
+			// Simulate a Deployment left over from an older operator version with a
+			// different (now stale) selector, as if the label convention changed
+			// across an upgrade.
+			desired, err := reconciler.createDeploymentObject(ctx, instance, testTrustAIServiceImage, caBundle)
+			Expect(err).ToNot(HaveOccurred())
+			stale := desired.DeepCopy()
+			stale.Spec.Selector.MatchLabels["app"] = "stale-value"
+			stale.Spec.Template.Labels["app"] = "stale-value"
+			Expect(ctrl.SetControllerReference(instance, stale, reconciler.Scheme)).To(Succeed())
+			Expect(k8sClient.Create(ctx, stale)).To(Succeed())
+
+			Expect(reconciler.updateDeployment(ctx, instance, testTrustAIServiceImage, caBundle)).To(Succeed())
+
+			deployment := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deployment)).To(Succeed())
+
+			Expect(deployment.Spec.Selector.MatchLabels["app"]).To(Equal(instance.Name), "selector should match the current desired value, not the stale one")
+			Expect(deploymentDeleted).To(BeTrue(), "stale Deployment should have been deleted")
+			Expect(deploymentUpdated).To(BeFalse(), "Deployment should not be updated in place when the selector changed")
+		})
+	})
+
+	Context("When a same-named Deployment exists but is not owned by the CR", func() {
+		var instance *trustyaiopendatahubiov1.TrustyAIService
+		It("refuses to delete or update the foreign Deployment", func() {
+			namespace := "trusty-ns-a-6-foreign-deployment"
+			instance = createDefaultPVCCustomResource(namespace)
+
+			var deploymentDeleted, deploymentUpdated bool
+			trackingClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+				Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					if _, ok := obj.(*appsv1.Deployment); ok {
+						deploymentDeleted = true
+					}
+					return c.Delete(ctx, obj, opts...)
+				},
+				Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+					if _, ok := obj.(*appsv1.Deployment); ok {
+						deploymentUpdated = true
+					}
+					return c.Update(ctx, obj, opts...)
+				},
+			}).Build()
+			k8sClient = trackingClient
+			reconciler = &TrustyAIServiceReconciler{
+				Client:        trackingClient,
+				Scheme:        scheme.Scheme,
+				EventRecorder: recorder,
+				Namespace:     operatorNamespace,
+			}
+
+			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
+			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
+
+			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
+			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
+
+			// A Deployment with the same name/namespace the operator would use,
+			// but with no OwnerReference back to our CR (e.g. created by a user
+			// or another controller before this CR existed).
+			foreign, err := reconciler.createDeploymentObject(ctx, instance, testTrustAIServiceImage, caBundle)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(k8sClient.Create(ctx, foreign)).To(Succeed())
+
+			Expect(reconciler.updateDeployment(ctx, instance, testTrustAIServiceImage, caBundle)).To(HaveOccurred())
+
+			Expect(deploymentDeleted).To(BeFalse(), "foreign Deployment should not be deleted")
+			Expect(deploymentUpdated).To(BeFalse(), "foreign Deployment should not be updated")
+
+			deployment := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deployment)).To(Succeed())
+			Expect(deployment.OwnerReferences).To(BeEmpty(), "foreign Deployment should remain unowned")
+		})
 	})
 
 	Context("When deploying with no custom CA bundle ConfigMap", func() {

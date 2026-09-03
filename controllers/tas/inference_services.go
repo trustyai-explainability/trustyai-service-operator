@@ -10,7 +10,10 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -21,7 +24,26 @@ const (
 	DEPLOYMENT_MODE_STANDARD   = "Standard"
 	DEPLOYMENT_MODE_SERVERLESS = "Serverless"
 	DEPLOYMENT_MODE_KNATIVE    = "Knative"
+
+	inferenceServiceCRDName = "inferenceservices.serving.kserve.io"
 )
+
+// isInferenceServiceCRDPresent returns true if the KServe InferenceService CRD is present, false otherwise
+func (r *TrustyAIServiceReconciler) isInferenceServiceCRDPresent(ctx context.Context) (bool, error) {
+	crd := &apiextensionsv1.CustomResourceDefinition{}
+
+	err := r.crdReader().Get(ctx, types.NamespacedName{Name: inferenceServiceCRDName}, crd)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			return false, fmt.Errorf("error getting "+inferenceServiceCRDName+" CRD: %v", err)
+		}
+		// Not found
+		return false, nil
+	}
+
+	// Found
+	return true, nil
+}
 
 // GetDeploymentsByLabel returns a list of Deployments that match a label key-value pair
 func (r *TrustyAIServiceReconciler) GetDeploymentsByLabel(ctx context.Context, namespace string, labelKey string, labelValue string) ([]appsv1.Deployment, error) {
@@ -214,6 +236,16 @@ func generateEnvVarValue(currentValue, newValue string, remove bool) string {
 }
 
 func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, namespace string, labelKey, labelValue, envVarName, crName string, remove bool) (bool, error) {
+	crdPresent, err := r.isInferenceServiceCRDPresent(ctx)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Error verifying InferenceService CRD is present")
+		return false, err
+	}
+	if !crdPresent {
+		log.FromContext(ctx).Info("InferenceService CRD not found, skipping InferenceService handling. Will retry on next reconcile.")
+		return true, nil
+	}
+
 	var inferenceServices kservev1beta1.InferenceServiceList
 
 	if err := r.List(ctx, &inferenceServices, client.InNamespace(namespace)); err != nil {
@@ -367,6 +399,14 @@ func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *t
 }
 
 func (r *TrustyAIServiceReconciler) checkInferenceServicesPresent(ctx context.Context, namespace string) (bool, error) {
+	crdPresent, err := r.isInferenceServiceCRDPresent(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !crdPresent {
+		return false, nil
+	}
+
 	infServiceList := &kservev1beta1.InferenceServiceList{}
 	if err := r.List(ctx, infServiceList, client.InNamespace(namespace)); err != nil {
 		return false, err

@@ -17,7 +17,7 @@ import (
 
 const (
 	virtualServiceTemplatePath = "service/virtual-service.tmpl.yaml"
-	virtualServiceCDRName      = "destinationrules.networking.istio.io"
+	virtualServiceCDRName      = "virtualservices.networking.istio.io"
 )
 
 // DestinationRuleConfig has the variables for the DestinationRule template
@@ -31,7 +31,7 @@ type VirtualServiceConfig struct {
 func (r *TrustyAIServiceReconciler) isVirtualServiceCRDPresent(ctx context.Context) (bool, error) {
 	crd := &apiextensionsv1.CustomResourceDefinition{}
 
-	err := r.Get(ctx, types.NamespacedName{Name: virtualServiceCDRName}, crd)
+	err := r.crdReader().Get(ctx, types.NamespacedName{Name: virtualServiceCDRName}, crd)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return false, fmt.Errorf("error getting "+virtualServiceCDRName+" CRD: %v", err)
