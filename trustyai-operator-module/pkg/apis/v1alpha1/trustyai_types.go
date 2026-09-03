@@ -62,6 +62,11 @@ type TrustyAIStatus struct {
 	Distribution DistributionInfo `json:"distribution,omitempty"`
 }
 
+const (
+	// TrustyAIInstanceName is the singleton CR name enforced by the CEL validation rule.
+	TrustyAIInstanceName = "default-trustyai"
+)
+
 // TrustyAI is the Schema for the trustyais API
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
