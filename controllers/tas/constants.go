@@ -76,6 +76,7 @@ const prometheusUserWorkloadNamespace = "openshift-user-workload-monitoring"
 // Event reasons
 const (
 	EventReasonPVCCreated                      = "PVCCreated"
+	EventReasonDeploymentCreated               = "DeploymentCreated"
 	EventReasonInferenceServiceConfigured      = "InferenceServiceConfigured"
 	EventReasonServiceMonitorCreated           = "ServiceMonitorCreated"
 	EventReasonMetricsReaderSACreated          = "MetricsReaderServiceAccountCreated"

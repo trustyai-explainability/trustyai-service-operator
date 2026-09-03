@@ -17,6 +17,10 @@ func (r *TrustyAIServiceReconciler) eventPVCCreated(instance *trustyaiopendatahu
 	r.EventRecorder.Event(instance, corev1.EventTypeNormal, EventReasonPVCCreated, "PVC created")
 }
 
+func (r *TrustyAIServiceReconciler) eventDeploymentCreated(instance *trustyaiopendatahubiov1.TrustyAIService, message string) {
+	r.EventRecorder.Event(instance, corev1.EventTypeNormal, EventReasonDeploymentCreated, message)
+}
+
 func (r *TrustyAIServiceReconciler) eventLocalServiceMonitorCreated(instance *trustyaiopendatahubiov1.TrustyAIService) {
 	r.EventRecorder.Event(instance, corev1.EventTypeNormal, EventReasonServiceMonitorCreated, "Local ServiceMonitor created")
 }

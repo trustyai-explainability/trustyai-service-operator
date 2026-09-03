@@ -17,7 +17,7 @@ import (
 
 const (
 	virtualServiceTemplatePath = "service/virtual-service.tmpl.yaml"
-	virtualServiceCDRName      = "destinationrules.networking.istio.io"
+	virtualServiceCDRName      = "virtualservices.networking.istio.io"
 )
 
 // DestinationRuleConfig has the variables for the DestinationRule template

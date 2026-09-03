@@ -14,6 +14,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -132,6 +133,7 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 		log.FromContext(ctx).Error(err, "Error creating Deployment.")
 		return err
 	}
+	r.eventDeploymentCreated(cr, "Deployment created")
 	// Created successfully
 	return nil
 
@@ -169,8 +171,18 @@ func (r *TrustyAIServiceReconciler) updateDeployment(ctx context.Context, cr *tr
 	if err != nil {
 		if errors.IsNotFound(err) {
 			log.FromContext(ctx).Info("Deployment not found during update, creating it.")
-			return r.Create(ctx, deployment)
+			if err := r.Create(ctx, deployment); err != nil {
+				return err
+			}
+			r.eventDeploymentCreated(cr, "Deployment created")
+			return nil
 		}
+		return err
+	}
+
+	if !metav1.IsControlledBy(existing, cr) {
+		err := fmt.Errorf("existing Deployment %s/%s is not controlled by TrustyAIService %s, refusing to modify it", existing.Namespace, existing.Name, cr.Name)
+		log.FromContext(ctx).Error(err, "Deployment ownership conflict")
 		return err
 	}
 
@@ -185,6 +197,7 @@ func (r *TrustyAIServiceReconciler) updateDeployment(ctx context.Context, cr *tr
 			log.FromContext(ctx).Error(err, "Error recreating Deployment after selector change.")
 			return err
 		}
+		r.eventDeploymentCreated(cr, "Deployment recreated due to immutable selector change")
 		return nil
 	}
 
