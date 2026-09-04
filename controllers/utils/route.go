@@ -46,6 +46,12 @@ func ReconcileRoute(ctx context.Context, c client.Client, owner metav1.Object, r
 	return err
 }
 
+func DeleteRoute(ctx context.Context, c client.Client, name string, namespace string) error {
+	genericConfig := GenericConfig{Name: &name, Namespace: &namespace}
+	_, err := DeleteGeneric[*routev1.Route](ctx, c, routeResourceKind, genericConfig)
+	return err
+}
+
 // === SPECIFIC ROUTE FUNCTIONS ========================================================================================
 
 // processConfig sets default values for the RouteConfig if not provided, then converts into a GenericConfig

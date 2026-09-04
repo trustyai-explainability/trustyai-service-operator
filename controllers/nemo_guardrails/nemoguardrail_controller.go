@@ -188,19 +188,26 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// ====== Reconcile Route ==========================================================================================
-	termination := utils.Edge
-	if utils.RequiresAuth(nemoGuardrails) {
-		termination = utils.Reencrypt
-	}
-	routeConfig := utils.RouteConfig{
-		PortName:    nemoGuardrails.Name, // only one available port in the service, so don't need to specify any port name
-		ServiceName: nemoGuardrails.Name,
-		Termination: utils.StringPointer(termination),
-	}
-	err = utils.ReconcileRoute(ctx, r.Client, nemoGuardrails, routeConfig, routeTemplate, templateParser.ParseResource)
-	if err != nil {
-		utils.LogErrorReconciling(ctx, err, "route", nemoGuardrails.Name, nemoGuardrails.Namespace)
-		return ctrl.Result{}, err
+	if nemoGuardrails.Spec.ExposeRoute != nil && *nemoGuardrails.Spec.ExposeRoute == true {
+		termination := utils.Edge
+		if utils.RequiresAuth(nemoGuardrails) {
+			termination = utils.Reencrypt
+		}
+		routeConfig := utils.RouteConfig{
+			PortName:    nemoGuardrails.Name, // only one available port in the service, so don't need to specify any port name
+			ServiceName: nemoGuardrails.Name,
+			Termination: utils.StringPointer(termination),
+		}
+		err = utils.ReconcileRoute(ctx, r.Client, nemoGuardrails, routeConfig, routeTemplate, templateParser.ParseResource)
+		if err != nil {
+			utils.LogErrorReconciling(ctx, err, "route", nemoGuardrails.Name, nemoGuardrails.Namespace)
+			return ctrl.Result{}, err
+		}
+	} else {
+		err := utils.DeleteRoute(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	// ====== Conditionally reconcile EnvoyFilter ========================================================================
@@ -252,7 +259,6 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if updateErr != nil {
 		return ctrl.Result{}, updateErr
 	}
-	log.FromContext(ctx).Info("RECONCILE DONE")
 	return ctrl.Result{Requeue: true, RequeueAfter: 30 * time.Second}, nil
 }
 

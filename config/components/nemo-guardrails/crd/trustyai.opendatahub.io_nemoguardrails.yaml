@@ -221,6 +221,11 @@ spec:
                   - name
                   type: object
                 type: array
+              exposeRoute:
+                default: true
+                description: ExposeRoute controls whether an external route to the
+                  NeMo Guardrails server is created. Defaults to true.
+                type: boolean
               nemoConfigs:
                 description: NemoConfig should be the names of the configmaps containing
                   NeMO server configuration files. All files in NemoConfigs will be

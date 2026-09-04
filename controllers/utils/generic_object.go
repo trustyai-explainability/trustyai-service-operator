@@ -152,3 +152,40 @@ func ReconcileGeneric[T client.Object](ctx context.Context, c client.Client, own
 	// object already existed, return the existingObj and false
 	return existingObj, false, nil
 }
+
+// DeleteGeneric deletes a generic object of type T from the cluster
+/*
+T must be a pointer to a k8s object, e.g., *corev1.ConfigMap
+
+Returns:
+- a boolean flag indicating whether the object exists/existed on the cluster
+- any error
+*/
+func DeleteGeneric[T client.Object](ctx context.Context, c client.Client, resourceKind string, config GenericConfig) (bool, error) {
+	// Allocate a new pointer to the struct that T points to, and cast to T
+	// e.g., replaces existingRoute := &routev1.Route{}
+	var existingObj T
+	tType := reflect.TypeOf((*T)(nil)).Elem()
+	if tType.Kind() != reflect.Ptr {
+		return false, fmt.Errorf("T must be a pointer type")
+	}
+	existingObjValue := reflect.New(tType.Elem())
+	existingObj = existingObjValue.Interface().(T)
+
+	// attempt to retrieve a matching object from the cluster
+	err := c.Get(ctx, types.NamespacedName{Name: *config.Name, Namespace: *config.Namespace}, existingObj)
+	if err != nil && errors.IsNotFound(err) {
+		return false, nil
+	} else if err != nil {
+		LogErrorRetrieving(ctx, err, resourceKind, *config.Name, *config.Namespace)
+		return true, err
+	} else {
+		err = c.Delete(ctx, existingObj)
+		if err != nil {
+			LogErrorVerb(ctx, err, "deleting", resourceKind, *config.Name, *config.Namespace)
+			return true, err
+		} else {
+			return true, nil
+		}
+	}
+}
