@@ -67,6 +67,10 @@ type NemoGuardrailsSpec struct {
 	// Template describes the pod template used by the deployment
 	// +optional
 	Template *NemoGuardrailsTemplate `json:"template,omitempty"`
+	// ExposeRoute controls whether an external route to the NeMo Guardrails server is created. Defaults to true.
+	// +optional
+	// +kubebuilder:default=true
+	ExposeRoute *bool `json:"exposeRoute,omitempty"`
 }
 
 // NemoGuardrailsTemplate defines the template for the NemoGuardrails deployment
