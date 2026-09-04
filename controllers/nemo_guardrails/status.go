@@ -43,7 +43,12 @@ func (r *NemoGuardrailsReconciler) flushMCPStatus(ctx context.Context, nemoGuard
 
 func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails) (ctrl.Result, error) {
 	deploymentReady, _ := utils.CheckDeploymentReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
-	routeReady, _ := utils.CheckRouteReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
+
+	exposeRoute := nemoGuardrails.Spec.ExposeRoute != nil && *nemoGuardrails.Spec.ExposeRoute
+	routeReady := !exposeRoute
+	if exposeRoute {
+		routeReady, _ = utils.CheckRouteReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
+	}
 
 	mcp := nemoGuardrails.Status.MCP
 	bbr := nemoGuardrails.Status.BBRPlugin
@@ -53,7 +58,11 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 			saved.Status.MCP = mcp
 			saved.Status.BBRPlugin = bbr
 			utils.SetResourceCondition(&saved.Status.Conditions, "Deployment", "DeploymentReady", "Deployment is ready", corev1.ConditionTrue)
-			utils.SetResourceCondition(&saved.Status.Conditions, "Route", "RouteReady", "Route is ready", corev1.ConditionTrue)
+			if exposeRoute {
+				utils.SetResourceCondition(&saved.Status.Conditions, "Route", "RouteReady", "Route is ready", corev1.ConditionTrue)
+			} else {
+				utils.SetResourceCondition(&saved.Status.Conditions, "Route", "RouteNotRequired", "Route is not required", corev1.ConditionUnknown)
+			}
 			utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionTrue, utils.ReconcileCompleted, utils.ReconcileCompletedMessage)
 			saved.Status.Phase = utils.PhaseReady
 		})
@@ -66,7 +75,11 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 			saved.Status.MCP = mcp
 			saved.Status.BBRPlugin = bbr
 			utils.SetStatus(&saved.Status.Conditions, "Deployment", deploymentReady)
-			utils.SetStatus(&saved.Status.Conditions, "Route", routeReady)
+			if exposeRoute {
+				utils.SetStatus(&saved.Status.Conditions, "Route", routeReady)
+			} else {
+				utils.SetResourceCondition(&saved.Status.Conditions, "Route", "RouteNotRequired", "Route is not required", corev1.ConditionUnknown)
+			}
 			utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionFalse, utils.ReconcileFailed, utils.ReconcileFailedMessage)
 		})
 		if updateErr != nil {
