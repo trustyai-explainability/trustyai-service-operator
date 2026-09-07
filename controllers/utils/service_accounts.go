@@ -14,7 +14,7 @@ type ServiceAccountConfig struct {
 
 const serviceAccountResourceKind = "ServiceAccount"
 
-// getServiceAccountName creates a service account name from the orchestrator name
+// getServiceAccountName creates a service account name from the object name
 func GetServiceAccountName(owner metav1.Object) string {
 	return owner.GetName() + "-serviceaccount"
 }

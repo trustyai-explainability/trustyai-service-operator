@@ -90,7 +90,6 @@ func init() {
 | `TAS` | `controllers/tas/` | `TrustyAIService` (v1alpha1, v1) |
 | `LMES` | `controllers/lmes/` | `LMEvalJob` (v1alpha1) |
 | `EVALHUB` | `controllers/evalhub/` | `EvalHub` (v1alpha1, v1) |
-| `GORCH` | `controllers/gorch/` | `GuardrailsOrchestrator` (v1alpha1) |
 | `NEMO_GUARDRAILS` | `controllers/nemo_guardrails/` | `NemoGuardrail` (v1alpha1) |
 | `JOB_MGR` | `controllers/job_mgr/` | (watches external jobs) |
 
@@ -104,7 +103,6 @@ api/                                # CRD type definitions (kubebuilder markers)
   tas/v1alpha1/, tas/v1/            # TrustyAIService (with version conversion)
   lmes/v1alpha1/                    # LMEvalJob
   evalhub/v1alpha1/, evalhub/v1/    # EvalHub (v1 is storage version)
-  gorch/v1alpha1/                   # GuardrailsOrchestrator
   nemo_guardrails/v1alpha1/         # NemoGuardrail
   common/                           # Shared types (Condition, CABundle)
 controllers/
@@ -191,7 +189,7 @@ Tenant ConfigMap changes trigger reconciliation via a ConfigMap watch (`tenantCo
 
 Registers all API groups in order:
 - Kubernetes core (`clientgoscheme`)
-- TrustyAI: `tasv1alpha1`, `tasv1`, `lmesv1alpha1`, `evalhubv1alpha1`, `evalhubv1`, `gorchv1alpha1`, `nemoguardrailsv1alpha1`
+- TrustyAI: `tasv1alpha1`, `tasv1`, `lmesv1alpha1`, `evalhubv1alpha1`, `evalhubv1`, `nemoguardrailsv1alpha1`
 - External: `monitoringv1` (Prometheus), `kservev1alpha1`/`v1beta1`, `routev1` (OpenShift), `apiextensionsv1`, `kueuev1beta1`
 
 ### Key Dependencies
@@ -263,7 +261,7 @@ make policy-check   # Full check against all overlays
 
 **Current policies:**
 - `policy/rbac.rego` — closed allowlist of expected `ClusterRoleBinding` resources. Any CRB not in `expected_crbs` or binding the wrong `ClusterRole` is denied.
-- `policy/clusterrole.rego` — inspects ClusterRole **contents**: (1) closed allowlist of permitted `(apiGroup, resource)` pairs, (2) denylist blocking wildcards, secrets write, privilege escalation verbs. Manager roles that legitimately need secrets or CRB write (TAS, GORCH, nemo-guardrails, evalhub) are exempt by name suffix — see `policy/README.md` for the full exemption list.
+- `policy/clusterrole.rego` — inspects ClusterRole **contents**: (1) closed allowlist of permitted `(apiGroup, resource)` pairs, (2) denylist blocking wildcards, secrets write, privilege escalation verbs. Manager roles that legitimately need secrets or CRB write (TAS, nemo-guardrails, evalhub) are exempt by name suffix — see `policy/README.md` for the full exemption list.
 
 **When adding RBAC resources:**
 - If you add a new `ClusterRoleBinding` (e.g. in a component's `rbac/` directory), you must add its post-kustomize name and expected `ClusterRole` to `expected_crbs` in `policy/rbac.rego`.
