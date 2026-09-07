@@ -204,7 +204,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 	} else {
-		err := utils.DeleteRoute(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
+		err := utils.DeleteRoute(ctx, r.Client, nemoGuardrails, nemoGuardrails.Name, nemoGuardrails.Namespace)
 		if err != nil {
 			return ctrl.Result{}, err
 		}

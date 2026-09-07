@@ -46,9 +46,9 @@ func ReconcileRoute(ctx context.Context, c client.Client, owner metav1.Object, r
 	return err
 }
 
-func DeleteRoute(ctx context.Context, c client.Client, name string, namespace string) error {
+func DeleteRoute(ctx context.Context, c client.Client, owner metav1.Object, name string, namespace string) error {
 	genericConfig := GenericConfig{Name: &name, Namespace: &namespace}
-	_, err := DeleteGeneric[*routev1.Route](ctx, c, routeResourceKind, genericConfig)
+	_, err := DeleteGeneric[*routev1.Route](ctx, c, owner, routeResourceKind, genericConfig)
 	return err
 }
 
