@@ -8,15 +8,23 @@ resources:
   - provider-lighteval.yaml
   - provider-lm-evaluation-harness.yaml
   - provider-ragas.yaml
+  - provider-ruler.yaml
   - collection-coding-v1.yaml
+  - collection-document-understanding-v1.yaml
   - collection-instruction-following-v1.yaml
+  - collection-instruction-output-v1.yaml
+  - collection-knowledge-reasoning-v1.yaml
   - collection-leaderboard-v2.yaml
   - collection-long-context-v1.yaml
   - collection-model-validation.yaml
+  - collection-multimodal-v1.yaml
   - collection-open-telco-v1.yaml
   - collection-reasoning-v1.yaml
   - collection-safety-and-fairness-v1.yaml
+  - collection-software-v1.yaml
   - collection-standard-llm-evals-v1.yaml
+  - collection-tool-use-v1.yaml
   - collection-toxicity-and-ethical-principles.yaml
+  - collection-trustworthiness-v1.yaml
 
 namespace: system
