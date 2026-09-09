@@ -4,7 +4,7 @@
 
 ## Overview
 
-The TrustyAI Service Operator is a Kubernetes operator that manages the lifecycle of AI/ML trust, safety, and evaluation services on OpenShift AI. It deploys and configures five distinct service types — model explainability (TAS), LLM evaluation (LMES), evaluation hub (EvalHub), and NeMo Guardrails — through a single operator binary with dynamic controller registration.
+The TrustyAI Service Operator is a Kubernetes operator that manages the lifecycle of AI/ML trust, safety, and evaluation services on OpenShift AI. It deploys and configures fourgi distinct service types — model explainability (TAS), LLM evaluation (LMES), evaluation hub (EvalHub), and NeMo Guardrails — through a single operator binary with dynamic controller registration.
 
 Built with kubebuilder v4 and controller-runtime v0.17.0 in Go 1.24, the operator uses a plugin-based architecture where controllers are selectively enabled via a startup flag (`--enable-services`). Each controller watches its own CRD and reconciles the desired state by creating Deployments, Services, Routes, ConfigMaps, RBAC resources, and monitoring infrastructure.
 
