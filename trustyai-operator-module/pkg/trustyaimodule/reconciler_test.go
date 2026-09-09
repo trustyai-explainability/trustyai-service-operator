@@ -104,6 +104,27 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 			Expect(module.Status.ObservedGeneration).To(Equal(module.Generation))
 		})
 
+		It("records the platform version handshake in status.releases", func() {
+			platformCM := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: PlatformConfigMapName, Namespace: testNamespace},
+				Data:       map[string]string{PlatformVersionKey: "3.6.0"},
+			}
+			Expect(k8sClient.Create(ctx, platformCM)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, platformCM)).To(Succeed())
+			})
+
+			r := newReconciler()
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+
+			module := &platformv1alpha1.TrustyAI{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
+			Expect(module.Status.GetPlatformRelease()).To(Equal("3.6.0"))
+		})
+
 		It("removes the DSC ConfigMap and finalizer on deletion", func() {
 			r := newReconciler()
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})

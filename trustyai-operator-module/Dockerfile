@@ -37,7 +37,8 @@ COPY --from=builder /opt/manifests-template /opt/manifests-template
 
 RUN microdnf install -y shadow-utils && \
     useradd -u 1000 -r -g 0 -s /sbin/nologin trustyai && \
-    microdnf clean all
+    microdnf clean all && \
+    chgrp -R 0 /opt && chmod -R g=u /opt
 
 USER 1000
 

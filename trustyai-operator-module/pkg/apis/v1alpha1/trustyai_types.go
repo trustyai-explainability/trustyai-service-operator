@@ -48,18 +48,10 @@ type TrustyAISpec struct {
 	Eval EvalConfig `json:"eval,omitempty"`
 }
 
-// DistributionInfo represents distribution information
-type DistributionInfo struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-}
-
 // TrustyAIStatus defines the observed state of TrustyAI module
 type TrustyAIStatus struct {
 	common.Status                 `json:",inline"`
 	common.ComponentReleaseStatus `json:",inline"`
-	// +optional
-	Distribution DistributionInfo `json:"distribution,omitempty"`
 }
 
 // TrustyAI is the Schema for the trustyais API
