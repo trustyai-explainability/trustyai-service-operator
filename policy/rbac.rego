@@ -56,6 +56,9 @@ expected_crbs := {
 	# --- component: nemo-guardrails ---
 	"trustyai-service-operator-nemo-guardrails-manager-rolebinding": "trustyai-service-operator-nemo-guardrails-manager-role",
 
+	# --- component: cluster-guardrail-policy ---
+	"trustyai-service-operator-cluster-guardrail-policy-manager-rolebinding": "trustyai-service-operator-cluster-guardrail-policy-manager-role",
+
 	# --- component: job-mgr ---
 	"trustyai-service-operator-job-mgr-manager-rolebinding": "trustyai-service-operator-job-mgr-manager-role",
 }

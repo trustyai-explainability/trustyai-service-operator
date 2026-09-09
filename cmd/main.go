@@ -28,6 +28,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	clusterguardrailpolicyv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/cluster_guardrail_policy/v1alpha1"
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -89,6 +90,7 @@ func init() {
 	utilruntime.Must(kueuev1beta1.AddToScheme(scheme))
 	utilruntime.Must(gorchv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(nemoguardrailsv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(clusterguardrailpolicyv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
