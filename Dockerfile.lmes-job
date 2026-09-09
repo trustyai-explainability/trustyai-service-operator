@@ -4,7 +4,7 @@ USER root
 RUN sed -i.bak 's/include-system-site-packages = false/include-system-site-packages = true/' /opt/app-root/pyvenv.cfg
 
 # required dependency for oci.py in lmes-job; put here for the `needs-lmes-build`, but already incorporated here: https://github.com/opendatahub-io/lm-evaluation-harness/blob/3c4dec006a4a096b546d60c3364c78acbe33cd48/Dockerfile.lmes-job#L16
-RUN dnf install -y skopeo && dnf clean all
+RUN dnf install -y git skopeo && dnf clean all
 
 USER default
 WORKDIR /opt/app-root/src
@@ -26,8 +26,19 @@ RUN curl -L https://github.com/opendatahub-io/lm-evaluation-harness/archive/refs
 # incubation branch's requirements.txt:
 #   evaluate, bert-score  → careqa_open_perplexity (bert_score metric)
 #   tinyBenchmarks        → tinyTruthfulQA
-RUN pip install --no-cache-dir evaluate bert-score \
-    "tinyBenchmarks @ git+https://github.com/felipemaiapolo/tinyBenchmarks"
+RUN printf '%s\n' \
+    'evaluate==0.4.3 --hash=sha256:47d8770bdea76e2c2ed0d40189273027d1a41ccea861bcc7ba12d30ec5d1e517' \
+    > /tmp/evaluate-requirements.txt && \
+    pip install --no-cache-dir --require-hashes --no-deps -r /tmp/evaluate-requirements.txt && \
+    rm /tmp/evaluate-requirements.txt && \
+    pip install --no-cache-dir matplotlib==3.11.1 && \
+    printf '%s\n' \
+    'bert-score==0.3.13 --hash=sha256:bbbb4c7fcdaa46d7681aff49f37f96faa09ed74e1b150e659bdc6b58a66989b9' \
+    > /tmp/bert-score-requirements.txt && \
+    pip install --no-cache-dir --no-deps -r /tmp/bert-score-requirements.txt && \
+    rm /tmp/bert-score-requirements.txt && \
+    pip install --no-cache-dir \
+    "tinyBenchmarks @ git+https://github.com/felipemaiapolo/tinyBenchmarks@e9a8b1031b0340571beb6c9ca3a27891be09a8fd"
 
 RUN python -c 'from lm_eval.tasks.unitxt import task; import os.path; print("class: !function " + task.__file__.replace("task.py", "task.Unitxt"))' > ./my_tasks/unitxt
 
