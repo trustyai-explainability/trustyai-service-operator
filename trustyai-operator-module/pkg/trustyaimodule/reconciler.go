@@ -46,8 +46,8 @@ type TrustyAIModuleReconciler struct {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;patch
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;patch
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;patch
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
 func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -167,6 +167,9 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	r.updateHealthStatus(ctx, module, condMgr)
 	r.updateReleases(module)
+	if err := r.updatePlatformRelease(ctx, module); err != nil {
+		logger.Error(err, "Failed to update platform release")
+	}
 
 	module.Status.ObservedGeneration = module.Generation
 	condMgr.Sort()

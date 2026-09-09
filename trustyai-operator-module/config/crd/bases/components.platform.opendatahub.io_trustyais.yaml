@@ -155,17 +155,6 @@ spec:
                   type: object
                 type: array
                 x-kubernetes-list-type: atomic
-              distribution:
-                description: DistributionInfo represents distribution information
-                properties:
-                  name:
-                    type: string
-                  version:
-                    type: string
-                required:
-                - name
-                - version
-                type: object
               observedGeneration:
                 description: |-
                   ObservedGeneration is the most recent .metadata.generation observed

@@ -25,9 +25,18 @@ const (
 	// ConfigMap names
 	DSCConfigMapName = "trustyai-dsc-config"
 
+	// PlatformConfigMapName is the platform-managed ConfigMap the platform
+	// operator creates/maintains for this module (odh-<modulename>-config).
+	// See the platform version handshake doc.
+	PlatformConfigMapName = "odh-trustyai-config"
+
 	// ConfigMap keys
 	LMEvalPermitCodeExecutionKey = "eval.lmeval.permitCodeExecution"
 	LMEvalPermitOnlineKey        = "eval.lmeval.permitOnline"
+
+	// PlatformVersionKey is the data key in PlatformConfigMapName holding the
+	// platform operator's current version.
+	PlatformVersionKey = "platformVersion"
 
 	// SSAAdoptionAnnotationKey marks whether SSA adoption of in-tree resources is complete
 	SSAAdoptionAnnotationKey = "trustyai.opendatahub.io/ssa-adoption-completed"

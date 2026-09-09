@@ -40,6 +40,7 @@ rules:
   - get
   - list
   - patch
+  - watch
 - apiGroups:
   - components.platform.opendatahub.io
   resources:
@@ -93,6 +94,7 @@ rules:
   - get
   - list
   - patch
+  - watch
 - apiGroups:
   - serving.kserve.io
   resources:
