@@ -22,6 +22,13 @@ RUN curl -L https://github.com/opendatahub-io/lm-evaluation-harness/archive/refs
     pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -e .
 
+# Extra packages required by specific lm-eval tasks but not in the
+# incubation branch's requirements.txt:
+#   evaluate, bert-score  → careqa_open_perplexity (bert_score metric)
+#   tinyBenchmarks        → tinyTruthfulQA
+RUN pip install --no-cache-dir evaluate bert-score \
+    "tinyBenchmarks @ git+https://github.com/felipemaiapolo/tinyBenchmarks"
+
 RUN python -c 'from lm_eval.tasks.unitxt import task; import os.path; print("class: !function " + task.__file__.replace("task.py", "task.Unitxt"))' > ./my_tasks/unitxt
 
 ENV PYTHONPATH=/opt/app-root/src/.local/lib/python3.11/site-packages:/opt/app-root/src:/opt/app-root/src/server
