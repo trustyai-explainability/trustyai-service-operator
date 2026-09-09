@@ -14,5 +14,5 @@ const (
 	// Discoverability contract (RHAI-517 AC); keep the two in sync until that
 	// lands.
 	manifestAnnotationKey = "trustyai.opendatahub.io/nemo-guardrails-manifest-url"
-	manifestPath          = "/info"
+	manifestPath          = "/admin/info"
 )
