@@ -574,6 +574,10 @@ func (r *EvalHubReconciler) reconcileProviderConfigMaps(ctx context.Context, ins
 				}); err != nil {
 				return nil, fmt.Errorf("failed to list tenant provider ConfigMaps for %q in namespace %s: %w", providerName, instance.Namespace, err)
 			}
+			if len(sourceList.Items) > 1 {
+				return nil, fmt.Errorf("provider %q is ambiguous: found %d tenant ConfigMaps in namespace %s, expected exactly 1",
+					providerName, len(sourceList.Items), instance.Namespace)
+			}
 		}
 
 		if len(sourceList.Items) == 0 {
@@ -662,6 +666,10 @@ func (r *EvalHubReconciler) reconcileCollectionConfigMaps(ctx context.Context, i
 					collectionNameLabel: collectionName,
 				}); err != nil {
 				return nil, fmt.Errorf("failed to list tenant collection ConfigMaps for %q in namespace %s: %w", collectionName, instance.Namespace, err)
+			}
+			if len(sourceList.Items) > 1 {
+				return nil, fmt.Errorf("collection %q is ambiguous: found %d tenant ConfigMaps in namespace %s, expected exactly 1",
+					collectionName, len(sourceList.Items), instance.Namespace)
 			}
 		}
 

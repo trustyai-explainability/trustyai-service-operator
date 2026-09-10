@@ -1994,6 +1994,20 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps_singleTenancy(t *testing.
 			},
 		}
 
+		tenantProvider := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "my-tenant-provider",
+				Namespace: instanceNamespace,
+				Labels: map[string]string{
+					providerLabel:     providerTenantValue,
+					providerNameLabel: "testprovider",
+				},
+			},
+			Data: map[string]string{
+				"testprovider.yaml": "id: testprovider\nname: Tenant Provider\n",
+			},
+		}
+
 		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      evalHubName,
@@ -2007,7 +2021,7 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps_singleTenancy(t *testing.
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(evalHub, systemProvider).
+			WithObjects(evalHub, systemProvider, tenantProvider).
 			Build()
 
 		reconciler := &EvalHubReconciler{
@@ -2021,6 +2035,14 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps_singleTenancy(t *testing.
 		require.NoError(t, err)
 		require.Len(t, cmNames, 1)
 		assert.Equal(t, evalHubName+"-provider-testprovider", cmNames[0])
+
+		copiedCM := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName + "-provider-testprovider",
+			Namespace: instanceNamespace,
+		}, copiedCM)
+		require.NoError(t, err)
+		assert.Equal(t, "id: testprovider\nname: System Provider\n", copiedCM.Data["testprovider.yaml"])
 	})
 
 	t.Run("should not find system-labeled provider in instance namespace", func(t *testing.T) {
@@ -2145,6 +2167,20 @@ func TestEvalHubReconciler_reconcileCollectionConfigMaps_singleTenancy(t *testin
 			},
 		}
 
+		tenantCollection := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "my-tenant-collection",
+				Namespace: instanceNamespace,
+				Labels: map[string]string{
+					collectionLabel:     collectionTenantValue,
+					collectionNameLabel: "testcollection",
+				},
+			},
+			Data: map[string]string{
+				"testcollection.yaml": "id: testcollection\nname: Tenant Collection\n",
+			},
+		}
+
 		evalHub := &evalhubv1.EvalHub{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      evalHubName,
@@ -2158,7 +2194,7 @@ func TestEvalHubReconciler_reconcileCollectionConfigMaps_singleTenancy(t *testin
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(evalHub, systemCollection).
+			WithObjects(evalHub, systemCollection, tenantCollection).
 			Build()
 
 		reconciler := &EvalHubReconciler{
@@ -2172,6 +2208,14 @@ func TestEvalHubReconciler_reconcileCollectionConfigMaps_singleTenancy(t *testin
 		require.NoError(t, err)
 		require.Len(t, cmNames, 1)
 		assert.Equal(t, evalHubName+"-collection-testcollection", cmNames[0])
+
+		copiedCM := &corev1.ConfigMap{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      evalHubName + "-collection-testcollection",
+			Namespace: instanceNamespace,
+		}, copiedCM)
+		require.NoError(t, err)
+		assert.Equal(t, "id: testcollection\nname: System Collection\n", copiedCM.Data["testcollection.yaml"])
 	})
 
 	t.Run("should not find system-labeled collection in instance namespace", func(t *testing.T) {
