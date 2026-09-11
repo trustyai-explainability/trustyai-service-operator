@@ -46,6 +46,7 @@ type TrustyAIModuleReconciler struct {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
