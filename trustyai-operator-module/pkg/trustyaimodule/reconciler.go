@@ -402,6 +402,15 @@ func (r *TrustyAIModuleReconciler) reconcileComponent(
 		return nil
 	}
 
+	if err := injectEnabledServices(objs, module.Spec.EnabledServices); err != nil {
+		condMgr.MarkFalse(string(common.ConditionTypeProvisioningSucceeded),
+			conditions.WithReason("RenderFailed"),
+			conditions.WithMessage("Failed to configure enabled services: %v", err),
+			conditions.WithObservedGeneration(module.Generation),
+		)
+		return err
+	}
+
 	if err := r.Deployer.Deploy(ctx, deploy.DeployInput{
 		Client:    r.Client,
 		Owner:     module,
