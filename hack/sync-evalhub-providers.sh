@@ -61,10 +61,16 @@ process_provider() {
     local filename="$1"
     local raw_url="https://raw.githubusercontent.com/${REPO}/${BRANCH}/${UPSTREAM_PROVIDERS_DIR}/${filename}"
     local content
-    content="$(curl -sfL "$raw_url")"
+    if ! content="$(curl -sfL "$raw_url")" || [[ -z "$content" ]]; then
+        echo "  ERROR: failed to fetch ${filename}" >&2
+        return 2
+    fi
 
     local provider_id
-    provider_id="$(echo "$content" | yq -r '.id // ""')"
+    if ! provider_id="$(echo "$content" | yq -r '.id // ""')" ; then
+        echo "  ERROR: yq failed to parse ${filename}" >&2
+        return 2
+    fi
     if [[ -z "$provider_id" ]]; then
         echo "  SKIP: no 'id' field found in ${filename}" >&2
         return 1
@@ -109,10 +115,16 @@ process_collection() {
     local filename="$1"
     local raw_url="https://raw.githubusercontent.com/${REPO}/${BRANCH}/${UPSTREAM_COLLECTIONS_DIR}/${filename}"
     local content
-    content="$(curl -sfL "$raw_url")"
+    if ! content="$(curl -sfL "$raw_url")" || [[ -z "$content" ]]; then
+        echo "  ERROR: failed to fetch ${filename}" >&2
+        return 2
+    fi
 
     local collection_id
-    collection_id="$(echo "$content" | yq -r '.id // ""')"
+    if ! collection_id="$(echo "$content" | yq -r '.id // ""')" ; then
+        echo "  ERROR: yq failed to parse ${filename}" >&2
+        return 2
+    fi
     if [[ -z "$collection_id" ]]; then
         echo "  SKIP: no 'id' field found in ${filename}" >&2
         return 1
@@ -176,7 +188,11 @@ main() {
     while IFS= read -r filename; do
         echo "Processing provider ${filename}..."
         local cm_file
-        if cm_file="$(process_provider "$filename")"; then
+        local rc=0
+        cm_file="$(process_provider "$filename")" || rc=$?
+        if [[ $rc -eq 2 ]]; then
+            exit 1
+        elif [[ $rc -eq 0 ]]; then
             cm_files+=("$cm_file")
             local safe_id="${cm_file#provider-}"
             safe_id="${safe_id%.yaml}"
@@ -197,7 +213,11 @@ main() {
     while IFS= read -r filename; do
         echo "Processing collection ${filename}..."
         local cm_file
-        if cm_file="$(process_collection "$filename")"; then
+        local rc=0
+        cm_file="$(process_collection "$filename")" || rc=$?
+        if [[ $rc -eq 2 ]]; then
+            exit 1
+        elif [[ $rc -eq 0 ]]; then
             cm_files+=("$cm_file")
             local safe_id="${cm_file#collection-}"
             safe_id="${safe_id%.yaml}"
