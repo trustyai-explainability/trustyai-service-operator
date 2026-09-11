@@ -1,9 +1,9 @@
-you can use
+# Syncing eval-hub providers and collections to the operator
+
+1. Run the script
 
 ```bash
-./hack/sync-evalhub-providers.py
+./hack/sync-evalhub-providers.sh
 ```
 
-to reflect the upstream repo config example folder: https://github.com/eval-hub/eval-hub/tree/main/config
-
-here.
+This will copy the `eval-hub` upstream config folder https://github.com/eval-hub/eval-hub/tree/main/config to this directory.
