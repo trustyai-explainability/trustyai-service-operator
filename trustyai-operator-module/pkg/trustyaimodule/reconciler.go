@@ -243,6 +243,7 @@ func (r *TrustyAIModuleReconciler) handleRemoval(ctx context.Context, module *pl
 		conditions.WithReason("ModuleRemoved"),
 		conditions.WithMessage("Module is not deployed"),
 		conditions.WithObservedGeneration(module.Generation),
+		conditions.WithSeverity(common.ConditionSeverityInfo),
 	)
 
 	module.Status.Phase = common.PhaseNotReady
@@ -319,6 +320,7 @@ func (r *TrustyAIModuleReconciler) updateHealthStatus(ctx context.Context, modul
 			conditions.WithReason("FullyFunctional"),
 			conditions.WithMessage("All services are fully functional"),
 			conditions.WithObservedGeneration(module.Generation),
+			conditions.WithSeverity(common.ConditionSeverityInfo),
 		)
 	} else {
 		module.Status.Phase = common.PhaseNotReady
@@ -338,12 +340,14 @@ func (r *TrustyAIModuleReconciler) updateHealthStatus(ctx context.Context, modul
 				conditions.WithReason("PartialFunctionality"),
 				conditions.WithMessage("Some services are unavailable: %s", strings.Join(unhealthyReasons, "; ")),
 				conditions.WithObservedGeneration(module.Generation),
+				conditions.WithSeverity(common.ConditionSeverityInfo),
 			)
 		} else {
 			condMgr.MarkTrue(string(common.ConditionTypeDegraded),
 				conditions.WithReason("AllServicesUnhealthy"),
 				conditions.WithMessage("All services are unavailable: %s", strings.Join(unhealthyReasons, "; ")),
 				conditions.WithObservedGeneration(module.Generation),
+				conditions.WithSeverity(common.ConditionSeverityInfo),
 			)
 		}
 	}
