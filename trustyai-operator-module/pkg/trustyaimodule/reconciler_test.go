@@ -10,6 +10,7 @@ import (
 	common "github.com/opendatahub-io/odh-platform-utilities/api/common"
 	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -147,6 +148,39 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue())
 
 			Expect(errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: DSCConfigMapName, Namespace: testNamespace}, cm))).To(BeTrue())
+		})
+
+		It("removes cluster-scoped RBAC on deletion", func() {
+			cr := &rbacv1.ClusterRole{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterRoleNames[0]},
+				Rules:      []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get"}}},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+
+			crb := &rbacv1.ClusterRoleBinding{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterRoleBindingNames[0]},
+				RoleRef: rbacv1.RoleRef{
+					APIGroup: "rbac.authorization.k8s.io",
+					Kind:     "ClusterRole",
+					Name:     clusterRoleNames[0],
+				},
+				Subjects: []rbacv1.Subject{{Kind: "ServiceAccount", Name: "trustyai-service-operator", Namespace: testNamespace}},
+			}
+			Expect(k8sClient.Create(ctx, crb)).To(Succeed())
+
+			r := newReconciler()
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+
+			module := &platformv1alpha1.TrustyAI{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, module)).To(Succeed())
+
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: clusterRoleNames[0]}, cr))).To(BeTrue())
+			Expect(errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: clusterRoleBindingNames[0]}, crb))).To(BeTrue())
 		})
 
 		It("sets Ready=False and Degraded=False when ManagementState is Removed", func() {

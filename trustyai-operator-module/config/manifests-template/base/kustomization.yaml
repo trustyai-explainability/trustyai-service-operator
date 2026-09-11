@@ -3,3 +3,15 @@ kind: Kustomization
 resources:
   - serviceaccount.yaml
   - deployment.yaml
+  - rbac/tls_profile_clusterrole.yaml
+  - rbac/tls_profile_clusterrolebinding.yaml
+  - rbac/tas_manager_clusterrole.yaml
+  - rbac/tas_manager_clusterrolebinding.yaml
+  - rbac/lmes_manager_clusterrole.yaml
+  - rbac/lmes_manager_clusterrolebinding.yaml
+  - rbac/evalhub_manager_clusterrole.yaml
+  - rbac/evalhub_manager_clusterrolebinding.yaml
+  - rbac/gorch_manager_clusterrole.yaml
+  - rbac/gorch_manager_clusterrolebinding.yaml
+  - rbac/nemo_guardrails_manager_clusterrole.yaml
+  - rbac/nemo_guardrails_manager_clusterrolebinding.yaml
