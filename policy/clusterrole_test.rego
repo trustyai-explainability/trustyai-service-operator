@@ -221,6 +221,68 @@ test_impersonate_verb_denied if {
 	}
 }
 
+# --- Layer 3: module-specific watch requirements ---
+
+test_module_services_watch_required if {
+	count(deny) > 0 with input as {
+		"kind": "ClusterRole",
+		"metadata": {"name": "trustyai-operator-module-manager-role"},
+		"rules": [{
+			"apiGroups": [""],
+			"resources": ["services"],
+			"verbs": ["get", "list", "patch"],
+		}],
+	}
+}
+
+test_module_services_watch_present_allowed if {
+	count(deny) == 0 with input as {
+		"kind": "ClusterRole",
+		"metadata": {"name": "trustyai-operator-module-manager-role"},
+		"rules": [{
+			"apiGroups": [""],
+			"resources": ["services"],
+			"verbs": ["get", "list", "watch", "patch"],
+		}],
+	}
+}
+
+test_module_prometheuses_watch_required if {
+	count(deny) > 0 with input as {
+		"kind": "ClusterRole",
+		"metadata": {"name": "trustyai-operator-module-manager-role"},
+		"rules": [{
+			"apiGroups": ["monitoring.coreos.com"],
+			"resources": ["prometheuses"],
+			"verbs": ["get", "list"],
+		}],
+	}
+}
+
+test_module_prometheuses_watch_present_allowed if {
+	count(deny) == 0 with input as {
+		"kind": "ClusterRole",
+		"metadata": {"name": "trustyai-operator-module-manager-role"},
+		"rules": [{
+			"apiGroups": ["monitoring.coreos.com"],
+			"resources": ["prometheuses"],
+			"verbs": ["get", "list", "watch"],
+		}],
+	}
+}
+
+test_module_services_watch_other_role_not_checked if {
+	count(deny) == 0 with input as {
+		"kind": "ClusterRole",
+		"metadata": {"name": "trustyai-service-operator-tas-manager-role"},
+		"rules": [{
+			"apiGroups": [""],
+			"resources": ["services"],
+			"verbs": ["get", "list", "patch"],
+		}],
+	}
+}
+
 # --- Non-ClusterRole input ---
 
 test_non_clusterrole_ignored if {

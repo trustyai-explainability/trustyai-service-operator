@@ -61,6 +61,7 @@ allowed_api_resources := {
 
 	# --- monitoring ---
 	["monitoring.coreos.com", "servicemonitors"],
+	["monitoring.coreos.com", "prometheuses"],
 
 	# --- kserve ---
 	["serving.kserve.io", "inferenceservices"],
@@ -250,4 +251,34 @@ deny contains msg if {
 		"RBAC VIOLATION: ClusterRole '%s' uses escalation verb '%s'.",
 		[input.metadata.name, verb],
 	)
+}
+
+# Layer 3: module-specific watch requirements.
+#
+# The manager's cached client establishes an informer for any GVK it Lists
+# or Gets, which requires the watch verb in addition to get/list. These
+# guard against regressing the bugs fixed in #908/#913.
+
+deny contains msg if {
+	input.kind == "ClusterRole"
+	input.metadata.name == "trustyai-operator-module-manager-role"
+
+	rule := input.rules[_]
+	"" in rule.apiGroups
+	"services" in rule.resources
+	not "watch" in rule.verbs
+
+	msg := "RBAC VIOLATION: TrustyAI module services permission must include watch."
+}
+
+deny contains msg if {
+	input.kind == "ClusterRole"
+	input.metadata.name == "trustyai-operator-module-manager-role"
+
+	rule := input.rules[_]
+	"monitoring.coreos.com" in rule.apiGroups
+	"prometheuses" in rule.resources
+	not "watch" in rule.verbs
+
+	msg := "RBAC VIOLATION: TrustyAI module prometheuses permission must include watch."
 }
