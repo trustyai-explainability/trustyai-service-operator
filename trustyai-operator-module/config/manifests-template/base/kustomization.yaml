@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - serviceaccount.yaml
   - deployment.yaml
+  - webhook-service.yaml
   - rbac/tls_profile_clusterrole.yaml
   - rbac/tls_profile_clusterrolebinding.yaml
   - rbac/tas_manager_clusterrole.yaml
