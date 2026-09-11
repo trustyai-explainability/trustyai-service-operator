@@ -107,6 +107,13 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.evalhub-provider-ragas-image
+  - name: evalhub-provider-ruler-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-ruler-image
   - name: lmes-pod-image
     objref:
       kind: ConfigMap
