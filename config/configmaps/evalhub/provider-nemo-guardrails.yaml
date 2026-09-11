@@ -133,7 +133,7 @@ data:
       - id: pii
         name: Personally Identifiable Information
         description: >-
-          Evaluate a NeMo config against personally identifiable information datasdt
+          Evaluate a NeMo config against a personally identifiable information dataset
         category: safety
         metrics:
           - accuracy
