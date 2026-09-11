@@ -7,6 +7,7 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -74,6 +75,14 @@ func main() {
 	deployer := deploy.NewDeployer(
 		deploy.WithFieldOwner(trustyaimodule.FieldManagerModule),
 		deploy.WithApplyOrder(),
+		// ClusterRole/ClusterRoleBinding are cluster-scoped; Kubernetes rejects
+		// a namespace-scoped owner (the TrustyAI CR) on a cluster-scoped
+		// resource, so they cannot use owner-reference-based ownership/GC.
+		// They are cleaned up explicitly in handleDeletion instead.
+		deploy.WithExcludeFromOwnership(
+			rbacv1.SchemeGroupVersion.WithKind("ClusterRole"),
+			rbacv1.SchemeGroupVersion.WithKind("ClusterRoleBinding"),
+		),
 	)
 
 	if err := (&trustyaimodule.TrustyAIModuleReconciler{
