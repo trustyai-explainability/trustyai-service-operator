@@ -6,8 +6,8 @@ require (
 	github.com/kserve/kserve v0.19.0
 	github.com/onsi/ginkgo/v2 v2.32.0
 	github.com/onsi/gomega v1.42.1
-	github.com/openshift/api v0.0.0-20250602203052-b29811a290c7
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.64.1
+	github.com/openshift/api v0.0.0-20260130140113-71e91db96ffc
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.74.0
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.83.2 // indirect
@@ -20,6 +20,7 @@ require (
 )
 
 require (
+	github.com/openshift/controller-runtime-common v0.0.0-20260204102813-ab84f25b3496
 	go.opentelemetry.io/otel v1.45.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.45.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.45.0
@@ -90,6 +91,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/moby/spdystream v0.5.1 // indirect
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
+	github.com/openshift/library-go v0.0.0-20260203175009-3067285722b9 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
