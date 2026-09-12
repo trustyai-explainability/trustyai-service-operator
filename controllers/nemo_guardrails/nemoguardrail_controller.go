@@ -103,6 +103,12 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
+	// ====== Surface the capability manifest URL as a CR annotation ===================================================
+	if err := r.ensureManifestAnnotation(ctx, nemoGuardrails); err != nil {
+		utils.LogErrorUpdating(ctx, err, "manifest annotation", nemoGuardrails.Name, nemoGuardrails.Namespace)
+		return ctrl.Result{}, err
+	}
+
 	// ====== Deploy the CA bundle configmap ============================================================================
 	caBundleConfigMapName := nemoGuardrails.Name + "-ca-bundle"
 	_, _, err = utils.ReconcileConfigMap(ctx, r.Client, nemoGuardrails, caBundleConfigMapName, constants.Version, caBundleTemplate, templateParser.ParseResource)
