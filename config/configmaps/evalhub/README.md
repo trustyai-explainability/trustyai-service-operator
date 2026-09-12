@@ -1,9 +1,9 @@
-you can use
+# Syncing eval-hub providers and collections to the operator
+
+1. Run the script
 
 ```bash
-./hack/sync-evalhub-providers.py
+./hack/sync-evalhub-providers.sh
 ```
 
-to reflect the upstream repo config example folder: https://github.com/eval-hub/eval-hub/tree/main/config
-
-here.
+This fetches provider and collection YAML files from the [eval-hub upstream config](https://github.com/eval-hub/eval-hub/tree/main/config), wraps each in a ConfigMap manifest, substitutes provider images with kustomize variables, and regenerates `kustomization.yaml`.
