@@ -157,16 +157,13 @@ var _ = Describe("Image Resolver", func() {
 	Describe("Image Mappings", func() {
 		It("should have all 10 expected image mappings", func() {
 			expectedMappings := map[string]string{
-				TrustyAIServiceImageKey:           RelatedImageTrustyAIService,
-				EvalHubImageKey:                   RelatedImageEvalHub,
-				KubeRBACProxyKey:                  RelatedImageKubeRBACProxy,
-				LMESPodImageKey:                   RelatedImageLMESJob,
-				LMESDriverImageKey:                RelatedImageLMESDriver,
-				GuardrailsOrchestratorImageKey:    RelatedImageGuardrailsOrchestrator,
-				GuardrailsBuiltInDetectorImageKey: RelatedImageBuiltInDetector,
-				GuardrailsSidecarGatewayImageKey:  RelatedImageVLLMOrchestratorGateway,
-				GarakProviderImageKey:             RelatedImageGarakLLSProviderDSP,
-				NemoGuardrailsImageKey:            RelatedImageNemoGuardrailsServer,
+				TrustyAIServiceImageKey: RelatedImageTrustyAIService,
+				EvalHubImageKey:         RelatedImageEvalHub,
+				KubeRBACProxyKey:        RelatedImageKubeRBACProxy,
+				LMESPodImageKey:         RelatedImageLMESJob,
+				LMESDriverImageKey:      RelatedImageLMESDriver,
+				GarakProviderImageKey:   RelatedImageGarakLLSProviderDSP,
+				NemoGuardrailsImageKey:  RelatedImageNemoGuardrailsServer,
 			}
 
 			Expect(imageMapping).To(HaveLen(len(expectedMappings)))

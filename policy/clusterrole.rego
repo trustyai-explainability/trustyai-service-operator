@@ -88,9 +88,6 @@ allowed_api_resources := {
 	["trustyai.opendatahub.io", "evalhubs/finalizers"],
 	["trustyai.opendatahub.io", "evalhubs/proxy"],
 	["trustyai.opendatahub.io", "evalhubs/status"],
-	["trustyai.opendatahub.io", "guardrailsorchestrators"],
-	["trustyai.opendatahub.io", "guardrailsorchestrators/finalizers"],
-	["trustyai.opendatahub.io", "guardrailsorchestrators/status"],
 	["trustyai.opendatahub.io", "lmevaljobs"],
 	["trustyai.opendatahub.io", "lmevaljobs/finalizers"],
 	["trustyai.opendatahub.io", "lmevaljobs/status"],
@@ -165,7 +162,6 @@ write_verbs := {"create", "update", "patch", "delete", "deletecollection"}
 
 secrets_write_exempt_suffixes := {
 	"tas-manager-role",
-	"gorch-manager-role",
 	"nemo-guardrails-manager-role",
 	"evalhub-model-secret",
 }

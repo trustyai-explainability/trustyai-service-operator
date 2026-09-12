@@ -17,7 +17,7 @@ RBAC_DIR="${CONFIG_DIR}/rbac"
 COMPONENTS_DIR="${CONFIG_DIR}/components"
 
 # Component list (bash 3.2 compatible)
-COMPONENT_NAMES="tas evalhub lmes job-mgr gorch nemo-guardrails"
+COMPONENT_NAMES="tas evalhub lmes job-mgr nemo-guardrails"
 
 # Function to get component details -> leave blank if the component has no CRDs
 get_crd_pattern() {
@@ -26,7 +26,6 @@ get_crd_pattern() {
         evalhub) echo "evalhubs" ;;
         lmes) echo "lmevaljobs" ;;
         job-mgr) echo "" ;;  # JOB_MGR shares CRD with LMES
-        gorch) echo "guardrailsorchestrators" ;;
         nemo-guardrails) echo "nemoguardrails" ;;
     esac
 }
@@ -37,7 +36,6 @@ get_controller_dirs() {
         evalhub) echo "controllers/evalhub" ;;
         lmes) echo "controllers/lmes" ;;
         job-mgr) echo "controllers/job_mgr" ;;
-        gorch) echo "controllers/gorch" ;;
         nemo-guardrails) echo "controllers/nemo_guardrails" ;;
     esac
 }

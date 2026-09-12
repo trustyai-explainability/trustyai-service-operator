@@ -272,9 +272,6 @@ func (r *TrustyAIModuleReconciler) buildHealthCheckers(module *platformv1alpha1.
 	if es.EvalHub {
 		checkers = append(checkers, NewRunningServiceChecker("EVALHUB", r.Client, r.Namespace))
 	}
-	if es.GORCH {
-		checkers = append(checkers, NewRunningServiceChecker("GORCH", r.Client, r.Namespace))
-	}
 	if es.NemoGuardrails {
 		checkers = append(checkers, NewRunningServiceChecker("NEMO_GUARDRAILS", r.Client, r.Namespace))
 	}

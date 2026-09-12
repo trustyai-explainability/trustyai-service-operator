@@ -4,7 +4,7 @@
 
 ## Overview
 
-The TrustyAI Service Operator is a Kubernetes operator that manages the lifecycle of AI/ML trust, safety, and evaluation services on OpenShift AI. It deploys and configures five distinct service types — model explainability (TAS), LLM evaluation (LMES), evaluation hub (EvalHub), guardrails orchestration (GORCH), and NeMo Guardrails — through a single operator binary with dynamic controller registration.
+The TrustyAI Service Operator is a Kubernetes operator that manages the lifecycle of AI/ML trust, safety, and evaluation services on OpenShift AI. It deploys and configures fourgi distinct service types — model explainability (TAS), LLM evaluation (LMES), evaluation hub (EvalHub), and NeMo Guardrails — through a single operator binary with dynamic controller registration.
 
 Built with kubebuilder v4 and controller-runtime v0.17.0 in Go 1.24, the operator uses a plugin-based architecture where controllers are selectively enabled via a startup flag (`--enable-services`). Each controller watches its own CRD and reconciles the desired state by creating Deployments, Services, Routes, ConfigMaps, RBAC resources, and monitoring infrastructure.
 
@@ -61,12 +61,6 @@ flowchart TB
         evalhub_metrics["Metrics server\n(port 8081, plain HTTP)"]
     end
 
-    subgraph gorch_pod["Guardrails Orchestrator Pod(s)"]
-        gorch_svc["Orchestrator\n(guardrail chains)"]
-        gorch_gw["Gateway sidecar\n(optional)"]
-        gorch_det["Built-in detectors\n(optional)"]
-    end
-
     subgraph nemo_pod["NeMo Guardrails Pod(s)"]
         nemo_svc["NeMo Guardrails Server\n(NVIDIA NeMo)"]
     end
@@ -75,13 +69,11 @@ flowchart TB
     manager -->|"creates/manages"| tas_pod
     manager -->|"creates/manages"| lmes_pod
     manager -->|"creates/manages"| evalhub_pod
-    manager -->|"creates/manages"| gorch_pod
     manager -->|"creates/manages"| nemo_pod
 
     tas_svc -->|"HTTP/gRPC"| model_endpoints["KServe InferenceServices"]
     lmes_main -->|"evaluates"| model_endpoints
     evalhub_svc -->|"submits LMEvalJobs"| k8s_api
-    gorch_svc -->|"intercepts inference"| model_endpoints
     nemo_svc -->|"guards inference"| model_endpoints
 
     evalhub_svc -->|"SQLite / PostgreSQL"| db["Database"]
@@ -123,11 +115,6 @@ flowchart LR
             evalhub_roles["tenant_roles.go\n(single-mode RBAC)"]
         end
 
-        subgraph gorch_ctrl["gorch/"]
-            gorch_rec["GuardrailsOrchestratorReconciler"]
-            gorch_autoconfig["auto_config.go\n(service discovery)"]
-        end
-
         subgraph nemo_ctrl["nemo_guardrails/"]
             nemo_rec["NemoGuardrailsReconciler"]
             nemo_ca["ca_bundle.go\n(certificate aggregation)"]
@@ -147,7 +134,6 @@ flowchart LR
         tas_types["tas/v1, v1alpha1\nTrustyAIService"]
         lmes_types["lmes/v1alpha1\nLMEvalJob"]
         evalhub_types["evalhub/v1, v1alpha1\nEvalHub"]
-        gorch_types["gorch/v1alpha1\nGuardrailsOrchestrator"]
         nemo_types["nemo_guardrails/v1alpha1\nNemoGuardrails"]
         common["common/\nCondition, helpers"]
     end
@@ -156,7 +142,6 @@ flowchart LR
     registry --> tas_rec
     registry --> lmes_rec
     registry --> evalhub_rec
-    registry --> gorch_rec
     registry --> nemo_rec
     registry --> job_mgr_rec
 ```
@@ -188,9 +173,9 @@ flowchart TB
 
 | Mode | Enabled Services | Use Case | Overlay |
 |------|-----------------|----------|---------|
-| **ODH (full)** | TAS, LMES, GORCH, NEMO_GUARDRAILS, EVALHUB | Open Data Hub — all AI trust services | `config/overlays/odh/` |
-| **RHOAI (full)** | TAS, LMES, GORCH, NEMO_GUARDRAILS, EVALHUB | Red Hat OpenShift AI — production | `config/overlays/rhoai/` |
-| **ODH + Kueue** | TAS, LMES, GORCH, NEMO_GUARDRAILS, EVALHUB, JOB_MGR | Full + job queuing via Kueue | `config/overlays/odh-kueue/` |
+| **ODH (full)** | TAS, LMES, NEMO_GUARDRAILS, EVALHUB | Open Data Hub — all AI trust services | `config/overlays/odh/` |
+| **RHOAI (full)** | TAS, LMES, NEMO_GUARDRAILS, EVALHUB | Red Hat OpenShift AI — production | `config/overlays/rhoai/` |
+| **ODH + Kueue** | TAS, LMES, NEMO_GUARDRAILS, EVALHUB, JOB_MGR | Full + job queuing via Kueue | `config/overlays/odh-kueue/` |
 | **LMES only** | LMES | LLM evaluation workloads only | `config/overlays/lmes/` |
 | **EvalHub only** | EVALHUB | Evaluation hub service only | `config/overlays/evalhub-only/` |
 | **NeMo only** | NEMO_GUARDRAILS | NeMo Guardrails only | `config/overlays/mcp-guardrails/` |
@@ -202,7 +187,6 @@ flowchart TB
 | **TAS** | Optional (3 modes) | -- | Yes (ServiceMonitor) | Yes | Optional (PVC or DB) |
 | **LMES** | -- | Optional (via JOB_MGR) | -- | -- | -- |
 | **EvalHub** | -- | Optional (workload monitoring) | Yes | Yes | Required (SQLite or PostgreSQL) |
-| **GORCH** | Optional (auto-config) | -- | Yes | Yes | -- |
 | **NeMo Guardrails** | -- | -- | -- | Yes | -- |
 | **JOB_MGR** | -- | Required | -- | -- | -- |
 
@@ -211,7 +195,6 @@ flowchart TB
 KServe is **not a mandatory dependency**. The operator behaves as follows:
 
 - **TAS controller**: Watches InferenceService objects. If none exist in the namespace, reconciliation continues without error. When InferenceServices are present, TAS patches them with payload-processing endpoints based on the deployment mode annotation.
-- **GORCH controller**: Uses InferenceServices for auto-configuration (discovering generator and detector services). Falls back to manual ConfigMap-based configuration if KServe is unavailable.
 - **LMES, EvalHub, NeMo**: No KServe dependency.
 
 ## Data and Message Flow
@@ -349,31 +332,6 @@ sequenceDiagram
     EH->>K8sAPI: Update status (Ready, URL, active providers)
 ```
 
-### Guardrails Auto-Configuration
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant K8sAPI as Kubernetes API
-    participant GORCH as GORCH Controller
-    participant ISvcs as InferenceServices
-
-    User->>K8sAPI: Create GuardrailsOrchestrator CR (autoConfig)
-    K8sAPI->>GORCH: Watch event
-
-    GORCH->>K8sAPI: List InferenceServices in namespace
-    GORCH->>ISvcs: Find generator (by name from spec)
-    GORCH->>ISvcs: Find detectors (by label match)
-
-    GORCH->>K8sAPI: Generate orchestrator ConfigMap (endpoints)
-    GORCH->>K8sAPI: Generate gateway ConfigMap (if enabled)
-
-    GORCH->>K8sAPI: Create Deployment (orchestrator + gateway + detectors)
-    GORCH->>K8sAPI: Create Service + Route
-
-    GORCH->>K8sAPI: Update autoConfigState in status
-```
-
 ## Dependencies
 
 ### Mandatory
@@ -385,7 +343,7 @@ sequenceDiagram
 
 ### Optional
 
-- **KServe** v0.12.1 — enables TAS inference service patching and GORCH auto-configuration
+- **KServe** v0.12.1 — enables TAS inference service patching
 - **Kueue** v0.6.2 — enables job queuing for LMEvalJobs (requires JOB_MGR service)
 - **Istio** — enables DestinationRule/VirtualService creation for service mesh traffic management (TAS with RawDeployment mode)
 - **OpenShift Routes** — enables external HTTP/HTTPS access via Routes (gracefully skipped on vanilla Kubernetes)
@@ -419,7 +377,6 @@ flowchart TB
             tas_cr["TrustyAIService CR"] --> tas_deploy["TAS Deployment\n+ kube-rbac-proxy"]
             lmes_cr["LMEvalJob CR"] --> lmes_pods["Eval Pod(s)\n+ driver sidecar"]
             evalhub_cr["EvalHub CR"] --> evalhub_deploy["EvalHub Deployment"]
-            gorch_cr["GuardrailsOrchestrator CR"] --> gorch_deploy["Orchestrator Deployment\n+ gateway + detectors"]
             nemo_cr["NemoGuardrails CR"] --> nemo_deploy["NeMo Deployment"]
         end
 
@@ -468,14 +425,12 @@ trustyai-service-operator/
 │   ├── lmes/v1alpha1/             # LMEvalJob types
 │   ├── evalhub/v1/                # EvalHub v1 (storage version)
 │   ├── evalhub/v1alpha1/          # EvalHub v1alpha1
-│   ├── gorch/v1alpha1/            # GuardrailsOrchestrator types
 │   └── nemo_guardrails/v1alpha1/  # NemoGuardrails types
 ├── controllers/
 │   ├── controllers.go             # Service registry (init-based registration)
 │   ├── tas/                       # TAS reconciler (KServe, TLS, storage)
 │   ├── lmes/                      # LMES reconciler (pod lifecycle, state machine)
 │   ├── evalhub/                   # EvalHub reconciler (providers, tenancy, DB)
-│   ├── gorch/                     # GORCH reconciler (auto-config, detectors)
 │   ├── nemo_guardrails/           # NeMo reconciler (CA bundles)
 │   ├── job_mgr/                   # Kueue job manager
 │   ├── utils/                     # Shared reconciliation helpers
