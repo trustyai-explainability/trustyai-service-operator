@@ -19,7 +19,7 @@ docker-push-tom: docker-build-tom ## Build and push the trustyai-operator-module
 	$(ENGINE) push $(TRUSTYAI_MODULE_IMG):$(MODULE_TAG)
 
 .PHONY: deploy-tom
-deploy-tom: ## Deploy the trustyai-operator-module-controller to the cluster
+deploy-tom: kustomize ## Deploy the trustyai-operator-module-controller to the cluster
 	cd $(MODULE_DIR)/config/default && \
 		$(KUSTOMIZE) edit set image trustyai-operator-module-controller=$(TRUSTYAI_MODULE_IMG):$(MODULE_TAG)
 	kubectl apply -k $(MODULE_DIR)/config/default --server-side=true
@@ -48,3 +48,7 @@ precommit-tom: ## Run pre-commit checks for trustyai-operator-module
 .PHONY: test-tom
 test-tom: envtest ## Run tests for trustyai-operator-module
 	cd $(MODULE_DIR) && KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -v
+
+.PHONY: test-tom-e2e
+test-tom-e2e: ## Run e2e tests for trustyai-operator-module against a live cluster (requires KUBECONFIG)
+	cd $(MODULE_DIR) && go test -tags e2e -count=1 -v ./tests/e2e/... -run ^TestE2E -timeout 10m
