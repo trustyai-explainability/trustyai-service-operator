@@ -149,3 +149,10 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.nemo-guardrails-image
+  - name: nemo-guardrails-reverse-proxy-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.nemo-guardrails-reverse-proxy-image
