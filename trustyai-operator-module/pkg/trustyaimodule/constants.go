@@ -49,4 +49,12 @@ const (
 
 	// InTreeManagedByLabel is the label used to identify resources managed by in-tree component
 	InTreeManagedByLabel = "opendatahub.io/trustyai-component"
+
+	// OperatorDeploymentName is the name of the trustyai-service-operator
+	// Deployment rendered from the manifests template.
+	OperatorDeploymentName = "trustyai-service-operator"
+
+	// ManagerContainerName is the name of the trustyai-service-operator
+	// container within OperatorDeploymentName.
+	ManagerContainerName = "manager"
 )

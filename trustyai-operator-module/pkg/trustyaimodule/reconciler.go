@@ -45,9 +45,10 @@ type TrustyAIModuleReconciler struct {
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheuses,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
-// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;patch
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;patch
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;patch
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;patch
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;patch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
 func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -242,6 +243,7 @@ func (r *TrustyAIModuleReconciler) handleRemoval(ctx context.Context, module *pl
 		conditions.WithReason("ModuleRemoved"),
 		conditions.WithMessage("Module is not deployed"),
 		conditions.WithObservedGeneration(module.Generation),
+		conditions.WithSeverity(common.ConditionSeverityInfo),
 	)
 
 	module.Status.Phase = common.PhaseNotReady
@@ -318,6 +320,7 @@ func (r *TrustyAIModuleReconciler) updateHealthStatus(ctx context.Context, modul
 			conditions.WithReason("FullyFunctional"),
 			conditions.WithMessage("All services are fully functional"),
 			conditions.WithObservedGeneration(module.Generation),
+			conditions.WithSeverity(common.ConditionSeverityInfo),
 		)
 	} else {
 		module.Status.Phase = common.PhaseNotReady
@@ -337,12 +340,14 @@ func (r *TrustyAIModuleReconciler) updateHealthStatus(ctx context.Context, modul
 				conditions.WithReason("PartialFunctionality"),
 				conditions.WithMessage("Some services are unavailable: %s", strings.Join(unhealthyReasons, "; ")),
 				conditions.WithObservedGeneration(module.Generation),
+				conditions.WithSeverity(common.ConditionSeverityInfo),
 			)
 		} else {
 			condMgr.MarkTrue(string(common.ConditionTypeDegraded),
 				conditions.WithReason("AllServicesUnhealthy"),
 				conditions.WithMessage("All services are unavailable: %s", strings.Join(unhealthyReasons, "; ")),
 				conditions.WithObservedGeneration(module.Generation),
+				conditions.WithSeverity(common.ConditionSeverityInfo),
 			)
 		}
 	}
@@ -395,6 +400,15 @@ func (r *TrustyAIModuleReconciler) reconcileComponent(
 
 	if len(objs) == 0 {
 		return nil
+	}
+
+	if err := injectEnabledServices(objs, module.Spec.EnabledServices); err != nil {
+		condMgr.MarkFalse(string(common.ConditionTypeProvisioningSucceeded),
+			conditions.WithReason("RenderFailed"),
+			conditions.WithMessage("Failed to configure enabled services: %v", err),
+			conditions.WithObservedGeneration(module.Generation),
+		)
+		return err
 	}
 
 	if err := r.Deployer.Deploy(ctx, deploy.DeployInput{

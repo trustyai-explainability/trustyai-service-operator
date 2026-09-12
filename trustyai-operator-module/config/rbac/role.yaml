@@ -27,8 +27,10 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - serviceaccounts
   - services
   verbs:
+  - create
   - get
   - list
   - patch
@@ -38,6 +40,7 @@ rules:
   resources:
   - deployments
   verbs:
+  - create
   - get
   - list
   - patch
@@ -93,6 +96,7 @@ rules:
   resources:
   - rolebindings
   verbs:
+  - create
   - get
   - list
   - patch
