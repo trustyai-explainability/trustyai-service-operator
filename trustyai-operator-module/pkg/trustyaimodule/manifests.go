@@ -17,11 +17,18 @@ import (
 )
 
 const (
-	// manifestsTarget is the writable runtime copy of the manifests template.
-	manifestsTarget = "/opt/manifests"
-
 	paramsEnvFile = "params.env"
 )
+
+// manifestsTarget returns the writable runtime copy of the manifests template.
+// The environment override keeps unit/integration tests non-root friendly while
+// retaining the image's established /opt/manifests location by default.
+func manifestsTarget() string {
+	if target := os.Getenv("TRUSTYAI_MANIFESTS_TARGET"); target != "" {
+		return target
+	}
+	return "/opt/manifests"
+}
 
 var (
 	stagingOnce   sync.Once
@@ -36,7 +43,7 @@ var (
 // Subsequent calls return the cached overlay path without re-running.
 func EnsureManifests(templatePath string) (string, error) {
 	stagingOnce.Do(func() {
-		overlay, err := stageManifests(templatePath, manifestsTarget)
+		overlay, err := stageManifests(templatePath, manifestsTarget())
 		stagedOverlay = overlay
 		stagingErr = err
 	})
@@ -123,18 +130,34 @@ func RenderManifests(ctx context.Context, templatePath, namespace string) ([]uns
 		return nil, fmt.Errorf("rendering kustomize overlay %s: %w", overlay, err)
 	}
 
-	logger.Info("Rendered manifests", "count", len(objs))
-	return objs, nil
+	filtered := filterUnsupportedResources(objs)
+	logger.Info("Rendered manifests", "count", len(filtered), "skipped", len(objs)-len(filtered))
+	return filtered, nil
+}
+
+// filterUnsupportedResources removes resources that require cluster-admin
+// authority to create. Kubernetes restricts ClusterRoles with an
+// aggregationRule to cluster-admin, so a least-privilege module operator
+// cannot safely manage those platform-level aggregate roles. The ordinary
+// user/editor/viewer roles remain in the rendered set and are sufficient for
+// the TrustyAI workload APIs.
+func filterUnsupportedResources(objs []unstructured.Unstructured) []unstructured.Unstructured {
+	filtered := make([]unstructured.Unstructured, 0, len(objs))
+	for _, obj := range objs {
+		if obj.GetKind() == "ClusterRole" {
+			if _, found, _ := unstructured.NestedMap(obj.Object, "aggregationRule"); found {
+				continue
+			}
+		}
+		filtered = append(filtered, obj)
+	}
+	return filtered
 }
 
 // enabledServiceNames maps EnabledServices booleans to the canonical service
 // names accepted by trustyai-service-operator's --enable-services flag
 // (see controllers/<service>/constants.go ServiceName in the parent repo).
 //
-// When none are explicitly enabled, all services are enabled. This matches
-// the pre-modular in-tree operator's default deployment (which always ran
-// with every service enabled) until the platform projects real per-service
-// toggles onto this CR.
 func enabledServiceNames(es platformv1alpha1.EnabledServices) []string {
 	var names []string
 	if es.TAS {
@@ -151,9 +174,6 @@ func enabledServiceNames(es platformv1alpha1.EnabledServices) []string {
 	}
 	if es.NemoGuardrails {
 		names = append(names, "NEMO_GUARDRAILS")
-	}
-	if len(names) == 0 {
-		names = []string{"TAS", "LMES", "EVALHUB", "GORCH", "NEMO_GUARDRAILS"}
 	}
 	return names
 }
@@ -180,7 +200,26 @@ func injectEnabledServices(objs []unstructured.Unstructured, es platformv1alpha1
 			if !ok || container["name"] != ManagerContainerName {
 				continue
 			}
-			container["args"] = []interface{}{arg}
+
+			args, _, err := unstructured.NestedSlice(container, "args")
+			if err != nil {
+				return fmt.Errorf("reading args from %s: %w", ManagerContainerName, err)
+			}
+			filtered := make([]interface{}, 0, len(args)+1)
+			for k := 0; k < len(args); k++ {
+				value, ok := args[k].(string)
+				if ok && value == "--enable-services" {
+					if k+1 < len(args) {
+						k++
+					}
+					continue
+				}
+				if ok && strings.HasPrefix(value, "--enable-services=") {
+					continue
+				}
+				filtered = append(filtered, args[k])
+			}
+			container["args"] = append(filtered, arg)
 			containers[j] = container
 		}
 

@@ -63,6 +63,10 @@ func SetupControllers(enabledServices []string, mgr manager.Manager, ns, configm
 }
 
 func (es *EnabledServices) Set(services string) error {
+	if services == "" {
+		return nil
+	}
+
 	for _, service := range strings.Split(services, ",") {
 		if slices.Contains(*es, service) {
 			return fmt.Errorf("specify the same service twice: %s", service)
