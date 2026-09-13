@@ -105,6 +105,23 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 			Expect(module.Status.ObservedGeneration).To(Equal(module.Generation))
 		})
 
+		It("does not mark omitted enabled services ready when their workloads are unhealthy", func() {
+			r := newReconciler()
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+
+			module := &platformv1alpha1.TrustyAI{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
+			Expect(module.Status.Phase).To(Equal(common.PhaseNotReady))
+
+			readyCond := findCondition(module.Status.Conditions, string(common.ConditionTypeReady))
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("ServicesUnhealthy"))
+		})
+
 		It("records the platform version handshake in status.releases", func() {
 			platformCM := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{Name: PlatformConfigMapName, Namespace: testNamespace},
