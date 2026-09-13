@@ -58,3 +58,27 @@ const (
 	// container within OperatorDeploymentName.
 	ManagerContainerName = "manager"
 )
+
+// clusterRoleNames and clusterRoleBindingNames list the ClusterRole and
+// ClusterRoleBinding names rendered from
+// config/manifests-template/base/rbac. These are excluded from
+// owner-reference-based ownership (Kubernetes rejects a namespace-scoped
+// owner on a cluster-scoped resource), so they must be deleted explicitly
+// during finalizer cleanup instead of relying on garbage collection.
+var clusterRoleNames = []string{
+	"tls-profile-reader",
+	"tas-manager-role",
+	"lmes-manager-role",
+	"evalhub-manager-role",
+	"gorch-manager-role",
+	"nemo-guardrails-manager-role",
+}
+
+var clusterRoleBindingNames = []string{
+	"tls-profile-reader-binding",
+	"tas-manager-rolebinding",
+	"lmes-manager-rolebinding",
+	"evalhub-manager-rolebinding",
+	"gorch-manager-rolebinding",
+	"nemo-guardrails-manager-rolebinding",
+}
