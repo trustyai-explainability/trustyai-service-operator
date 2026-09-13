@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/opendatahub-io/odh-platform-utilities/pkg/render/kustomize"
+	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -124,6 +125,71 @@ func RenderManifests(ctx context.Context, templatePath, namespace string) ([]uns
 
 	logger.Info("Rendered manifests", "count", len(objs))
 	return objs, nil
+}
+
+// enabledServiceNames maps EnabledServices booleans to the canonical service
+// names accepted by trustyai-service-operator's --enable-services flag
+// (see controllers/<service>/constants.go ServiceName in the parent repo).
+//
+// When none are explicitly enabled, all services are enabled. This matches
+// the pre-modular in-tree operator's default deployment (which always ran
+// with every service enabled) until the platform projects real per-service
+// toggles onto this CR.
+func enabledServiceNames(es platformv1alpha1.EnabledServices) []string {
+	var names []string
+	if es.TAS {
+		names = append(names, "TAS")
+	}
+	if es.LMES {
+		names = append(names, "LMES")
+	}
+	if es.EvalHub {
+		names = append(names, "EVALHUB")
+	}
+	if es.GORCH {
+		names = append(names, "GORCH")
+	}
+	if es.NemoGuardrails {
+		names = append(names, "NEMO_GUARDRAILS")
+	}
+	if len(names) == 0 {
+		names = []string{"TAS", "LMES", "EVALHUB", "GORCH", "NEMO_GUARDRAILS"}
+	}
+	return names
+}
+
+// injectEnabledServices sets the --enable-services argument on
+// OperatorDeploymentName's ManagerContainerName container, derived from the
+// module CR's spec.enabledServices.
+func injectEnabledServices(objs []unstructured.Unstructured, es platformv1alpha1.EnabledServices) error {
+	arg := "--enable-services=" + strings.Join(enabledServiceNames(es), ",")
+
+	for i := range objs {
+		obj := &objs[i]
+		if obj.GetKind() != "Deployment" || obj.GetName() != OperatorDeploymentName {
+			continue
+		}
+
+		containers, found, err := unstructured.NestedSlice(obj.Object, "spec", "template", "spec", "containers")
+		if err != nil || !found {
+			return fmt.Errorf("reading containers from Deployment %s: %w", obj.GetName(), err)
+		}
+
+		for j, c := range containers {
+			container, ok := c.(map[string]interface{})
+			if !ok || container["name"] != ManagerContainerName {
+				continue
+			}
+			container["args"] = []interface{}{arg}
+			containers[j] = container
+		}
+
+		if err := unstructured.SetNestedSlice(obj.Object, containers, "spec", "template", "spec", "containers"); err != nil {
+			return fmt.Errorf("setting containers on Deployment %s: %w", obj.GetName(), err)
+		}
+	}
+
+	return nil
 }
 
 func copyDir(src, dst string) error {
