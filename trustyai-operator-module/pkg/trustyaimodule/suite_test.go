@@ -49,6 +49,7 @@ func TestTrustyAIModule(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	Expect(os.Setenv("TRUSTYAI_MANIFESTS_TARGET", filepath.Join(os.TempDir(), "trustyai-module-manifests-test"))).To(Succeed())
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{

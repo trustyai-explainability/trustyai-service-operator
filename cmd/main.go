@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"os"
 	"time"
 
@@ -137,11 +136,6 @@ func run() int {
 			setupLog.Error(err, "problem shutting down OpenTelemetry tracing")
 		}
 	}()
-
-	if enabledServices.Empty() {
-		setupLog.Error(fmt.Errorf("no service is specified"), "please specify at least one service")
-		return 1
-	}
 
 	cfg := ctrl.GetConfigOrDie()
 	tlsResult, err := pkgtls.Resolve(context.Background(), cfg)
