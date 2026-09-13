@@ -305,19 +305,19 @@ func (r *TrustyAIModuleReconciler) persistStatus(ctx context.Context, module *pl
 func (r *TrustyAIModuleReconciler) buildHealthCheckers(es platformv1alpha1.EnabledServices) []ServiceHealthChecker {
 	var checkers []ServiceHealthChecker
 	if es.TAS {
-		checkers = append(checkers, NewRunningServiceChecker("TAS", r.Client, r.Namespace))
+		checkers = append(checkers, NewOperandHealthChecker("TAS", r.Client))
 	}
 	if es.LMES {
-		checkers = append(checkers, NewRunningServiceChecker("LMES", r.Client, r.Namespace))
+		checkers = append(checkers, NewOperandHealthChecker("LMES", r.Client))
 	}
 	if es.EvalHub {
-		checkers = append(checkers, NewRunningServiceChecker("EVALHUB", r.Client, r.Namespace))
+		checkers = append(checkers, NewOperandHealthChecker("EVALHUB", r.Client))
 	}
 	if es.GORCH {
-		checkers = append(checkers, NewRunningServiceChecker("GORCH", r.Client, r.Namespace))
+		checkers = append(checkers, NewOperandHealthChecker("GORCH", r.Client))
 	}
 	if es.NemoGuardrails {
-		checkers = append(checkers, NewRunningServiceChecker("NEMO_GUARDRAILS", r.Client, r.Namespace))
+		checkers = append(checkers, NewOperandHealthChecker("NEMO_GUARDRAILS", r.Client))
 	}
 	return checkers
 }
@@ -332,17 +332,18 @@ func (r *TrustyAIModuleReconciler) updateHealthStatus(
 
 	healthCheckers := r.buildHealthCheckers(es)
 	allHealthy := true
-	partiallyHealthy := false
+	anyDegraded := false
 	var unhealthyReasons []string
 
 	for _, checker := range healthCheckers {
-		healthy, reason := checker.IsHealthy(ctx)
-		if !healthy {
+		result := checker.Check(ctx)
+		if !result.Healthy {
 			allHealthy = false
-			unhealthyReasons = append(unhealthyReasons, fmt.Sprintf("%s: %s", checker.Name(), reason))
-			logger.Info("Service unhealthy", "service", checker.Name(), "reason", reason)
-		} else {
-			partiallyHealthy = true
+			unhealthyReasons = append(unhealthyReasons, fmt.Sprintf("%s: %s", checker.Name(), result.Reason))
+			logger.Info("Service not ready", "service", checker.Name(), "reason", result.Reason, "degraded", result.Degraded)
+		}
+		if result.Degraded {
+			anyDegraded = true
 		}
 	}
 
@@ -368,32 +369,34 @@ func (r *TrustyAIModuleReconciler) updateHealthStatus(
 		)
 	} else {
 		module.Status.Phase = common.PhaseNotReady
-		condMgr.MarkFalse(string(common.ConditionTypeReady),
-			conditions.WithReason("ServicesUnhealthy"),
-			conditions.WithMessage("%s", strings.Join(unhealthyReasons, "; ")),
-			conditions.WithObservedGeneration(module.Generation),
-		)
-		condMgr.MarkFalse(string(common.ConditionTypeProvisioningSucceeded),
-			conditions.WithReason("ServicesUnhealthy"),
-			conditions.WithMessage("One or more services are not healthy"),
+		condMgr.MarkTrue(string(common.ConditionTypeProvisioningSucceeded),
+			conditions.WithReason("ProvisioningComplete"),
+			conditions.WithMessage("Module manifests applied; waiting for enabled operand instances"),
 			conditions.WithObservedGeneration(module.Generation),
 		)
 
-		if partiallyHealthy {
+		if anyDegraded {
 			condMgr.MarkTrue(string(common.ConditionTypeDegraded),
-				conditions.WithReason("PartialFunctionality"),
-				conditions.WithMessage("Some services are unavailable: %s", strings.Join(unhealthyReasons, "; ")),
+				conditions.WithReason("OperandUnhealthy"),
+				conditions.WithMessage("One or more operand instances are unhealthy: %s", strings.Join(unhealthyReasons, "; ")),
 				conditions.WithObservedGeneration(module.Generation),
-				conditions.WithSeverity(common.ConditionSeverityInfo),
 			)
 		} else {
-			condMgr.MarkTrue(string(common.ConditionTypeDegraded),
-				conditions.WithReason("AllServicesUnhealthy"),
-				conditions.WithMessage("All services are unavailable: %s", strings.Join(unhealthyReasons, "; ")),
+			condMgr.MarkFalse(string(common.ConditionTypeDegraded),
+				conditions.WithReason("WaitingForOperands"),
+				conditions.WithMessage("Waiting for enabled operand instances: %s", strings.Join(unhealthyReasons, "; ")),
 				conditions.WithObservedGeneration(module.Generation),
 				conditions.WithSeverity(common.ConditionSeverityInfo),
 			)
 		}
+		// Mark Ready after the dependent conditions. The conditions manager
+		// aggregates dependents into Ready, so this final write preserves the
+		// module-level readiness result for both waiting and failed operands.
+		condMgr.MarkFalse(string(common.ConditionTypeReady),
+			conditions.WithReason("ServicesNotReady"),
+			conditions.WithMessage("%s", strings.Join(unhealthyReasons, "; ")),
+			conditions.WithObservedGeneration(module.Generation),
+		)
 	}
 
 	logger.Info("Updated health status", "phase", module.Status.Phase)
@@ -401,10 +404,10 @@ func (r *TrustyAIModuleReconciler) updateHealthStatus(
 	if prevPhase != module.Status.Phase {
 		if allHealthy {
 			r.EventRecorder.Event(module, "Normal", "HealthCheckPassed", "All enabled services are healthy")
-		} else if partiallyHealthy {
-			r.EventRecorder.Event(module, "Warning", "HealthCheckPartial", "Some services are unhealthy")
+		} else if anyDegraded {
+			r.EventRecorder.Event(module, "Warning", "HealthCheckFailed", "One or more operand instances are unhealthy")
 		} else {
-			r.EventRecorder.Event(module, "Warning", "HealthCheckFailed", "All services are unhealthy")
+			r.EventRecorder.Event(module, "Normal", "HealthCheckWaiting", "Waiting for enabled operand instances")
 		}
 	}
 }
