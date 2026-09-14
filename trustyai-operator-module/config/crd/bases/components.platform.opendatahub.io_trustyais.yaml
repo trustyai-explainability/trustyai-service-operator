@@ -79,6 +79,9 @@ spec:
                         type: boolean
                     type: object
                 type: object
+              mcpGuardrailsMode:
+                description: MCPGuardrailsMode deploys only the NeMo Guardrails service. It takes precedence over EnabledServices when enabled.
+                type: boolean
               managementState:
                 default: Managed
                 description: |-

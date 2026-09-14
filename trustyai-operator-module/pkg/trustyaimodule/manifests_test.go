@@ -1,6 +1,8 @@
 package trustyaimodule
 
 import (
+	"os"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -38,6 +40,35 @@ var _ = Describe("enabledServiceNames", func() {
 		Expect(enabledServiceNames(platformv1alpha1.EnabledServices{})).To(ConsistOf(
 			"TAS", "LMES", "EVALHUB", "GORCH", "NEMO_GUARDRAILS",
 		))
+	})
+})
+
+var _ = Describe("effectiveEnabledServices", func() {
+	It("forces NeMo Guardrails only in MCP mode", func() {
+		services := effectiveEnabledServices(platformv1alpha1.EnabledServices{
+			TAS: true, LMES: true, EvalHub: true, GORCH: true,
+		}, true)
+
+		Expect(services).To(Equal(platformv1alpha1.EnabledServices{NemoGuardrails: true}))
+	})
+
+	It("preserves normal service selection outside MCP mode", func() {
+		services := effectiveEnabledServices(platformv1alpha1.EnabledServices{TAS: true}, false)
+		Expect(services).To(Equal(platformv1alpha1.EnabledServices{TAS: true}))
+	})
+})
+
+var _ = Describe("selectOverlay", func() {
+	It("selects the MCP overlay regardless of platform", func() {
+		Expect(selectOverlay("/manifests", true)).To(Equal("/manifests/overlays/mcp-guardrails"))
+	})
+
+	It("selects the platform overlay when MCP mode is disabled", func() {
+		old := os.Getenv("ODH_PLATFORM_TYPE")
+		DeferCleanup(func() { _ = os.Setenv("ODH_PLATFORM_TYPE", old) })
+		Expect(os.Setenv("ODH_PLATFORM_TYPE", "rhoai-self-managed")).To(Succeed())
+
+		Expect(selectOverlay("/manifests", false)).To(Equal("/manifests/overlays/rhoai"))
 	})
 })
 
