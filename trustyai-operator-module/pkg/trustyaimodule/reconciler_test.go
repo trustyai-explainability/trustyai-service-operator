@@ -120,7 +120,7 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 			readyCond := findCondition(module.Status.Conditions, string(common.ConditionTypeReady))
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
-			Expect(readyCond.Reason).To(Equal("AllDependentsHealthy"))
+			Expect(readyCond.Reason).To(Equal("AllServicesHealthy"))
 
 			degradedCond := findCondition(module.Status.Conditions, string(common.ConditionTypeDegraded))
 			Expect(degradedCond).NotTo(BeNil())
