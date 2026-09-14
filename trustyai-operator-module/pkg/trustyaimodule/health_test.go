@@ -2,6 +2,7 @@ package trustyaimodule
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -38,6 +39,17 @@ func TestOperandHealthCheckerReportsFailedInstance(t *testing.T) {
 	}
 }
 
+func TestOperandHealthCheckerReportsListErrorsAsUnknown(t *testing.T) {
+	checker := NewOperandHealthChecker("TAS", listErrorClient{err: errors.New("forbidden")})
+	result := checker.Check(context.Background())
+	if result.Healthy || result.Degraded || !result.Unknown {
+		t.Fatalf("expected list error to be unknown without degradation, got %#v", result)
+	}
+	if result.Reason != "failed to list operand instances: forbidden" {
+		t.Fatalf("expected list error in reason, got %q", result.Reason)
+	}
+}
+
 func TestOperandHealthCheckerTreatsNoInstancesAsWaiting(t *testing.T) {
 	checker := NewOperandHealthChecker("NEMO_GUARDRAILS", fake.NewClientBuilder().Build())
 	result := checker.Check(context.Background())
@@ -64,4 +76,13 @@ func testOperand(kind, version, namespace, name, ready, message string) *unstruc
 	}}
 	operand.SetGroupVersionKind(operand.GroupVersionKind())
 	return operand
+}
+
+type listErrorClient struct {
+	client.Client
+	err error
+}
+
+func (c listErrorClient) List(context.Context, client.ObjectList, ...client.ListOption) error {
+	return c.err
 }

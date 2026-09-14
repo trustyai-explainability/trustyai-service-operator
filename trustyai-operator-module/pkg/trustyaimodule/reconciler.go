@@ -333,6 +333,7 @@ func (r *TrustyAIModuleReconciler) updateHealthStatus(
 	healthCheckers := r.buildHealthCheckers(es)
 	allHealthy := true
 	anyDegraded := false
+	anyUnknown := false
 	var unhealthyReasons []string
 
 	for _, checker := range healthCheckers {
@@ -344,6 +345,9 @@ func (r *TrustyAIModuleReconciler) updateHealthStatus(
 		}
 		if result.Degraded {
 			anyDegraded = true
+		}
+		if result.Unknown {
+			anyUnknown = true
 		}
 	}
 
@@ -392,11 +396,19 @@ func (r *TrustyAIModuleReconciler) updateHealthStatus(
 		// Mark Ready after the dependent conditions. The conditions manager
 		// aggregates dependents into Ready, so this final write preserves the
 		// module-level readiness result for both waiting and failed operands.
-		condMgr.MarkFalse(string(common.ConditionTypeReady),
-			conditions.WithReason("ServicesNotReady"),
-			conditions.WithMessage("%s", strings.Join(unhealthyReasons, "; ")),
-			conditions.WithObservedGeneration(module.Generation),
-		)
+		if anyUnknown && !anyDegraded {
+			condMgr.MarkUnknown(string(common.ConditionTypeReady),
+				conditions.WithReason("OperandHealthUnknown"),
+				conditions.WithMessage("%s", strings.Join(unhealthyReasons, "; ")),
+				conditions.WithObservedGeneration(module.Generation),
+			)
+		} else {
+			condMgr.MarkFalse(string(common.ConditionTypeReady),
+				conditions.WithReason("ServicesNotReady"),
+				conditions.WithMessage("%s", strings.Join(unhealthyReasons, "; ")),
+				conditions.WithObservedGeneration(module.Generation),
+			)
+		}
 	}
 
 	logger.Info("Updated health status", "phase", module.Status.Phase)

@@ -18,6 +18,7 @@ import (
 type ServiceHealthResult struct {
 	Healthy  bool
 	Degraded bool
+	Unknown  bool
 	Reason   string
 }
 
@@ -59,7 +60,7 @@ func (r *OperandHealthChecker) Check(ctx context.Context) ServiceHealthResult {
 	operands := &unstructured.UnstructuredList{}
 	operands.SetGroupVersionKind(r.definition.gvk)
 	if err := r.client.List(ctx, operands); err != nil {
-		return ServiceHealthResult{Reason: fmt.Sprintf("failed to list operand instances: %v", err), Degraded: true}
+		return ServiceHealthResult{Reason: fmt.Sprintf("failed to list operand instances: %v", err), Unknown: true}
 	}
 
 	if len(operands.Items) == 0 {
