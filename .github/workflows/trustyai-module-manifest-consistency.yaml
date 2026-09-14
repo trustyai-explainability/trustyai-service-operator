@@ -4,11 +4,13 @@ on:
   push:
     paths:
       - 'config/**'
+      - 'trustyai-operator-module/config/**'
       - 'trustyai-operator-module/config/manifests-template/**'
       - '.github/workflows/trustyai-module-manifest-consistency.yaml'
   pull_request:
     paths:
       - 'config/**'
+      - 'trustyai-operator-module/config/**'
       - 'trustyai-operator-module/config/manifests-template/**'
       - '.github/workflows/trustyai-module-manifest-consistency.yaml'
 
@@ -26,3 +28,7 @@ jobs:
       - name: Compare bundled manifests with the source manifests
         run: |
           diff -r -u config trustyai-operator-module/config/manifests-template
+
+      - name: Build module deployment manifests
+        run: |
+          kustomize build trustyai-operator-module/config/default
