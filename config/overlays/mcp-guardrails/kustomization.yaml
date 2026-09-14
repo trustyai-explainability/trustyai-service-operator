@@ -18,18 +18,6 @@ labels:
 
 namePrefix: trustyai-service-operator-
 
-patches:
-  - target:
-      kind: Deployment
-      name: controller-manager
-    patch: |-
-      - op: add
-        path: /spec/template/spec/containers/0/args/-
-        value: "--enable-services"
-      - op: add
-        path: /spec/template/spec/containers/0/args/-
-        value: "NEMO_GUARDRAILS"
-
 configMapGenerator:
   - env: params.env
     behavior: merge
