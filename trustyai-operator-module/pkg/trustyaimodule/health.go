@@ -3,91 +3,161 @@ package trustyaimodule
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
-	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// ServiceHealthChecker defines the interface for service-level health checking
+// ServiceHealthResult describes the state of all operand instances for one
+// enabled service. An operand that has not been created yet is progressing,
+// not degraded: the module has applied its manifests, but the operand
+// operator has not provisioned an instance.
+type ServiceHealthResult struct {
+	Healthy  bool
+	Degraded bool
+	Unknown  bool
+	Reason   string
+}
+
+// ServiceHealthChecker defines the interface for service-level health checks.
 type ServiceHealthChecker interface {
-	// Name returns the service name (e.g., "TAS", "LMES", "EVALHUB")
 	Name() string
-
-	// IsHealthy checks if the service's workloads are healthy.
-	// Returns: (healthy bool, reason string)
-	IsHealthy(ctx context.Context) (bool, string)
+	Check(ctx context.Context) ServiceHealthResult
 }
 
-// RunningServiceChecker checks if a service's Deployment is available
-type RunningServiceChecker struct {
+type operandHealthDefinition struct {
 	serviceName string
-	client      client.Client
-	namespace   string
+	gvk         schema.GroupVersionKind
 }
 
-// NewRunningServiceChecker creates a new deployment-based health checker for a service
-func NewRunningServiceChecker(name string, c client.Client, ns string) *RunningServiceChecker {
-	return &RunningServiceChecker{
-		serviceName: name,
-		client:      c,
-		namespace:   ns,
+var operandHealthDefinitions = map[string]operandHealthDefinition{
+	"TAS":             {serviceName: "TAS", gvk: schema.GroupVersionKind{Group: "trustyai.opendatahub.io", Version: "v1", Kind: "TrustyAIServiceList"}},
+	"LMES":            {serviceName: "LMES", gvk: schema.GroupVersionKind{Group: "trustyai.opendatahub.io", Version: "v1alpha1", Kind: "LMEvalJobList"}},
+	"EVALHUB":         {serviceName: "EVALHUB", gvk: schema.GroupVersionKind{Group: "trustyai.opendatahub.io", Version: "v1", Kind: "EvalHubList"}},
+	"GORCH":           {serviceName: "GORCH", gvk: schema.GroupVersionKind{Group: "trustyai.opendatahub.io", Version: "v1alpha1", Kind: "GuardrailsOrchestratorList"}},
+	"NEMO_GUARDRAILS": {serviceName: "NEMO_GUARDRAILS", gvk: schema.GroupVersionKind{Group: "trustyai.opendatahub.io", Version: "v1alpha1", Kind: "NemoGuardrailsList"}},
+}
+
+// OperandHealthChecker reads the CRs managed by the TrustyAI service operator
+// cluster-wide. This deliberately does not use the module namespace: operand
+// instances are namespaced and a service may have instances in many
+// namespaces.
+type OperandHealthChecker struct {
+	definition operandHealthDefinition
+	client     client.Client
+}
+
+func NewOperandHealthChecker(name string, c client.Client) *OperandHealthChecker {
+	return &OperandHealthChecker{definition: operandHealthDefinitions[name], client: c}
+}
+
+func (r *OperandHealthChecker) Name() string { return r.definition.serviceName }
+
+func (r *OperandHealthChecker) Check(ctx context.Context) ServiceHealthResult {
+	operands := &unstructured.UnstructuredList{}
+	operands.SetGroupVersionKind(r.definition.gvk)
+	if err := r.client.List(ctx, operands); err != nil {
+		return ServiceHealthResult{Reason: fmt.Sprintf("failed to list operand instances: %v", err), Unknown: true}
 	}
-}
 
-// Name returns the service name
-func (r *RunningServiceChecker) Name() string {
-	return r.serviceName
-}
-
-// IsHealthy checks if the service's Deployment has ready replicas.
-// Returns (true, "Deployment ready") if ReadyReplicas == Replicas && ReadyReplicas > 0.
-func (r *RunningServiceChecker) IsHealthy(ctx context.Context) (bool, string) {
-	deploymentList := &appsv1.DeploymentList{}
-	labelSelector := labels.SelectorFromSet(labels.Set{
-		"app.kubernetes.io/name": r.serviceName,
-	})
-
-	if err := r.client.List(ctx, deploymentList, &client.ListOptions{
-		Namespace:     r.namespace,
-		LabelSelector: labelSelector,
-	}); err != nil {
-		return false, fmt.Sprintf("failed to list deployments: %v", err)
+	if len(operands.Items) == 0 {
+		return ServiceHealthResult{Reason: "no operand instances found"}
 	}
 
-	if len(deploymentList.Items) == 0 {
-		deployment := &appsv1.Deployment{}
-		err := r.client.Get(ctx, types.NamespacedName{
-			Name:      r.serviceName,
-			Namespace: r.namespace,
-		}, deployment)
-		if err != nil {
-			return false, "deployment not found"
+	instances := make([]string, 0, len(operands.Items))
+	degraded := false
+	for i := range operands.Items {
+		operand := &operands.Items[i]
+		state, reason := operandState(operand)
+		if state == operandReady {
+			continue
 		}
-		return r.checkDeploymentHealth(deployment)
+		instance := operand.GetNamespace() + "/" + operand.GetName()
+		if operand.GetNamespace() == "" {
+			instance = operand.GetName()
+		}
+		instances = append(instances, fmt.Sprintf("%s: %s", instance, reason))
+		if state == operandFailed {
+			degraded = true
+		}
 	}
 
-	return r.checkDeploymentHealth(&deploymentList.Items[0])
+	if len(instances) == 0 {
+		return ServiceHealthResult{Healthy: true, Reason: fmt.Sprintf("%d operand instance(s) healthy", len(operands.Items))}
+	}
+	sort.Strings(instances)
+	return ServiceHealthResult{Reason: strings.Join(instances, "; "), Degraded: degraded}
 }
 
-func (r *RunningServiceChecker) checkDeploymentHealth(deployment *appsv1.Deployment) (bool, string) {
-	if deployment.Spec.Replicas == nil {
-		return false, "deployment has no replica count specified"
+type operandStateValue string
+
+const (
+	operandReady       operandStateValue = "ready"
+	operandProgressing operandStateValue = "progressing"
+	operandFailed      operandStateValue = "failed"
+)
+
+func operandState(operand *unstructured.Unstructured) (operandStateValue, string) {
+	conditions, found, err := unstructured.NestedSlice(operand.Object, "status", "conditions")
+	if err == nil && found {
+		for _, raw := range conditions {
+			condition, ok := raw.(map[string]interface{})
+			if !ok || condition["type"] != "Ready" {
+				continue
+			}
+			status, _ := condition["status"].(string)
+			reason, _ := condition["reason"].(string)
+			message, _ := condition["message"].(string)
+			if message == "" {
+				message, _ = condition["reason"].(string)
+			}
+			switch strings.ToLower(status) {
+			case "true":
+				return operandReady, "ready"
+			case "false":
+				if message == "" {
+					message = "Ready condition is false"
+				}
+				if isTerminalFailureReason(reason) {
+					return operandFailed, message
+				}
+				return operandProgressing, message
+			default:
+				if message == "" {
+					message = "Ready condition is not yet true"
+				}
+				return operandProgressing, message
+			}
+		}
 	}
 
-	desiredReplicas := *deployment.Spec.Replicas
-	readyReplicas := deployment.Status.ReadyReplicas
+	if ready, found, _ := unstructured.NestedString(operand.Object, "status", "ready"); found {
+		if strings.EqualFold(ready, "true") {
+			return operandReady, "ready"
+		}
+		if strings.EqualFold(ready, "false") {
+			return operandFailed, "status.ready is false"
+		}
+	}
+	if phase, found, _ := unstructured.NestedString(operand.Object, "status", "phase"); found {
+		switch strings.ToLower(phase) {
+		case "ready", "running", "succeeded", "complete", "completed":
+			return operandReady, phase
+		case "failed", "error", "degraded":
+			return operandFailed, "phase is " + phase
+		}
+	}
+	return operandProgressing, "operand status is not yet available"
+}
 
-	if desiredReplicas == 0 {
-		return false, "deployment scaled to 0 replicas"
+func isTerminalFailureReason(reason string) bool {
+	switch strings.ToLower(reason) {
+	case "failed", "error", "reconcilefailed", "reconciliationfailed", "deploymentfailed", "invalid", "invalidspec", "validationfailed":
+		return true
+	default:
+		return false
 	}
-	if readyReplicas == 0 {
-		return false, fmt.Sprintf("0/%d replicas ready", desiredReplicas)
-	}
-	if readyReplicas < desiredReplicas {
-		return false, fmt.Sprintf("%d/%d replicas ready", readyReplicas, desiredReplicas)
-	}
-
-	return true, "deployment ready"
 }
