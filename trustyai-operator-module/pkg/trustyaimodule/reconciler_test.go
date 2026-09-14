@@ -106,7 +106,7 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 			Expect(module.Status.ObservedGeneration).To(Equal(module.Generation))
 		})
 
-		It("does not report ready when default service workloads are unhealthy", func() {
+		It("does not report ready when default service workloads are absent", func() {
 			r := newReconciler()
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 			Expect(err).NotTo(HaveOccurred())
@@ -124,7 +124,8 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 
 			degradedCond := findCondition(module.Status.Conditions, string(common.ConditionTypeDegraded))
 			Expect(degradedCond).NotTo(BeNil())
-			Expect(degradedCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(degradedCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(degradedCond.Reason).To(Equal("WaitingForOperands"))
 		})
 
 		It("reports an explicitly enabled service as unhealthy when its workload is absent", func() {
