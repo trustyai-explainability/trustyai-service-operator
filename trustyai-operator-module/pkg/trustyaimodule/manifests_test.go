@@ -34,8 +34,10 @@ var _ = Describe("enabledServiceNames", func() {
 		Expect(enabledServiceNames(platformv1alpha1.EnabledServices{TAS: true, GORCH: true})).To(ConsistOf("TAS", "GORCH"))
 	})
 
-	It("returns no services when none are explicitly enabled", func() {
-		Expect(enabledServiceNames(platformv1alpha1.EnabledServices{})).To(BeEmpty())
+	It("returns all services when none are explicitly enabled", func() {
+		Expect(enabledServiceNames(platformv1alpha1.EnabledServices{})).To(ConsistOf(
+			"TAS", "LMES", "EVALHUB", "GORCH", "NEMO_GUARDRAILS",
+		))
 	})
 })
 

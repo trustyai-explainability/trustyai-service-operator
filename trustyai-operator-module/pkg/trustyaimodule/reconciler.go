@@ -113,11 +113,10 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return r.handleRemoval(ctx, module)
 	}
 
-	// An empty enabledServices object means that no TrustyAI service workloads
-	// were selected. Do not turn it into an implicit "enable everything"
-	// configuration: the module operator itself can be installed independently
-	// of the service operands.
-	enabledServices := module.Spec.EnabledServices
+	// An empty enabledServices object means that all TrustyAI service workloads
+	// are enabled for platform-managed module CRs, which do not currently
+	// project per-service selections.
+	enabledServices := effectiveEnabledServices(module.Spec.EnabledServices)
 
 	// Build the condition manager for this reconcile cycle.
 	condMgr := r.newConditionManager(module)
@@ -262,6 +261,19 @@ func (r *TrustyAIModuleReconciler) handleRemoval(ctx context.Context, module *pl
 		"Module management state is Removed; reconciliation skipped")
 
 	return ctrl.Result{}, nil
+}
+
+func effectiveEnabledServices(es platformv1alpha1.EnabledServices) platformv1alpha1.EnabledServices {
+	if es == (platformv1alpha1.EnabledServices{}) {
+		return platformv1alpha1.EnabledServices{
+			TAS:            true,
+			LMES:           true,
+			EvalHub:        true,
+			GORCH:          true,
+			NemoGuardrails: true,
+		}
+	}
+	return es
 }
 
 // persistStatus normalizes conditions before writing status. Older platform

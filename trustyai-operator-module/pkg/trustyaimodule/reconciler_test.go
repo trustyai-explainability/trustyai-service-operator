@@ -106,7 +106,7 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 			Expect(module.Status.ObservedGeneration).To(Equal(module.Generation))
 		})
 
-		It("reports ready when no service workloads are selected", func() {
+		It("does not report ready when default service workloads are unhealthy", func() {
 			r := newReconciler()
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 			Expect(err).NotTo(HaveOccurred())
@@ -115,16 +115,16 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 
 			module := &platformv1alpha1.TrustyAI{}
 			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
-			Expect(module.Status.Phase).To(Equal(common.PhaseReady))
+			Expect(module.Status.Phase).To(Equal(common.PhaseNotReady))
 
 			readyCond := findCondition(module.Status.Conditions, string(common.ConditionTypeReady))
 			Expect(readyCond).NotTo(BeNil())
-			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
-			Expect(readyCond.Reason).To(Equal("AllServicesHealthy"))
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("ServicesUnhealthy"))
 
 			degradedCond := findCondition(module.Status.Conditions, string(common.ConditionTypeDegraded))
 			Expect(degradedCond).NotTo(BeNil())
-			Expect(degradedCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(degradedCond.Status).To(Equal(metav1.ConditionTrue))
 		})
 
 		It("reports an explicitly enabled service as unhealthy when its workload is absent", func() {

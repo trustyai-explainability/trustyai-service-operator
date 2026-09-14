@@ -157,7 +157,6 @@ func filterUnsupportedResources(objs []unstructured.Unstructured) []unstructured
 // enabledServiceNames maps EnabledServices booleans to the canonical service
 // names accepted by trustyai-service-operator's --enable-services flag
 // (see controllers/<service>/constants.go ServiceName in the parent repo).
-//
 func enabledServiceNames(es platformv1alpha1.EnabledServices) []string {
 	var names []string
 	if es.TAS {
@@ -174,6 +173,9 @@ func enabledServiceNames(es platformv1alpha1.EnabledServices) []string {
 	}
 	if es.NemoGuardrails {
 		names = append(names, "NEMO_GUARDRAILS")
+	}
+	if len(names) == 0 {
+		names = []string{"TAS", "LMES", "EVALHUB", "GORCH", "NEMO_GUARDRAILS"}
 	}
 	return names
 }
