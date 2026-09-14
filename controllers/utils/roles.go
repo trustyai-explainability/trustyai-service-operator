@@ -13,12 +13,12 @@ const (
 	clusterRoleBindingResourceKind = "ClusterRoleBinding"
 )
 
-// getClusterRoleName creates an auth cluster role name from the orchestrator name and namespace
+// getClusterRoleName creates an auth cluster role name from the object name and namespace
 func GetAuthDelegatorClusterRoleName(owner metav1.Object) string {
 	return owner.GetName() + "-" + owner.GetNamespace() + "-auth-delegator"
 }
 
-// createClusterRoleBinding creates a cluster role binding for the orchestrator oauth service account
+// createClusterRoleBinding creates a cluster role binding for the object oauth service account
 func createAuthDelegatorClusterRoleBinding(owner metav1.Object) *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
@@ -54,7 +54,7 @@ func ReconcileAuthDelegatorClusterRoleBinding(ctx context.Context, c client.Clie
 	return ReconcileClusterRoleBinding(ctx, c, owner, createAuthDelegatorClusterRoleBinding(owner))
 }
 
-// cleanupClusterRoleBinding deletes the oauth cluster role upon orchestrator deletion
+// cleanupClusterRoleBinding deletes the oauth cluster role upon object deletion
 func CleanupClusterRoleBinding(ctx context.Context, c client.Client, owner metav1.Object) error {
 	crbName := GetAuthDelegatorClusterRoleName(owner)
 	crb := &rbacv1.ClusterRoleBinding{}

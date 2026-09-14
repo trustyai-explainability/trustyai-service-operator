@@ -93,14 +93,6 @@ test_secrets_write_exempt_tas_manager if {
 	}
 }
 
-test_secrets_write_exempt_gorch_manager if {
-	count(deny) == 0 with input as {
-		"kind": "ClusterRole",
-		"metadata": {"name": "trustyai-service-operator-gorch-manager-role"},
-		"rules": [{"apiGroups": [""], "resources": ["secrets"], "verbs": ["update", "patch"]}],
-	}
-}
-
 test_secrets_write_exempt_evalhub_model_secret if {
 	count(deny) == 0 with input as {
 		"kind": "ClusterRole",

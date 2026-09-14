@@ -51,7 +51,6 @@ import (
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
-	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
 	tasv1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	tasv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
@@ -87,7 +86,6 @@ func init() {
 	utilruntime.Must(routev1.AddToScheme(scheme))
 	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
 	utilruntime.Must(kueuev1beta1.AddToScheme(scheme))
-	utilruntime.Must(gorchv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(nemoguardrailsv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }

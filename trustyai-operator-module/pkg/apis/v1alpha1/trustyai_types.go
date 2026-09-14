@@ -18,8 +18,6 @@ type EnabledServices struct {
 	// +optional
 	EvalHub bool `json:"evalHub,omitempty"`
 	// +optional
-	GORCH bool `json:"gorch,omitempty"`
-	// +optional
 	NemoGuardrails bool `json:"nemoGuardrails,omitempty"`
 }
 

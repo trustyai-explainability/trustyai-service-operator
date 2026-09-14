@@ -48,12 +48,6 @@ spec:
               value: $(lmes-pod-image)
             - name: RELATED_IMAGE_ODH_TA_LMES_DRIVER_IMAGE
               value: $(lmes-driver-image)
-            - name: RELATED_IMAGE_ODH_FMS_GUARDRAILS_ORCHESTRATOR_IMAGE
-              value: $(guardrails-orchestrator-image)
-            - name: RELATED_IMAGE_ODH_BUILT_IN_DETECTOR_IMAGE
-              value: $(guardrails-built-in-detector-image)
-            - name: RELATED_IMAGE_ODH_TRUSTYAI_VLLM_ORCHESTRATOR_GATEWAY_IMAGE
-              value: $(guardrails-sidecar-gateway-image)
             - name: RELATED_IMAGE_ODH_TRUSTYAI_GARAK_LLS_PROVIDER_DSP_IMAGE
               value: $(garak-provider-image)
             - name: RELATED_IMAGE_ODH_TRUSTYAI_NEMO_GUARDRAILS_SERVER_IMAGE

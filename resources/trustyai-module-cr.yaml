@@ -7,6 +7,4 @@ spec:
   enabledServices:
     tas: true
     lmes: true
-    evalHub: true
-    gorch: false
     nemoGuardrails: false
