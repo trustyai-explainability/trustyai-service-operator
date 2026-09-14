@@ -330,6 +330,11 @@ func (r *TrustyAIModuleReconciler) updateHealthStatus(
 ) {
 	logger := log.FromContext(ctx)
 
+	prevDegraded := false
+	if degradedCond := condMgr.GetCondition(string(common.ConditionTypeDegraded)); degradedCond != nil {
+		prevDegraded = degradedCond.Status == metav1.ConditionTrue
+	}
+
 	healthCheckers := r.buildHealthCheckers(es)
 	allHealthy := true
 	anyDegraded := false
@@ -413,7 +418,7 @@ func (r *TrustyAIModuleReconciler) updateHealthStatus(
 
 	logger.Info("Updated health status", "phase", module.Status.Phase)
 
-	if prevPhase != module.Status.Phase {
+	if prevPhase != module.Status.Phase || prevDegraded != anyDegraded {
 		if allHealthy {
 			r.EventRecorder.Event(module, "Normal", "HealthCheckPassed", "All enabled services are healthy")
 		} else if anyDegraded {
