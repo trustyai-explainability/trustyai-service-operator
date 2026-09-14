@@ -18,6 +18,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -97,10 +98,7 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		)
 		module.Status.ObservedGeneration = module.Generation
 		condMgr.Sort()
-		desired := module.Status.DeepCopy()
-		if updateErr := statusPkg.Update(ctx, r.Client, module, func(o *platformv1alpha1.TrustyAI) {
-			o.Status = *desired
-		}); updateErr != nil {
+		if updateErr := r.persistStatus(ctx, module); updateErr != nil {
 			logger.Error(updateErr, "Failed to update status after migration failure")
 		}
 		return ctrl.Result{}, err
@@ -115,6 +113,9 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return r.handleRemoval(ctx, module)
 	}
 
+	// An empty enabledServices object means that all TrustyAI service workloads
+	// are enabled for platform-managed module CRs, which do not currently
+	// project per-service selections.
 	enabledServices := effectiveEnabledServices(module.Spec.EnabledServices)
 
 	// Build the condition manager for this reconcile cycle.
@@ -131,10 +132,7 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			module.Status.Phase = common.PhaseNotReady
 			module.Status.ObservedGeneration = module.Generation
 			condMgr.Sort()
-			desired := module.Status.DeepCopy()
-			if err := statusPkg.Update(ctx, r.Client, module, func(o *platformv1alpha1.TrustyAI) {
-				o.Status = *desired
-			}); err != nil {
+			if err := r.persistStatus(ctx, module); err != nil {
 				logger.Error(err, "Failed to update status after dependency check")
 				return ctrl.Result{}, err
 			}
@@ -158,10 +156,7 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		logger.Error(err, "Failed to deploy workload operator")
 		module.Status.ObservedGeneration = module.Generation
 		condMgr.Sort()
-		desired := module.Status.DeepCopy()
-		if updateErr := statusPkg.Update(ctx, r.Client, module, func(o *platformv1alpha1.TrustyAI) {
-			o.Status = *desired
-		}); updateErr != nil {
+		if updateErr := r.persistStatus(ctx, module); updateErr != nil {
 			logger.Error(updateErr, "Failed to update status after deploy failure")
 		}
 		return ctrl.Result{}, err
@@ -180,10 +175,7 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	module.Status.ObservedGeneration = module.Generation
 	condMgr.Sort()
-	desired := module.Status.DeepCopy()
-	if err := statusPkg.Update(ctx, r.Client, module, func(o *platformv1alpha1.TrustyAI) {
-		o.Status = *desired
-	}); err != nil {
+	if err := r.persistStatus(ctx, module); err != nil {
 		logger.Error(err, "Failed to update TrustyAI module status")
 		return ctrl.Result{}, err
 	}
@@ -261,10 +253,7 @@ func (r *TrustyAIModuleReconciler) handleRemoval(ctx context.Context, module *pl
 	module.Status.Phase = common.PhaseNotReady
 	module.Status.ObservedGeneration = module.Generation
 	condMgr.Sort()
-	desired := module.Status.DeepCopy()
-	if err := statusPkg.Update(ctx, r.Client, module, func(o *platformv1alpha1.TrustyAI) {
-		o.Status = *desired
-	}); err != nil {
+	if err := r.persistStatus(ctx, module); err != nil {
 		logger.Error(err, "Failed to update TrustyAI module status")
 		return ctrl.Result{}, err
 	}
@@ -285,6 +274,32 @@ func effectiveEnabledServices(es platformv1alpha1.EnabledServices) platformv1alp
 		}
 	}
 	return es
+}
+
+// persistStatus normalizes conditions before writing status. Older platform
+// versions validate reason, message, and lastTransitionTime as required
+// fields, while the current common API intentionally makes them optional.
+// Keeping the emitted status complete lets this module work with either CRD
+// schema and avoids masking the original reconciliation error with a status
+// validation error.
+func (r *TrustyAIModuleReconciler) persistStatus(ctx context.Context, module *platformv1alpha1.TrustyAI) error {
+	for i := range module.Status.Conditions {
+		condition := &module.Status.Conditions[i]
+		if condition.LastTransitionTime.IsZero() {
+			condition.LastTransitionTime = metav1.Now()
+		}
+		if condition.Reason == "" {
+			condition.Reason = "ConditionNotSet"
+		}
+		if condition.Message == "" {
+			condition.Message = "Condition has not been evaluated"
+		}
+	}
+
+	desired := module.Status.DeepCopy()
+	return statusPkg.Update(ctx, r.Client, module, func(o *platformv1alpha1.TrustyAI) {
+		o.Status = *desired
+	})
 }
 
 func (r *TrustyAIModuleReconciler) buildHealthCheckers(es platformv1alpha1.EnabledServices) []ServiceHealthChecker {

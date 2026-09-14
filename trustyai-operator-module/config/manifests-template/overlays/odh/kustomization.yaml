@@ -1,23 +1,85 @@
+---
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base
-# Build a ConfigMap from params.env (rewritten by applyParams with platform-injected image env vars).
-# The Deployment reads it via envFrom so the operator receives all image refs at runtime.
-configMapGenerator:
-  - name: trustyai-images
-    envs:
-      - params.env
+  - rbac/tls
 
-# Inject the operator's own image ref (TRUSTYAI_OPERATOR_IMAGE) directly into the Deployment.
-replacements:
-  - source:
-      kind: ConfigMap
-      name: trustyai-images
-      fieldPath: data.TRUSTYAI_OPERATOR_IMAGE
-    targets:
-      - select:
-          kind: Deployment
-          name: trustyai-service-operator
-        fieldPaths:
-          - spec.template.spec.containers.[name=manager].image
+components:
+  - ../../components/webhook
+  - ../../components/tas
+  - ../../components/evalhub
+  - ../../components/lmes
+  - ../../components/gorch
+  - ../../components/nemo-guardrails
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app.kubernetes.io/part-of: trustyai
+
+namePrefix: trustyai-service-operator-
+
+patches:
+  - target:
+      kind: Deployment
+      name: controller-manager
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--enable-services"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "TAS,LMES,GORCH,NEMO_GUARDRAILS,EVALHUB"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--metrics-cert-path=/etc/metrics-certs"
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: metrics-certs
+          mountPath: /etc/metrics-certs
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: metrics-certs
+          secret:
+            secretName: trustyai-service-operator-metrics-tls
+  - target:
+      kind: Service
+      name: metrics-service
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          service.beta.openshift.io/serving-cert-secret-name: trustyai-service-operator-metrics-tls
+      - op: replace
+        path: /spec/ports/0
+        value:
+          name: https
+          port: 8443
+          protocol: TCP
+          targetPort: 8443
+  - target:
+      kind: ServiceMonitor
+      name: service-monitor
+    patch: |-
+      - op: replace
+        path: /spec/endpoints/0
+        value:
+          path: /metrics
+          port: https
+          scheme: https
+          bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          tlsConfig:
+            serverName: trustyai-service-operator-metrics-service.opendatahub.svc
+            ca:
+              configMap:
+                name: openshift-service-ca.crt
+                key: service-ca.crt
+
+configMapGenerator:
+  - env: params.env
+    behavior: merge
+    name: config

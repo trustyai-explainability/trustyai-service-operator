@@ -5,6 +5,10 @@ MODULE_DIR         := trustyai-operator-module
 MODULE_TAG         ?= latest
 ENGINE             ?= $(BUILD_TOOL)
 
+.PHONY: sync-trustyai-module-manifests
+sync-trustyai-module-manifests: ## Copy the generated workload manifests into the module image source tree
+	./hack/sync-trustyai-module-manifests.sh
+
 .PHONY: docker-build-tom
 docker-build-tom: ## Build the trustyai-operator-module-controller image
 	$(ENGINE) buildx build \

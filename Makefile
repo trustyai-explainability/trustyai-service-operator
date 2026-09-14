@@ -97,6 +97,7 @@ help: ## Display this help.
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role,headerFile="hack/boilerplate.yaml.txt" crd:headerFile="hack/boilerplate.yaml.txt" webhook:headerFile="hack/boilerplate.yaml.txt" paths="./api/..." paths="./controllers/..." paths="./cmd/..." paths="./pkg/..." output:crd:artifacts:config=config/crd/bases
 	@$(MAKE) components-generate
+	@$(MAKE) sync-trustyai-module-manifests
 
 .PHONY: components-generate
 components-generate: ## Generate component kustomizations from controller-gen output
@@ -121,6 +122,7 @@ list-overlays: ## List available overlays
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..." paths="./controllers/..." paths="./cmd/..." paths="./pkg/..."
+	@$(MAKE) sync-trustyai-module-manifests
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.

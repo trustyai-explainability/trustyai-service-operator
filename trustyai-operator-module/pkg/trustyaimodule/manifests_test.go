@@ -34,10 +34,32 @@ var _ = Describe("enabledServiceNames", func() {
 		Expect(enabledServiceNames(platformv1alpha1.EnabledServices{TAS: true, GORCH: true})).To(ConsistOf("TAS", "GORCH"))
 	})
 
-	It("defaults to all services when none are explicitly enabled", func() {
+	It("returns all services when none are explicitly enabled", func() {
 		Expect(enabledServiceNames(platformv1alpha1.EnabledServices{})).To(ConsistOf(
 			"TAS", "LMES", "EVALHUB", "GORCH", "NEMO_GUARDRAILS",
 		))
+	})
+})
+
+var _ = Describe("filterUnsupportedResources", func() {
+	It("omits aggregated ClusterRoles but keeps ordinary resources", func() {
+		aggregated := unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "rbac.authorization.k8s.io/v1",
+			"kind":       "ClusterRole",
+			"metadata":   map[string]interface{}{"name": "aggregated-role"},
+			"aggregationRule": map[string]interface{}{
+				"clusterRoleSelectors": []interface{}{},
+			},
+		}}
+		ordinary := unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "rbac.authorization.k8s.io/v1",
+			"kind":       "ClusterRole",
+			"metadata":   map[string]interface{}{"name": "ordinary-role"},
+		}}
+
+		filtered := filterUnsupportedResources([]unstructured.Unstructured{aggregated, ordinary})
+		Expect(filtered).To(HaveLen(1))
+		Expect(filtered[0].GetName()).To(Equal("ordinary-role"))
 	})
 })
 
@@ -86,5 +108,20 @@ var _ = Describe("injectEnabledServices", func() {
 		manager := containers[1].(map[string]interface{})
 		Expect(sidecar["args"]).To(Equal([]interface{}{"--existing"}))
 		Expect(manager["args"]).To(Equal([]interface{}{"--enable-services=TAS"}))
+	})
+
+	It("preserves unrelated manager arguments", func() {
+		objs := []unstructured.Unstructured{
+			operatorDeployment(map[string]interface{}{
+				"name": ManagerContainerName,
+				"args": []interface{}{"--leader-elect", "--enable-services", "OLD"},
+			}),
+		}
+
+		Expect(injectEnabledServices(objs, platformv1alpha1.EnabledServices{TAS: true})).To(Succeed())
+
+		containers, _, _ := unstructured.NestedSlice(objs[0].Object, "spec", "template", "spec", "containers")
+		manager := containers[0].(map[string]interface{})
+		Expect(manager["args"]).To(Equal([]interface{}{"--leader-elect", "--enable-services=TAS"}))
 	})
 })

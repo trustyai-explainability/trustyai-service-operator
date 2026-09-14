@@ -4,6 +4,10 @@ kind: ClusterRole
 metadata:
   name: manager-role
 rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
 - apiGroups:
   - ""
   resources:
@@ -55,12 +59,29 @@ rules:
   verbs:
   - get
 - apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - mutatingwebhookconfigurations
+  - validatingwebhookconfigurations
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - apiextensions.k8s.io
   resources:
   - customresourcedefinitions
   verbs:
+  - create
+  - delete
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - apps
@@ -89,10 +110,23 @@ rules:
   - patch
   - update
 - apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+- apiGroups:
   - batch
   resources:
   - jobs
   verbs:
+  - create
   - delete
   - get
   - list
@@ -182,8 +216,10 @@ rules:
   - experiments
   verbs:
   - create
+  - delete
   - get
   - list
+  - update
 - apiGroups:
   - monitoring.coreos.com
   resources:
@@ -198,8 +234,10 @@ rules:
   - servicemonitors
   verbs:
   - create
+  - delete
   - get
   - list
+  - patch
   - update
   - watch
 - apiGroups:
@@ -231,6 +269,22 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resourceNames:
+  - trustyai-service-operator-evalhub-auth-reviewer-role
+  - trustyai-service-operator-evalhub-collections-access
+  - trustyai-service-operator-evalhub-hardware-profiles-reader
+  - trustyai-service-operator-evalhub-job-config
+  - trustyai-service-operator-evalhub-jobs-writer
+  - trustyai-service-operator-evalhub-mlflow-access
+  - trustyai-service-operator-evalhub-mlflow-jobs-access
+  - trustyai-service-operator-evalhub-model-secret
+  - trustyai-service-operator-evalhub-providers-access
+  resources:
+  - clusterroles
+  verbs:
+  - bind
 - apiGroups:
   - route.openshift.io
   resources:
@@ -296,9 +350,7 @@ rules:
   - trustyai.opendatahub.io
   resources:
   - evalhubs/finalizers
-  - guardrailsorchestrators/finalizers
   - lmevaljobs/finalizers
-  - nemoguardrails/finalizers
   - trustyaiservices/finalizers
   verbs:
   - update
@@ -313,11 +365,30 @@ rules:
   - trustyai.opendatahub.io
   resources:
   - evalhubs/status
-  - guardrailsorchestrators/status
   - lmevaljobs/status
-  - nemoguardrails/status
   - trustyaiservices/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - guardrailsorchestrators/finalizers
+  - nemoguardrails/finalizers
+  verbs:
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - guardrailsorchestrators/status
+  - nemoguardrails/status
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
