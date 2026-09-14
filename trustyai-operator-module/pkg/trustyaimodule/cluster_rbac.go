@@ -18,7 +18,9 @@ import (
 func (r *TrustyAIModuleReconciler) deleteClusterScopedRBAC(ctx context.Context) error {
 	logger := log.FromContext(ctx)
 
-	resources, err := RenderManifests(ctx, r.ManifestsTemplatePath, r.Namespace)
+	// Cleanup must cover the complete normal manifest set, including resources
+	// that are absent from the MCP-only overlay.
+	resources, err := RenderManifests(ctx, r.ManifestsTemplatePath, r.Namespace, false)
 	if err != nil {
 		return fmt.Errorf("rendering manifests for cluster-scoped RBAC cleanup: %w", err)
 	}
