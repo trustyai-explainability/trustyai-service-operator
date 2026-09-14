@@ -98,12 +98,25 @@ func (dst *TrustyAIService) ConvertFrom(srcRaw conversion.Hub) error {
 			status = corev1.ConditionUnknown
 		}
 
+		lastTransitionTime := srcCondition.LastTransitionTime
+		if lastTransitionTime.IsZero() {
+			lastTransitionTime = metav1.Now()
+		}
+		reason := srcCondition.Reason
+		if reason == "" {
+			reason = "ConditionNotSet"
+		}
+		message := srcCondition.Message
+		if message == "" {
+			message = "Condition has not been evaluated"
+		}
+
 		dst.Status.Conditions[i] = Condition{
 			Type:               srcCondition.Type,
 			Status:             status,
-			LastTransitionTime: srcCondition.LastTransitionTime,
-			Reason:             srcCondition.Reason,
-			Message:            srcCondition.Message,
+			LastTransitionTime: lastTransitionTime,
+			Reason:             reason,
+			Message:            message,
 		}
 	}
 
