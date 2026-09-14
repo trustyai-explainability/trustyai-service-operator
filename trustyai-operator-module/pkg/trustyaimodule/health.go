@@ -109,6 +109,7 @@ func operandState(operand *unstructured.Unstructured) (operandStateValue, string
 				continue
 			}
 			status, _ := condition["status"].(string)
+			reason, _ := condition["reason"].(string)
 			message, _ := condition["message"].(string)
 			if message == "" {
 				message, _ = condition["reason"].(string)
@@ -120,7 +121,10 @@ func operandState(operand *unstructured.Unstructured) (operandStateValue, string
 				if message == "" {
 					message = "Ready condition is false"
 				}
-				return operandFailed, message
+				if isTerminalFailureReason(reason) {
+					return operandFailed, message
+				}
+				return operandProgressing, message
 			default:
 				if message == "" {
 					message = "Ready condition is not yet true"
@@ -147,4 +151,13 @@ func operandState(operand *unstructured.Unstructured) (operandStateValue, string
 		}
 	}
 	return operandProgressing, "operand status is not yet available"
+}
+
+func isTerminalFailureReason(reason string) bool {
+	switch strings.ToLower(reason) {
+	case "failed", "error", "reconcilefailed", "reconciliationfailed", "deploymentfailed", "invalid", "invalidspec", "validationfailed":
+		return true
+	default:
+		return false
+	}
 }

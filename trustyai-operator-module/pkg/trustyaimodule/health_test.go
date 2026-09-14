@@ -26,7 +26,7 @@ func TestOperandHealthCheckerAggregatesInstancesAcrossNamespaces(t *testing.T) {
 func TestOperandHealthCheckerReportsFailedInstance(t *testing.T) {
 	objects := []client.Object{
 		testOperand("EvalHub", "v1", "team-a", "evalhub-a", "True", ""),
-		testOperand("EvalHub", "v1", "team-b", "evalhub-b", "False", "deployment unavailable"),
+		testOperandWithReason("EvalHub", "v1", "team-b", "evalhub-b", "False", "Error", "deployment unavailable"),
 	}
 
 	checker := NewOperandHealthChecker("EVALHUB", fake.NewClientBuilder().WithObjects(objects...).Build())
@@ -36,6 +36,23 @@ func TestOperandHealthCheckerReportsFailedInstance(t *testing.T) {
 	}
 	if result.Reason != "team-b/evalhub-b: deployment unavailable" {
 		t.Fatalf("expected failed instance in reason, got %q", result.Reason)
+	}
+}
+
+func TestOperandHealthCheckerTreatsProvisioningReadyFalseAsWaiting(t *testing.T) {
+	for _, reason := range []string{"ComponentsNotReady", "ProvisioningInProgress", "Initializing", "DeploymentNotReady"} {
+		t.Run(reason, func(t *testing.T) {
+			checker := NewOperandHealthChecker("TAS", fake.NewClientBuilder().WithObjects(
+				testOperandWithReason("TrustyAIService", "v1", "team-a", "tas", "False", reason, "not ready yet"),
+			).Build())
+			result := checker.Check(context.Background())
+			if result.Healthy || result.Degraded || result.Unknown {
+				t.Fatalf("expected provisioning to remain in progress, got %#v", result)
+			}
+			if result.Reason != "team-a/tas: not ready yet" {
+				t.Fatalf("expected provisioning message in reason, got %q", result.Reason)
+			}
+		})
 	}
 }
 
@@ -59,6 +76,10 @@ func TestOperandHealthCheckerTreatsNoInstancesAsWaiting(t *testing.T) {
 }
 
 func testOperand(kind, version, namespace, name, ready, message string) *unstructured.Unstructured {
+	return testOperandWithReason(kind, version, namespace, name, ready, "", message)
+}
+
+func testOperandWithReason(kind, version, namespace, name, ready, reason, message string) *unstructured.Unstructured {
 	operand := &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "trustyai.opendatahub.io/" + version,
 		"kind":       kind,
@@ -70,6 +91,7 @@ func testOperand(kind, version, namespace, name, ready, message string) *unstruc
 			"conditions": []interface{}{map[string]interface{}{
 				"type":    "Ready",
 				"status":  ready,
+				"reason":  reason,
 				"message": message,
 			}},
 		},
