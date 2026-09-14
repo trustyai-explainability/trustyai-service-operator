@@ -147,7 +147,8 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 			provisioningCond := findCondition(module.Status.Conditions, string(common.ConditionTypeProvisioningSucceeded))
 			Expect(provisioningCond.Status).To(Equal(metav1.ConditionTrue))
 			degradedCond := findCondition(module.Status.Conditions, string(common.ConditionTypeDegraded))
-			Expect(degradedCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(degradedCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(degradedCond.Reason).To(Equal("WaitingForOperands"))
 		})
 
 		It("records the platform version handshake in status.releases", func() {
