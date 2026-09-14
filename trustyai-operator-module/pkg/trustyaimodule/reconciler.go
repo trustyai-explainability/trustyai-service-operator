@@ -116,7 +116,7 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// An empty enabledServices object means that all TrustyAI service workloads
 	// are enabled for platform-managed module CRs, which do not currently
 	// project per-service selections.
-	enabledServices := effectiveEnabledServices(module.Spec.EnabledServices)
+	enabledServices := effectiveEnabledServices(module.Spec.EnabledServices, module.Spec.MCPGuardrailsMode)
 
 	// Build the condition manager for this reconcile cycle.
 	condMgr := r.newConditionManager(module)
@@ -263,7 +263,10 @@ func (r *TrustyAIModuleReconciler) handleRemoval(ctx context.Context, module *pl
 	return ctrl.Result{}, nil
 }
 
-func effectiveEnabledServices(es platformv1alpha1.EnabledServices) platformv1alpha1.EnabledServices {
+func effectiveEnabledServices(es platformv1alpha1.EnabledServices, mcpMode bool) platformv1alpha1.EnabledServices {
+	if mcpMode {
+		return platformv1alpha1.EnabledServices{NemoGuardrails: true}
+	}
 	if es == (platformv1alpha1.EnabledServices{}) {
 		return platformv1alpha1.EnabledServices{
 			TAS:            true,
@@ -433,7 +436,7 @@ func (r *TrustyAIModuleReconciler) reconcileComponent(
 		return nil
 	}
 
-	objs, err := RenderManifests(ctx, r.ManifestsTemplatePath, r.Namespace)
+	objs, err := RenderManifests(ctx, r.ManifestsTemplatePath, r.Namespace, module.Spec.MCPGuardrailsMode)
 	if err != nil {
 		condMgr.MarkFalse(string(common.ConditionTypeProvisioningSucceeded),
 			conditions.WithReason("RenderFailed"),

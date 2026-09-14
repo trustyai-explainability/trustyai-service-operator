@@ -46,6 +46,10 @@ type TrustyAISpec struct {
 	EnabledServices EnabledServices `json:"enabledServices,omitempty"`
 	// +optional
 	Eval EvalConfig `json:"eval,omitempty"`
+	// MCPGuardrailsMode deploys only the NeMo Guardrails service. It takes
+	// precedence over EnabledServices when enabled.
+	// +optional
+	MCPGuardrailsMode bool `json:"mcpGuardrailsMode,omitempty"`
 }
 
 // TrustyAIStatus defines the observed state of TrustyAI module
