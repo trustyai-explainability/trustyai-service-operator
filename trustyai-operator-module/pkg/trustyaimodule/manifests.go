@@ -31,8 +31,10 @@ func manifestsTarget() string {
 }
 
 var (
-	copyOnce sync.Once
-	copyErr  error
+	copyOnce           sync.Once
+	copyErr            error
+	stagedManifestsDir string
+	manifestsMu        sync.Mutex
 )
 
 // EnsureManifests copies templatePath to a writable location once per process.
@@ -43,6 +45,7 @@ var (
 func EnsureManifests(templatePath string, mcpMode bool) (string, error) {
 	copyOnce.Do(func() {
 		dst := manifestsTarget()
+		stagedManifestsDir = dst
 		if err := os.RemoveAll(dst); err != nil && !os.IsNotExist(err) {
 			copyErr = fmt.Errorf("clearing manifests target %s: %w", dst, err)
 			return
@@ -55,7 +58,7 @@ func EnsureManifests(templatePath string, mcpMode bool) (string, error) {
 		return "", copyErr
 	}
 
-	overlay := selectOverlay(manifestsTarget(), mcpMode)
+	overlay := selectOverlay(stagedManifestsDir, mcpMode)
 	if err := applyParams(overlay); err != nil {
 		return "", fmt.Errorf("applying image params to overlay %s: %w", overlay, err)
 	}
@@ -115,6 +118,10 @@ func applyParams(overlayDir string) error {
 // Kustomize overlay into a list of unstructured resources, injecting
 // namespace into all namespaced resources.
 func RenderManifests(ctx context.Context, templatePath, namespace string, mcpMode bool) ([]unstructured.Unstructured, error) {
+	// Ensure params.env cannot be rewritten while kustomize is reading it.
+	manifestsMu.Lock()
+	defer manifestsMu.Unlock()
+
 	logger := log.FromContext(ctx)
 
 	overlay, err := EnsureManifests(templatePath, mcpMode)
