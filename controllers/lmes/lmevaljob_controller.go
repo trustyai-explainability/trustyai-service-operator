@@ -386,11 +386,17 @@ func (r *LMEvalJobReconciler) updateStatus(ctx context.Context, log logr.Logger,
 			// Main container not found, pod still initialising
 			log.Info("ignoring Complete status from driver - pod still initialising", "podName", job.GetPodName())
 			return nil
-		} else if pod.Status.ContainerStatuses[mainIdx].State.Running == nil {
-			// Main container not running, pod still initialising
+		} else if pod.Status.ContainerStatuses[mainIdx].State.Waiting != nil {
+			// Main container still initialising (pulling image, PodInitializing)
 			log.Info("ignoring Complete status from driver - pod not running yet", "podName", job.GetPodName())
 			return nil
+		} else if pod.Status.ContainerStatuses[mainIdx].State.Running == nil &&
+			pod.Status.ContainerStatuses[mainIdx].State.Terminated == nil {
+			// All state fields nil — kubelet hasn't synced yet, ignore for now
+			log.Info("ignoring Complete status from driver - container state unknown", "podName", job.GetPodName())
+			return nil
 		}
+		// Container is Running or Terminated — accept the Complete status
 	}
 
 	// driver only provides updates for these fields
@@ -585,15 +591,33 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 	currentTime := v1.Now()
 	pod := CreatePod(Options, job, permConfig, caBundle, caBundleKey, log)
 	if err := r.Create(ctx, pod, &client.CreateOptions{}); err != nil {
-		// Failed to create the pod. Mark the status as complete with failed
-		job.Status.State = lmesv1alpha1.CompleteJobState
-		job.Status.Reason = lmesv1alpha1.FailedReason
-		job.Status.Message = err.Error()
-		if err := r.Status().Update(ctx, job); err != nil {
-			log.Error(err, "unable to update LMEvalJob status for pod creation failure")
+		if apierrors.IsAlreadyExists(err) {
+			// Pod already exists from a previous reconcile attempt. Verify it
+			// belongs to this job before proceeding.
+			existingPod, getErr := r.getPod(ctx, job)
+			if getErr != nil {
+				log.Error(getErr, "pod AlreadyExists but cannot fetch it — possible name collision")
+				job.Status.State = lmesv1alpha1.CompleteJobState
+				job.Status.Reason = lmesv1alpha1.FailedReason
+				job.Status.Message = fmt.Sprintf("pod name collision: %v", getErr)
+				if err := r.Status().Update(ctx, job); err != nil {
+					log.Error(err, "unable to update LMEvalJob status for pod collision")
+				}
+				return ctrl.Result{}, getErr
+			}
+			log.Info("pod already exists with valid ownership, proceeding to set Scheduled state",
+				"podName", existingPod.Name, "podPhase", existingPod.Status.Phase)
+		} else {
+			// Genuine pod creation failure
+			job.Status.State = lmesv1alpha1.CompleteJobState
+			job.Status.Reason = lmesv1alpha1.FailedReason
+			job.Status.Message = err.Error()
+			if err := r.Status().Update(ctx, job); err != nil {
+				log.Error(err, "unable to update LMEvalJob status for pod creation failure")
+			}
+			log.Error(err, "Failed to create pod for the LMEvalJob", "name", job.Name)
+			return ctrl.Result{}, err
 		}
-		log.Error(err, "Failed to create pod for the LMEvalJob", "name", job.Name)
-		return ctrl.Result{}, err
 	}
 
 	// Create metrics
@@ -648,10 +672,32 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 		}
 		log.Info("detect an error on the job's pod. marked the job as done", "name", job.GetPodName())
 		return ctrl.Result{}, err
-	} else if pod.Status.ContainerStatuses[mainIdx].State.Running == nil {
-		// Pod is not running yet, don't accept completion status from driver
-		// This prevents the driver from marking the job as complete during pod initialisation
+	} else if pod.Status.ContainerStatuses[mainIdx].State.Waiting != nil {
+		// Container is still initialising (e.g., pulling image, PodInitializing)
 		log.Info("pod not running yet, skipping status update from driver", "podName", job.GetPodName())
+		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
+	} else if t := pod.Status.ContainerStatuses[mainIdx].State.Terminated; t != nil {
+		if t.ExitCode == 0 {
+			// Container terminated successfully. The driver exited before the
+			// operator could poll its status. Transition directly to Complete.
+			log.Info("main container terminated successfully before status was polled", "podName", job.GetPodName())
+			job.Status.State = lmesv1alpha1.CompleteJobState
+			job.Status.Reason = lmesv1alpha1.SucceedReason
+			job.Status.Message = "job completed (driver exited before status poll)"
+			return r.handleComplete(ctx, log, job)
+		}
+		// Non-zero exit that isContainerFailed didn't catch — treat as failure
+		log.Info("main container terminated with unexpected exit code", "podName", job.GetPodName(), "exitCode", t.ExitCode)
+		job.Status.State = lmesv1alpha1.CompleteJobState
+		job.Status.Reason = lmesv1alpha1.FailedReason
+		job.Status.Message = fmt.Sprintf("container terminated with exit code %d", t.ExitCode)
+		if err := r.Status().Update(ctx, job); err != nil {
+			log.Error(err, "unable to update LMEvalJob status for unexpected termination")
+		}
+		return ctrl.Result{}, nil
+	} else if pod.Status.ContainerStatuses[mainIdx].State.Running == nil {
+		// All state fields nil — kubelet hasn't synced yet, requeue
+		log.Info("container state unknown, requeueing", "podName", job.GetPodName())
 		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
 	}
 
