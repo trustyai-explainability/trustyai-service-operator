@@ -12,44 +12,47 @@ import (
 
 // Image key constants matching ConfigMap keys
 const (
-	TrustyAIServiceImageKey           = "trustyaiServiceImage"
-	EvalHubImageKey                   = "evalHubImage"
-	KubeRBACProxyKey                  = "kube-rbac-proxy"
-	LMESPodImageKey                   = "lmes-pod-image"
-	LMESDriverImageKey                = "lmes-driver-image"
-	GuardrailsOrchestratorImageKey    = "guardrails-orchestrator-image"
-	GuardrailsBuiltInDetectorImageKey = "guardrails-built-in-detector-image"
-	GuardrailsSidecarGatewayImageKey  = "guardrails-sidecar-gateway-image"
-	GarakProviderImageKey             = "garak-provider-image"
-	NemoGuardrailsImageKey            = "nemo-guardrails-image"
+	TrustyAIServiceImageKey            = "trustyaiServiceImage"
+	EvalHubImageKey                    = "evalHubImage"
+	KubeRBACProxyKey                   = "kube-rbac-proxy"
+	LMESPodImageKey                    = "lmes-pod-image"
+	LMESDriverImageKey                 = "lmes-driver-image"
+	GuardrailsOrchestratorImageKey     = "guardrails-orchestrator-image"
+	GuardrailsBuiltInDetectorImageKey  = "guardrails-built-in-detector-image"
+	GuardrailsSidecarGatewayImageKey   = "guardrails-sidecar-gateway-image"
+	GarakProviderImageKey              = "garak-provider-image"
+	NemoGuardrailsImageKey             = "nemo-guardrails-image"
+	NemoGuardrailsReverseProxyImageKey = "nemo-guardrails-reverse-proxy-image"
 )
 
 // Operand image env vars injected by the ODH platform operator at deploy time
 const (
-	RelatedImageTrustyAIService         = "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_PY_IMAGE"
-	RelatedImageEvalHub                 = "RELATED_IMAGE_ODH_EVAL_HUB_IMAGE"
-	RelatedImageKubeRBACProxy           = "RELATED_IMAGE_ODH_KUBE_RBAC_PROXY_IMAGE"
-	RelatedImageLMESJob                 = "RELATED_IMAGE_ODH_TA_LMES_JOB_IMAGE"
-	RelatedImageLMESDriver              = "RELATED_IMAGE_ODH_TA_LMES_DRIVER_IMAGE"
-	RelatedImageGuardrailsOrchestrator  = "RELATED_IMAGE_ODH_FMS_GUARDRAILS_ORCHESTRATOR_IMAGE"
-	RelatedImageBuiltInDetector         = "RELATED_IMAGE_ODH_BUILT_IN_DETECTOR_IMAGE"
-	RelatedImageVLLMOrchestratorGateway = "RELATED_IMAGE_ODH_TRUSTYAI_VLLM_ORCHESTRATOR_GATEWAY_IMAGE"
-	RelatedImageGarakLLSProviderDSP     = "RELATED_IMAGE_ODH_TRUSTYAI_GARAK_LLS_PROVIDER_DSP_IMAGE"
-	RelatedImageNemoGuardrailsServer    = "RELATED_IMAGE_ODH_TRUSTYAI_NEMO_GUARDRAILS_SERVER_IMAGE"
+	RelatedImageTrustyAIService            = "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_PY_IMAGE"
+	RelatedImageEvalHub                    = "RELATED_IMAGE_ODH_EVAL_HUB_IMAGE"
+	RelatedImageKubeRBACProxy              = "RELATED_IMAGE_ODH_KUBE_RBAC_PROXY_IMAGE"
+	RelatedImageLMESJob                    = "RELATED_IMAGE_ODH_TA_LMES_JOB_IMAGE"
+	RelatedImageLMESDriver                 = "RELATED_IMAGE_ODH_TA_LMES_DRIVER_IMAGE"
+	RelatedImageGuardrailsOrchestrator     = "RELATED_IMAGE_ODH_FMS_GUARDRAILS_ORCHESTRATOR_IMAGE"
+	RelatedImageBuiltInDetector            = "RELATED_IMAGE_ODH_BUILT_IN_DETECTOR_IMAGE"
+	RelatedImageVLLMOrchestratorGateway    = "RELATED_IMAGE_ODH_TRUSTYAI_VLLM_ORCHESTRATOR_GATEWAY_IMAGE"
+	RelatedImageGarakLLSProviderDSP        = "RELATED_IMAGE_ODH_TRUSTYAI_GARAK_LLS_PROVIDER_DSP_IMAGE"
+	RelatedImageNemoGuardrailsServer       = "RELATED_IMAGE_ODH_TRUSTYAI_NEMO_GUARDRAILS_SERVER_IMAGE"
+	RelatedImageNemoGuardrailsReverseProxy = "RELATED_IMAGE_ODH_TRUSTYAI_NEMO_GUARDRAILS_REVERSE_PROXY_IMAGE"
 )
 
 // imageMapping maps ConfigMap keys to their corresponding RELATED_IMAGE_* environment variable names
 var imageMapping = map[string]string{
-	TrustyAIServiceImageKey:           RelatedImageTrustyAIService,
-	EvalHubImageKey:                   RelatedImageEvalHub,
-	KubeRBACProxyKey:                  RelatedImageKubeRBACProxy,
-	LMESPodImageKey:                   RelatedImageLMESJob,
-	LMESDriverImageKey:                RelatedImageLMESDriver,
-	GuardrailsOrchestratorImageKey:    RelatedImageGuardrailsOrchestrator,
-	GuardrailsBuiltInDetectorImageKey: RelatedImageBuiltInDetector,
-	GuardrailsSidecarGatewayImageKey:  RelatedImageVLLMOrchestratorGateway,
-	GarakProviderImageKey:             RelatedImageGarakLLSProviderDSP,
-	NemoGuardrailsImageKey:            RelatedImageNemoGuardrailsServer,
+	TrustyAIServiceImageKey:            RelatedImageTrustyAIService,
+	EvalHubImageKey:                    RelatedImageEvalHub,
+	KubeRBACProxyKey:                   RelatedImageKubeRBACProxy,
+	LMESPodImageKey:                    RelatedImageLMESJob,
+	LMESDriverImageKey:                 RelatedImageLMESDriver,
+	GuardrailsOrchestratorImageKey:     RelatedImageGuardrailsOrchestrator,
+	GuardrailsBuiltInDetectorImageKey:  RelatedImageBuiltInDetector,
+	GuardrailsSidecarGatewayImageKey:   RelatedImageVLLMOrchestratorGateway,
+	GarakProviderImageKey:              RelatedImageGarakLLSProviderDSP,
+	NemoGuardrailsImageKey:             RelatedImageNemoGuardrailsServer,
+	NemoGuardrailsReverseProxyImageKey: RelatedImageNemoGuardrailsReverseProxy,
 }
 
 // GetImageFromConfigMap is the legacy function signature that now uses the unified resolver.

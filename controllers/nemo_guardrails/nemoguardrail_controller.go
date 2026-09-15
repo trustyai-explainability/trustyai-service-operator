@@ -137,12 +137,46 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
+	// ====== Deploy user-mapping configmap if needed ===================================================================
+	var userMappingCM *corev1.ConfigMap
+	if utils.RequiresAuth(nemoGuardrails) {
+		configMapping := make(map[string][]string)
+		for _, config := range nemoGuardrails.Spec.NemoConfigs {
+			if config.Usernames != nil && len(config.Usernames) > 0 {
+				configMapping[config.Name] = config.Usernames
+			}
+		}
+
+		if len(configMapping) > 0 {
+			configUserMappingCM, err := utils.DefineYAMLConfigMap(nemoGuardrails.Name+"-user-mapping", nemoGuardrails.Namespace, configMapping)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			existingCM, newlyCreated, err := utils.ReconcileGenericManuallyDefined[*corev1.ConfigMap](ctx, r.Client, utils.ConfigMapResourceKind, nemoGuardrails, configUserMappingCM)
+			if err != nil {
+				utils.LogInfoCreating(ctx, "configMap", nemoGuardrails.Name+"-user-mapping", nemoGuardrails.Namespace)
+				return ctrl.Result{}, err
+			}
+
+			// if the configmap already existed on the system, make sure it has the correct values
+			if !newlyCreated && existingCM != nil {
+				err = utils.CompareAndUpdateConfigmap(ctx, r.Client, existingCM, configUserMappingCM)
+				if err != nil {
+					utils.LogErrorUpdating(ctx, err, "configMap", nemoGuardrails.Name+"-user-mapping", nemoGuardrails.Namespace)
+					return ctrl.Result{}, err
+				}
+			}
+			// existingCM will equal configUserMappingCM if newlyCreated is true, or if CompareAndUpdate was called
+			userMappingCM = existingCM
+		}
+	}
+
 	// ====== Create deployment ========================================================================================
 	existingDeployment := &appsv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Name: nemoGuardrails.Name, Namespace: nemoGuardrails.Namespace}, existingDeployment)
 	if err != nil && errors.IsNotFound(err) {
 		// Create a new deployment
-		deployment, err := r.createDeployment(ctx, nemoGuardrails, caBundleInitContainerConfig, configMapsToMount)
+		deployment, err := r.createDeployment(ctx, nemoGuardrails, caBundleInitContainerConfig, configMapsToMount, userMappingCM)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -158,7 +192,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	} else {
 		// Deployment exists - update only if the spec actually changed
-		deployment, err := r.createDeployment(ctx, nemoGuardrails, caBundleInitContainerConfig, configMapsToMount)
+		deployment, err := r.createDeployment(ctx, nemoGuardrails, caBundleInitContainerConfig, configMapsToMount, userMappingCM)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
