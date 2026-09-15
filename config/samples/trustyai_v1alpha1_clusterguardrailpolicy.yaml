@@ -1,0 +1,24 @@
+apiVersion: trustyai.opendatahub.io/v1alpha1
+kind: ClusterGuardrailPolicy
+metadata:
+  name: test-guardrails
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: openshift-ai-inference
+  targetNamespace: openshift-ingress
+  guardrails:
+    nemoGuardrails:
+      nemoConfigs:
+        - name: content-safety
+          configMaps:
+            - test-guardrail-config
+          default: true
+      replicas: 1
+    inputGuard:
+      enabled: true
+      timeoutSeconds: 30
+    outputGuard:
+      enabled: true
+      timeoutSeconds: 60
