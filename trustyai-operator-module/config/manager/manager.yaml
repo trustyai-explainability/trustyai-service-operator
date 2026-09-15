@@ -53,5 +53,16 @@ spec:
             capabilities:
               drop:
                 - ALL
+          volumeMounts:
+            - name: manifests
+              mountPath: /opt/manifests
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: manifests
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: tmp
+          emptyDir: {}
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
