@@ -51,7 +51,7 @@ func EnsureManifests(templatePath string) (string, error) {
 }
 
 func stageManifests(src, dst string) (string, error) {
-	if err := os.RemoveAll(dst); err != nil && !os.IsNotExist(err) {
+	if err := clearDir(dst); err != nil {
 		return "", fmt.Errorf("clearing manifests target %s: %w", dst, err)
 	}
 	if err := copyDir(src, dst); err != nil {
@@ -230,6 +230,24 @@ func injectEnabledServices(objs []unstructured.Unstructured, es platformv1alpha1
 		}
 	}
 
+	return nil
+}
+
+// clearDir removes all entries inside dir without deleting the directory
+// itself. This is required when dir is a volume mount point.
+func clearDir(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return os.MkdirAll(dir, 0o755)
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
