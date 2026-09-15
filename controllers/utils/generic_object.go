@@ -152,3 +152,50 @@ func ReconcileGeneric[T client.Object](ctx context.Context, c client.Client, own
 	// object already existed, return the existingObj and false
 	return existingObj, false, nil
 }
+
+// DeleteGeneric deletes a generic object of type T from the cluster.
+// If owner is non-nil, the object is only deleted if it has an owner reference pointing to owner.
+/*
+T must be a pointer to a k8s object, e.g., *corev1.ConfigMap
+
+Returns:
+- a boolean flag indicating whether the object exists/existed on the cluster
+- any error
+*/
+func DeleteGeneric[T client.Object](ctx context.Context, c client.Client, owner metav1.Object, resourceKind string, config GenericConfig) (bool, error) {
+	// Allocate a new pointer to the struct that T points to, and cast to T
+	// e.g., replaces existingRoute := &routev1.Route{}
+	var existingObj T
+	tType := reflect.TypeOf((*T)(nil)).Elem()
+	if tType.Kind() != reflect.Ptr {
+		return false, fmt.Errorf("T must be a pointer type")
+	}
+	existingObjValue := reflect.New(tType.Elem())
+	existingObj = existingObjValue.Interface().(T)
+
+	// attempt to retrieve a matching object from the cluster
+	err := c.Get(ctx, types.NamespacedName{Name: *config.Name, Namespace: *config.Namespace}, existingObj)
+	if err != nil && errors.IsNotFound(err) {
+		return false, nil
+	} else if err != nil {
+		LogErrorRetrieving(ctx, err, resourceKind, *config.Name, *config.Namespace)
+		return true, err
+	}
+
+	if owner != nil && !isControlledBy(existingObj, owner) {
+		return false, nil
+	}
+
+	err = c.Delete(ctx, existingObj)
+	if err != nil {
+		LogErrorVerb(ctx, err, "deleting", resourceKind, *config.Name, *config.Namespace)
+		return true, err
+	}
+	return true, nil
+}
+
+// isControlledBy reports whether obj's controller owner reference points to the proviced owner.
+func isControlledBy(obj metav1.Object, owner metav1.Object) bool {
+	ref := metav1.GetControllerOf(obj)
+	return ref != nil && ref.UID == owner.GetUID()
+}

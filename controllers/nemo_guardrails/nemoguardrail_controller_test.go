@@ -2,6 +2,7 @@ package nemo_guardrails
 
 import (
 	"context"
+	routev1 "github.com/openshift/api/route/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/tas"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -565,5 +566,126 @@ var _ = Describe("NemoGuardrails Controller", func() {
 			crb := &rbacv1.ClusterRoleBinding{}
 			return k8sClient.Get(ctx, types.NamespacedName{Name: crbName, Namespace: namespace}, crb)
 		}, time.Second*10, time.Millisecond*100).Should(Succeed())
+	})
+
+	It("should not delete an unrelated route that shares the CR name", func() {
+		const collisionName = "nemoguardrails-collision"
+		collisionKey := types.NamespacedName{Name: collisionName, Namespace: namespace}
+
+		By("Pre-creating an unrelated Route with no owner reference")
+		unrelatedRoute := &routev1.Route{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      collisionName,
+				Namespace: namespace,
+			},
+			Spec: routev1.RouteSpec{
+				To: routev1.RouteTargetReference{
+					Kind: "Service",
+					Name: "some-other-service",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, unrelatedRoute)).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, unrelatedRoute)
+		})
+
+		By("Creating a NemoGuardrails CR with the same name and exposeRoute=false")
+		exposeFalse := false
+		collisionCR := &nemoguardrailsv1alpha1.NemoGuardrails{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      collisionName,
+				Namespace: namespace,
+				Annotations: map[string]string{
+					constants.AuthAnnotationKey: "true",
+				},
+			},
+			Spec: nemoguardrailsv1alpha1.NemoGuardrailsSpec{
+				NemoConfigs: []nemoguardrailsv1alpha1.NemoConfig{
+					{Name: "nemo-config", ConfigMaps: []string{"nemo-config"}, Default: true},
+				},
+				ExposeRoute: &exposeFalse,
+			},
+		}
+		Expect(k8sClient.Create(ctx, collisionCR)).To(Succeed())
+		DeferCleanup(func() {
+			cr := &nemoguardrailsv1alpha1.NemoGuardrails{}
+			if err := k8sClient.Get(ctx, collisionKey, cr); err == nil {
+				_ = k8sClient.Delete(ctx, cr)
+				controllerReconciler := &NemoGuardrailsReconciler{
+					Client:    k8sClient,
+					Scheme:    k8sClient.Scheme(),
+					Namespace: operatorNamespace,
+				}
+				_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: collisionKey})
+			}
+		})
+
+		By("Reconciling with exposeRoute=false")
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: collisionKey})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Verifying the unrelated Route was not deleted")
+		Consistently(func() error {
+			route := &routev1.Route{}
+			return k8sClient.Get(ctx, collisionKey, route)
+		}, time.Second*3, time.Millisecond*250).Should(Succeed())
+	})
+
+	It("should delete the route when exposeRoute is patched from true to false", func() {
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+
+		routeKey := types.NamespacedName{Name: resourceName, Namespace: namespace}
+
+		By("Removing any pre-existing route left by prior specs")
+		staleRoute := &routev1.Route{}
+		if err := k8sClient.Get(ctx, routeKey, staleRoute); err == nil {
+			Expect(k8sClient.Delete(ctx, staleRoute)).To(Succeed())
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, routeKey, staleRoute)
+				return errors.IsNotFound(err)
+			}, time.Second*5, time.Millisecond*100).Should(BeTrue())
+		}
+
+		By("Setting exposeRoute=true and reconciling")
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
+		exposeTrue := true
+		nemo.Spec.ExposeRoute = &exposeTrue
+		Expect(k8sClient.Update(ctx, nemo)).To(Succeed())
+
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Verifying the Route was created")
+		Eventually(func() error {
+			route := &routev1.Route{}
+			return k8sClient.Get(ctx, routeKey, route)
+		}, time.Second*10, time.Millisecond*100).Should(Succeed())
+
+		By("Patching exposeRoute=false and reconciling")
+		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
+		exposeFalse := false
+		nemo.Spec.ExposeRoute = &exposeFalse
+		Expect(k8sClient.Update(ctx, nemo)).To(Succeed())
+
+		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Verifying the Route was deleted")
+		Eventually(func() bool {
+			route := &routev1.Route{}
+			err := k8sClient.Get(ctx, routeKey, route)
+			return errors.IsNotFound(err)
+		}, time.Second*10, time.Millisecond*100).Should(BeTrue())
 	})
 })
