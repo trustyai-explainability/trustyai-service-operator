@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"time"
 
+	common "github.com/opendatahub-io/odh-platform-utilities/api/common"
+	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
+	"github.com/trustyai-explainability/trustyai-operator-module/pkg/trustyaimodule"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,8 +22,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
 )
 
 const (
@@ -35,9 +36,23 @@ const (
 	// InstanceName is the only name the singleton CRD's CEL rule accepts.
 	InstanceName = "default-trustyai"
 
+	// WorkloadOperatorDeploymentName is the trustyai-service-operator Deployment
+	// the module operator deploys into the applications namespace.
+	WorkloadOperatorDeploymentName = trustyaimodule.OperatorDeploymentName
+
+	// WorkloadOperatorMetricsServiceName is the metrics Service fronting the
+	// deployed workload operator's kube-rbac-proxy.
+	WorkloadOperatorMetricsServiceName = "trustyai-service-operator-controller-manager-metrics-service"
+
 	pollInterval = 2 * time.Second
 	pollTimeout  = 2 * time.Minute
 )
+
+var trustyAIServiceGVK = schema.GroupVersionKind{
+	Group:   "trustyai.opendatahub.io",
+	Version: "v1",
+	Kind:    "TrustyAIService",
+}
 
 // prometheusGVK matches dependencies.go's required-dependency check. The live
 // cluster has no Prometheus operator, so the lifecycle test seeds a bare
@@ -98,7 +113,84 @@ func SetupTestEnv() error {
 func newManagedTrustyAI(name string) *platformv1alpha1.TrustyAI {
 	return &platformv1alpha1.TrustyAI{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec: platformv1alpha1.TrustyAISpec{
+			ManagementSpec: common.ManagementSpec{
+				ManagementState: common.Managed,
+			},
+		},
 	}
+}
+
+func newTASOnlyModule(name string) *platformv1alpha1.TrustyAI {
+	module := newManagedTrustyAI(name)
+	module.Spec.EnabledServices = platformv1alpha1.EnabledServices{TAS: true}
+	return module
+}
+
+func createHealthyTrustyAIService(ctx context.Context, namespace, name string) error {
+	operand := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "trustyai.opendatahub.io/v1",
+		"kind":       "TrustyAIService",
+		"metadata": map[string]interface{}{
+			"name":      name,
+			"namespace": namespace,
+		},
+		"spec": map[string]interface{}{
+			"metrics": map[string]interface{}{"schedule": "0 0 * * *"},
+			"storage": map[string]interface{}{"format": "PVC"},
+		},
+	}}
+	operand.SetGroupVersionKind(trustyAIServiceGVK)
+	if err := k8sClient.Create(ctx, operand); err != nil {
+		return err
+	}
+	status := operand.DeepCopy()
+	if err := unstructured.SetNestedSlice(status.Object, []interface{}{
+		map[string]interface{}{
+			"type":   "Ready",
+			"status": "True",
+			"reason": "Available",
+		},
+	}, "status", "conditions"); err != nil {
+		return err
+	}
+	return k8sClient.Status().Update(ctx, status)
+}
+
+func waitForModulePhase(ctx context.Context, phase common.Phase) error {
+	return wait.PollUntilContextTimeout(ctx, pollInterval, pollTimeout, true, func(ctx context.Context) (bool, error) {
+		module, err := getModule(ctx)
+		if err != nil {
+			return false, err
+		}
+		return module.Status.Phase == phase, nil
+	})
+}
+
+func waitForModuleCondition(ctx context.Context, condType string, status metav1.ConditionStatus) error {
+	return wait.PollUntilContextTimeout(ctx, pollInterval, pollTimeout, true, func(ctx context.Context) (bool, error) {
+		module, err := getModule(ctx)
+		if err != nil {
+			return false, err
+		}
+		for i := range module.Status.Conditions {
+			cond := module.Status.Conditions[i]
+			if cond.Type == condType && cond.Status == status {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+}
+
+func waitForResource(ctx context.Context, key types.NamespacedName, obj client.Object) error {
+	return wait.PollUntilContextTimeout(ctx, pollInterval, pollTimeout, true, func(ctx context.Context) (bool, error) {
+		err := k8sClient.Get(ctx, key, obj)
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return err == nil, err
+	})
 }
 
 // requireDeploymentReady polls until the named Deployment has at least one
