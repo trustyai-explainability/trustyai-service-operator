@@ -8,7 +8,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	common "github.com/opendatahub-io/odh-platform-utilities/api/common"
+	"github.com/opendatahub-io/odh-platform-utilities/pkg/deploy"
 	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -37,6 +39,30 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 			EventRecorder:         record.NewFakeRecorder(100),
 			SkipDependencyChecks:  true,
 		}
+	}
+
+	newReconcilerWithDeployer := func() *TrustyAIModuleReconciler {
+		r := newReconciler()
+		r.Deployer = deploy.NewDeployer(
+			deploy.WithFieldOwner(FieldManagerModule),
+			deploy.WithApplyOrder(),
+			deploy.WithExcludeFromOwnership(
+				rbacv1.SchemeGroupVersion.WithKind("ClusterRole"),
+				rbacv1.SchemeGroupVersion.WithKind("ClusterRoleBinding"),
+			),
+		)
+		return r
+	}
+
+	reconcileUntilCurrent := func(r *TrustyAIModuleReconciler) {
+		Eventually(func() bool {
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+
+			module := &platformv1alpha1.TrustyAI{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
+			return module.Status.ObservedGeneration == module.Generation
+		}, 30*time.Second, 200*time.Millisecond).Should(BeTrue())
 	}
 
 	AfterEach(func() {
@@ -126,6 +152,29 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 			Expect(degradedCond).NotTo(BeNil())
 			Expect(degradedCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(degradedCond.Reason).To(Equal("WaitingForOperands"))
+		})
+
+		It("reports Ready when the only enabled service has a healthy operand", func() {
+			module := &platformv1alpha1.TrustyAI{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
+			module.Spec.EnabledServices = platformv1alpha1.EnabledServices{TAS: true}
+			Expect(k8sClient.Update(ctx, module)).To(Succeed())
+			Expect(createHealthyTrustyAIService(ctx, k8sClient, testNamespace, "healthy-tas")).To(Succeed())
+			DeferCleanup(func() {
+				operand := newTrustyAIService(testNamespace, "healthy-tas")
+				_ = k8sClient.Delete(ctx, operand)
+			})
+
+			r := newReconciler()
+			reconcileUntilCurrent(r)
+
+			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
+			Expect(module.Status.Phase).To(Equal(common.PhaseReady))
+
+			readyCond := findCondition(module.Status.Conditions, string(common.ConditionTypeReady))
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCond.Reason).To(Or(Equal("AllServicesHealthy"), Equal("AllDependentsHealthy")))
 		})
 
 		It("reports an explicitly enabled service as unhealthy when its workload is absent", func() {
@@ -232,10 +281,15 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 			Expect(errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: clusterRoleBindingName}, crb))).To(BeTrue())
 		})
 
-		It("sets Ready=False and Degraded=False when ManagementState is Removed", func() {
+		It("removes the DSC ConfigMap and sets Removed status when ManagementState is Removed", func() {
 			r := newReconciler()
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 			Expect(err).NotTo(HaveOccurred())
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+
+			cm := &corev1.ConfigMap{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: DSCConfigMapName, Namespace: testNamespace}, cm)).To(Succeed())
 
 			module := &platformv1alpha1.TrustyAI{}
 			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
@@ -244,6 +298,8 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 
 			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 			Expect(err).NotTo(HaveOccurred())
+
+			Expect(errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: DSCConfigMapName, Namespace: testNamespace}, cm))).To(BeTrue())
 
 			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
 			Expect(module.Status.Phase).To(Equal(common.PhaseNotReady))
@@ -258,8 +314,92 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 			Expect(degradedCond).NotTo(BeNil())
 			Expect(degradedCond.Status).To(Equal(metav1.ConditionFalse))
 		})
+
+		It("reflects enabledServices changes in the deployed operator arguments", func() {
+			r := newReconcilerWithDeployer()
+			reconcileUntilCurrent(r)
+
+			dep := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: OperatorDeploymentName, Namespace: testNamespace,
+			}, dep)).To(Succeed())
+			Expect(deploymentEnableServicesArg(dep)).To(Equal("--enable-services=TAS,LMES,EVALHUB,GORCH,NEMO_GUARDRAILS"))
+
+			module := &platformv1alpha1.TrustyAI{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
+			module.Spec.EnabledServices = platformv1alpha1.EnabledServices{TAS: true, LMES: true}
+			Expect(k8sClient.Update(ctx, module)).To(Succeed())
+
+			reconcileUntilCurrent(r)
+
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: OperatorDeploymentName, Namespace: testNamespace,
+			}, dep)).To(Succeed())
+			Expect(deploymentEnableServicesArg(dep)).To(Equal("--enable-services=TAS,LMES"))
+		})
+
+		It("records the module operator version in status.releases", func() {
+			Version = "test-module-1.2.3"
+			DeferCleanup(func() { Version = "unknown" })
+
+			r := newReconciler()
+			reconcileUntilCurrent(r)
+
+			module := &platformv1alpha1.TrustyAI{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
+			release := module.Status.GetRelease("trustyai-operator-module")
+			Expect(release).NotTo(BeNil())
+			Expect(release.Version).To(Equal("test-module-1.2.3"))
+		})
+
+		It("updates the platform release when the platform version changes", func() {
+			platformCM := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: PlatformConfigMapName, Namespace: testNamespace},
+				Data:       map[string]string{PlatformVersionKey: "3.5.0"},
+			}
+			Expect(k8sClient.Create(ctx, platformCM)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, platformCM)).To(Succeed())
+			})
+
+			r := newReconciler()
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+
+			module := &platformv1alpha1.TrustyAI{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
+			Expect(module.Status.GetPlatformRelease()).To(Equal("3.5.0"))
+
+			platformCM.Data[PlatformVersionKey] = "3.6.0"
+			Expect(k8sClient.Update(ctx, platformCM)).To(Succeed())
+
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
+			Expect(module.Status.GetPlatformRelease()).To(Equal("3.6.0"))
+		})
 	})
 })
+
+func deploymentEnableServicesArg(dep *appsv1.Deployment) string {
+	for i := range dep.Spec.Template.Spec.Containers {
+		container := dep.Spec.Template.Spec.Containers[i]
+		if container.Name != ManagerContainerName {
+			continue
+		}
+		for _, arg := range container.Args {
+			if len(arg) > len("--enable-services=") && arg[:len("--enable-services=")] == "--enable-services=" {
+				return arg
+			}
+		}
+	}
+	return ""
+}
 
 func findCondition(conditions []common.Condition, condType string) *common.Condition {
 	for i := range conditions {

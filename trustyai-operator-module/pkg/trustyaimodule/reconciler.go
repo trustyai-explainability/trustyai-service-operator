@@ -86,6 +86,10 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	if module.Spec.ManagementState == common.Removed {
+		return r.handleRemoval(ctx, module)
+	}
+
 	if err := r.adoptInTreeResources(ctx, module); err != nil {
 		logger.Error(err, "Failed to adopt in-tree resources")
 		r.EventRecorder.Event(module, "Warning", "MigrationFailed", fmt.Sprintf("SSA adoption failed: %v", err))
@@ -107,10 +111,6 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	module.Status.ObservedGeneration = module.Generation
 	if module.Status.Phase == "" {
 		module.Status.Phase = common.PhaseNotReady
-	}
-
-	if module.Spec.ManagementState == common.Removed {
-		return r.handleRemoval(ctx, module)
 	}
 
 	// An empty enabledServices object means that all TrustyAI service workloads
@@ -204,15 +204,9 @@ func (r *TrustyAIModuleReconciler) handleDeletion(ctx context.Context, module *p
 		logger.Info("Performing cleanup for TrustyAI module")
 		r.EventRecorder.Event(module, "Normal", "Cleanup", "Starting cleanup for TrustyAI module")
 
-		if err := r.deleteDSCConfigMap(ctx); err != nil {
-			logger.Error(err, "Failed to delete DSC ConfigMap during cleanup")
-			r.EventRecorder.Event(module, "Warning", "CleanupFailed", "Failed to delete DSC ConfigMap during cleanup")
-			return ctrl.Result{}, err
-		}
-
-		if err := r.deleteClusterScopedRBAC(ctx); err != nil {
-			logger.Error(err, "Failed to delete cluster-scoped RBAC during cleanup")
-			r.EventRecorder.Event(module, "Warning", "CleanupFailed", "Failed to delete cluster-scoped RBAC during cleanup")
+		if err := r.cleanupModuleResources(ctx); err != nil {
+			logger.Error(err, "Failed to clean up module resources")
+			r.EventRecorder.Event(module, "Warning", "CleanupFailed", "Failed to clean up module resources")
 			return ctrl.Result{}, err
 		}
 
@@ -230,7 +224,13 @@ func (r *TrustyAIModuleReconciler) handleDeletion(ctx context.Context, module *p
 
 func (r *TrustyAIModuleReconciler) handleRemoval(ctx context.Context, module *platformv1alpha1.TrustyAI) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	logger.Info("TrustyAI module is in Removed state, skipping reconciliation")
+	logger.Info("TrustyAI module is in Removed state, tearing down deployed resources")
+
+	if err := r.cleanupModuleResources(ctx); err != nil {
+		logger.Error(err, "Failed to clean up module resources in Removed state")
+		r.EventRecorder.Event(module, "Warning", "CleanupFailed", "Failed to clean up module resources")
+		return ctrl.Result{}, err
+	}
 
 	condMgr := r.newConditionManager(module)
 	condMgr.MarkFalse(string(common.ConditionTypeReady),
