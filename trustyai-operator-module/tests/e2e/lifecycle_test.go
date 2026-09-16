@@ -70,6 +70,11 @@ func testLifecycle(t *testing.T) {
 
 	t.Run("reports Ready when the enabled operand instance is healthy", func(t *testing.T) {
 		g := gomega.NewWithT(t)
+		g.Expect(requireDeploymentReady(
+			ctx,
+			OperatorNamespace,
+			WorkloadOperatorDeploymentName,
+		)).To(gomega.Succeed())
 		g.Expect(createHealthyTrustyAIService(ctx, OperatorNamespace, "e2e-tas")).To(gomega.Succeed())
 		t.Cleanup(func() {
 			operand := &unstructured.Unstructured{}
