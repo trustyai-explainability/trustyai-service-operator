@@ -10,6 +10,6 @@ import "testing"
 // they run in a fixed order: validation first (does not mutate the singleton
 // CR), then the lifecycle test which creates and tears down the CR.
 func TestE2E(t *testing.T) {
-	t.Run("validation", TestValidation)
-	t.Run("lifecycle", TestLifecycle)
+	t.Run("validation", testValidation)
+	t.Run("lifecycle", testLifecycle)
 }

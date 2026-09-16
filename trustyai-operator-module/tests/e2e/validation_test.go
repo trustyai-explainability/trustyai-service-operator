@@ -11,11 +11,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 )
 
-// TestValidation checks cluster-level preconditions that must hold before the
+// testValidation checks cluster-level preconditions that must hold before the
 // lifecycle test runs: the module operator itself is up, and the CRD's
 // singleton-name admission rule is enforced by the live API server (not just
 // asserted in a unit test against the Go struct/string constant).
-func TestValidation(t *testing.T) {
+func testValidation(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("module operator deployment is ready", func(t *testing.T) {

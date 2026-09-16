@@ -15,12 +15,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// TestLifecycle drives the singleton TrustyAI CR through creation, the
+// testLifecycle drives the singleton TrustyAI CR through creation, the
 // Removed management-state cleanup path, and deletion against a real
 // cluster. It seeds a Prometheus instance first so the required-dependency
 // precondition gate does not block reconciliation before it reaches the DSC
 // ConfigMap this test exercises.
-func TestLifecycle(t *testing.T) {
+func testLifecycle(t *testing.T) {
 	g := gomega.NewWithT(t)
 	ctx := context.Background()
 

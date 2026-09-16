@@ -86,6 +86,10 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	if module.Spec.ManagementState == common.Removed {
+		return r.handleRemoval(ctx, module)
+	}
+
 	if err := r.adoptInTreeResources(ctx, module); err != nil {
 		logger.Error(err, "Failed to adopt in-tree resources")
 		r.EventRecorder.Event(module, "Warning", "MigrationFailed", fmt.Sprintf("SSA adoption failed: %v", err))
@@ -107,10 +111,6 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	module.Status.ObservedGeneration = module.Generation
 	if module.Status.Phase == "" {
 		module.Status.Phase = common.PhaseNotReady
-	}
-
-	if module.Spec.ManagementState == common.Removed {
-		return r.handleRemoval(ctx, module)
 	}
 
 	// An empty enabledServices object means that all TrustyAI service workloads

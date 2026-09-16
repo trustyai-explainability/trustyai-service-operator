@@ -1,4 +1,4 @@
-name: Module E2E test
+name: Tier 2 - Module smoke test
 
 on:
   pull_request:
@@ -47,7 +47,9 @@ jobs:
         run: kind load docker-image ${{ env.TRUSTYAI_MODULE_IMG }}:${{ env.MODULE_TAG }}
 
       - name: Apply external CRDs required by dependency preconditions
-        run: kubectl apply -f tests/crds/monitoring.coreos.com_prometheuses.yaml
+        run: |
+          kubectl apply -f tests/crds/monitoring.coreos.com_prometheuses.yaml
+          kubectl apply -f tests/crds/monitoring.coreos.com_servicemonitors.yaml
 
       - name: Deploy the module operator
         run: |
@@ -85,6 +87,3 @@ jobs:
           echo "::group::Module operator logs"
           kubectl logs -l control-plane=controller-manager -n system --tail=500 || true
           echo "::endgroup::"
-
-env:
-  KUBECONFIG: "${HOME}/.kube/config"
