@@ -1,0 +1,90 @@
+name: Module E2E test
+
+on:
+  pull_request:
+    paths:
+      - 'trustyai-operator-module/**'
+      - 'tests/crds/**'
+      - 'Makefile.trustyai-operator-module.mk'
+      - 'Makefile'
+      - '.github/workflows/trustyai-module-e2e-test.yaml'
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      TRUSTYAI_MODULE_IMG: trustyai-operator-module-controller
+      MODULE_TAG: pr-${{ github.event.pull_request.number || 'default-pr-number' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: trustyai-operator-module/go.mod
+          cache-dependency-path: trustyai-operator-module/go.sum
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push module operator image
+        uses: docker/build-push-action@v6
+        with:
+          context: trustyai-operator-module
+          file: trustyai-operator-module/Dockerfile
+          load: true
+          tags: ${{ env.TRUSTYAI_MODULE_IMG }}:${{ env.MODULE_TAG }}
+          build-args: |
+            VERSION=${{ env.MODULE_TAG }}
+
+      - name: Create k8s Kind Cluster
+        uses: helm/kind-action@v1
+        with:
+          node_image: kindest/node:v1.29.0
+          cluster_name: kind
+
+      - name: Load the module operator image into Kind
+        run: kind load docker-image ${{ env.TRUSTYAI_MODULE_IMG }}:${{ env.MODULE_TAG }}
+
+      - name: Apply external CRDs required by dependency preconditions
+        run: kubectl apply -f tests/crds/monitoring.coreos.com_prometheuses.yaml
+
+      - name: Deploy the module operator
+        run: |
+          kubectl create namespace system
+          make deploy-tom TRUSTYAI_MODULE_IMG=${{ env.TRUSTYAI_MODULE_IMG }} MODULE_TAG=${{ env.MODULE_TAG }}
+
+      - name: Wait for module operator to be ready
+        run: |
+          if ! kubectl wait --for=condition=available --timeout=120s \
+            deployment/trustyai-operator-module-controller-manager -n system; then
+            echo "::group::Module operator diagnostics"
+            kubectl get pods -n system -o wide
+            kubectl describe pod -l control-plane=controller-manager -n system
+            echo "--- Module operator logs ---"
+            kubectl logs -l control-plane=controller-manager -n system --tail=200 || true
+            echo "--- Events ---"
+            kubectl get events -n system --sort-by='.lastTimestamp' || true
+            echo "::endgroup::"
+            exit 1
+          fi
+          echo "Module operator deployment is ready"
+
+      - name: Run module e2e tests
+        run: make test-tom-e2e
+
+      - name: Collect diagnostics
+        if: always()
+        run: |
+          echo "::group::TrustyAI module CR"
+          kubectl get trustyai.components.platform.opendatahub.io -o yaml || true
+          echo "::endgroup::"
+          echo "::group::system namespace resources"
+          kubectl get all -n system || true
+          echo "::endgroup::"
+          echo "::group::Module operator logs"
+          kubectl logs -l control-plane=controller-manager -n system --tail=500 || true
+          echo "::endgroup::"
+
+env:
+  KUBECONFIG: "${HOME}/.kube/config"
