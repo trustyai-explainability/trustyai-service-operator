@@ -21,13 +21,14 @@ const (
 )
 
 // manifestsTarget returns the writable runtime copy of the manifests template.
-// The environment override keeps unit/integration tests non-root friendly while
-// retaining the image's established /opt/manifests location by default.
+// The environment override keeps unit/integration tests non-root friendly. In
+// the deployed operator, /opt/manifests is an emptyDir mount point, so stage
+// below it rather than trying to remove or replace the mount point itself.
 func manifestsTarget() string {
 	if target := os.Getenv("TRUSTYAI_MANIFESTS_TARGET"); target != "" {
 		return target
 	}
-	return "/opt/manifests"
+	return "/opt/manifests/runtime"
 }
 
 var (

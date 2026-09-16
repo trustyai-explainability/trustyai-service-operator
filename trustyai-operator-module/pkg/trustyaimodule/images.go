@@ -3,7 +3,7 @@ package trustyaimodule
 // paramsEnvMap maps each params.env key to the RELATED_IMAGE_* environment
 // variable injected by the ODH platform into the module controller pod.
 var paramsEnvMap = map[string]string{
-	"trustyaiOperatorImage":              "RELATED_IMAGE_ODH_TRUSTYAI_OPERATOR_IMAGE",
+	"trustyaiOperatorImage":              "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_OPERATOR_IMAGE",
 	"trustyaiServiceImage":               "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_IMAGE",
 	"evalHubImage":                       "RELATED_IMAGE_ODH_EVAL_HUB_IMAGE",
 	"evalHubMCPImage":                    "RELATED_IMAGE_ODH_EVAL_HUB_IMAGE",
