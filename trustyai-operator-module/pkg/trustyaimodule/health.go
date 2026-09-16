@@ -12,9 +12,9 @@ import (
 )
 
 // ServiceHealthResult describes the state of all operand instances for one
-// enabled service. An operand that has not been created yet is progressing,
-// not degraded: the module has applied its manifests, but the operand
-// operator has not provisioned an instance.
+// enabled service. An enabled service with no operand instances is healthy:
+// operand instances are optional user resources, and their absence does not
+// indicate a module failure.
 type ServiceHealthResult struct {
 	Healthy  bool
 	Degraded bool
@@ -64,7 +64,10 @@ func (r *OperandHealthChecker) Check(ctx context.Context) ServiceHealthResult {
 	}
 
 	if len(operands.Items) == 0 {
-		return ServiceHealthResult{Reason: "no operand instances found"}
+		return ServiceHealthResult{
+			Healthy: true,
+			Reason:  "No operand instances found",
+		}
 	}
 
 	instances := make([]string, 0, len(operands.Items))

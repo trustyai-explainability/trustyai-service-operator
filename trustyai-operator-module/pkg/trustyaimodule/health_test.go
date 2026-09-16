@@ -67,11 +67,14 @@ func TestOperandHealthCheckerReportsListErrorsAsUnknown(t *testing.T) {
 	}
 }
 
-func TestOperandHealthCheckerTreatsNoInstancesAsWaiting(t *testing.T) {
+func TestOperandHealthCheckerTreatsNoInstancesAsHealthy(t *testing.T) {
 	checker := NewOperandHealthChecker("NEMO_GUARDRAILS", fake.NewClientBuilder().Build())
 	result := checker.Check(context.Background())
-	if result.Healthy || result.Degraded || result.Reason != "no operand instances found" {
-		t.Fatalf("expected no instances to be waiting, got %#v", result)
+	if !result.Healthy || result.Degraded || result.Unknown {
+		t.Fatalf("expected no instances to be healthy, got %#v", result)
+	}
+	if result.Reason != "No operand instances found" {
+		t.Fatalf("expected no-instance reason, got %q", result.Reason)
 	}
 }
 

@@ -304,6 +304,12 @@ func (r *TrustyAIModuleReconciler) persistStatus(ctx context.Context, module *pl
 
 func (r *TrustyAIModuleReconciler) buildHealthCheckers(es platformv1alpha1.EnabledServices) []ServiceHealthChecker {
 	var checkers []ServiceHealthChecker
+	// A nil deployer is used by unit tests and reconciliation paths that do not
+	// manage workloads. In a real module reconciliation, verify the operator
+	// Deployment before evaluating optional operand instances.
+	if r.Deployer != nil {
+		checkers = append(checkers, NewOperatorHealthChecker(r.Client, r.Namespace))
+	}
 	if es.TAS {
 		checkers = append(checkers, NewOperandHealthChecker("TAS", r.Client))
 	}
