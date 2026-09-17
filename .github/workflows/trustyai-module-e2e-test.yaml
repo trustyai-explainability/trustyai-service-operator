@@ -103,6 +103,28 @@ jobs:
             namespace: system
           EOF
 
+      - name: Seed TLS secrets required on Kind
+        run: |
+          openssl req -x509 -nodes -newkey rsa:2048 \
+            -keyout /tmp/tls.key -out /tmp/tls.crt -days 1 \
+            -subj '/CN=trustyai-service-operator-webhook-service.system.svc' \
+            -addext 'subjectAltName=DNS:trustyai-service-operator-webhook-service.system.svc,DNS:trustyai-service-operator-webhook-service.system.svc.cluster.local'
+          kubectl create secret tls webhook-server-cert \
+            --cert=/tmp/tls.crt --key=/tmp/tls.key -n system
+          kubectl create secret tls trustyai-service-operator-metrics-tls \
+            --cert=/tmp/tls.crt --key=/tmp/tls.key -n system
+
+      - name: Inject the CA bundle into conversion webhooks
+        run: |
+          CA_BUNDLE=$(base64 -w 0 /tmp/tls.crt)
+          for crd in trustyaiservices.trustyai.opendatahub.io evalhubs.trustyai.opendatahub.io; do
+            if kubectl get crd "$crd" -o jsonpath='{.spec.conversion.strategy}' 2>/dev/null | grep -q Webhook; then
+              kubectl patch crd "$crd" --type=json \
+                -p="[{\"op\":\"add\",\"path\":\"/spec/conversion/webhook/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}]"
+              echo "Patched $crd with the Kind CA bundle"
+            fi
+          done
+
       - name: Deploy the TrustyAI module resource
         run: kubectl apply -f trustyai-operator-module/tests/e2e/manifests/trustyai-cr.yaml
 
