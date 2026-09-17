@@ -16,17 +16,18 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Install Gitleaks
         env:
           GITLEAKS_VERSION: 8.28.0
+          # GitHub's release API asset digest, independently recorded here.
+          GITLEAKS_SHA256: a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
         run: |
           asset="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           base_url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
           curl --fail --silent --show-error --location "${base_url}/${asset}" --output "/tmp/${asset}"
-          curl --fail --silent --show-error --location "${base_url}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" \
-            --output /tmp/gitleaks_checksums.txt
-          grep "${asset}" /tmp/gitleaks_checksums.txt | (cd /tmp && sha256sum --check)
+          echo "${GITLEAKS_SHA256}  /tmp/${asset}" | sha256sum --check
           tar --extract --file "/tmp/${asset}" --directory /tmp gitleaks
           install /tmp/gitleaks /usr/local/bin/gitleaks
 
