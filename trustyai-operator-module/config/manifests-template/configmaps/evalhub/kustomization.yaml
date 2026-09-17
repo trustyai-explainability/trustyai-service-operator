@@ -4,6 +4,7 @@ resources:
   - provider-garak.yaml
   - provider-guidellm.yaml
   - provider-ibm-clear.yaml
+  - provider-ifbench.yaml
   - provider-inspect.yaml
   - provider-lighteval.yaml
   - provider-lm-evaluation-harness.yaml
@@ -12,6 +13,7 @@ resources:
   - provider-ruler.yaml
   - collection-coding-v1.yaml
   - collection-document-understanding-v1.yaml
+  - collection-evaluate-model-accuracy.yaml
   - collection-instruction-following-v1.yaml
   - collection-instruction-output-v1.yaml
   - collection-knowledge-reasoning-v1.yaml
