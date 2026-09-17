@@ -12,7 +12,7 @@ SERVICE_NAME_1="trustyai-service"
 SERVICE_NAME_2="trustyai-service-tls"
 DEPLOYMENT_NAME="trustyai-service-operator-controller-manager"
 
-EXPECTED_IMAGE="smoke/operator:pr-${PR_NUMBER:-default-pr-number}"
+EXPECTED_IMAGE="${TRUSTYAI_OPERATOR_IMG:-smoke/operator}:${WORKLOAD_TAG:-pr-${PR_NUMBER:-default-pr-number}}"
 
 log_success() {
     local message=$1
