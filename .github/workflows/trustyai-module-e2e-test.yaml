@@ -3,10 +3,14 @@ name: Tier 2 - Operators (workload, module) smoke tests
 on:
   pull_request:
     paths:
+      - 'api/**'
+      - 'cmd/**'
       - 'config/**'
       - 'controllers/**'
       - 'pkg/**'
       - 'Dockerfile'
+      - 'go.mod'
+      - 'go.sum'
       - 'trustyai-operator-module/**'
       - 'tests/crds/**'
       - 'tests/smoke/**'
