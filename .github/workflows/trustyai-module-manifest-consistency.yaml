@@ -31,4 +31,4 @@ jobs:
 
       - name: Build module deployment manifests
         run: |
-          kustomize build trustyai-operator-module/config/default
+          kubectl kustomize trustyai-operator-module/config/default
