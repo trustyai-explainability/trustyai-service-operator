@@ -1,0 +1,34 @@
+name: TrustyAI Module Manifest Consistency
+
+on:
+  push:
+    paths:
+      - 'config/**'
+      - 'trustyai-operator-module/config/**'
+      - 'trustyai-operator-module/config/manifests-template/**'
+      - '.github/workflows/trustyai-module-manifest-consistency.yaml'
+  pull_request:
+    paths:
+      - 'config/**'
+      - 'trustyai-operator-module/config/**'
+      - 'trustyai-operator-module/config/manifests-template/**'
+      - '.github/workflows/trustyai-module-manifest-consistency.yaml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check bundled manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Compare bundled manifests with the source manifests
+        run: |
+          diff -r -u config trustyai-operator-module/config/manifests-template
+
+      - name: Build module deployment manifests
+        run: |
+          kustomize build trustyai-operator-module/config/default
