@@ -6,3 +6,7 @@ spec:
   managementState: Managed
   enabledServices:
     tas: true
+    lmes: true
+    evalHub: true
+    gorch: true
+    nemoGuardrails: true

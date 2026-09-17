@@ -9,6 +9,7 @@ import (
 
 	"github.com/onsi/gomega"
 	common "github.com/opendatahub-io/odh-platform-utilities/api/common"
+	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-operator-module/pkg/trustyaimodule"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -36,7 +37,13 @@ func testLifecycle(t *testing.T) {
 		g := gomega.NewWithT(t)
 		module, err := getModule(ctx)
 		g.Expect(err).NotTo(gomega.HaveOccurred())
-		g.Expect(module.Spec.EnabledServices.TAS).To(gomega.BeTrue())
+		g.Expect(module.Spec.EnabledServices).To(gomega.Equal(platformv1alpha1.EnabledServices{
+			TAS:            true,
+			LMES:           true,
+			EvalHub:        true,
+			GORCH:          true,
+			NemoGuardrails: true,
+		}))
 
 		g.Eventually(func() []string {
 			m, err := getModule(ctx)
