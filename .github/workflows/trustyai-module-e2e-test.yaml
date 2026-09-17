@@ -18,9 +18,9 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     env:
-      TRUSTYAI_OPERATOR_IMG: smoke/operator
+      TRUSTYAI_OPERATOR_IMG: smoke/operator-workload
       WORKLOAD_TAG: pr-${{ github.event.pull_request.number || 'default-pr-number' }}
-      TRUSTYAI_MODULE_IMG: trustyai-operator-module-controller
+      TRUSTYAI_MODULE_IMG: smoke/operator-module
       MODULE_TAG: pr-${{ github.event.pull_request.number || 'default-pr-number' }}
       PR_NUMBER: ${{ github.event.pull_request.number || 'default-pr-number' }}
     steps:
