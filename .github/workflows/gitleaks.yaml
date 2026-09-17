@@ -31,4 +31,4 @@ jobs:
           install /tmp/gitleaks /usr/local/bin/gitleaks
 
       - name: Run Gitleaks
-        run: gitleaks git --source=. --redact --verbose --no-banner
+        run: gitleaks git . --redact --verbose --no-banner
