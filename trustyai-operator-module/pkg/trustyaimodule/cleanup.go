@@ -50,7 +50,7 @@ func (r *TrustyAIModuleReconciler) deleteDeployedOperands(ctx context.Context) e
 func (r *TrustyAIModuleReconciler) deleteRenderedOperands(ctx context.Context) error {
 	logger := log.FromContext(ctx)
 
-	resources, err := RenderManifests(ctx, r.ManifestsTemplatePath, r.Namespace)
+	resources, err := RenderManifests(ctx, r.ManifestsTemplatePath, r.Namespace, false)
 	if err != nil {
 		return fmt.Errorf("rendering manifests for operand cleanup: %w", err)
 	}
