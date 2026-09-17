@@ -54,6 +54,51 @@ var trustyAIServiceGVK = schema.GroupVersionKind{
 	Kind:    "TrustyAIService",
 }
 
+// prometheusGVK matches the dependency precondition checked by the module.
+var prometheusGVK = schema.GroupVersionKind{
+	Group:   "monitoring.coreos.com",
+	Version: "v1",
+	Kind:    "Prometheus",
+}
+
+// ensurePrometheusInstance reuses a workflow-owned resource when present. It
+// returns true only when this test created the resource, so cleanup cannot
+// delete an object owned by the surrounding test environment.
+func ensurePrometheusInstance(ctx context.Context, namespace, name string) (bool, error) {
+	prom := &unstructured.Unstructured{}
+	prom.SetGroupVersionKind(prometheusGVK)
+	prom.SetName(name)
+	prom.SetNamespace(namespace)
+
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, prom)
+	if err == nil {
+		return false, nil
+	}
+	if !errors.IsNotFound(err) {
+		return false, err
+	}
+
+	if err := k8sClient.Create(ctx, prom); err != nil {
+		if errors.IsAlreadyExists(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func deletePrometheusInstance(ctx context.Context, namespace, name string) error {
+	prom := &unstructured.Unstructured{}
+	prom.SetGroupVersionKind(prometheusGVK)
+	prom.SetName(name)
+	prom.SetNamespace(namespace)
+	err := k8sClient.Delete(ctx, prom)
+	if errors.IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
 // k8sClient is the real cluster client shared by every e2e test in this package.
 var k8sClient client.Client
 
