@@ -1,4 +1,4 @@
-name: Tier 2 - Combined TrustyAI operator Kind test
+name: Tier 2 - Operators (workload, module) smoke tests
 
 on:
   pull_request:
