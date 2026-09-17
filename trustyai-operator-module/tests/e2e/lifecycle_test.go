@@ -32,10 +32,11 @@ func testLifecycle(t *testing.T) {
 		_ = deletePrometheusInstance(ctx, OperatorNamespace, "e2e-prometheus")
 	})
 
-	t.Run("creates the singleton CR and adds a finalizer", func(t *testing.T) {
+	t.Run("uses the fixture singleton CR and adds a finalizer", func(t *testing.T) {
 		g := gomega.NewWithT(t)
-		module := newTASOnlyModule(InstanceName)
-		g.Expect(k8sClient.Create(ctx, module)).To(gomega.Succeed())
+		module, err := getModule(ctx)
+		g.Expect(err).NotTo(gomega.HaveOccurred())
+		g.Expect(module.Spec.EnabledServices.TAS).To(gomega.BeTrue())
 
 		g.Eventually(func() []string {
 			m, err := getModule(ctx)
