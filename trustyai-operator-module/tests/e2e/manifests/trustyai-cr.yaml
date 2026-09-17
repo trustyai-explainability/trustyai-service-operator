@@ -1,0 +1,12 @@
+apiVersion: components.platform.opendatahub.io/v1alpha1
+kind: TrustyAI
+metadata:
+  name: default-trustyai
+spec:
+  managementState: Managed
+  enabledServices:
+    tas: true
+    lmes: true
+    evalHub: true
+    gorch: true
+    nemoGuardrails: true

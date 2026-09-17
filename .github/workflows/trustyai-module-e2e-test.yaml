@@ -1,10 +1,19 @@
-name: Tier 2 - Module smoke test
+name: Tier 2 - Operators (workload, module) smoke tests
 
 on:
   pull_request:
     paths:
+      - 'api/**'
+      - 'cmd/**'
+      - 'config/**'
+      - 'controllers/**'
+      - 'pkg/**'
+      - 'Dockerfile'
+      - 'go.mod'
+      - 'go.sum'
       - 'trustyai-operator-module/**'
       - 'tests/crds/**'
+      - 'tests/smoke/**'
       - 'Makefile.trustyai-operator-module.mk'
       - 'Makefile'
       - '.github/workflows/trustyai-module-e2e-test.yaml'
@@ -13,8 +22,11 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     env:
-      TRUSTYAI_MODULE_IMG: trustyai-operator-module-controller
+      TRUSTYAI_OPERATOR_IMG: smoke/operator-workload
+      WORKLOAD_TAG: pr-${{ github.event.pull_request.number || 'default-pr-number' }}
+      TRUSTYAI_MODULE_IMG: smoke/operator-module
       MODULE_TAG: pr-${{ github.event.pull_request.number || 'default-pr-number' }}
+      PR_NUMBER: ${{ github.event.pull_request.number || 'default-pr-number' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,7 +39,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push module operator image
+      - name: Build the workload operator image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          tags: ${{ env.TRUSTYAI_OPERATOR_IMG }}:${{ env.WORKLOAD_TAG }}
+          build-args: |
+            CI_CONTAINER_VERSION=${{ env.WORKLOAD_TAG }}
+
+      - name: Build the module operator image
         uses: docker/build-push-action@v6
         with:
           context: trustyai-operator-module
@@ -43,36 +65,92 @@ jobs:
           node_image: kindest/node:v1.29.0
           cluster_name: kind
 
-      - name: Load the module operator image into Kind
-        run: kind load docker-image ${{ env.TRUSTYAI_MODULE_IMG }}:${{ env.MODULE_TAG }}
+      - name: Load both operator images into Kind
+        run: |
+          kind load docker-image ${{ env.TRUSTYAI_OPERATOR_IMG }}:${{ env.WORKLOAD_TAG }}
+          kind load docker-image ${{ env.TRUSTYAI_MODULE_IMG }}:${{ env.MODULE_TAG }}
 
-      - name: Apply external CRDs required by dependency preconditions
+      - name: Apply external CRDs required by both operators
         run: |
           kubectl apply -f tests/crds/monitoring.coreos.com_prometheuses.yaml
           kubectl apply -f tests/crds/monitoring.coreos.com_servicemonitors.yaml
+          kubectl apply -f tests/crds/route_crd.yaml
+          kubectl apply -f tests/crds/serving.kserve.io_inferenceservices.yaml
 
       - name: Deploy the module operator
         run: |
           kubectl create namespace system
           make deploy-tom TRUSTYAI_MODULE_IMG=${{ env.TRUSTYAI_MODULE_IMG }} MODULE_TAG=${{ env.MODULE_TAG }}
+          kubectl set env deployment/trustyai-operator-module-controller-manager -n system \
+            RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_OPERATOR_IMAGE=${{ env.TRUSTYAI_OPERATOR_IMG }}:${{ env.WORKLOAD_TAG }}
 
-      - name: Wait for module operator to be ready
+      - name: Wait for the module operator
         run: |
           if ! kubectl wait --for=condition=available --timeout=120s \
             deployment/trustyai-operator-module-controller-manager -n system; then
             echo "::group::Module operator diagnostics"
             kubectl get pods -n system -o wide
             kubectl describe pod -l control-plane=controller-manager -n system
-            echo "--- Module operator logs ---"
             kubectl logs -l control-plane=controller-manager -n system --tail=200 || true
-            echo "--- Events ---"
             kubectl get events -n system --sort-by='.lastTimestamp' || true
             echo "::endgroup::"
             exit 1
           fi
-          echo "Module operator deployment is ready"
 
-      - name: Run module e2e tests
+      - name: Seed the Prometheus dependency
+        run: |
+          kubectl apply -f - <<'EOF'
+          apiVersion: monitoring.coreos.com/v1
+          kind: Prometheus
+          metadata:
+            name: e2e-prometheus
+            namespace: system
+          EOF
+
+      - name: Seed TLS secrets required on Kind
+        run: |
+          openssl req -x509 -nodes -newkey rsa:2048 \
+            -keyout /tmp/tls.key -out /tmp/tls.crt -days 1 \
+            -subj '/CN=trustyai-service-operator-webhook-service.system.svc' \
+            -addext 'subjectAltName=DNS:trustyai-service-operator-webhook-service.system.svc,DNS:trustyai-service-operator-webhook-service.system.svc.cluster.local'
+          kubectl create secret tls webhook-server-cert \
+            --cert=/tmp/tls.crt --key=/tmp/tls.key -n system
+          kubectl create secret tls trustyai-service-operator-metrics-tls \
+            --cert=/tmp/tls.crt --key=/tmp/tls.key -n system
+
+      - name: Deploy the TrustyAI module resource
+        run: kubectl apply -f trustyai-operator-module/tests/e2e/manifests/trustyai-cr.yaml
+
+      - name: Wait for the module to deploy the workload operator
+        run: |
+          for attempt in $(seq 1 90); do
+            if kubectl get deployment/trustyai-service-operator-controller-manager -n system >/dev/null 2>&1; then
+              kubectl wait --for=condition=available --timeout=180s \
+                deployment/trustyai-service-operator-controller-manager -n system
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Timed out waiting for the module to create the workload operator deployment"
+          kubectl get trustyais -o yaml || true
+          kubectl logs -l control-plane=controller-manager -n system --tail=200 || true
+          exit 1
+
+      - name: Inject the CA bundle into conversion webhooks
+        run: |
+          CA_BUNDLE=$(base64 -w 0 /tmp/tls.crt)
+          for crd in trustyaiservices.trustyai.opendatahub.io evalhubs.trustyai.opendatahub.io; do
+            if kubectl get crd "$crd" -o jsonpath='{.spec.conversion.strategy}' 2>/dev/null | grep -q Webhook; then
+              kubectl patch crd "$crd" --type=json \
+                -p="[{\"op\":\"add\",\"path\":\"/spec/conversion/webhook/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}]"
+              echo "Patched $crd with the Kind CA bundle"
+            fi
+          done
+
+      - name: Run workload operator smoke tests
+        run: ./tests/smoke/test_smoke.sh
+
+      - name: Run module operator e2e tests
         run: make test-tom-e2e
 
       - name: Collect diagnostics
@@ -86,4 +164,7 @@ jobs:
           echo "::endgroup::"
           echo "::group::Module operator logs"
           kubectl logs -l control-plane=controller-manager -n system --tail=500 || true
+          echo "::endgroup::"
+          echo "::group::Workload operator logs"
+          kubectl logs -l control-plane=trustyai-service-operator -n system --tail=500 || true
           echo "::endgroup::"

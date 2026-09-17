@@ -8,13 +8,14 @@ import (
 	"testing"
 
 	"github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
+	common "github.com/opendatahub-io/odh-platform-utilities/api/common"
 )
 
 // testValidation checks cluster-level preconditions that must hold before the
 // lifecycle test runs: the module operator itself is up, and the CRD's
 // singleton-name admission rule is enforced by the live API server (not just
-// asserted in a unit test against the Go struct/string constant).
+// asserted in a unit test against the Go struct/string constant). The fixture
+// is applied by the combined Kind workflow before this test starts.
 func testValidation(t *testing.T) {
 	ctx := context.Background()
 
@@ -31,10 +32,10 @@ func testValidation(t *testing.T) {
 		g.Expect(err.Error()).To(gomega.ContainSubstring("must be named 'default-trustyai'"))
 	})
 
-	t.Run("no stale singleton CR left over from a previous run", func(t *testing.T) {
+	t.Run("the combined test fixture is present", func(t *testing.T) {
 		g := gomega.NewWithT(t)
-		_, err := getModule(ctx)
-		g.Expect(errors.IsNotFound(err)).To(gomega.BeTrue(),
-			"expected no TrustyAI/%s CR to exist yet; got: %v", InstanceName, err)
+		module, err := getModule(ctx)
+		g.Expect(err).NotTo(gomega.HaveOccurred())
+		g.Expect(module.Spec.ManagementState).To(gomega.Equal(common.Managed))
 	})
 }
