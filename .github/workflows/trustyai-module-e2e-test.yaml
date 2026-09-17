@@ -93,6 +93,16 @@ jobs:
             exit 1
           fi
 
+      - name: Seed the Prometheus dependency
+        run: |
+          kubectl apply -f - <<'EOF'
+          apiVersion: monitoring.coreos.com/v1
+          kind: Prometheus
+          metadata:
+            name: e2e-prometheus
+            namespace: system
+          EOF
+
       - name: Deploy the TrustyAI module resource
         run: kubectl apply -f trustyai-operator-module/tests/e2e/manifests/trustyai-cr.yaml
 
