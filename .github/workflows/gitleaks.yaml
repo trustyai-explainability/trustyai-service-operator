@@ -17,9 +17,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install Gitleaks
+        env:
+          GITLEAKS_VERSION: 8.28.0
+        run: |
+          asset="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          base_url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl --fail --silent --show-error --location "${base_url}/${asset}" --output "/tmp/${asset}"
+          curl --fail --silent --show-error --location "${base_url}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" \
+            --output /tmp/gitleaks_checksums.txt
+          grep "${asset}" /tmp/gitleaks_checksums.txt | (cd /tmp && sha256sum --check)
+          tar --extract --file "/tmp/${asset}" --directory /tmp gitleaks
+          install /tmp/gitleaks /usr/local/bin/gitleaks
+
       - name: Run Gitleaks
-        run: >-
-          docker run --rm
-          -v "$PWD:/repo:ro"
-          zricethezav/gitleaks:v8.28.0
-          git --source=/repo --redact --verbose --no-banner
+        run: gitleaks git --source=. --redact --verbose --no-banner
