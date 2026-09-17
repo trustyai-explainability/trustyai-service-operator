@@ -21,17 +21,10 @@ import (
 
 // testLifecycle drives the singleton TrustyAI CR through creation, the
 // Removed management-state cleanup path, and deletion against a real
-// cluster. It seeds a Prometheus instance first so the required-dependency
-// precondition gate does not block reconciliation before it reaches the DSC
-// ConfigMap this test exercises.
+// cluster. The workflow seeds the Prometheus resource required by the
+// dependency precondition before applying the module resource.
 func testLifecycle(t *testing.T) {
-	g := gomega.NewWithT(t)
 	ctx := context.Background()
-
-	g.Expect(createPrometheusInstance(ctx, OperatorNamespace, "e2e-prometheus")).To(gomega.Succeed())
-	t.Cleanup(func() {
-		_ = deletePrometheusInstance(ctx, OperatorNamespace, "e2e-prometheus")
-	})
 
 	t.Run("uses the fixture singleton CR and adds a finalizer", func(t *testing.T) {
 		g := gomega.NewWithT(t)

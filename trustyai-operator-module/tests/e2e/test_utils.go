@@ -54,38 +54,6 @@ var trustyAIServiceGVK = schema.GroupVersionKind{
 	Kind:    "TrustyAIService",
 }
 
-// prometheusGVK matches dependencies.go's required-dependency check. The live
-// cluster has no Prometheus operator, so the lifecycle test seeds a bare
-// instance via the same minimal CRD fixture used by the envtest suite
-// (tests/crds/monitoring.coreos.com_prometheuses.yaml) to clear that gate -
-// otherwise reconciliation never proceeds far enough to create/delete the
-// DSC ConfigMap this test exercises.
-var prometheusGVK = schema.GroupVersionKind{
-	Group:   "monitoring.coreos.com",
-	Version: "v1",
-	Kind:    "Prometheus",
-}
-
-func createPrometheusInstance(ctx context.Context, namespace, name string) error {
-	prom := &unstructured.Unstructured{}
-	prom.SetGroupVersionKind(prometheusGVK)
-	prom.SetName(name)
-	prom.SetNamespace(namespace)
-	return k8sClient.Create(ctx, prom)
-}
-
-func deletePrometheusInstance(ctx context.Context, namespace, name string) error {
-	prom := &unstructured.Unstructured{}
-	prom.SetGroupVersionKind(prometheusGVK)
-	prom.SetName(name)
-	prom.SetNamespace(namespace)
-	err := k8sClient.Delete(ctx, prom)
-	if errors.IsNotFound(err) {
-		return nil
-	}
-	return err
-}
-
 // k8sClient is the real cluster client shared by every e2e test in this package.
 var k8sClient client.Client
 
