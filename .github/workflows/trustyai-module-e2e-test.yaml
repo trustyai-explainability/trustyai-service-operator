@@ -108,8 +108,18 @@ jobs:
 
       - name: Wait for the module to deploy the workload operator
         run: |
-          kubectl wait --for=condition=available --timeout=180s \
-            deployment/trustyai-service-operator-controller-manager -n system
+          for attempt in $(seq 1 90); do
+            if kubectl get deployment/trustyai-service-operator-controller-manager -n system >/dev/null 2>&1; then
+              kubectl wait --for=condition=available --timeout=180s \
+                deployment/trustyai-service-operator-controller-manager -n system
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Timed out waiting for the module to create the workload operator deployment"
+          kubectl get trustyais -o yaml || true
+          kubectl logs -l control-plane=controller-manager -n system --tail=200 || true
+          exit 1
 
       - name: Run workload operator smoke tests
         run: ./tests/smoke/test_smoke.sh
