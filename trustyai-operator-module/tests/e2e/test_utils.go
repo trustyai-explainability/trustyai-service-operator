@@ -20,6 +20,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -157,17 +158,26 @@ func createHealthyTrustyAIService(ctx context.Context, namespace, name string) e
 	if err := k8sClient.Create(ctx, operand); err != nil {
 		return err
 	}
-	status := operand.DeepCopy()
-	if err := unstructured.SetNestedSlice(status.Object, []interface{}{
-		map[string]interface{}{
-			"type":   "Ready",
-			"status": "True",
-			"reason": "Available",
-		},
-	}, "status", "conditions"); err != nil {
-		return err
-	}
-	return k8sClient.Status().Update(ctx, status)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		status := &unstructured.Unstructured{}
+		status.SetGroupVersionKind(trustyAIServiceGVK)
+		if err := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      name,
+			Namespace: namespace,
+		}, status); err != nil {
+			return err
+		}
+		if err := unstructured.SetNestedSlice(status.Object, []interface{}{
+			map[string]interface{}{
+				"type":   "Ready",
+				"status": "True",
+				"reason": "Available",
+			},
+		}, "status", "conditions"); err != nil {
+			return err
+		}
+		return k8sClient.Status().Update(ctx, status)
+	})
 }
 
 func waitForModulePhase(ctx context.Context, phase common.Phase) error {

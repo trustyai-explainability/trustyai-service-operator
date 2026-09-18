@@ -338,6 +338,24 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 			Expect(deploymentEnableServicesArg(dep)).To(Equal("--enable-services=TAS,LMES"))
 		})
 
+		It("deploys only NeMo Guardrails in MCP mode", func() {
+			r := newReconcilerWithDeployer()
+			reconcileUntilCurrent(r)
+
+			module := &platformv1alpha1.TrustyAI{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
+			module.Spec.MCPGuardrailsMode = true
+			Expect(k8sClient.Update(ctx, module)).To(Succeed())
+
+			reconcileUntilCurrent(r)
+
+			dep := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: OperatorDeploymentName, Namespace: testNamespace,
+			}, dep)).To(Succeed())
+			Expect(deploymentEnableServicesArg(dep)).To(Equal("--enable-services=NEMO_GUARDRAILS"))
+		})
+
 		It("records the module operator version in status.releases", func() {
 			Version = "test-module-1.2.3"
 			DeferCleanup(func() { Version = "unknown" })
