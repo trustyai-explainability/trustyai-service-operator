@@ -26,7 +26,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
@@ -100,7 +99,7 @@ func failureWatcherLogFields() []any {
 	}
 }
 
-//+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;patch;delete
+//+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=pods/log,verbs=get
@@ -355,20 +354,14 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 	}
 
 	if failureAlreadyReported(&job) {
-		setJobFailureAction("delete")
-		if err := r.deleteEvalHubFailureSyncedJob(ctx, &job); err != nil {
-			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-		}
+		setJobFailureAction("skip")
 		return ctrl.Result{}, nil
 	}
 	if serverAlreadyHandledFailure(&job) {
 		log.Info("skip: EvalHub server already set failure label",
 			append(failureWatcherLogFields(), "action", "skip_server_handled",
 				"job", job.Name, "namespace", job.Namespace)...)
-		setJobFailureAction("delete")
-		if err := r.deleteEvalHubFailureSyncedJob(ctx, &job); err != nil {
-			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-		}
+		setJobFailureAction("skip")
 		return ctrl.Result{}, nil
 	}
 
@@ -495,11 +488,8 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 
 	r.EventRecorder.Eventf(&job, corev1.EventTypeWarning, eventReasonEvaluationFailed, "%s", msg)
 
-	setJobFailureAction("delete")
-	if err := r.deleteEvalHubFailureSyncedJob(ctx, &job); err != nil {
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-	}
-
+	// Keep the Job/pod so logs remain available until Kubernetes TTL
+	// (ttlSecondsAfterFinished) expires. Do not delete after failure sync.
 	log.Info("posted EvalHub benchmark failure event",
 		append(failureWatcherLogFields(), "action", "post_events_ok", "evalJobID", jobID, "k8sJob", job.Name, "namespace", job.Namespace)...)
 	return ctrl.Result{}, nil
@@ -875,22 +865,6 @@ func failurePendingReport(job *batchv1.Job) bool {
 		return false
 	}
 	return job.Annotations[annotationFailurePending] == "true"
-}
-
-// deleteEvalHubFailureSyncedJob removes the Batch Job after EvalHub accepted the failure event (pods are GC'd with the Job).
-func (r *EvalHubEvaluationJobFailureReconciler) deleteEvalHubFailureSyncedJob(ctx context.Context, job *batchv1.Job) error {
-	log := log.FromContext(ctx)
-	if err := r.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		log.Error(err, "failed to delete evaluation job after EvalHub failure sync",
-			append(failureWatcherLogFields(), "action", "delete_job_failed", "job", job.Name, "namespace", job.Namespace)...)
-		return err
-	}
-	log.Info("deleted evaluation job after EvalHub failure sync",
-		append(failureWatcherLogFields(), "action", "delete_job_ok", "job", job.Name, "namespace", job.Namespace)...)
-	return nil
 }
 
 // JSON body compatible with EvalHub pkg/api StatusEvent.

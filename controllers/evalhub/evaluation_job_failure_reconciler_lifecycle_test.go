@@ -18,7 +18,6 @@ import (
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -65,10 +64,10 @@ func readyEvalHubCR(name, ns, url string) *evalhubv1.EvalHub {
 // extra is merged into the label map (use it to add instance/phase labels per test).
 func evalHubEvaluationJob(name, ns string, extra map[string]string) *batchv1.Job {
 	labels := map[string]string{
-		evalHubAppLabel:       evalHubAppValue,
-		evalHubComponentLabel: evalHubComponentValue,
-		evalHubJobIDLabel:     "jid-" + name,
-		evalHubProviderIDLabel: "provider-1",
+		evalHubAppLabel:         evalHubAppValue,
+		evalHubComponentLabel:   evalHubComponentValue,
+		evalHubJobIDLabel:       "jid-" + name,
+		evalHubProviderIDLabel:  "provider-1",
 		evalHubBenchmarkIDLabel: "bench-1",
 	}
 	for k, v := range extra {
@@ -223,9 +222,9 @@ func TestJobFailureReconciler_OOMKill_EmitsEventAndPatchesJob(t *testing.T) {
 	assert.Equal(t, labelEvaluationPhaseFailed, patchedLabels[labelEvaluationPhase])
 	assert.NotEmpty(t, patchedAnnotations[annotationEvaluationStatus])
 
-	// After a successful sync the job is deleted.
+	// Retain the Job so pod logs remain available until ttlSecondsAfterFinished expires.
 	err = fc.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: job.Name}, &batchv1.Job{})
-	assert.True(t, apierrors.IsNotFound(err), "job should be deleted after successful failure sync")
+	assert.NoError(t, err, "job should be retained after successful failure sync")
 }
 
 // TestJobFailureReconciler_ImagePullError_EmitsEventAndPatchesJob verifies the full lifecycle for an init
