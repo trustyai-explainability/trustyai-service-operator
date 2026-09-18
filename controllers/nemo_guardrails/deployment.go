@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/google/uuid"
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
@@ -86,7 +87,6 @@ func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGua
 
 		for _, configCM := range nemoConfig.ConfigMaps {
 			configmap := &corev1.ConfigMap{}
-
 			if strings.HasPrefix(configCM, nemoGuardrailsDefaultConfigPrefix) {
 				// if the specified config has a matching prefix in the name, try to load from the default configs
 				// in the operator namespace
@@ -101,7 +101,7 @@ func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGua
 					// copy from operator namespace into CR namespace
 					crNamespaceConfigMap := &corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:        configCM,
+							Name:        fmt.Sprintf("%s-%s", nemoGuardrails.Name, sourceCM.Name),
 							Namespace:   nemoGuardrails.Namespace,
 							Labels:      sourceCM.Labels,
 							Annotations: sourceCM.Annotations,
@@ -157,15 +157,11 @@ func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGua
 				hasher.Write([]byte(configmap.Data[k]))
 			}
 
-			var volumeName string
-			if strings.HasPrefix(configCM, nemoGuardrailsDefaultConfigPrefix) {
-				// trim the lengthy prefix to avoid volume-name-too-long errors
-				strippedName, _ := strings.CutPrefix(configCM, nemoGuardrailsDefaultConfigPrefix)
-				volumeName = fmt.Sprintf("%s-%s", nemoConfig.Name, strippedName)
-			} else {
-				volumeName = fmt.Sprintf("%s-%s-volume", nemoConfig.Name, configCM)
+			volumeName := fmt.Sprintf("%s-%s-vol", nemoConfig.Name, configmap.Name)
+			if len(volumeName) > 63 {
+				// prevent a configmap mounting failure if the volume name is too long with a deterministic UUID
+				volumeName = uuid.NewSHA1(uuid.NameSpaceURL, []byte(volumeName)).String()
 			}
-
 			utils.MountConfigMapToDeployment(configmap, volumeName, deployment)
 			volumeMount := corev1.VolumeMount{
 				Name:      volumeName,
