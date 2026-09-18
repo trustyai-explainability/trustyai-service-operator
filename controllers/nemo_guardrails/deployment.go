@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"reflect"
 	"sort"
+	"strings"
 
+	"github.com/google/uuid"
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
@@ -14,7 +17,9 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -82,9 +87,62 @@ func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGua
 
 		for _, configCM := range nemoConfig.ConfigMaps {
 			configmap := &corev1.ConfigMap{}
-			if err := r.Client.Get(ctx, types.NamespacedName{Name: configCM, Namespace: nemoGuardrails.Namespace}, configmap); err != nil {
-				utils.LogErrorRetrieving(ctx, err, "configmap", configCM, deployment.Namespace)
-				return err
+			if strings.HasPrefix(configCM, nemoGuardrailsDefaultConfigPrefix) {
+				// if the specified config has a matching prefix in the name, try to load from the default configs
+				// in the operator namespace
+				sourceCM := &corev1.ConfigMap{}
+				if err := r.Client.Get(ctx, types.NamespacedName{Name: configCM, Namespace: r.Namespace}, sourceCM); err != nil {
+					if !k8serrors.IsNotFound(err) {
+						return err
+					}
+					// not found in operator namespace, fall back to the deployment namespace
+					utils.LogErrorRetrieving(ctx, err, "default NeMo Guardrails configmap", configCM, r.Namespace)
+				} else {
+					// copy from operator namespace into CR namespace
+					crNamespaceConfigMap := &corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:        fmt.Sprintf("%s-%s", nemoGuardrails.Name, sourceCM.Name),
+							Namespace:   nemoGuardrails.Namespace,
+							Labels:      sourceCM.Labels,
+							Annotations: sourceCM.Annotations,
+						},
+						Data: sourceCM.Data,
+					}
+					copiedCM, justCreated, copyErr := utils.ReconcileManuallyDefinedConfigMap(ctx, r.Client, nemoGuardrails, crNamespaceConfigMap)
+					if copyErr != nil {
+						utils.LogErrorReconciling(ctx, copyErr, "default NeMo Guardrails configmap", configCM, nemoGuardrails.Namespace)
+						return copyErr
+					} else {
+						if !justCreated {
+							// if we didn't just create a new config, check to make sure the values are correct
+							if err := utils.CompareAndUpdateConfigmap(ctx, r.Client, copiedCM, crNamespaceConfigMap, true); err != nil {
+								utils.LogErrorUpdating(ctx, err, "default NeMo Guardrails configmap", configCM, nemoGuardrails.Namespace)
+								return err
+							}
+						}
+						configmap = copiedCM
+					}
+				}
+			}
+
+			if configmap.Name == "" {
+				// if we didn't end up creating a new configmap in the above logic, try to retrieve from CR namespace
+				if err := r.Client.Get(ctx, types.NamespacedName{Name: configCM, Namespace: nemoGuardrails.Namespace}, configmap); err != nil {
+					utils.LogErrorRetrieving(ctx, err, "configmap", configCM, deployment.Namespace)
+					return err
+				}
+			}
+
+			labelValue, labelExists := configmap.Labels["nemo-guardrails-config"]
+			if !labelExists || labelValue != "true" {
+				patch := client.MergeFrom(configmap.DeepCopy())
+				if configmap.Labels == nil {
+					configmap.Labels = map[string]string{}
+				}
+				configmap.Labels["nemo-guardrails-config"] = "true"
+				if err := r.Client.Patch(ctx, configmap, patch); err != nil {
+					return err
+				}
 			}
 
 			// Include ConfigMap name and data in hash for change detection
@@ -99,7 +157,11 @@ func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGua
 				hasher.Write([]byte(configmap.Data[k]))
 			}
 
-			volumeName := fmt.Sprintf("%s-%s-volume", nemoConfig.Name, configCM)
+			volumeName := fmt.Sprintf("%s-%s-vol", nemoConfig.Name, configmap.Name)
+			if len(volumeName) > 63 {
+				// prevent a configmap mounting failure if the volume name is too long with a deterministic UUID
+				volumeName = uuid.NewSHA1(uuid.NameSpaceURL, []byte(volumeName)).String()
+			}
 			utils.MountConfigMapToDeployment(configmap, volumeName, deployment)
 			volumeMount := corev1.VolumeMount{
 				Name:      volumeName,

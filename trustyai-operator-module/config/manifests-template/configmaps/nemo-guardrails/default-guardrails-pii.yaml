@@ -1,0 +1,213 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nemo-guardrails-default-pii
+  labels:
+    nemo-guardrails-config: "true"
+  annotations:
+    "guardrail-tags": |
+      ["pii", "personal-information", "personally-identifiable-information"]
+    "evalhub/results": |
+      [
+        {
+          "provider": "nemo-guardrails",
+          "benchmark_id": "pii_masking",
+          "benchmark_source": "https://github.com/eval-hub/eval-hub-contrib/blob/a1f02d02a8f1f839a95c05561f13cb25299c8437/adapters/nemo-guardrails/provider.yaml#L195",
+          "metrics": {
+            "errors": 0,
+            "masking_accuracy": 0.7021,
+            "mean_latency_ms": 32.8,
+            "median_latency_ms": 29.4,
+            "p95_latency_ms": 56.3
+          },
+          "artifacts": {
+            "evalhub.env_card": {
+              "aggregate_results": {},
+              "autograder_bias": {},
+              "capture_completeness": 0.15,
+              "confidence_intervals": {},
+              "cpu_model": "arm",
+              "custom": {},
+              "k8s_pod_labels": {},
+              "k8s_resource_limits": {},
+              "key_packages": {
+                "torch": "2.13.0",
+                "transformers": "5.14.1"
+              },
+              "os_info": "macOS-26.6.2-arm64-arm-64bit",
+              "per_task_results": {},
+              "python_version": "3.12.7",
+              "scorer_ids": []
+            }
+          }
+        }
+      ]
+data:
+  config.yaml: |
+    passthrough: true
+    rails:
+      input:
+        flows:
+          - mask sensitive data on input
+      output:
+        flows:
+          - mask sensitive data on output
+      config:
+        sensitive_data_detection:
+          recognizers:
+            - name: "Email Regex"
+              supported_entity: "EMAIL"
+              patterns:
+                - name: "email_regex"
+                  regex: "((?!\\.)(?!.*\\.\\.)([a-zA-Z0-9_'+\\-\\.]*)[a-zA-Z0-9_+\\-]@([a-zA-Z0-9][a-zA-Z0-9\\-]*\\.)+[a-zA-Z]{2,})"
+                  score: 1
+            - name: "Passport"
+              supported_entity: "PASSPORT"
+              patterns:
+                - name: "canada_passport_regex"
+                  regex: "(\\b[A-Z]{2}[0-9]{6}\\b)"
+                  score: 1
+            - name: "Age Recognizer"
+              supported_entity: "AGE"
+              supported_language: "en"
+              patterns:
+                - name: "age_keyword"
+                  regex: "\\bage[sd]?\\s*:?\\s*(\\d{1,3})\\b"
+                  score: 1
+                - name: "year_old"
+                  regex: "\\b(\\d{1,3})[- ]year[s]?[- ]old\\b"
+                  score: 1
+                - name: "years_of_age"
+                  regex: "\\b(\\d{1,3})\\s+years?\\s+of\\s+age\\b"
+                  score: 1
+                - name: "born_in_year"
+                  regex: "\\bborn\\s+in\\s+(\\d{4})\\b"
+                  score: 1
+                - name: "turned_age"
+                  regex: "\\b(?:turned|turns|turning)\\s+(\\d{1,3})\\b"
+                  score: 1
+            - name: "Gender" # taken from ai4privacy/pii-masking-openpii-1m training data GENDER list
+              supported_entity: "GENDER"
+              supported_language: "en"
+              deny_list:
+                - "Male"
+                - "Agender"
+                - "Genderqueer"
+                - "Androgynous"
+                - "Bigender"
+                - "Genderfluid"
+                - "Female"
+                - "Non-binary"
+                - "Transgender"
+            - name: "Title Recognizer" # taken from ai4privacy/pii-masking-openpii-1m training data TITLE list
+              supported_entity: "TITLE"
+              supported_language: "en"
+              deny_list:
+                - "Amb"
+                - "Prof"
+                - "Honourable"
+                - "Mx"
+                - "Capt"
+                - "Miss"
+                - "Gov"
+                - "Eng"
+                - "Minister"
+                - "Professor"
+                - "Councillor"
+                - "Premier"
+                - "Master"
+                - "President"
+                - "Captain"
+                - "Adv"
+                - "Madame"
+                - "Notary"
+                - "Senator"
+                - "Director"
+                - "Mayor"
+                - "Pres"
+                - "Mag"
+                - "Principal"
+                - "Delegate"
+                - "Ambassador"
+                - "Governor"
+                - "Prefect"
+                - "Mrs"
+                - "Sec"
+                - "Officer"
+                - "Cllr"
+                - "Hon"
+                - "Sen"
+                - "Advocate"
+                - "Mr"
+                - "Engineer"
+                - "Min"
+                - "Doctor"
+                - "Dean"
+                - "Dr"
+                - "Mister"
+                - "Solicitor"
+                - "Judge"
+                - "Secretary"
+                - "Solicit"
+                - "Assistant"
+                - "Magistrate"
+                - "Ass"
+                - "Manager"
+                - "Ofc"
+                - "Pref"
+                - "Del"
+                - "Attorney"
+                - "Mstr"
+                - "Att"
+                - "Mayoress"
+          # curated for the AI4Privacy PII Types
+          input:
+            entities:
+              - DATE_TIME
+              - PERSON
+              - EMAIL
+              - LOCATION
+              - IP_ADDRESS
+              - PHONE_NUMBER
+              - CREDIT_CARD
+              - US_DRIVER_LICENSE
+              - US_SSN
+              - US_PASSPORT
+              - UK_DRIVING_LICENCE
+              - UK_PASSPORT
+              - UK_NINO
+              - IT_PASSPORT
+              - ES_PASSPORT
+              - IN_PASSPORT
+              - KR_PASSPORT
+              - DE_PASSPORT
+              - PASSPORT
+              - TITLE
+              - GENDER
+              - AGE
+          output:
+            entities:
+              - DATE_TIME
+              - PERSON
+              - EMAIL
+              - LOCATION
+              - IP_ADDRESS
+              - PHONE_NUMBER
+              - CREDIT_CARD
+              - US_DRIVER_LICENSE
+              - US_SSN
+              - US_PASSPORT
+              - UK_DRIVING_LICENCE
+              - UK_PASSPORT
+              - UK_NINO
+              - IT_PASSPORT
+              - ES_PASSPORT
+              - IN_PASSPORT
+              - KR_PASSPORT
+              - DE_PASSPORT
+              - PASSPORT
+              - TITLE
+              - GENDER
+              - AGE
+  rails.co: |
+    # none

@@ -34,7 +34,13 @@ func DefineConfigMap(ctx context.Context, c client.Client, owner metav1.Object, 
 	return DefineGeneric[*corev1.ConfigMap](ctx, c, owner, configMapResourceKind, genericConfig, configMapTemplatePath, parser)
 }
 
-// ReconcileConfigMap holds reconciliation logic for a generic ConfigMap in the owner's namespace.
+// ReconcileManuallyDefinedConfigMap holds reconciliation logic for a generic ConfigMap in the owner's namespace.
+// Returns the created/found configmap, a boolean flag indicating whether the return configmap was created during this function, and any errors
+func ReconcileManuallyDefinedConfigMap(ctx context.Context, c client.Client, owner metav1.Object, configMap *corev1.ConfigMap) (*corev1.ConfigMap, bool, error) {
+	return ReconcileGenericManuallyDefined[*corev1.ConfigMap](ctx, c, configMapResourceKind, owner, configMap)
+}
+
+// ReconcileConfigMap holds reconciliation logic for a generic ConfigMap created from a template in the owner's namespace.
 // Returns the created/found configmap, a boolean flag indicating whether the return configmap was created during this function, and any errors
 func ReconcileConfigMap(ctx context.Context, c client.Client, owner metav1.Object, configMapName string, version string, templatePath string, parserFunc ResourceParserFunc[*corev1.ConfigMap]) (*corev1.ConfigMap, bool, error) {
 	configMapConfig := ConfigMapConfig{
@@ -97,15 +103,18 @@ func MountConfigMapToDeployment(configMap *corev1.ConfigMap, volumeName string, 
 }
 
 // Compare a provided configmap against an expectedConfigMap, and update the provided one if its data or labels do not match the expected CM
-func compareAndUpdateConfigmap(ctx context.Context, c client.Client, configMap *corev1.ConfigMap, expectedConfigMap *corev1.ConfigMap) error {
-	// Compare the data content to see if update is needed
+func CompareAndUpdateConfigmap(ctx context.Context, c client.Client, configMap *corev1.ConfigMap, expectedConfigMap *corev1.ConfigMap, syncAnnotations bool) error {
+	annotationsChanged := syncAnnotations && !reflect.DeepEqual(configMap.Annotations, expectedConfigMap.Annotations)
 	if !reflect.DeepEqual(configMap.Data, expectedConfigMap.Data) ||
-		!reflect.DeepEqual(configMap.Labels, expectedConfigMap.Labels) {
+		!reflect.DeepEqual(configMap.Labels, expectedConfigMap.Labels) ||
+		annotationsChanged {
 		LogInfoUpdating(ctx, configMapResourceKind, configMap.Name, configMap.Namespace)
 
-		// Update the existing ConfigMap with new data and labels
 		configMap.Data = expectedConfigMap.Data
 		configMap.Labels = expectedConfigMap.Labels
+		if syncAnnotations {
+			configMap.Annotations = expectedConfigMap.Annotations
+		}
 
 		if err := c.Update(ctx, configMap); err != nil {
 			LogErrorUpdating(ctx, err, configMapResourceKind, configMap.Name, configMap.Namespace)
@@ -136,7 +145,7 @@ func EnsureConfigMap(ctx context.Context, c client.Client, owner metav1.Object, 
 	}
 
 	// check if update is needed by comparing data
-	if err = compareAndUpdateConfigmap(ctx, c, configMap, expectedConfigMap); err != nil {
+	if err = CompareAndUpdateConfigmap(ctx, c, configMap, expectedConfigMap, false); err != nil {
 		return err
 	}
 	return nil
