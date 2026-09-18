@@ -133,7 +133,8 @@ func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGua
 				}
 			}
 
-			if _, exists := configmap.Labels["nemo-guardrails-config"]; !exists {
+			labelValue, labelExists := configmap.Labels["nemo-guardrails-config"]
+			if !labelExists || labelValue != "true" {
 				patch := client.MergeFrom(configmap.DeepCopy())
 				if configmap.Labels == nil {
 					configmap.Labels = map[string]string{}
