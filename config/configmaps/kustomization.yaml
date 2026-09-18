@@ -1,4 +1,5 @@
 resources:
   - evalhub/
+  - nemo-guardrails
 
 namespace: system

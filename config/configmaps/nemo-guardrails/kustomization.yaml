@@ -1,0 +1,7 @@
+resources:
+  - default-guardrails-all.yaml
+  - default-guardrails-injection.yaml
+  - default-guardrails-pii.yaml
+  - default-guardrails-safety.yaml
+
+namespace: system
