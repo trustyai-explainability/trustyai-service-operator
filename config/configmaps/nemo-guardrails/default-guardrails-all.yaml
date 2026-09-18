@@ -401,7 +401,7 @@ data:
             try:
                 windows = _sliding_windows(text, window_size, overlap)
                 for i, window in enumerate(windows):
-                    result = await hf_classifier_check_input(classifier, config, None, text=window, http_client=http_client,
+                    result = await hf_classifier_check_output(classifier, config, context, text=window, http_client=http_client,
                                                              **kwargs)
                     if result != RailOutcome.allow():
                         return result
