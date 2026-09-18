@@ -169,6 +169,40 @@ func TestJobFailureReconciler_ServerAlreadyHandled_NoEvent(t *testing.T) {
 		t.Fatalf("expected no event after dedup (server already handled), got: %s", ev)
 	default:
 	}
+
+	// Retain the Job when the server already marked failure (do not delete after skip).
+	err = fc.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: job.Name}, &batchv1.Job{})
+	assert.NoError(t, err, "job should be retained when evaluation-phase=Failed was already set by the server")
+}
+
+// TestJobFailureReconciler_FailureAlreadyReported_RetainsJob verifies that when the operator has
+// already posted failure (evalhub-failure-reported annotation), reconcile is a no-op that keeps the Job.
+func TestJobFailureReconciler_FailureAlreadyReported_RetainsJob(t *testing.T) {
+	sc := jobFailureLifecycleScheme(t)
+	ns := "tenant-ns"
+
+	job := evalHubEvaluationJob("eval-job-already-reported", ns, nil)
+	job.Annotations = map[string]string{
+		annotationFailureReported: "true",
+	}
+
+	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(job).Build()
+	r, rec := buildJobFailureReconciler(fc, ns)
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: ns, Name: job.Name},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, ctrl.Result{}, result)
+
+	select {
+	case ev := <-rec.Events:
+		t.Fatalf("expected no event when failure already reported, got: %s", ev)
+	default:
+	}
+
+	err = fc.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: job.Name}, &batchv1.Job{})
+	assert.NoError(t, err, "job should be retained when failure-reported annotation is already set")
 }
 
 // TestJobFailureReconciler_OOMKill_EmitsEventAndPatchesJob verifies the full lifecycle for an OOM-killed
