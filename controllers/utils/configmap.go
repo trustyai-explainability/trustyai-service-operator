@@ -7,6 +7,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/yaml"
 
 	"github.com/trustyai-explainability/trustyai-service-operator/pkg/configmap"
 	corev1 "k8s.io/api/core/v1"
@@ -19,9 +20,20 @@ type ConfigMapConfig struct {
 	Version string
 }
 
-const configMapResourceKind = "configmap"
+const ConfigMapResourceKind = "configmap"
 
 // === GENERIC FUNCTIONS ===============================================================================================
+// DefineYAMLConfigMap will marshall a map[string][]string into yaml, then define a ConfigMap containing that yaml file.
+func DefineYAMLConfigMap(name, namespace string, data map[string][]string) (*corev1.ConfigMap, error) {
+	encoded, err := yaml.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal data: %w", err)
+	}
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Data:       map[string]string{"config-user-mapping.yaml": string(encoded)},
+	}, nil
+}
 
 // DefineConfigMap will create a ConfigMap object in the owner's namespace, but does not deploy anything to the cluster
 func DefineConfigMap(ctx context.Context, c client.Client, owner metav1.Object, configMapName string, version string, configMapTemplatePath string, parser ResourceParserFunc[*corev1.ConfigMap]) (*corev1.ConfigMap, error) {
@@ -31,7 +43,7 @@ func DefineConfigMap(ctx context.Context, c client.Client, owner metav1.Object, 
 		Version: version,
 	}
 	genericConfig := GetGenericConfig(StringPointer(configMapName), StringPointer(owner.GetNamespace()), configMapConfig)
-	return DefineGeneric[*corev1.ConfigMap](ctx, c, owner, configMapResourceKind, genericConfig, configMapTemplatePath, parser)
+	return DefineGeneric[*corev1.ConfigMap](ctx, c, owner, ConfigMapResourceKind, genericConfig, configMapTemplatePath, parser)
 }
 
 // ReconcileConfigMap holds reconciliation logic for a generic ConfigMap in the owner's namespace.
@@ -43,7 +55,7 @@ func ReconcileConfigMap(ctx context.Context, c client.Client, owner metav1.Objec
 		Version: version,
 	}
 	genericConfig := GetGenericConfig(StringPointer(configMapName), StringPointer(owner.GetNamespace()), configMapConfig)
-	return ReconcileGeneric[*corev1.ConfigMap](ctx, c, owner, configMapResourceKind, genericConfig, templatePath, parserFunc)
+	return ReconcileGeneric[*corev1.ConfigMap](ctx, c, owner, ConfigMapResourceKind, genericConfig, templatePath, parserFunc)
 }
 
 // === SPECIFIC CONFIGMAP FUNCTIONS ====================================================================================
@@ -97,18 +109,18 @@ func MountConfigMapToDeployment(configMap *corev1.ConfigMap, volumeName string, 
 }
 
 // Compare a provided configmap against an expectedConfigMap, and update the provided one if its data or labels do not match the expected CM
-func compareAndUpdateConfigmap(ctx context.Context, c client.Client, configMap *corev1.ConfigMap, expectedConfigMap *corev1.ConfigMap) error {
+func CompareAndUpdateConfigmap(ctx context.Context, c client.Client, configMap *corev1.ConfigMap, expectedConfigMap *corev1.ConfigMap) error {
 	// Compare the data content to see if update is needed
 	if !reflect.DeepEqual(configMap.Data, expectedConfigMap.Data) ||
 		!reflect.DeepEqual(configMap.Labels, expectedConfigMap.Labels) {
-		LogInfoUpdating(ctx, configMapResourceKind, configMap.Name, configMap.Namespace)
+		LogInfoUpdating(ctx, ConfigMapResourceKind, configMap.Name, configMap.Namespace)
 
 		// Update the existing ConfigMap with new data and labels
 		configMap.Data = expectedConfigMap.Data
 		configMap.Labels = expectedConfigMap.Labels
 
 		if err := c.Update(ctx, configMap); err != nil {
-			LogErrorUpdating(ctx, err, configMapResourceKind, configMap.Name, configMap.Namespace)
+			LogErrorUpdating(ctx, err, ConfigMapResourceKind, configMap.Name, configMap.Namespace)
 			return err
 		}
 	} else {
@@ -121,7 +133,7 @@ func compareAndUpdateConfigmap(ctx context.Context, c client.Client, configMap *
 func EnsureConfigMap(ctx context.Context, c client.Client, owner metav1.Object, configMapName string, version string, templatePath string, parserFunc ResourceParserFunc[*corev1.ConfigMap]) error {
 	configMap, justCreated, err := ReconcileConfigMap(ctx, c, owner, configMapName, version, templatePath, parserFunc)
 	if err != nil {
-		LogErrorRetrieving(ctx, err, configMapResourceKind, configMapName, owner.GetNamespace())
+		LogErrorRetrieving(ctx, err, ConfigMapResourceKind, configMapName, owner.GetNamespace())
 		return err
 	}
 	if justCreated {
@@ -131,12 +143,12 @@ func EnsureConfigMap(ctx context.Context, c client.Client, owner metav1.Object, 
 	// ConfigMap exists, check if update is needed by comparing data
 	expectedConfigMap, err := DefineConfigMap(ctx, c, owner, configMapName, version, templatePath, parserFunc)
 	if err != nil {
-		LogErrorCreating(ctx, err, "expected comparison "+configMapResourceKind, configMapName, owner.GetNamespace())
+		LogErrorCreating(ctx, err, "expected comparison "+ConfigMapResourceKind, configMapName, owner.GetNamespace())
 		return err
 	}
 
 	// check if update is needed by comparing data
-	if err = compareAndUpdateConfigmap(ctx, c, configMap, expectedConfigMap); err != nil {
+	if err = CompareAndUpdateConfigmap(ctx, c, configMap, expectedConfigMap); err != nil {
 		return err
 	}
 	return nil
