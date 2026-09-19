@@ -754,7 +754,7 @@ func (r *GuardrailsOrchestratorReconciler) setConfigMapHashAnnotations(
 		}
 	}
 
-	// Orchestrator config hash
+	// Orchestrator config hash and name (Fix for RHOAIENG-34953: track CM name changes)
 	if getOrchestratorConfigMap(orchestrator) != nil {
 		cmName := *getOrchestratorConfigMap(orchestrator)
 		cm, ok := prefetched[cmName]
@@ -767,14 +767,17 @@ func (r *GuardrailsOrchestratorReconciler) setConfigMapHashAnnotations(
 		if cm != nil {
 			configData := cm.Data["config.yaml"]
 			hash := fmt.Sprintf("%x", sha256.Sum256([]byte(configData)))
-			if annotations["trustyai.opendatahub.io/orchestrator-config-hash"] != hash {
+			hashChanged := annotations["trustyai.opendatahub.io/orchestrator-config-hash"] != hash
+			nameChanged := annotations["trustyai.opendatahub.io/orchestrator-config-name"] != cmName
+			if hashChanged || nameChanged {
 				annotations["trustyai.opendatahub.io/orchestrator-config-hash"] = hash
+				annotations["trustyai.opendatahub.io/orchestrator-config-name"] = cmName
 				changedConfigs = append(changedConfigs, "Orchestrator ConfigMap")
 			}
 		}
 	}
 
-	// Gateway config hash
+	// Gateway config hash and name (Fix for RHOAIENG-34953: track CM name changes)
 	if orchestrator.Spec.EnableGuardrailsGateway && getGatewayConfigMap(orchestrator) != nil {
 		cmName := *getGatewayConfigMap(orchestrator)
 		cm, ok := prefetched[cmName]
@@ -787,8 +790,11 @@ func (r *GuardrailsOrchestratorReconciler) setConfigMapHashAnnotations(
 		if cm != nil {
 			configData := cm.Data["config.yaml"]
 			hash := fmt.Sprintf("%x", sha256.Sum256([]byte(configData)))
-			if annotations["trustyai.opendatahub.io/orchestrator-gateway-config-hash"] != hash {
+			hashChanged := annotations["trustyai.opendatahub.io/orchestrator-gateway-config-hash"] != hash
+			nameChanged := annotations["trustyai.opendatahub.io/orchestrator-gateway-config-name"] != cmName
+			if hashChanged || nameChanged {
 				annotations["trustyai.opendatahub.io/orchestrator-gateway-config-hash"] = hash
+				annotations["trustyai.opendatahub.io/orchestrator-gateway-config-name"] = cmName
 				changedConfigs = append(changedConfigs, "Gateway ConfigMap")
 			}
 		}
