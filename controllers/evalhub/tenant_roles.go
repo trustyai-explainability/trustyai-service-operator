@@ -158,7 +158,7 @@ func tenantAdminRules(instance *evalhubv1.EvalHub) []rbacv1.PolicyRule {
 
 // tenantUserRules returns the PolicyRules for the evalhub-user Role.
 // Evaluation job lifecycle (list/create/get/update/patch/delete), read collections/providers,
-// submit via proxy, create status-events, and MLflow experiment access for submission.
+// submit via proxy and MLflow experiment access for submission.
 func tenantUserRules(instance *evalhubv1.EvalHub) []rbacv1.PolicyRule {
 	return []rbacv1.PolicyRule{
 		{
