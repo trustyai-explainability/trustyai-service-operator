@@ -183,11 +183,6 @@ func tenantUserRules(instance *evalhubv1.EvalHub) []rbacv1.PolicyRule {
 			Verbs:         []string{"get", "create"},
 		},
 		{
-			APIGroups: []string{"trustyai.opendatahub.io"},
-			Resources: []string{"status-events"},
-			Verbs:     []string{"create"},
-		},
-		{
 			APIGroups: []string{"mlflow.kubeflow.org"},
 			Resources: []string{"experiments"},
 			Verbs:     []string{"get", "list", "create"},
