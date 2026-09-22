@@ -121,6 +121,18 @@ func TestCollectionOverridesByName(t *testing.T) {
 	}
 }
 
+func TestReconcileCollectionConfigMapsRejectsUnselectedOverrideWithoutCollections(t *testing.T) {
+	instance := &evalhubv1.EvalHub{
+		Spec: evalhubv1.EvalHubSpec{
+			CollectionOverrides: []evalhubv1.SystemCollectionOverride{{Collection: "collection-a"}},
+		},
+	}
+	reconciler := &EvalHubReconciler{}
+	if _, err := reconciler.reconcileCollectionConfigMaps(context.Background(), instance); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("error = %v, want unselected collection override rejection", err)
+	}
+}
+
 func TestReconcileCollectionConfigMapsAppliesSystemCollectionOverride(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := corev1.AddToScheme(scheme); err != nil {
@@ -249,7 +261,6 @@ func TestReconcileCollectionConfigMapsRejectsOverrideForTenantFallback(t *testin
 		instanceNamespace = "instance-ns"
 		collectionName    = "tenant-collection"
 	)
-	order := int32(1)
 	tenantSource := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "tenant-source",
@@ -267,8 +278,7 @@ func TestReconcileCollectionConfigMapsRejectsOverrideForTenantFallback(t *testin
 			Tenancy:     evalhubv1.TenancySingle,
 			Collections: []string{collectionName},
 			CollectionOverrides: []evalhubv1.SystemCollectionOverride{{
-				Collection:    collectionName,
-				CurationOrder: &order,
+				Collection: collectionName,
 			}},
 		},
 	}

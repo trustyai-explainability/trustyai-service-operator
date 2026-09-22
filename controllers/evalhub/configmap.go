@@ -641,17 +641,16 @@ func (r *EvalHubReconciler) reconcileProviderConfigMaps(ctx context.Context, ins
 //
 // Returns the list of created ConfigMap names (for building projected volumes).
 func (r *EvalHubReconciler) reconcileCollectionConfigMaps(ctx context.Context, instance *evalhubv1.EvalHub) ([]string, error) {
+	overrides, err := collectionOverridesByName(instance.Spec.Collections, instance.Spec.CollectionOverrides)
+	if err != nil {
+		return nil, err
+	}
 	if len(instance.Spec.Collections) == 0 {
 		return nil, nil
 	}
 
 	log := log.FromContext(ctx)
 	log.Info("Reconciling Collection ConfigMaps", "instance", instance.Name, "collections", instance.Spec.Collections)
-
-	overrides, err := collectionOverridesByName(instance.Spec.Collections, instance.Spec.CollectionOverrides)
-	if err != nil {
-		return nil, err
-	}
 
 	type renderedCollectionConfigMap struct {
 		collectionName string
@@ -699,7 +698,7 @@ func (r *EvalHubReconciler) reconcileCollectionConfigMaps(ctx context.Context, i
 
 		src := &sourceList.Items[0]
 		override, hasOverride := overrides[collectionName]
-		if hasOverride && override.CurationOrder != nil && !isSystemCollection {
+		if hasOverride && !isSystemCollection {
 			return nil, fmt.Errorf("collection override for %q requires an operator-packaged system collection", collectionName)
 		}
 		data, err := renderCollectionConfigMapData(src.Data, collectionName, override.CurationOrder)
