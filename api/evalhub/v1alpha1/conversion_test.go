@@ -25,6 +25,10 @@ func fullEvalHubV1Alpha1() *EvalHub {
 			Env:         []corev1.EnvVar{{Name: "KEY", Value: "val"}},
 			Providers:   []string{"garak", "lm-evaluation-harness"},
 			Collections: []string{"safety-and-fairness-v1"},
+			CollectionOverrides: []SystemCollectionOverride{{
+				Collection:    "safety-and-fairness-v1",
+				CurationOrder: int32Ptr(2),
+			}},
 			Database: &DatabaseSpec{
 				Type:         "postgresql",
 				Secret:       "db-secret",
@@ -114,6 +118,9 @@ func TestConvertTo(t *testing.T) {
 	if dst.Spec.MCP == nil || !*dst.Spec.MCP.Enabled {
 		t.Error("MCP not converted")
 	}
+	if len(dst.Spec.CollectionOverrides) != 1 || dst.Spec.CollectionOverrides[0].CurationOrder == nil || *dst.Spec.CollectionOverrides[0].CurationOrder != 2 {
+		t.Errorf("CollectionOverrides = %#v, want one override with curation order 2", dst.Spec.CollectionOverrides)
+	}
 	if dst.Status.Phase != "Ready" {
 		t.Errorf("Status.Phase = %q, want %q", dst.Status.Phase, "Ready")
 	}
@@ -152,6 +159,9 @@ func TestConvertFrom(t *testing.T) {
 	}
 	if roundTripped.Spec.MCP.AuthSecret != src.Spec.MCP.AuthSecret {
 		t.Errorf("MCP.AuthSecret = %q, want %q", roundTripped.Spec.MCP.AuthSecret, src.Spec.MCP.AuthSecret)
+	}
+	if len(roundTripped.Spec.CollectionOverrides) != 1 || roundTripped.Spec.CollectionOverrides[0].CurationOrder == nil || *roundTripped.Spec.CollectionOverrides[0].CurationOrder != 2 {
+		t.Errorf("CollectionOverrides = %#v, want one override with curation order 2", roundTripped.Spec.CollectionOverrides)
 	}
 	if roundTripped.Status.URL != src.Status.URL {
 		t.Errorf("Status.URL = %q, want %q", roundTripped.Status.URL, src.Status.URL)
@@ -287,6 +297,7 @@ func TestConvertDeepCopyIsolation(t *testing.T) {
 	src.Spec.Database.Secret = "MUTATED"
 	src.Spec.Otel.ExporterEndpoint = "MUTATED"
 	src.Spec.MCP.Image = "MUTATED"
+	*src.Spec.CollectionOverrides[0].CurationOrder = 99
 
 	if dst.Spec.Database.Secret == "MUTATED" {
 		t.Error("Database was not deep-copied — mutation leaked")
@@ -296,6 +307,9 @@ func TestConvertDeepCopyIsolation(t *testing.T) {
 	}
 	if dst.Spec.MCP.Image == "MUTATED" {
 		t.Error("MCP was not deep-copied — mutation leaked")
+	}
+	if *dst.Spec.CollectionOverrides[0].CurationOrder == 99 {
+		t.Error("CollectionOverrides was not deep-copied — mutation leaked")
 	}
 }
 
