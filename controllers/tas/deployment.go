@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
 	"reflect"
 	"strconv"
 
@@ -45,6 +46,7 @@ type DeploymentConfig struct {
 	Version                  string
 	BatchSize                int
 	UseDBTLSCerts            bool
+	ProxyTLSArgs             []string
 }
 
 // createDeploymentObject returns a Deployment for the TrustyAI Service instance
@@ -75,6 +77,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		CustomCertificatesBundle: caBunble,
 		Version:                  constants.Version,
 		BatchSize:                batchSize,
+		ProxyTLSArgs:             pkgtls.CurrentProxyTLSArguments().Args,
 	}
 
 	if instance.Spec.Storage.IsStorageDatabase() {

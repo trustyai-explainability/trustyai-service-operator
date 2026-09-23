@@ -55,6 +55,35 @@ func TestResolveProxyTLSArgumentsRejectsStrictProfiles(t *testing.T) {
 	}
 }
 
+func TestResolveProxyTLSArgumentsUsesApplicableIANACiphers(t *testing.T) {
+	profile := &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType, Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
+		MinTLSVersion: configv1.VersionTLS12,
+		Ciphers: []string{
+			"TLS_AES_128_GCM_SHA256",
+			"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+		},
+	}}}
+	got, err := ResolveProxyTLSArguments(profile, TLSAdherenceStrictAllComponents, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.CipherSuites, []string{"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"}) {
+		t.Fatalf("CipherSuites = %v", got.CipherSuites)
+	}
+	if !strings.Contains(strings.Join(got.Args, " "), "--tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256") {
+		t.Fatalf("expected plural cipher flag in args: %v", got.Args)
+	}
+}
+
+func TestResolveProxyTLSArgumentsRejectsUnknownMinimumVersion(t *testing.T) {
+	profile := &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType, Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
+		MinTLSVersion: "VersionTLS99",
+	}}}
+	if _, err := ResolveProxyTLSArguments(profile, TLSAdherenceStrictAllComponents, nil, false); err == nil {
+		t.Fatal("expected unknown TLS version to fail")
+	}
+}
+
 func TestResolveProxyTLSArgumentsOmitsTLS13CipherFlag(t *testing.T) {
 	profile := &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType, Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
 		MinTLSVersion: configv1.VersionTLS13,

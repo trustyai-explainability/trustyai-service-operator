@@ -144,6 +144,7 @@ func run() int {
 		return 1
 	}
 	tlsOpts := tlsResult.TLSOpts
+	pkgtls.SetProxyTLSArguments(tlsResult.ProxyArgs)
 
 	metricsOpts := server.Options{
 		BindAddress:   metricsAddr,

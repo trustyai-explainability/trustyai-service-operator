@@ -15,6 +15,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	openshifttls "github.com/openshift/controller-runtime-common/pkg/tls"
+	libgocrypto "github.com/openshift/library-go/pkg/crypto"
 )
 
 const (
@@ -74,7 +75,7 @@ func ResolveProxyTLSArguments(profile *configv1.TLSSecurityProfile, adherence st
 	// Go and kube-rbac-proxy cannot restrict TLS 1.3 cipher suites. Do not
 	// accidentally pass the TLS 1.2 list when the profile requires TLS 1.3.
 	if min != tls.VersionTLS13 {
-		result.CipherSuites = supportedCipherNames(spec.Ciphers)
+		result.CipherSuites = supportedCipherNames(spec.Ciphers, min)
 		if len(spec.Ciphers) > 0 && len(result.CipherSuites) == 0 {
 			return ProxyTLSArguments{}, fmt.Errorf("TLS profile has no supported cipher suites for TLS %s", minVersion)
 		}
@@ -101,17 +102,22 @@ func tlsVersion(version string) (uint16, error) {
 	}
 }
 
-func supportedCipherNames(names []string) []string {
+func supportedCipherNames(names []string, minVersion uint16) []string {
 	if len(names) == 0 {
 		return nil
 	}
 	result := make([]string, 0, len(names))
 	for _, name := range names {
+		ianaNames := libgocrypto.OpenSSLToIANACipherSuites([]string{name})
+		if len(ianaNames) != 1 {
+			ianaNames = []string{name}
+		}
 		for _, suite := range tls.CipherSuites() {
-			if suite.Name == name {
-				result = append(result, suite.Name)
-				break
+			if suite.Name != ianaNames[0] || !supportsVersion(suite.SupportedVersions, minVersion) {
+				continue
 			}
+			result = append(result, suite.Name)
+			break
 		}
 	}
 	return result
@@ -123,6 +129,15 @@ var curveIDs = map[string]uint16{
 	"secp521r1":      25,
 	"X25519":         29,
 	"X25519MLKEM768": 4588,
+}
+
+func supportsVersion(versions []uint16, wanted uint16) bool {
+	for _, version := range versions {
+		if version == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveCurves(groups []string, fips, strict bool) ([]uint16, error) {
