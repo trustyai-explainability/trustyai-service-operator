@@ -138,6 +138,7 @@ func Resolve(ctx context.Context, cfg *rest.Config) (Result, error) {
 	if err != nil {
 		return result, err
 	}
+	// The pinned APIServerSpec API has no TLS adherence field, so strict proxy adherence cannot be selected here.
 	result.ProxyArgs, err = ResolveProxyTLSArguments(apiServer.Spec.TLSSecurityProfile, TLSAdherenceNoOpinion, nil, false)
 	if err != nil {
 		return result, err
