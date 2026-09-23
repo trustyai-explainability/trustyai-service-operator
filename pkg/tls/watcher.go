@@ -38,13 +38,22 @@ const profileRetryInterval = 5 * time.Second
 type ProfileWatcher struct {
 	client.Client
 	lastProfile     *configv1.TLSSecurityProfile
+	lastAdherence   string
 	onProfileChange func()
 }
 
 func NewProfileWatcher(c client.Client, initialProfile *configv1.TLSSecurityProfile, onProfileChange func()) *ProfileWatcher {
+	return NewProfileWatcherWithAdherence(c, initialProfile, TLSAdherenceNoOpinion, onProfileChange)
+}
+
+// NewProfileWatcherWithAdherence seeds the watcher with the complete state
+// read during operator bootstrap. On API versions without the adherence API
+// field, the operator boundary supplies it through ConfiguredTLSAdherence.
+func NewProfileWatcherWithAdherence(c client.Client, initialProfile *configv1.TLSSecurityProfile, initialAdherence string, onProfileChange func()) *ProfileWatcher {
 	return &ProfileWatcher{
 		Client:          c,
 		lastProfile:     initialProfile,
+		lastAdherence:   initialAdherence,
 		onProfileChange: onProfileChange,
 	}
 }
@@ -57,9 +66,11 @@ func (w *ProfileWatcher) Reconcile(ctx context.Context, _ reconcile.Request) (re
 	}
 
 	currentProfile := apiServer.Spec.TLSSecurityProfile
-	if !reflect.DeepEqual(w.lastProfile, currentProfile) {
-		watcherLog.Info("TLS security profile changed, triggering restart")
+	currentAdherence := ConfiguredTLSAdherence()
+	if !reflect.DeepEqual(w.lastProfile, currentProfile) || w.lastAdherence != currentAdherence {
+		watcherLog.Info("TLS security profile or adherence changed, triggering operand refresh", "adherence", currentAdherence)
 		w.lastProfile = currentProfile
+		w.lastAdherence = currentAdherence
 		if w.onProfileChange != nil {
 			w.onProfileChange()
 		}

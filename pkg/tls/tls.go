@@ -21,6 +21,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -36,11 +37,24 @@ import (
 
 var log = ctrl.Log.WithName("tls")
 
+const tlsAdherenceEnv = "TRUSTYAI_TLS_ADHERENCE"
+
+// ConfiguredTLSAdherence is the operator-boundary source for adherence on
+// OpenShift API versions that do not expose APIServerSpec.TLSAdherence yet.
+// Deployments should inject this from the platform's TLS-adherence setting;
+// an unset value intentionally means NoOpinion. Keeping it here makes the
+// source explicit and lets the watcher observe transitions without teaching
+// kube-rbac-proxy about cluster configuration.
+func ConfiguredTLSAdherence() string {
+	return os.Getenv(tlsAdherenceEnv)
+}
+
 // Result holds the resolved TLS configuration.
 type Result struct {
 	TLSOpts      []func(*tls.Config)
 	APIAvailable bool
 	ProfileSpec  *configv1.TLSSecurityProfile
+	TLSAdherence string
 	ProxyArgs    ProxyTLSArguments
 }
 
@@ -133,13 +147,20 @@ func Resolve(ctx context.Context, cfg *rest.Config) (Result, error) {
 
 	result.APIAvailable = true
 	result.ProfileSpec = apiServer.Spec.TLSSecurityProfile
+	result.TLSAdherence = ConfiguredTLSAdherence()
 
 	result.TLSOpts, err = tlsOptsForProfile(apiServer.Spec.TLSSecurityProfile)
 	if err != nil {
 		return result, err
 	}
-	// The pinned APIServerSpec API has no TLS adherence field, so strict proxy adherence cannot be selected here.
-	result.ProxyArgs, err = ResolveProxyTLSArguments(apiServer.Spec.TLSSecurityProfile, TLSAdherenceNoOpinion, nil, false)
+	// Resolve the complete profile plus operator-boundary adherence value
+	// before publishing it to workload builders.
+	result.ProxyArgs, err = ResolveProxyTLSArguments(
+		apiServer.Spec.TLSSecurityProfile,
+		result.TLSAdherence,
+		nil,
+		false,
+	)
 	if err != nil {
 		return result, err
 	}
