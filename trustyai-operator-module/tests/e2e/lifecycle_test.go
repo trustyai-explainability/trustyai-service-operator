@@ -95,6 +95,25 @@ func testLifecycle(t *testing.T) {
 			_ = k8sClient.Delete(ctx, operand)
 		})
 		g.Expect(waitForModulePhase(ctx, common.PhaseReady)).To(gomega.Succeed())
+
+		deployment := &appsv1.Deployment{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "e2e-tas",
+			Namespace: OperatorNamespace,
+		}, deployment)
+		g.Expect(err).NotTo(gomega.HaveOccurred())
+
+		var args []string
+		for _, container := range deployment.Spec.Template.Spec.Containers {
+			if container.Name == "kube-rbac-proxy" {
+				args = container.Args
+				break
+			}
+		}
+		g.Expect(args).NotTo(gomega.BeEmpty())
+		g.Expect(args).To(gomega.ContainElement("--tls-min-version=VersionTLS12"))
+		g.Expect(args).To(gomega.ContainElement("--tls-curve-preferences=23,24,25,29"))
+		g.Expect(args).To(gomega.ContainElement(gomega.HavePrefix("--tls-cipher-suites=")))
 	})
 
 	t.Run("records platform version transitions in status.releases", func(t *testing.T) {
