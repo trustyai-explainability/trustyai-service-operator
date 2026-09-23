@@ -19,7 +19,6 @@ func (src *EvalHub) ConvertTo(dstRaw conversion.Hub) error {
 	dst.Spec.Env = deepCopyEnvVars(src.Spec.Env)
 	dst.Spec.Providers = copyStrings(src.Spec.Providers)
 	dst.Spec.Collections = copyStrings(src.Spec.Collections)
-	dst.Spec.CollectionOverrides = copyCollectionOverridesToV1(src.Spec.CollectionOverrides)
 
 	if src.Spec.Database != nil {
 		dst.Spec.Database = &v1.DatabaseSpec{
@@ -103,7 +102,6 @@ func (dst *EvalHub) ConvertFrom(srcRaw conversion.Hub) error {
 	dst.Spec.Env = deepCopyEnvVars(src.Spec.Env)
 	dst.Spec.Providers = copyStrings(src.Spec.Providers)
 	dst.Spec.Collections = copyStrings(src.Spec.Collections)
-	dst.Spec.CollectionOverrides = copyCollectionOverridesFromV1(src.Spec.CollectionOverrides)
 
 	if src.Spec.Database != nil {
 		dst.Spec.Database = &DatabaseSpec{
@@ -174,30 +172,6 @@ func copyStrings(s []string) []string {
 	out := make([]string, len(s))
 	copy(out, s)
 	return out
-}
-
-func copyCollectionOverridesToV1(src []SystemCollectionOverride) []v1.SystemCollectionOverride {
-	if src == nil {
-		return nil
-	}
-	dst := make([]v1.SystemCollectionOverride, len(src))
-	for i, override := range src {
-		dst[i].Collection = override.Collection
-		dst[i].CurationOrder = copyInt32Ptr(override.CurationOrder)
-	}
-	return dst
-}
-
-func copyCollectionOverridesFromV1(src []v1.SystemCollectionOverride) []SystemCollectionOverride {
-	if src == nil {
-		return nil
-	}
-	dst := make([]SystemCollectionOverride, len(src))
-	for i, override := range src {
-		dst[i].Collection = override.Collection
-		dst[i].CurationOrder = copyInt32Ptr(override.CurationOrder)
-	}
-	return dst
 }
 
 func deepCopyEnvVars(envs []corev1.EnvVar) []corev1.EnvVar {
