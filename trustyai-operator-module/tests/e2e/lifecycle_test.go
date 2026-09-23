@@ -14,6 +14,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -85,6 +86,44 @@ func testLifecycle(t *testing.T) {
 			OperatorNamespace,
 			WorkloadOperatorDeploymentName,
 		)).To(gomega.Succeed())
+
+		storageClassName := ""
+		hostPathType := corev1.HostPathDirectoryOrCreate
+		pv := &corev1.PersistentVolume{
+			ObjectMeta: metav1.ObjectMeta{Name: "e2e-tas-pv"},
+			Spec: corev1.PersistentVolumeSpec{
+				Capacity:                      corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Mi")},
+				AccessModes:                   []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
+				StorageClassName:              storageClassName,
+				ClaimRef:                      &corev1.ObjectReference{Name: "e2e-tas-pvc", Namespace: OperatorNamespace},
+				PersistentVolumeSource: corev1.PersistentVolumeSource{
+					HostPath: &corev1.HostPathVolumeSource{Path: "/tmp/e2e-tas", Type: &hostPathType},
+				},
+			},
+		}
+		g.Expect(k8sClient.Create(ctx, pv)).To(gomega.Succeed())
+		t.Cleanup(func() { _ = k8sClient.Delete(ctx, pv) })
+
+		pvc := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{Name: "e2e-tas-pvc", Namespace: OperatorNamespace},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources:        corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Mi")}},
+				StorageClassName: &storageClassName,
+				VolumeName:       pv.Name,
+			},
+		}
+		g.Expect(k8sClient.Create(ctx, pvc)).To(gomega.Succeed())
+		t.Cleanup(func() { _ = k8sClient.Delete(ctx, pvc) })
+		g.Eventually(func() corev1.PersistentVolumeClaimPhase {
+			current := &corev1.PersistentVolumeClaim{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}, current); err != nil {
+				return ""
+			}
+			return current.Status.Phase
+		}, pollTimeout, pollInterval).Should(gomega.Equal(corev1.ClaimBound))
+
 		g.Expect(createHealthyTrustyAIService(ctx, OperatorNamespace, "e2e-tas")).To(gomega.Succeed())
 		t.Cleanup(func() {
 			operand := &unstructured.Unstructured{}
