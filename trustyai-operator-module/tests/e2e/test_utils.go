@@ -151,7 +151,7 @@ func createHealthyTrustyAIService(ctx context.Context, namespace, name string) e
 		},
 		"spec": map[string]interface{}{
 			"metrics": map[string]interface{}{"schedule": "0 0 * * *"},
-			"storage": map[string]interface{}{"format": "PVC"},
+			"storage": map[string]interface{}{"format": "PVC", "size": "1Gi"},
 		},
 	}}
 	operand.SetGroupVersionKind(trustyAIServiceGVK)
