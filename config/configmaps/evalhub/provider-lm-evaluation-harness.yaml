@@ -1971,14 +1971,14 @@ data:
       description: 23 challenging tasks where LLMs previously failed to match average human raters.
       category: logic_reasoning
       metrics:
-      - acc
+      - exact_match
       num_few_shot: 0
       dataset_size: 1000
       tags:
       - logic_reasoning
       - lm_eval
       primary_score:
-        metric: acc
+        metric: exact_match
         lower_is_better: false
       pass_criteria:
         threshold: 0.25
@@ -1987,14 +1987,14 @@ data:
       description: BIG-Bench Hard with step-by-step reasoning and 5-shot examples.
       category: logic_reasoning
       metrics:
-      - acc
+      - exact_match
       num_few_shot: 5
       dataset_size: 1000
       tags:
       - logic_reasoning
       - lm_eval
       primary_score:
-        metric: acc
+        metric: exact_match
         lower_is_better: false
       pass_criteria:
         threshold: 0.25
@@ -2003,14 +2003,14 @@ data:
       description: Determines who or what is causally responsible in complex real-world scenarios.
       category: logic_reasoning
       metrics:
-      - acc
+      - exact_match
       num_few_shot: 5
       dataset_size: 1000
       tags:
       - logic_reasoning
       - lm_eval
       primary_score:
-        metric: acc
+        metric: exact_match
         lower_is_better: false
       pass_criteria:
         threshold: 0.25
@@ -2019,14 +2019,14 @@ data:
       description: Tests formal language skills by completing balanced bracket sequences.
       category: logic_reasoning
       metrics:
-      - acc
+      - exact_match
       num_few_shot: 5
       dataset_size: 1000
       tags:
       - logic_reasoning
       - lm_eval
       primary_score:
-        metric: acc
+        metric: exact_match
         lower_is_better: false
       pass_criteria:
         threshold: 0.25
@@ -2036,14 +2036,14 @@ data:
         Identifies the naturally-ordered adjective sequence (e.g., 'big red ball' vs. 'red big ball').
       category: logic_reasoning
       metrics:
-      - acc
+      - exact_match
       num_few_shot: 5
       dataset_size: 1000
       tags:
       - logic_reasoning
       - lm_eval
       primary_score:
-        metric: acc
+        metric: exact_match
         lower_is_better: false
       pass_criteria:
         threshold: 0.25
@@ -2052,14 +2052,14 @@ data:
       description: Deduces the correct order of three objects from a set of clues.
       category: logic_reasoning
       metrics:
-      - acc
+      - exact_match
       num_few_shot: 5
       dataset_size: 1000
       tags:
       - logic_reasoning
       - lm_eval
       primary_score:
-        metric: acc
+        metric: exact_match
         lower_is_better: false
       pass_criteria:
         threshold: 0.25
@@ -2068,14 +2068,14 @@ data:
       description: Determines final position after a sequence of movement instructions.
       category: logic_reasoning
       metrics:
-      - acc
+      - exact_match
       num_few_shot: 5
       dataset_size: 1000
       tags:
       - logic_reasoning
       - lm_eval
       primary_score:
-        metric: acc
+        metric: exact_match
         lower_is_better: false
       pass_criteria:
         threshold: 0.25
@@ -2084,14 +2084,14 @@ data:
       description: Answers questions about colors, positions, and properties of described objects.
       category: logic_reasoning
       metrics:
-      - acc
+      - exact_match
       num_few_shot: 5
       dataset_size: 1000
       tags:
       - logic_reasoning
       - lm_eval
       primary_score:
-        metric: acc
+        metric: exact_match
         lower_is_better: false
       pass_criteria:
         threshold: 0.25
@@ -2100,14 +2100,14 @@ data:
       description: Identifies which of two similar sentences is sarcastic.
       category: logic_reasoning
       metrics:
-      - acc
+      - exact_match
       num_few_shot: 5
       dataset_size: 1000
       tags:
       - logic_reasoning
       - lm_eval
       primary_score:
-        metric: acc
+        metric: exact_match
         lower_is_better: false
       pass_criteria:
         threshold: 0.25
@@ -2116,14 +2116,14 @@ data:
       description: Tracks where five objects end up after a series of swaps.
       category: logic_reasoning
       metrics:
-      - acc
+      - exact_match
       num_few_shot: 5
       dataset_size: 1000
       tags:
       - logic_reasoning
       - lm_eval
       primary_score:
-        metric: acc
+        metric: exact_match
         lower_is_better: false
       pass_criteria:
         threshold: 0.25
@@ -2132,14 +2132,14 @@ data:
       description: "Determines the final truth value through a chain of 'X says Y is a liar' statements."
       category: logic_reasoning
       metrics:
-      - acc
+      - exact_match
       num_few_shot: 5
       dataset_size: 1000
       tags:
       - logic_reasoning
       - lm_eval
       primary_score:
-        metric: acc
+        metric: exact_match
         lower_is_better: false
       pass_criteria:
         threshold: 0.25
@@ -2148,14 +2148,14 @@ data:
       description: BIG-Bench Hard with step-by-step reasoning but no provided examples.
       category: logic_reasoning
       metrics:
-      - acc
+      - exact_match
       num_few_shot: 0
       dataset_size: 1000
       tags:
       - logic_reasoning
       - lm_eval
       primary_score:
-        metric: acc
+        metric: exact_match
         lower_is_better: false
       pass_criteria:
         threshold: 0.25
@@ -2164,14 +2164,14 @@ data:
       description: Determines causal responsibility without any example demonstrations.
       category: logic_reasoning
       metrics:
-      - acc
+      - exact_match
       num_few_shot: 0
       dataset_size: 1000
       tags:
       - logic_reasoning
       - lm_eval
       primary_score:
-        metric: acc
+        metric: exact_match
         lower_is_better: false
       pass_criteria:
         threshold: 0.25
@@ -2180,14 +2180,14 @@ data:
       description: Completes balanced bracket sequences without any example demonstrations.
       category: logic_reasoning
       metrics:
-      - acc
+      - exact_match
       num_few_shot: 0
       dataset_size: 1000
       tags:
       - logic_reasoning
       - lm_eval
       primary_score:
-        metric: acc
+        metric: exact_match
         lower_is_better: false
       pass_criteria:
         threshold: 0.25
