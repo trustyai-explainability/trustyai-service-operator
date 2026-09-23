@@ -113,7 +113,7 @@ func supportedCipherNames(names []string, minVersion uint16) []string {
 			ianaNames = []string{name}
 		}
 		for _, suite := range tls.CipherSuites() {
-			if suite.Name != ianaNames[0] || !supportsVersion(suite.SupportedVersions, minVersion) {
+			if suite.Name != ianaNames[0] || !supportsVersionAtOrAbove(suite.SupportedVersions, minVersion) {
 				continue
 			}
 			result = append(result, suite.Name)
@@ -131,9 +131,10 @@ var curveIDs = map[string]uint16{
 	"X25519MLKEM768": 4588,
 }
 
-func supportsVersion(versions []uint16, wanted uint16) bool {
+func supportsVersionAtOrAbove(versions []uint16, wanted uint16) bool {
 	for _, version := range versions {
-		if version == wanted {
+		// TLS 1.3 cipher suites are not configurable through CipherSuites.
+		if version != tls.VersionTLS13 && version >= wanted {
 			return true
 		}
 	}
