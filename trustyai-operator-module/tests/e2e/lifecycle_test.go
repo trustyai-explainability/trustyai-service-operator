@@ -96,11 +96,10 @@ func testLifecycle(t *testing.T) {
 		g.Expect(waitForModulePhase(ctx, common.PhaseReady)).To(gomega.Succeed())
 
 		deployment := &appsv1.Deployment{}
-		err = k8sClient.Get(ctx, types.NamespacedName{
+		g.Expect(waitForResource(ctx, types.NamespacedName{
 			Name:      "e2e-tas",
 			Namespace: OperatorNamespace,
-		}, deployment)
-		g.Expect(err).NotTo(gomega.HaveOccurred())
+		}, deployment)).To(gomega.Succeed())
 
 		var args []string
 		for _, container := range deployment.Spec.Template.Spec.Containers {
