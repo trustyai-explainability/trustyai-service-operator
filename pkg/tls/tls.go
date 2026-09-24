@@ -141,7 +141,14 @@ func Resolve(ctx context.Context, cfg *rest.Config) (Result, error) {
 			return result, fmt.Errorf("failed to read APIServer TLS profile: %w", err)
 		}
 		result.TLSOpts, _ = tlsOptsForProfile(nil)
-		result.ProxyArgs, _ = ResolveProxyTLSArguments(nil, TLSAdherenceNoOpinion, nil, false)
+		if result.APIAvailable {
+			// A transient read failure must not replace a previously published
+			// strict profile with NoOpinion arguments. Keep the last known-good
+			// value until the watcher can confirm the current APIServer state.
+			result.ProxyArgs = CurrentProxyTLSArguments()
+		} else {
+			result.ProxyArgs, _ = ResolveProxyTLSArguments(nil, TLSAdherenceNoOpinion, nil, false)
+		}
 		return result, nil //nolint:nilerr // intentional fail-open: use hardened defaults for transient/expected errors
 	}
 
