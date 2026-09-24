@@ -1,8 +1,10 @@
 package evalhub
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
 	"strings"
@@ -10,6 +12,7 @@ import (
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
+	yamlv3 "gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -638,6 +641,10 @@ func (r *EvalHubReconciler) reconcileProviderConfigMaps(ctx context.Context, ins
 //
 // Returns the list of created ConfigMap names (for building projected volumes).
 func (r *EvalHubReconciler) reconcileCollectionConfigMaps(ctx context.Context, instance *evalhubv1.EvalHub) ([]string, error) {
+	overrides, err := collectionOverridesByName(instance.Spec.Collections, instance.Spec.CollectionOverrides)
+	if err != nil {
+		return nil, err
+	}
 	if len(instance.Spec.Collections) == 0 {
 		return nil, nil
 	}
@@ -645,7 +652,12 @@ func (r *EvalHubReconciler) reconcileCollectionConfigMaps(ctx context.Context, i
 	log := log.FromContext(ctx)
 	log.Info("Reconciling Collection ConfigMaps", "instance", instance.Name, "collections", instance.Spec.Collections)
 
-	var cmNames []string
+	type renderedCollectionConfigMap struct {
+		collectionName string
+		targetName     string
+		data           map[string]string
+	}
+	renderedConfigMaps := make([]renderedCollectionConfigMap, 0, len(instance.Spec.Collections))
 	for _, collectionName := range instance.Spec.Collections {
 		// Look up the source ConfigMap by both labels in the operator namespace
 		var sourceList corev1.ConfigMapList
@@ -658,6 +670,12 @@ func (r *EvalHubReconciler) reconcileCollectionConfigMaps(ctx context.Context, i
 			return nil, fmt.Errorf("failed to list collection ConfigMaps for %q in namespace %s: %w", collectionName, r.Namespace, err)
 		}
 
+		if len(sourceList.Items) > 1 {
+			return nil, fmt.Errorf("collection %q is ambiguous: found %d system ConfigMaps in namespace %s, expected exactly 1",
+				collectionName, len(sourceList.Items), r.Namespace)
+		}
+
+		isSystemCollection := len(sourceList.Items) == 1
 		if len(sourceList.Items) == 0 && instance.Spec.IsSingleTenancy() {
 			if err := r.List(ctx, &sourceList,
 				client.InNamespace(instance.Namespace),
@@ -679,44 +697,189 @@ func (r *EvalHubReconciler) reconcileCollectionConfigMaps(ctx context.Context, i
 		}
 
 		src := &sourceList.Items[0]
-		targetName := instance.Name + "-collection-" + collectionName
+		override, hasOverride := overrides[collectionName]
+		if hasOverride && !isSystemCollection {
+			return nil, fmt.Errorf("collection override for %q requires an operator-packaged system collection", collectionName)
+		}
+		data, err := renderCollectionConfigMapData(src.Data, collectionName, override.CurationOrder)
+		if err != nil {
+			return nil, fmt.Errorf("render collection ConfigMap for %q: %w", collectionName, err)
+		}
+		renderedConfigMaps = append(renderedConfigMaps, renderedCollectionConfigMap{
+			collectionName: collectionName,
+			targetName:     instance.Name + "-collection-" + collectionName,
+			data:           data,
+		})
+	}
 
+	cmNames := make([]string, 0, len(renderedConfigMaps))
+	for _, rendered := range renderedConfigMaps {
 		configMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      targetName,
+				Name:      rendered.targetName,
 				Namespace: instance.Namespace,
 			},
 		}
-
-		// Check if ConfigMap already exists
 		getErr := r.Get(ctx, client.ObjectKeyFromObject(configMap), configMap)
 		if getErr != nil && !errors.IsNotFound(getErr) {
 			return nil, getErr
 		}
 
 		if errors.IsNotFound(getErr) {
-			configMap.Data = src.Data
+			configMap.Data = rendered.data
 			if instance.UID != "" {
 				if err := controllerutil.SetControllerReference(instance, configMap, r.Scheme); err != nil {
 					return nil, err
 				}
 			}
-			log.Info("Creating Collection ConfigMap", "name", targetName, "collection", collectionName)
+			log.Info("Creating Collection ConfigMap", "name", rendered.targetName, "collection", rendered.collectionName)
 			if err := r.Create(ctx, configMap); err != nil {
 				return nil, err
 			}
 		} else {
-			configMap.Data = src.Data
-			log.Info("Updating Collection ConfigMap", "name", targetName, "collection", collectionName)
+			configMap.Data = rendered.data
+			log.Info("Updating Collection ConfigMap", "name", rendered.targetName, "collection", rendered.collectionName)
 			if err := r.Update(ctx, configMap); err != nil {
 				return nil, err
 			}
 		}
 
-		cmNames = append(cmNames, targetName)
+		cmNames = append(cmNames, rendered.targetName)
 	}
 
 	return cmNames, nil
+}
+
+func collectionOverridesByName(collections []string, overrides []evalhubv1.SystemCollectionOverride) (map[string]evalhubv1.SystemCollectionOverride, error) {
+	selected := make(map[string]struct{}, len(collections))
+	for _, collection := range collections {
+		selected[collection] = struct{}{}
+	}
+
+	byName := make(map[string]evalhubv1.SystemCollectionOverride, len(overrides))
+	for _, override := range overrides {
+		if strings.TrimSpace(override.Collection) == "" {
+			return nil, fmt.Errorf("collection override must specify collection")
+		}
+		if _, ok := selected[override.Collection]; !ok {
+			return nil, fmt.Errorf("collection override for %q does not match a selected collection", override.Collection)
+		}
+		if _, exists := byName[override.Collection]; exists {
+			return nil, fmt.Errorf("duplicate collection override for %q", override.Collection)
+		}
+		if override.CurationOrder != nil && *override.CurationOrder < 0 {
+			return nil, fmt.Errorf("collection override for %q has negative curationOrder", override.Collection)
+		}
+		byName[override.Collection] = override
+	}
+
+	return byName, nil
+}
+
+// renderCollectionConfigMapData returns a copy of sourceData with curation_order
+// updated only in the YAML document whose id matches collectionName. A nil
+// curationOrder retains the packaged data unchanged.
+func renderCollectionConfigMapData(sourceData map[string]string, collectionName string, curationOrder *int32) (map[string]string, error) {
+	renderedData := make(map[string]string, len(sourceData))
+	for key, value := range sourceData {
+		renderedData[key] = value
+	}
+	if curationOrder == nil {
+		return renderedData, nil
+	}
+
+	matched := 0
+	for key, value := range sourceData {
+		rendered, matches, err := renderCollectionYAML(value, collectionName, *curationOrder)
+		if err != nil {
+			return nil, fmt.Errorf("parse data key %q: %w", key, err)
+		}
+		matched += matches
+		if matched > 1 {
+			return nil, fmt.Errorf("found multiple collection YAML documents with id %q", collectionName)
+		}
+		if matches == 1 {
+			renderedData[key] = rendered
+		}
+	}
+	if matched == 0 {
+		return nil, fmt.Errorf("no collection YAML document with id %q", collectionName)
+	}
+
+	return renderedData, nil
+}
+
+func renderCollectionYAML(content, collectionName string, curationOrder int32) (string, int, error) {
+	decoder := yamlv3.NewDecoder(strings.NewReader(content))
+	var output bytes.Buffer
+	encoder := yamlv3.NewEncoder(&output)
+	encoder.SetIndent(2)
+
+	matches := 0
+	for {
+		var document yamlv3.Node
+		err := decoder.Decode(&document)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", 0, err
+		}
+
+		if collectionDocumentID(&document) == collectionName {
+			matches++
+			if matches > 1 {
+				return "", 0, fmt.Errorf("found multiple YAML documents with id %q", collectionName)
+			}
+			setMappingInt(&document, "curation_order", curationOrder)
+		}
+
+		if err := encoder.Encode(&document); err != nil {
+			return "", 0, err
+		}
+	}
+	if err := encoder.Close(); err != nil {
+		return "", 0, err
+	}
+
+	return output.String(), matches, nil
+}
+
+func collectionDocumentID(document *yamlv3.Node) string {
+	if document.Kind != yamlv3.DocumentNode || len(document.Content) != 1 {
+		return ""
+	}
+	value := mappingValue(document.Content[0], "id")
+	if value == nil {
+		return ""
+	}
+	return value.Value
+}
+
+func setMappingInt(document *yamlv3.Node, key string, value int32) {
+	mapping := document.Content[0]
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			mapping.Content[i+1] = &yamlv3.Node{Kind: yamlv3.ScalarNode, Tag: "!!int", Value: strconv.FormatInt(int64(value), 10)}
+			return
+		}
+	}
+	mapping.Content = append(mapping.Content,
+		&yamlv3.Node{Kind: yamlv3.ScalarNode, Tag: "!!str", Value: key},
+		&yamlv3.Node{Kind: yamlv3.ScalarNode, Tag: "!!int", Value: strconv.FormatInt(int64(value), 10)},
+	)
+}
+
+func mappingValue(mapping *yamlv3.Node, key string) *yamlv3.Node {
+	if mapping == nil || mapping.Kind != yamlv3.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			return mapping.Content[i+1]
+		}
+	}
+	return nil
 }
 
 // collectionVolumeProjections builds VolumeProjection entries for mounting collection ConfigMaps

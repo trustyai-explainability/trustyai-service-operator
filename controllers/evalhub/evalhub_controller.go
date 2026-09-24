@@ -256,10 +256,12 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		collectionCMNames, reconcileErr = r.reconcileCollectionConfigMaps(ctx, instance)
 		if reconcileErr != nil {
 			log.Error(reconcileErr, "Failed to reconcile Collection ConfigMaps")
+			instance.SetStatus("CollectionOverridesReady", "RenderFailed", reconcileErr.Error(), corev1.ConditionFalse)
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Collection ConfigMaps: %v", reconcileErr), corev1.ConditionFalse)
 			r.Status().Update(ctx, instance)
 			return reconcileErr
 		}
+		instance.SetStatus("CollectionOverridesReady", "Rendered", fmt.Sprintf("Rendered %d collection override(s)", len(instance.Spec.CollectionOverrides)), corev1.ConditionTrue)
 		instance.Status.ActiveCollections = instance.Spec.Collections
 		tenantProviderCMNames, reconcileErr = r.reconcileTenantProviderConfigMaps(ctx, instance)
 		if reconcileErr != nil {
