@@ -156,6 +156,9 @@ spec:
             - --secure-listen-address=0.0.0.0:8443
             - --upstream=http://127.0.0.1:8081/
             - --config-file=/etc/kube-rbac-proxy/config.yaml
+{{- range .ProxyTLSArgs }}
+            - {{ . }}
+{{- end }}
             - --tls-cert-file=/etc/tls/private/tls.crt
             - --tls-private-key-file=/etc/tls/private/tls.key
             - --proxy-endpoints-port=9443

@@ -15,6 +15,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/nemo_guardrails/templates"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -244,6 +245,11 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 	if err != nil {
 		utils.LogErrorParsing(ctx, err, "deployment template", nemoGuardrails.Name, nemoGuardrails.Namespace)
 		return nil, err
+	}
+	for i := range deployment.Spec.Template.Spec.Containers {
+		if deployment.Spec.Template.Spec.Containers[i].Name == "kube-rbac-proxy" {
+			deployment.Spec.Template.Spec.Containers[i].Args = append(deployment.Spec.Template.Spec.Containers[i].Args, pkgtls.CurrentProxyTLSArguments().Args...)
+		}
 	}
 	if err := controllerutil.SetControllerReference(nemoGuardrails, deployment, r.Scheme); err != nil {
 		utils.LogErrorControllerReference(ctx, err, "deployment", deployment.Name, deployment.Namespace)

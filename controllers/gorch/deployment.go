@@ -7,6 +7,7 @@ import (
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/gorch/templates"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
 	appsv1 "k8s.io/api/apps/v1"
 	"reflect"
 	"strings"
@@ -29,6 +30,7 @@ type DeploymentConfig struct {
 	OrchestratorKubeRBACProxy *utils.KubeRBACProxyConfig
 	GatewayKubeRBACProxy      *utils.KubeRBACProxyConfig
 	BuiltInKubeRBACProxy      *utils.KubeRBACProxyConfig
+	ProxyTLSArgs              []string
 }
 
 func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context, orchestrator *gorchv1alpha1.GuardrailsOrchestrator) (*appsv1.Deployment, error) {
@@ -69,6 +71,7 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 		ContainerImages:           containerImages,
 		OrchestratorKubeRBACProxy: nil,
 		GatewayKubeRBACProxy:      nil,
+		ProxyTLSArgs:              pkgtls.CurrentProxyTLSArguments().Args,
 	}
 
 	if utils.RequiresAuth(orchestrator) {
@@ -83,6 +86,11 @@ func (r *GuardrailsOrchestratorReconciler) createDeployment(ctx context.Context,
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to parse deployment template")
 		return nil, err
+	}
+	for i := range deployment.Spec.Template.Spec.Containers {
+		if isKubeRBACProxyContainer(deployment.Spec.Template.Spec.Containers[i].Name) {
+			deployment.Spec.Template.Spec.Containers[i].Args = append(deployment.Spec.Template.Spec.Containers[i].Args, deploymentConfig.ProxyTLSArgs...)
+		}
 	}
 
 	// add env vars to the deployment

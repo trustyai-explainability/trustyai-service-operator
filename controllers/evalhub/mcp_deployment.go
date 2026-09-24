@@ -7,6 +7,7 @@ import (
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
+	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -178,7 +179,7 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 		Name:            kubeRBACProxyContainerName,
 		Image:           kubeRBACProxyImage,
 		ImagePullPolicy: corev1.PullIfNotPresent,
-		Args: []string{
+		Args: append([]string{
 			"--secure-listen-address=0.0.0.0:" + fmt.Sprintf("%d", mcpServicePort),
 			"--upstream=" + upstreamURL,
 			"--config-file=" + kubeRBACProxyConfigMountPath,
@@ -189,7 +190,7 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 			"--auth-header-fields-enabled",
 			"--auth-header-user-field-name=X-User",
 			"--v=0",
-		},
+		}, pkgtls.CurrentProxyTLSArguments().Args...),
 		Ports: []corev1.ContainerPort{
 			{
 				Name:          "https",

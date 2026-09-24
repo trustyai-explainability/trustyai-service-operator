@@ -85,6 +85,7 @@ func testLifecycle(t *testing.T) {
 			OperatorNamespace,
 			WorkloadOperatorDeploymentName,
 		)).To(gomega.Succeed())
+
 		g.Expect(createHealthyTrustyAIService(ctx, OperatorNamespace, "e2e-tas")).To(gomega.Succeed())
 		t.Cleanup(func() {
 			operand := &unstructured.Unstructured{}
