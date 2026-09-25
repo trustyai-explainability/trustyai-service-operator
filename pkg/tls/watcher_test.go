@@ -198,11 +198,13 @@ func TestReconcile_AdherenceChange(t *testing.T) {
 
 	apiServer := newAPIServerWithProfile(profile)
 	apiServer.Name = "cluster"
-	t.Setenv(tlsAdherenceEnv, TLSAdherenceStrictAllComponents)
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(apiServer).Build()
 
 	called := false
 	w := NewProfileWatcher(c, profile, func() { called = true })
+	w.readProfileState = func(context.Context) (profileState, error) {
+		return profileState{profile: profile, adherence: TLSAdherenceStrictAllComponents}, nil
+	}
 
 	mustReconcile(t, w)
 	if !called {

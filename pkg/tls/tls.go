@@ -21,7 +21,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -29,25 +28,12 @@ import (
 	openshifttls "github.com/openshift/controller-runtime-common/pkg/tls"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var log = ctrl.Log.WithName("tls")
-
-const tlsAdherenceEnv = "TRUSTYAI_TLS_ADHERENCE"
-
-// ConfiguredTLSAdherence is the operator-boundary source for adherence on
-// OpenShift API versions that do not expose APIServerSpec.TLSAdherence yet.
-// Deployments should inject this from the platform's TLS-adherence setting;
-// an unset value intentionally means NoOpinion. Keeping it here makes the
-// source explicit and lets the watcher observe transitions without teaching
-// kube-rbac-proxy about cluster configuration.
-func ConfiguredTLSAdherence() string {
-	return os.Getenv(tlsAdherenceEnv)
-}
 
 // Result holds the resolved TLS configuration.
 type Result struct {
@@ -92,7 +78,7 @@ func copyProxyTLSArguments(args ProxyTLSArguments) ProxyTLSArguments {
 }
 
 func init() {
-	if args, err := ResolveProxyTLSArguments(nil, TLSAdherenceNoOpinion, nil, false); err == nil {
+	if args, err := ResolveProxyTLSArguments(nil, TLSAdherenceNoOpinion, nil, fipsModeEnabled()); err == nil {
 		SetProxyTLSArguments(args)
 	}
 }
@@ -105,12 +91,7 @@ func init() {
 func Resolve(ctx context.Context, cfg *rest.Config) (Result, error) {
 	var result Result
 
-	scheme := runtime.NewScheme()
-	if err := configv1.Install(scheme); err != nil {
-		return result, fmt.Errorf("installing OpenShift config scheme: %w", err)
-	}
-
-	k8sClient, err := client.New(cfg, client.Options{Scheme: scheme})
+	apiClient, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		return result, fmt.Errorf("creating bootstrap client for TLS profile: %w", err)
 	}
@@ -120,8 +101,8 @@ func Resolve(ctx context.Context, cfg *rest.Config) (Result, error) {
 	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	apiServer := &configv1.APIServer{}
-	if err := k8sClient.Get(fetchCtx, client.ObjectKey{Name: "cluster"}, apiServer); err != nil {
+	state, err := readTLSProfileState(fetchCtx, apiClient)
+	if err != nil {
 		switch {
 		case meta.IsNoMatchError(err):
 			log.Info("TLS profile not available (non-OpenShift cluster)")
@@ -147,26 +128,26 @@ func Resolve(ctx context.Context, cfg *rest.Config) (Result, error) {
 			// value until the watcher can confirm the current APIServer state.
 			result.ProxyArgs = CurrentProxyTLSArguments()
 		} else {
-			result.ProxyArgs, _ = ResolveProxyTLSArguments(nil, TLSAdherenceNoOpinion, nil, false)
+			result.ProxyArgs, _ = ResolveProxyTLSArguments(nil, TLSAdherenceNoOpinion, nil, fipsModeEnabled())
 		}
 		return result, nil //nolint:nilerr // intentional fail-open: use hardened defaults for transient/expected errors
 	}
 
 	result.APIAvailable = true
-	result.ProfileSpec = apiServer.Spec.TLSSecurityProfile
-	result.TLSAdherence = ConfiguredTLSAdherence()
+	result.ProfileSpec = state.profile
+	result.TLSAdherence = state.adherence
 
-	result.TLSOpts, err = tlsOptsForProfile(apiServer.Spec.TLSSecurityProfile)
+	result.TLSOpts, err = tlsOptsForProfile(state.profile)
 	if err != nil {
 		return result, err
 	}
-	// Resolve the complete profile plus operator-boundary adherence value
-	// before publishing it to workload builders.
+	// Resolve the APIServer profile and adherence together before publishing
+	// the complete configuration to workload builders.
 	result.ProxyArgs, err = ResolveProxyTLSArguments(
-		apiServer.Spec.TLSSecurityProfile,
+		state.profile,
 		result.TLSAdherence,
 		nil,
-		false,
+		fipsModeEnabled(),
 	)
 	if err != nil {
 		return result, err

@@ -43,6 +43,16 @@ func TestResolveProxyTLSArguments(t *testing.T) {
 	}
 }
 
+func TestResolveProxyTLSArgumentsUsesFIPSDefaultCurves(t *testing.T) {
+	got, err := ResolveProxyTLSArguments(nil, TLSAdherenceStrictAllComponents, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.CurvePreferences, []uint16{23, 24, 25}) {
+		t.Fatalf("FIPS CurvePreferences = %v, want [23 24 25]", got.CurvePreferences)
+	}
+}
+
 func TestResolveProxyTLSArgumentsRejectsStrictProfiles(t *testing.T) {
 	_, err := ResolveProxyTLSArguments(&configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType}, TLSAdherenceStrictAllComponents, nil, false)
 	if err == nil {
