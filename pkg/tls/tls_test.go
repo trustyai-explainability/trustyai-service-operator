@@ -17,11 +17,43 @@ limitations under the License.
 package tls
 
 import (
+	"context"
 	"crypto/tls"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"k8s.io/client-go/rest"
 )
+
+func TestResolveRetainsProxyArgumentsOnTransientAPIServerFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	profile := &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}
+	lastKnownGood, err := ResolveProxyTLSArguments(profile, TLSAdherenceStrictAllComponents, nil, false)
+	if err != nil {
+		t.Fatalf("ResolveProxyTLSArguments() returned unexpected error: %v", err)
+	}
+	previous := CurrentProxyTLSArguments()
+	SetProxyTLSArguments(lastKnownGood)
+	defer SetProxyTLSArguments(previous)
+
+	result, err := Resolve(context.Background(), &rest.Config{Host: server.URL})
+	if err != nil {
+		t.Fatalf("Resolve() returned unexpected error: %v", err)
+	}
+	if !result.APIAvailable {
+		t.Fatal("Resolve() should retry after a transient APIServer failure")
+	}
+	if !reflect.DeepEqual(result.ProxyArgs, lastKnownGood) {
+		t.Errorf("ProxyArgs = %#v, want last known-good arguments %#v", result.ProxyArgs, lastKnownGood)
+	}
+}
 
 func TestTLSOptsForProfile(t *testing.T) {
 	tests := []struct {
