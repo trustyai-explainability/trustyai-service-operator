@@ -54,6 +54,7 @@ allowed_api_resources := {
 	# --- networking / routes ---
 	["gateway.networking.k8s.io", "gateways"],
 	["mcp.kuadrant.io", "mcpgatewayextensions"],
+	["networking.k8s.io", "networkpolicies"],
 	["networking.istio.io", "destinationrules"],
 	["networking.istio.io", "envoyfilters"],
 	["networking.istio.io", "virtualservices"],
