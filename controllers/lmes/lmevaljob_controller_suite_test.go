@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -21,6 +22,7 @@ import (
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/lmes"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -163,6 +165,9 @@ var _ = Describe("Simple LMEvalJob", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
 					Namespace: testNamespace,
+					Labels: map[string]string{
+						lmes.LMEvalJobUIDLabel: "user-spoofed-value",
+					},
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind:       lmesv1alpha1.KindName,
@@ -209,6 +214,50 @@ var _ = Describe("Simple LMEvalJob", func() {
 					jobpod,
 				)
 			}, "can't find the job pod")
+			Expect(jobpod.Labels[lmes.LMEvalJobUIDLabel]).To(Equal(string(newjob.UID)))
+
+			policies := &networkingv1.NetworkPolicyList{}
+			WaitFor(func() error {
+				if err := k8sClient.List(ctx, policies, client.InNamespace(testNamespace), client.MatchingLabels{
+					utils.NetworkPolicyOwnerUIDLabel: string(newjob.UID),
+				}); err != nil {
+					return err
+				}
+				if len(policies.Items) != 1 {
+					return fmt.Errorf("found %d policies for LMEvalJob UID %s, want one", len(policies.Items), newjob.UID)
+				}
+				return nil
+			}, "controller did not create the per-job NetworkPolicy")
+			policy := policies.Items[0].DeepCopy()
+			Expect(policy.Spec.PodSelector.MatchLabels).To(Equal(map[string]string{lmes.LMEvalJobUIDLabel: string(newjob.UID)}))
+			Expect(policy.Spec.PolicyTypes).To(Equal([]networkingv1.PolicyType{networkingv1.PolicyTypeIngress}))
+			Expect(policy.Spec.Ingress).To(BeEmpty())
+			Expect(policy.OwnerReferences).To(HaveLen(1))
+
+			Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
+			WaitFor(func() error {
+				if err := k8sClient.List(ctx, policies, client.InNamespace(testNamespace), client.MatchingLabels{
+					utils.NetworkPolicyOwnerUIDLabel: string(newjob.UID),
+				}); err != nil {
+					return err
+				}
+				if len(policies.Items) != 1 {
+					return fmt.Errorf("found %d policies after deleting owned policy, want recreated policy", len(policies.Items))
+				}
+				return nil
+			}, "controller did not recreate a deleted per-job NetworkPolicy")
+
+			jobpod.Labels[lmes.LMEvalJobUIDLabel] = "drifted-value"
+			Expect(k8sClient.Update(ctx, jobpod)).To(Succeed())
+			WaitFor(func() error {
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: "test", Namespace: testNamespace}, jobpod); err != nil {
+					return err
+				}
+				if jobpod.Labels[lmes.LMEvalJobUIDLabel] != string(newjob.UID) {
+					return fmt.Errorf("pod UID label = %q, want %q", jobpod.Labels[lmes.LMEvalJobUIDLabel], newjob.UID)
+				}
+				return nil
+			}, "controller did not repair the per-job pod identity label")
 		})
 	})
 })

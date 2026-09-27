@@ -66,4 +66,7 @@ const (
 	// was last created. When a completed job's current generation exceeds this value the operator
 	// knows the spec changed and resets the job so it can be re-run with the updated configuration.
 	LastScheduledGenerationAnnotation = "trustyai.opendatahub.io/last-scheduled-generation"
+	// LMEvalJobUIDLabel isolates the pod generated for one persisted LMEvalJob.
+	// The controller overwrites any user-supplied value with the CR UID.
+	LMEvalJobUIDLabel = "trustyai.opendatahub.io/lmevaljob-uid"
 )

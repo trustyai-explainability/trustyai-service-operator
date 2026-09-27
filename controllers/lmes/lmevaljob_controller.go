@@ -32,6 +32,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -172,12 +173,13 @@ func (q *syncedMap4Reconciler) remove(key string) {
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=lmevaljobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=lmevaljobs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=lmevaljobs/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods/exec,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;watch;list;create;update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;watch;list
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=list;get;watch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=list;get;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch
 
 func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
@@ -189,8 +191,20 @@ func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	if !job.ObjectMeta.DeletionTimestamp.IsZero() {
-		// Handle deletion here
+		// Handle deletion here. The NetworkPolicy has a controller owner reference
+		// and is removed by Kubernetes garbage collection with the LMEvalJob.
 		return r.handleDeletion(ctx, job, log)
+	}
+
+	// Apply the ingress-deny policy before any path can create or resume a pod.
+	// Errors fail closed: an unprotected LMEvalJob pod must not be started.
+	if err := reconcileLMEvalJobNetworkPolicy(ctx, r.Client, job, r.Scheme); err != nil {
+		log.Error(err, "failed to reconcile LMEvalJob NetworkPolicy")
+		return ctrl.Result{}, err
+	}
+	if err := r.reconcileExistingLMEvalJobPodLabel(ctx, job); err != nil {
+		log.Error(err, "failed to repair LMEvalJob pod identity label")
+		return ctrl.Result{}, err
 	}
 
 	// When a completed job's spec is edited, metadata.Generation is incremented
@@ -335,7 +349,7 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
-	// watch the pods created by the controller but only for the deletion event
+	// Watch owned policies for drift/deletion recovery and controller-owned Pods for deletion or identity-label drift.
 	return ctrl.NewControllerManagedBy(mgr).
 		// since we register the finalizer, no need to monitor deletion events
 		For(&lmesv1alpha1.LMEvalJob{}, builder.WithPredicates(predicate.Funcs{
@@ -344,6 +358,7 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				return false
 			},
 		})).
+		Owns(&networkingv1.NetworkPolicy{}).
 		Watches(
 			&corev1.Pod{},
 			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetClient().RESTMapper(), &lmesv1alpha1.LMEvalJob{}, handler.OnlyControllerOwner()),
@@ -352,8 +367,10 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				CreateFunc: func(event.CreateEvent) bool {
 					return false
 				},
-				UpdateFunc: func(event.UpdateEvent) bool {
-					return false
+				UpdateFunc: func(e event.UpdateEvent) bool {
+					oldPod, oldOK := e.ObjectOld.(v1.Object)
+					newPod, newOK := e.ObjectNew.(v1.Object)
+					return oldOK && newOK && oldPod.GetLabels()[LMEvalJobUIDLabel] != newPod.GetLabels()[LMEvalJobUIDLabel]
 				},
 				GenericFunc: func(event.GenericEvent) bool {
 					return false
@@ -584,6 +601,9 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 	// construct a new pod and create a pod for the job
 	currentTime := v1.Now()
 	pod := CreatePod(Options, job, permConfig, caBundle, caBundleKey, log)
+	if err := setLMEvalJobPodIdentityLabel(pod, job); err != nil {
+		return ctrl.Result{}, err
+	}
 	if err := r.Create(ctx, pod, &client.CreateOptions{}); err != nil {
 		// Failed to create the pod. Mark the status as complete with failed
 		job.Status.State = lmesv1alpha1.CompleteJobState
@@ -818,6 +838,9 @@ func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger,
 	}
 
 	pod := CreatePod(Options, job, permConfig, caBundle, caBundleKey, log)
+	if err := setLMEvalJobPodIdentityLabel(pod, job); err != nil {
+		return ctrl.Result{}, err
+	}
 	if createErr := r.Create(ctx, pod); createErr != nil {
 		log.Error(createErr, "failed to create pod to resume job")
 		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
