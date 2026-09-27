@@ -10,6 +10,7 @@ import (
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -261,6 +262,19 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		By("Checking that ConfigMap is created")
 		configMapCreated := waitForConfigMap(evalHubName+"-config", testNamespace)
 		Expect(configMapCreated.Data).To(HaveKey("config.yaml"))
+
+		By("Checking that the NetworkPolicy is created and owned by the EvalHub")
+		policyName, err := evalHubNetworkPolicyName(evalHub)
+		Expect(err).NotTo(HaveOccurred())
+		policy := &networkingv1.NetworkPolicy{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: policyName, Namespace: testNamespace}, policy)).To(Succeed())
+		Expect(policy.Spec.PodSelector.MatchLabels).To(Equal(map[string]string{
+			"app":       "eval-hub",
+			"instance":  evalHubName,
+			"component": "api",
+		}))
+		Expect(policy.OwnerReferences).To(HaveLen(1))
+		Expect(policy.OwnerReferences[0].UID).To(Equal(evalHub.UID))
 
 		By("Checking that Deployment is created")
 		deployment := waitForDeployment(evalHubName, testNamespace)

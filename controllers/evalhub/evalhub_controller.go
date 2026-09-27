@@ -10,6 +10,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/pkg/tracing"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -57,6 +58,7 @@ type EvalHubReconciler struct {
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=status-events,verbs=create
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=list;watch;get;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;delete
@@ -284,6 +286,12 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 	}
 
 	err = tracing.WithPhase(ctx, spanReconcileDeployment, func(ctx context.Context) error {
+		if err := r.reconcileNetworkPolicy(ctx, instance); err != nil {
+			log.Error(err, "Failed to reconcile NetworkPolicy")
+			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile NetworkPolicy: %v", err), corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+			return err
+		}
 		if err := r.reconcileDeployment(ctx, instance, providerCMNames, collectionCMNames, tenantProviderCMNames, tenantCollectionCMNames); err != nil {
 			log.Error(err, "Failed to reconcile Deployment")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Deployment: %v", err), corev1.ConditionFalse)
@@ -371,6 +379,7 @@ func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Named("evalhub").
 		For(&evalhubv1.EvalHub{}).
 		Owns(&appsv1.Deployment{}).
+		Owns(&networkingv1.NetworkPolicy{}, builder.OnlyMetadata).
 		Owns(&corev1.Service{}, builder.OnlyMetadata).
 		Owns(&corev1.ConfigMap{}, builder.OnlyMetadata).
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.mapNamespaceToEvalHubs), builder.OnlyMetadata, builder.WithPredicates(tenantLabelPredicate())).
