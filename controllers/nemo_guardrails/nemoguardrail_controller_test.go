@@ -5,6 +5,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/tas"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"time"
@@ -14,6 +15,7 @@ import (
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -155,6 +157,18 @@ var _ = Describe("NemoGuardrails Controller", func() {
 				err := k8sClient.Get(ctx, types.NamespacedName{Name: crbName, Namespace: namespace}, crb)
 				return errors.IsNotFound(err)
 			}, time.Second*2, time.Millisecond*100).Should(BeTrue())
+		}
+
+		By("removing any NetworkPolicy left behind by envtest garbage collection")
+		policyName, err := utils.NetworkPolicyName("nemo-guardrails-" + resourceName)
+		Expect(err).NotTo(HaveOccurred())
+		policy := &networkingv1.NetworkPolicy{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: policyName, Namespace: namespace}, policy)
+		if err == nil {
+			err = k8sClient.Delete(ctx, policy)
+		}
+		if !errors.IsNotFound(err) {
+			Expect(err).NotTo(HaveOccurred())
 		}
 	})
 

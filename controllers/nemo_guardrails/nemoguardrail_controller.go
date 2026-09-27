@@ -26,6 +26,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -69,6 +70,7 @@ const (
 // +kubebuilder:rbac:groups=networking.istio.io,resources=envoyfilters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=mcp.kuadrant.io,resources=mcpgatewayextensions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gateways,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update
 
 func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -147,6 +149,12 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err := utils.ReconcileAuthDelegatorClusterRoleBinding(ctx, r.Client, nemoGuardrails); err != nil {
 			return ctrl.Result{}, err
 		}
+	}
+
+	// ====== Reconcile ingress policy before creating/updating the deployment =========================================
+	if err := r.reconcileNetworkPolicy(ctx, nemoGuardrails); err != nil {
+		utils.LogErrorReconciling(ctx, err, "NetworkPolicy", nemoGuardrails.Name, nemoGuardrails.Namespace)
+		return ctrl.Result{}, err
 	}
 
 	// ====== Create deployment ========================================================================================
@@ -278,6 +286,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *NemoGuardrailsReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&nemoguardrailsv1alpha1.NemoGuardrails{}).
+		Owns(&networkingv1.NetworkPolicy{}).
 		// Watch for changes to ConfigMaps referenced by NemoGuardrails CRs.
 		// OnlyMetadata caches only object metadata (~1KB each) instead of full
 		// objects, preventing OOM when many ConfigMaps exist cluster-wide.
