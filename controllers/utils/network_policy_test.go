@@ -168,6 +168,33 @@ func TestValidateNetworkPolicy(t *testing.T) {
 	}
 }
 
+func TestValidateNetworkPolicyNamedPorts(t *testing.T) {
+	protocol := corev1.ProtocolTCP
+	for _, tt := range []struct {
+		name    string
+		port    string
+		wantErr bool
+	}{
+		{name: "valid Kubernetes port name", port: "http-metrics"},
+		{name: "name longer than Kubernetes limit", port: "portname123456789", wantErr: true},
+		{name: "name without a letter", port: "12345", wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			port := intstr.FromString(tt.port)
+			err := validateNetworkPolicyPorts([]networkingv1.NetworkPolicyPort{{Protocol: &protocol, Port: &port}}, "ingress rule 0")
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "ingress rule 0 port 0 has an invalid named port:") {
+					t.Fatalf("validateNetworkPolicyPorts() error = %v, want invalid named port error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("validateNetworkPolicyPorts() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestReconcileNetworkPolicy(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := networkingv1.AddToScheme(scheme); err != nil {

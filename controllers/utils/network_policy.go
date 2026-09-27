@@ -199,7 +199,7 @@ func validateNetworkPolicyPorts(ports []networkingv1.NetworkPolicyPort, rule str
 				return fmt.Errorf("%s port %d has an invalid numeric port", rule, i)
 			}
 		case intstr.String:
-			if problems := validation.IsDNS1123Label(port.Port.StrVal); len(problems) > 0 {
+			if problems := validation.IsValidPortName(port.Port.StrVal); len(problems) > 0 {
 				return fmt.Errorf("%s port %d has an invalid named port: %s", rule, i, strings.Join(problems, "; "))
 			}
 		default:
