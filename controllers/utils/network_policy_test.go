@@ -294,6 +294,14 @@ func TestReconcileNetworkPolicy(t *testing.T) {
 		"trustyai.opendatahub.io/purpose": "reconciled",
 		"example.com/preserved":           "desired-must-not-overwrite",
 	}
+	controller := true
+	desired.OwnerReferences = []metav1.OwnerReference{{
+		APIVersion: "v1",
+		Kind:       "ConfigMap",
+		Name:       "owner",
+		UID:        types.UID("desired-owner"),
+		Controller: &controller,
+	}}
 	if err := ReconcileNetworkPolicy(context.Background(), c, desired); err != nil {
 		t.Fatalf("update drifted NetworkPolicy: %v", err)
 	}
@@ -326,9 +334,64 @@ func TestReconcileNetworkPolicy(t *testing.T) {
 	if _, ok := actual.Annotations["trustyai.opendatahub.io/stale"]; ok {
 		t.Errorf("stale operator-owned annotation was not removed: %#v", actual.Annotations)
 	}
+	if len(actual.OwnerReferences) != 1 || actual.OwnerReferences[0].UID != types.UID("desired-owner") || actual.OwnerReferences[0].Controller == nil || !*actual.OwnerReferences[0].Controller {
+		t.Errorf("missing controller owner reference was not repaired: %#v", actual.OwnerReferences)
+	}
 
 	if err := ReconcileNetworkPolicy(context.Background(), c, desired); err != nil {
 		t.Fatalf("reconcile already-current NetworkPolicy: %v", err)
+	}
+}
+
+func TestReconcileNetworkPolicyRejectsConflictingControllerOwner(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		desiredUID types.UID
+	}{
+		{name: "different desired controller", desiredUID: types.UID("desired-owner")},
+		{name: "desired policy has no controller"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			if err := networkingv1.AddToScheme(scheme); err != nil {
+				t.Fatalf("register networking API types: %v", err)
+			}
+			c := fake.NewClientBuilder().WithScheme(scheme).Build()
+			controller := true
+			existing := testNetworkPolicy()
+			existing.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: "v1",
+				Kind:       "ConfigMap",
+				Name:       "existing-owner",
+				UID:        types.UID("existing-owner"),
+				Controller: &controller,
+			}}
+			if err := c.Create(context.Background(), existing); err != nil {
+				t.Fatalf("create existing NetworkPolicy: %v", err)
+			}
+			desired := testNetworkPolicy()
+			if tt.desiredUID != "" {
+				desired.OwnerReferences = []metav1.OwnerReference{{
+					APIVersion: "v1",
+					Kind:       "ConfigMap",
+					Name:       "desired-owner",
+					UID:        tt.desiredUID,
+					Controller: &controller,
+				}}
+			}
+
+			err := ReconcileNetworkPolicy(context.Background(), c, desired)
+			if err == nil || !strings.Contains(err.Error(), "conflicts with desired controller owner UID") {
+				t.Fatalf("ReconcileNetworkPolicy() error = %v, want conflicting controller owner error", err)
+			}
+			actual := &networkingv1.NetworkPolicy{}
+			if err := c.Get(context.Background(), client.ObjectKeyFromObject(existing), actual); err != nil {
+				t.Fatalf("get existing NetworkPolicy: %v", err)
+			}
+			if len(actual.OwnerReferences) != 1 || actual.OwnerReferences[0].UID != types.UID("existing-owner") {
+				t.Errorf("conflicting owner reference was modified: %#v", actual.OwnerReferences)
+			}
+		})
 	}
 }
 

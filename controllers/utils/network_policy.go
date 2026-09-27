@@ -10,6 +10,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -279,6 +280,16 @@ func ReconcileNetworkPolicy(ctx context.Context, c client.Client, desired *netwo
 	}
 
 	desiredCopy := desired.DeepCopy()
+	existingController := metav1.GetControllerOf(existing)
+	desiredController := metav1.GetControllerOf(desiredCopy)
+	if existingController != nil && (desiredController == nil || existingController.UID != desiredController.UID) {
+		desiredControllerUID := "<none>"
+		if desiredController != nil {
+			desiredControllerUID = string(desiredController.UID)
+		}
+		return fmt.Errorf("NetworkPolicy %s/%s has controller owner UID %q, which conflicts with desired controller owner UID %q", key.Namespace, key.Name, existingController.UID, desiredControllerUID)
+	}
+
 	reconciledLabels := make(map[string]string, len(existing.Labels)+len(desiredCopy.Labels))
 	for key, value := range existing.Labels {
 		if key != NetworkPolicyManagedByLabel && key != NetworkPolicyOwnerUIDLabel {
