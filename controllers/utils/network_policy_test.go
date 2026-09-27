@@ -168,6 +168,56 @@ func TestValidateNetworkPolicy(t *testing.T) {
 	}
 }
 
+func TestValidateNetworkPolicyPeerIPBlockExceptions(t *testing.T) {
+	tests := []struct {
+		name       string
+		cidr       string
+		exceptions []string
+		wantErr    string
+	}{
+		{
+			name:       "masked exception is contained",
+			cidr:       "192.168.1.7/24",
+			exceptions: []string{"192.168.1.130/25"},
+		},
+		{
+			name:       "malformed exception",
+			cidr:       "192.168.1.0/24",
+			exceptions: []string{"not-a-prefix"},
+			wantErr:    "invalid IPBlock exception CIDR",
+		},
+		{
+			name:       "exception outside parent",
+			cidr:       "192.168.1.0/24",
+			exceptions: []string{"192.168.2.0/24"},
+			wantErr:    "not contained within parent CIDR",
+		},
+		{
+			name:       "exception overlaps parent but is broader",
+			cidr:       "10.1.2.0/24",
+			exceptions: []string{"10.1.2.0/23"},
+			wantErr:    "not contained within parent CIDR",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateNetworkPolicyPeer(networkingv1.NetworkPolicyPeer{
+				IPBlock: &networkingv1.IPBlock{CIDR: tt.cidr, Except: tt.exceptions},
+			})
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("validateNetworkPolicyPeer() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("validateNetworkPolicyPeer() error = %v, want substring %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateNetworkPolicyNamedPorts(t *testing.T) {
 	protocol := corev1.ProtocolTCP
 	for _, tt := range []struct {

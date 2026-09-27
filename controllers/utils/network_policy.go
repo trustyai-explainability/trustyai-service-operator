@@ -226,6 +226,17 @@ func validateNetworkPolicyPeer(peer networkingv1.NetworkPolicyPeer) error {
 		if prefix.Bits() == 0 {
 			return fmt.Errorf("IPBlock CIDR %q is unrestricted", peer.IPBlock.CIDR)
 		}
+		prefix = prefix.Masked()
+		for _, exceptCIDR := range peer.IPBlock.Except {
+			exception, err := netip.ParsePrefix(exceptCIDR)
+			if err != nil {
+				return fmt.Errorf("invalid IPBlock exception CIDR %q: %w", exceptCIDR, err)
+			}
+			exception = exception.Masked()
+			if !prefix.Contains(exception.Addr()) || exception.Bits() < prefix.Bits() {
+				return fmt.Errorf("IPBlock exception CIDR %q is not contained within parent CIDR %q", exceptCIDR, peer.IPBlock.CIDR)
+			}
+		}
 		return nil
 	}
 
