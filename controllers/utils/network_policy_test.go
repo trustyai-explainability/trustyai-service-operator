@@ -278,14 +278,22 @@ func TestReconcileNetworkPolicy(t *testing.T) {
 		"example.com/preserved":     "existing",
 		"example.com/override":      "existing",
 	}
+	actual.Annotations = map[string]string{
+		"trustyai.opendatahub.io/stale":   "remove",
+		"trustyai.opendatahub.io/purpose": "old",
+		"example.com/preserved":           "existing",
+	}
 	if err := c.Update(context.Background(), actual); err != nil {
-		t.Fatalf("seed labels on existing NetworkPolicy: %v", err)
+		t.Fatalf("seed metadata on existing NetworkPolicy: %v", err)
 	}
 	desired.Labels = map[string]string{
 		NetworkPolicyManagedByLabel: NetworkPolicyManagedByValue,
 		"example.com/override":      "desired",
 	}
-	desired.Annotations = map[string]string{"example.com/purpose": "reconciled"}
+	desired.Annotations = map[string]string{
+		"trustyai.opendatahub.io/purpose": "reconciled",
+		"example.com/preserved":           "desired-must-not-overwrite",
+	}
 	if err := ReconcileNetworkPolicy(context.Background(), c, desired); err != nil {
 		t.Fatalf("update drifted NetworkPolicy: %v", err)
 	}
@@ -309,8 +317,14 @@ func TestReconcileNetworkPolicy(t *testing.T) {
 	if _, ok := actual.Labels[NetworkPolicyOwnerUIDLabel]; ok {
 		t.Errorf("stale controller-managed owner UID label was not removed: %#v", actual.Labels)
 	}
-	if actual.Annotations["example.com/purpose"] != "reconciled" {
-		t.Errorf("updated annotations = %#v", actual.Annotations)
+	if actual.Annotations["example.com/preserved"] != "existing" {
+		t.Errorf("unrelated existing annotation was not preserved: %#v", actual.Annotations)
+	}
+	if actual.Annotations["trustyai.opendatahub.io/purpose"] != "reconciled" {
+		t.Errorf("operator-owned annotation was not reconciled: %#v", actual.Annotations)
+	}
+	if _, ok := actual.Annotations["trustyai.opendatahub.io/stale"]; ok {
+		t.Errorf("stale operator-owned annotation was not removed: %#v", actual.Annotations)
 	}
 
 	if err := ReconcileNetworkPolicy(context.Background(), c, desired); err != nil {

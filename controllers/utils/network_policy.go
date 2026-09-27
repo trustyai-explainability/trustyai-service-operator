@@ -27,6 +27,9 @@ const (
 	// relying on a user-selected name. It is useful for explicit cleanup where a
 	// same-namespace owner reference is not valid.
 	NetworkPolicyOwnerUIDLabel = "trustyai.opendatahub.io/network-policy-owner-uid"
+
+	// networkPolicyManagedAnnotationPrefix reserves TrustyAI annotations for reconciliation.
+	networkPolicyManagedAnnotationPrefix = "trustyai.opendatahub.io/"
 )
 
 // NetworkPolicyName returns a deterministic, DNS-label-safe policy name for a
@@ -253,8 +256,8 @@ func validateNetworkPolicyPeer(peer networkingv1.NetworkPolicyPeer) error {
 }
 
 // ReconcileNetworkPolicy creates or updates a NetworkPolicy to match desired
-// state. It only reconciles the policy spec, labels, annotations, and owner
-// references; API-managed metadata and unrelated fields are preserved.
+// state. It reconciles the policy spec, labels, TrustyAI-owned annotations, and
+// owner references; API-managed metadata and unrelated fields are preserved.
 func ReconcileNetworkPolicy(ctx context.Context, c client.Client, desired *networkingv1.NetworkPolicy) error {
 	if c == nil {
 		return fmt.Errorf("client must not be nil")
@@ -288,9 +291,23 @@ func ReconcileNetworkPolicy(ctx context.Context, c client.Client, desired *netwo
 	if len(reconciledLabels) == 0 {
 		reconciledLabels = nil
 	}
+	reconciledAnnotations := make(map[string]string, len(existing.Annotations)+len(desiredCopy.Annotations))
+	for key, value := range existing.Annotations {
+		if !strings.HasPrefix(key, networkPolicyManagedAnnotationPrefix) {
+			reconciledAnnotations[key] = value
+		}
+	}
+	for key, value := range desiredCopy.Annotations {
+		if strings.HasPrefix(key, networkPolicyManagedAnnotationPrefix) {
+			reconciledAnnotations[key] = value
+		}
+	}
+	if len(reconciledAnnotations) == 0 {
+		reconciledAnnotations = nil
+	}
 	if equality.Semantic.DeepEqual(existing.Spec, desiredCopy.Spec) &&
 		equality.Semantic.DeepEqual(existing.Labels, reconciledLabels) &&
-		equality.Semantic.DeepEqual(existing.Annotations, desiredCopy.Annotations) &&
+		equality.Semantic.DeepEqual(existing.Annotations, reconciledAnnotations) &&
 		equality.Semantic.DeepEqual(existing.OwnerReferences, desiredCopy.OwnerReferences) {
 		return nil
 	}
@@ -298,7 +315,7 @@ func ReconcileNetworkPolicy(ctx context.Context, c client.Client, desired *netwo
 	updated := existing.DeepCopy()
 	updated.Spec = desiredCopy.Spec
 	updated.Labels = reconciledLabels
-	updated.Annotations = desiredCopy.Annotations
+	updated.Annotations = reconciledAnnotations
 	updated.OwnerReferences = desiredCopy.OwnerReferences
 	if err := c.Update(ctx, updated); err != nil {
 		return fmt.Errorf("update NetworkPolicy %s/%s: %w", key.Namespace, key.Name, err)
