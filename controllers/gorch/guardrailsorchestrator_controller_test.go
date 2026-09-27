@@ -27,6 +27,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/scheme"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -35,6 +36,7 @@ import (
 
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 )
 
 func createGuardrailsOrchestrator(ctx context.Context, orchestratorConfigMap string, name string, namespace string) error {
@@ -159,6 +161,16 @@ func testCreateDeleteGuardrailsOrchestrator(namespaceName string) {
 			Expect(configMap.Name).Should(Equal(constants.ConfigMap))
 			Expect(configMap.Namespace).Should(Equal(namespaceName))
 			Expect(configMap.Data[orchestratorImageKey]).ShouldNot(BeEmpty())
+
+			policyName, err := utils.NetworkPolicyName("gorch-" + orchestratorName)
+			if err != nil {
+				return err
+			}
+			policy := &networkingv1.NetworkPolicy{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: policyName, Namespace: namespaceName}, policy); err != nil {
+				return err
+			}
+			Expect(policy.Spec.PolicyTypes).Should(Equal([]networkingv1.PolicyType{networkingv1.PolicyTypeIngress}))
 
 			serviceAccount := &corev1.ServiceAccount{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: orchestratorName + "-serviceaccount", Namespace: namespaceName}, serviceAccount); err != nil {
