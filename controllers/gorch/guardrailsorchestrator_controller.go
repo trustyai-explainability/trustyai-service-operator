@@ -34,6 +34,7 @@ import (
 	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -58,6 +59,7 @@ type GuardrailsOrchestratorReconciler struct {
 // +kubebuilder:rbac:groups=serving.kserve.io,resources=servingruntimes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=get;list
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=list;watch;get;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update
 //+kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=apps,resources=deployments/finalizers,verbs=update
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
@@ -274,6 +276,13 @@ func (r *GuardrailsOrchestratorReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	// === DEPLOYMENT ========================================================================================================================
+	// Ensure the ingress policy exists and is current before creating or
+	// updating the operand Deployment.
+	if err := r.reconcileNetworkPolicy(ctx, orchestrator); err != nil {
+		r.handleReconciliationError(ctx, log, orchestrator, err, utils.ReconcileFailed, "Failed to reconcile NetworkPolicy")
+		return ctrl.Result{}, err
+	}
+
 	existingDeployment := &appsv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Name: orchestrator.Name, Namespace: orchestrator.Namespace}, existingDeployment)
 	if err != nil && errors.IsNotFound(err) {
@@ -409,6 +418,7 @@ func (r *GuardrailsOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) er
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&gorchv1alpha1.GuardrailsOrchestrator{}).
 		Owns(&appsv1.Deployment{}).
+		Owns(&networkingv1.NetworkPolicy{}).
 		// Watch for changes to orchestrator-config or gateway-config ConfigMaps.
 		// OnlyMetadata caches only object metadata (~1KB each) instead of full
 		// objects, preventing OOM when many ConfigMaps exist cluster-wide.
