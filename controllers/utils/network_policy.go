@@ -276,8 +276,20 @@ func ReconcileNetworkPolicy(ctx context.Context, c client.Client, desired *netwo
 	}
 
 	desiredCopy := desired.DeepCopy()
+	reconciledLabels := make(map[string]string, len(existing.Labels)+len(desiredCopy.Labels))
+	for key, value := range existing.Labels {
+		if key != NetworkPolicyManagedByLabel && key != NetworkPolicyOwnerUIDLabel {
+			reconciledLabels[key] = value
+		}
+	}
+	for key, value := range desiredCopy.Labels {
+		reconciledLabels[key] = value
+	}
+	if len(reconciledLabels) == 0 {
+		reconciledLabels = nil
+	}
 	if equality.Semantic.DeepEqual(existing.Spec, desiredCopy.Spec) &&
-		equality.Semantic.DeepEqual(existing.Labels, desiredCopy.Labels) &&
+		equality.Semantic.DeepEqual(existing.Labels, reconciledLabels) &&
 		equality.Semantic.DeepEqual(existing.Annotations, desiredCopy.Annotations) &&
 		equality.Semantic.DeepEqual(existing.OwnerReferences, desiredCopy.OwnerReferences) {
 		return nil
@@ -285,7 +297,7 @@ func ReconcileNetworkPolicy(ctx context.Context, c client.Client, desired *netwo
 
 	updated := existing.DeepCopy()
 	updated.Spec = desiredCopy.Spec
-	updated.Labels = desiredCopy.Labels
+	updated.Labels = reconciledLabels
 	updated.Annotations = desiredCopy.Annotations
 	updated.OwnerReferences = desiredCopy.OwnerReferences
 	if err := c.Update(ctx, updated); err != nil {

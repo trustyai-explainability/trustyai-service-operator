@@ -272,7 +272,19 @@ func TestReconcileNetworkPolicy(t *testing.T) {
 		From:  []networkingv1.NetworkPolicyPeer{{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "caller"}}}},
 		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &protocol, Port: &port}},
 	}}
-	desired.Labels = map[string]string{NetworkPolicyManagedByLabel: NetworkPolicyManagedByValue}
+	actual.Labels = map[string]string{
+		NetworkPolicyManagedByLabel: "stale-manager",
+		NetworkPolicyOwnerUIDLabel:  "stale-owner",
+		"example.com/preserved":     "existing",
+		"example.com/override":      "existing",
+	}
+	if err := c.Update(context.Background(), actual); err != nil {
+		t.Fatalf("seed labels on existing NetworkPolicy: %v", err)
+	}
+	desired.Labels = map[string]string{
+		NetworkPolicyManagedByLabel: NetworkPolicyManagedByValue,
+		"example.com/override":      "desired",
+	}
 	desired.Annotations = map[string]string{"example.com/purpose": "reconciled"}
 	if err := ReconcileNetworkPolicy(context.Background(), c, desired); err != nil {
 		t.Fatalf("update drifted NetworkPolicy: %v", err)
@@ -286,7 +298,16 @@ func TestReconcileNetworkPolicy(t *testing.T) {
 		t.Errorf("updated ingress rules = %#v, want TCP 8443 rule", actual.Spec.Ingress)
 	}
 	if actual.Labels[NetworkPolicyManagedByLabel] != NetworkPolicyManagedByValue {
-		t.Errorf("updated labels = %#v", actual.Labels)
+		t.Errorf("managed-by label = %q, want %q", actual.Labels[NetworkPolicyManagedByLabel], NetworkPolicyManagedByValue)
+	}
+	if actual.Labels["example.com/preserved"] != "existing" {
+		t.Errorf("unrelated existing label was not preserved: %#v", actual.Labels)
+	}
+	if actual.Labels["example.com/override"] != "desired" {
+		t.Errorf("desired label did not override existing value: %#v", actual.Labels)
+	}
+	if _, ok := actual.Labels[NetworkPolicyOwnerUIDLabel]; ok {
+		t.Errorf("stale controller-managed owner UID label was not removed: %#v", actual.Labels)
 	}
 	if actual.Annotations["example.com/purpose"] != "reconciled" {
 		t.Errorf("updated annotations = %#v", actual.Annotations)
