@@ -2,6 +2,8 @@ package nemo_guardrails
 
 import (
 	"context"
+	"errors"
+
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	corev1 "k8s.io/api/core/v1"
@@ -27,7 +29,7 @@ func (r *NemoGuardrailsReconciler) updateStatus(ctx context.Context, original *n
 }
 
 func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails) (ctrl.Result, error) {
-	deploymentReady, _ := utils.CheckDeploymentReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
+	deploymentReady, deploymentErr := utils.CheckDeploymentReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
 
 	exposeRoute := nemoGuardrails.Spec.ExposeRoute != nil && *nemoGuardrails.Spec.ExposeRoute
 	routeReady := !exposeRoute
@@ -53,13 +55,27 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 	} else {
 		_, updateErr := r.updateStatus(ctx, nemoGuardrails, func(saved *nemoguardrailsv1alpha1.NemoGuardrails) {
 
-			utils.SetStatus(&saved.Status.Conditions, "Deployment", deploymentReady)
+			if deploymentErr != nil {
+				utils.SetResourceCondition(&saved.Status.Conditions, "Deployment", "DeploymentReadinessCheckFailed", "Deployment readiness check failed: "+deploymentErr.Error(), corev1.ConditionFalse)
+			} else {
+				utils.SetStatus(&saved.Status.Conditions, "Deployment", deploymentReady)
+			}
 			if exposeRoute {
 				utils.SetStatus(&saved.Status.Conditions, "Route", routeReady)
 			} else {
 				utils.SetResourceCondition(&saved.Status.Conditions, "Route", "RouteDisabled", "Route is not required", corev1.ConditionFalse)
 			}
-			utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionFalse, utils.ReconcileFailed, utils.ReconcileFailedMessage)
+			if deploymentErr != nil {
+				message := "Deployment readiness check failed: " + deploymentErr.Error()
+				if errors.Is(deploymentErr, utils.ErrDeploymentProgressDeadlineExceeded) {
+					message = "Deployment rollout is stuck: " + deploymentErr.Error()
+				}
+				utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionFalse, utils.ReconcileFailed, message)
+				saved.Status.Phase = utils.PhaseError
+			} else {
+				utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionFalse, "WaitingForReady", "Waiting for required resources to become ready")
+				saved.Status.Phase = utils.PhaseProgressing
+			}
 		})
 		if updateErr != nil {
 			log.FromContext(ctx).Error(updateErr, "Failed to update status")
