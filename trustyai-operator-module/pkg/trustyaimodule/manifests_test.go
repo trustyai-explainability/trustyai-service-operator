@@ -33,12 +33,12 @@ func operatorDeployment(containers ...map[string]interface{}) unstructured.Unstr
 
 var _ = Describe("enabledServiceNames", func() {
 	It("returns only the enabled services", func() {
-		Expect(enabledServiceNames(platformv1alpha1.EnabledServices{TAS: true, GORCH: true})).To(ConsistOf("TAS", "GORCH"))
+		Expect(enabledServiceNames(platformv1alpha1.EnabledServices{TAS: true})).To(ConsistOf("TAS"))
 	})
 
 	It("returns all services when none are explicitly enabled", func() {
 		Expect(enabledServiceNames(platformv1alpha1.EnabledServices{})).To(ConsistOf(
-			"TAS", "LMES", "EVALHUB", "GORCH", "NEMO_GUARDRAILS",
+			"TAS", "LMES", "EVALHUB", "NEMO_GUARDRAILS",
 		))
 	})
 })
@@ -46,7 +46,7 @@ var _ = Describe("enabledServiceNames", func() {
 var _ = Describe("effectiveEnabledServices", func() {
 	It("forces NeMo Guardrails only in MCP mode", func() {
 		services := effectiveEnabledServices(platformv1alpha1.EnabledServices{
-			TAS: true, LMES: true, EvalHub: true, GORCH: true,
+			TAS: true, LMES: true, EvalHub: true,
 		}, true)
 
 		Expect(services).To(Equal(platformv1alpha1.EnabledServices{NemoGuardrails: true}))

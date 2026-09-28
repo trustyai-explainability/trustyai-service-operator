@@ -22,7 +22,7 @@ When a `TrustyAI` resource named `default-trustyai` has
 Setting `spec.managementState` to `Removed` stops reconciliation and removes
 the resources owned by the module. An empty `spec.enabledServices` object
 enables all TrustyAI services; individual services can be selected with the
-`tas`, `evalHub`, `gorch`, `lmes`, and `nemoGuardrails` fields.
+`tas`, `evalHub`,  `lmes`, and `nemoGuardrails` fields.
 
 ## Installation
 

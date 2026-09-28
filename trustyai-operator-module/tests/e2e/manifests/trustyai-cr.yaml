@@ -8,5 +8,4 @@ spec:
     tas: true
     lmes: true
     evalHub: true
-    gorch: true
     nemoGuardrails: true

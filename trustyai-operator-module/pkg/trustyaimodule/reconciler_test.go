@@ -323,7 +323,7 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name: OperatorDeploymentName, Namespace: testNamespace,
 			}, dep)).To(Succeed())
-			Expect(deploymentEnableServicesArg(dep)).To(Equal("--enable-services=TAS,LMES,EVALHUB,GORCH,NEMO_GUARDRAILS"))
+			Expect(deploymentEnableServicesArg(dep)).To(Equal("--enable-services=TAS,LMES,EVALHUB,NEMO_GUARDRAILS"))
 
 			module := &platformv1alpha1.TrustyAI{}
 			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())

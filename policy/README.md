@@ -27,7 +27,7 @@ Validates the **contents** of every `ClusterRole` in the rendered manifests usin
    - Escalation verbs: `escalate`, `bind`, `impersonate`
 
    **Exemptions** (matched by role name suffix):
-   - *Secrets write:* `tas-manager-role`, `gorch-manager-role`, `nemo-guardrails-manager-role` — these managers create/manage TLS certificates and service credentials for their workloads.
+   - *Secrets write:* `tas-manager-role`, `nemo-guardrails-manager-role` — these managers create/manage TLS certificates and service credentials for their workloads.
    - *ClusterRoleBindings write:* `tas-manager-role`, `evalhub-manager-role`, `nemo-guardrails-manager-role` — these managers create CRBs to bind service accounts to component-specific roles.
 
 ### `selector.rego` — Deployment selector pinning

@@ -56,8 +56,6 @@ spec:
                 properties:
                   evalHub:
                     type: boolean
-                  gorch:
-                    type: boolean
                   lmes:
                     type: boolean
                   nemoGuardrails:
