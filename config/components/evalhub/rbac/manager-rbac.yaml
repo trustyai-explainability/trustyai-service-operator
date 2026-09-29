@@ -26,6 +26,7 @@ rules:
   - events
   verbs:
   - create
+  - list
   - patch
 - apiGroups:
   - trustyai.opendatahub.io

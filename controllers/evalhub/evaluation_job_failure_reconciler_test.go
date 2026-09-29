@@ -190,6 +190,107 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 		})
 	})
 
+	Describe("podMayBeVolumeMountStuck", func() {
+		It("returns true for scheduled pending pod with ContainerCreating init", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(time.Now().Add(-3 * time.Minute)),
+					}},
+					InitContainerStatuses: []corev1.ContainerStatus{{
+						Name: initContainerName,
+						State: corev1.ContainerState{
+							Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"},
+						},
+					}},
+				},
+			}
+			Expect(podMayBeVolumeMountStuck(pod)).To(BeTrue())
+		})
+
+		It("returns false when a container has already started", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:   corev1.PodScheduled,
+						Status: corev1.ConditionTrue,
+					}},
+					InitContainerStatuses: []corev1.ContainerStatus{{
+						Name: initContainerName,
+						State: corev1.ContainerState{
+							Running: &corev1.ContainerStateRunning{},
+						},
+					}},
+				},
+			}
+			Expect(podMayBeVolumeMountStuck(pod)).To(BeFalse())
+		})
+
+		It("returns false when not scheduled", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:   corev1.PodScheduled,
+						Status: corev1.ConditionFalse,
+						Reason: corev1.PodReasonUnschedulable,
+					}},
+				},
+			}
+			Expect(podMayBeVolumeMountStuck(pod)).To(BeFalse())
+		})
+	})
+
+	Describe("volumeMountGracePeriodRemaining", func() {
+		It("returns remaining duration within grace period", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(time.Now().Add(-30 * time.Second)),
+					}},
+				},
+			}
+			remaining := volumeMountGracePeriodRemaining(pod)
+			Expect(remaining).To(BeNumerically(">", 0))
+			Expect(remaining).To(BeNumerically("<=", schedulingGracePeriod))
+		})
+
+		It("returns recheck interval past grace within watch max", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(time.Now().Add(-3 * time.Minute)),
+					}},
+				},
+			}
+			Expect(volumeMountGracePeriodRemaining(pod)).To(Equal(schedulingGracePeriod))
+		})
+
+		It("returns 0 past volume-mount watch max", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(time.Now().Add(-(volumeMountWatchMaxAge + time.Minute))),
+					}},
+				},
+			}
+			Expect(volumeMountGracePeriodRemaining(pod)).To(Equal(time.Duration(0)))
+		})
+	})
+
 	Describe("podSchedulingFailureMessage", func() {
 		It("returns false for non-pending pod", func() {
 			pod := &corev1.Pod{
