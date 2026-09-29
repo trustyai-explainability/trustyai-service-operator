@@ -75,7 +75,7 @@ const (
 	sandboxPhaseError       = "Error"
 )
 
-//+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups="",resources=resourcequotas,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;delete
 // The manager must itself hold every permission it grants to the sandbox broker

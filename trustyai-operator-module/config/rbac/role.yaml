@@ -14,6 +14,7 @@ rules:
   - configmaps
   - persistentvolumeclaims
   - pods
+  - resourcequotas
   - secrets
   - serviceaccounts
   - services
@@ -37,6 +38,16 @@ rules:
   - ""
   resources:
   - namespaces
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - persistentvolumes
   verbs:
   - get
@@ -56,6 +67,7 @@ rules:
   - ""
   resources:
   - pods/log
+  - pods/status
   verbs:
   - get
 - apiGroups:
@@ -255,6 +267,18 @@ rules:
   - update
   - watch
 - apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - rbac.authorization.k8s.io
   resources:
   - clusterrolebindings
@@ -336,6 +360,7 @@ rules:
   - lmevaljobs
   - nemoguardrails
   - providers
+  - sandboxnamespaces
   - status-events
   - trustyaiservices
   verbs:
@@ -351,6 +376,7 @@ rules:
   resources:
   - evalhubs/finalizers
   - lmevaljobs/finalizers
+  - sandboxnamespaces/finalizers
   - trustyaiservices/finalizers
   verbs:
   - update
@@ -366,6 +392,7 @@ rules:
   resources:
   - evalhubs/status
   - lmevaljobs/status
+  - sandboxnamespaces/status
   - trustyaiservices/status
   verbs:
   - get
