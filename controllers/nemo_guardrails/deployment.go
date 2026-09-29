@@ -21,7 +21,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -35,6 +34,7 @@ type DeploymentConfig struct {
 	ContainerImages     ContainerImages
 	UseAuthProxy        bool
 	KubeRbacProxyConfig *utils.KubeRBACProxyConfig
+	Namespace           string
 }
 
 const deploymentTemplateFilename = "deployment.tmpl.yaml"
@@ -55,7 +55,7 @@ func (r *NemoGuardrailsReconciler) setAuthConfig(ctx context.Context, nemoGuardr
 
 	deploymentConfig.KubeRbacProxyConfig = &utils.KubeRBACProxyConfig{
 		Suffix:             "",
-		Namespace:          nemoGuardrails.Namespace,
+		Namespace:          r.workloadNamespace(nemoGuardrails),
 		Name:               GetRBACConfigName(*nemoGuardrails),
 		KubeRBACProxyImage: authImage,
 		DownstreamPort:     8443,
@@ -67,6 +67,19 @@ func (r *NemoGuardrailsReconciler) setAuthConfig(ctx context.Context, nemoGuardr
 	return nil
 }
 
+func labelNemoConfigMap(ctx context.Context, c client.Client, configmap *corev1.ConfigMap) error {
+	labelValue, labelExists := configmap.Labels["nemo-guardrails-config"]
+	if labelExists && labelValue == "true" {
+		return nil
+	}
+	patch := client.MergeFrom(configmap.DeepCopy())
+	if configmap.Labels == nil {
+		configmap.Labels = map[string]string{}
+	}
+	configmap.Labels["nemo-guardrails-config"] = "true"
+	return c.Patch(ctx, configmap, patch)
+}
+
 // mountNemoConfigs will take all configmaps specified inside the nemoGuardrails.NemoConfig section of the CR and mount them to the deployment in the specified directories
 // this is where user guardrail config files (actions.py, flows.co, etc) are placed into the container
 func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, deployment *appsv1.Deployment) error {
@@ -76,6 +89,8 @@ func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGua
 
 	// Accumulate a hash of all ConfigMap names and data to detect content changes
 	hasher := sha256.New()
+
+	targetNamespace := r.workloadNamespace(nemoGuardrails)
 
 	for idx, nemoConfig := range nemoGuardrails.Spec.NemoConfigs {
 		// Take the first config as default for now. If any config manually specifies default-ness, we'll override this
@@ -99,51 +114,41 @@ func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGua
 					// not found in operator namespace, fall back to the deployment namespace
 					utils.LogErrorRetrieving(ctx, err, "default NeMo Guardrails configmap", configCM, r.Namespace)
 				} else {
-					// copy from operator namespace into CR namespace
-					crNamespaceConfigMap := &corev1.ConfigMap{
+					// copy from operator namespace into the deployment namespace
+					deployedConfigMap := &corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:        fmt.Sprintf("%s-%s", nemoGuardrails.Name, sourceCM.Name),
-							Namespace:   nemoGuardrails.Namespace,
-							Labels:      sourceCM.Labels,
-							Annotations: sourceCM.Annotations,
+							Namespace:   targetNamespace,
+							Labels:      copyStringMap(sourceCM.Labels),
+							Annotations: copyStringMap(sourceCM.Annotations),
 						},
 						Data: sourceCM.Data,
 					}
-					copiedCM, justCreated, copyErr := utils.ReconcileManuallyDefinedConfigMap(ctx, r.Client, nemoGuardrails, crNamespaceConfigMap)
+					copiedCM, copyErr := r.createOrUpdateOwnedConfigMap(ctx, nemoGuardrails, deployedConfigMap)
 					if copyErr != nil {
-						utils.LogErrorReconciling(ctx, copyErr, "default NeMo Guardrails configmap", configCM, nemoGuardrails.Namespace)
+						utils.LogErrorReconciling(ctx, copyErr, "default NeMo Guardrails configmap", configCM, targetNamespace)
 						return copyErr
-					} else {
-						if !justCreated {
-							// if we didn't just create a new config, check to make sure the values are correct
-							if err := utils.CompareAndUpdateConfigmap(ctx, r.Client, copiedCM, crNamespaceConfigMap, true); err != nil {
-								utils.LogErrorUpdating(ctx, err, "default NeMo Guardrails configmap", configCM, nemoGuardrails.Namespace)
-								return err
-							}
-						}
-						configmap = copiedCM
 					}
+					configmap = copiedCM
 				}
 			}
 
 			if configmap.Name == "" {
-				// if we didn't end up creating a new configmap in the above logic, try to retrieve from CR namespace
+				// User configmaps are read from the custom resource namespace.
 				if err := r.Client.Get(ctx, types.NamespacedName{Name: configCM, Namespace: nemoGuardrails.Namespace}, configmap); err != nil {
 					utils.LogErrorRetrieving(ctx, err, "configmap", configCM, deployment.Namespace)
 					return err
 				}
 			}
-
-			labelValue, labelExists := configmap.Labels["nemo-guardrails-config"]
-			if !labelExists || labelValue != "true" {
-				patch := client.MergeFrom(configmap.DeepCopy())
-				if configmap.Labels == nil {
-					configmap.Labels = map[string]string{}
-				}
-				configmap.Labels["nemo-guardrails-config"] = "true"
-				if err := r.Client.Patch(ctx, configmap, patch); err != nil {
+			if err := labelNemoConfigMap(ctx, r.Client, configmap); err != nil {
+				return err
+			}
+			if configmap.Namespace != targetNamespace {
+				copied, err := r.ensureConfigMapInNamespace(ctx, nemoGuardrails, configmap, targetNamespace)
+				if err != nil {
 					return err
 				}
+				configmap = copied
 			}
 
 			// Include ConfigMap name and data in hash for change detection
@@ -232,6 +237,7 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 		NemoGuardrails:  nemoGuardrails,
 		ContainerImages: containerImages,
 		UseAuthProxy:    utils.RequiresAuth(nemoGuardrails),
+		Namespace:       r.workloadNamespace(nemoGuardrails),
 	}
 	// === configure kube-rbac-proxy if needed ========
 	if deploymentConfig.UseAuthProxy {
@@ -246,12 +252,13 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 		utils.LogErrorParsing(ctx, err, "deployment template", nemoGuardrails.Name, nemoGuardrails.Namespace)
 		return nil, err
 	}
+	deployment.Namespace = r.workloadNamespace(nemoGuardrails)
 	for i := range deployment.Spec.Template.Spec.Containers {
 		if deployment.Spec.Template.Spec.Containers[i].Name == "kube-rbac-proxy" {
 			deployment.Spec.Template.Spec.Containers[i].Args = append(deployment.Spec.Template.Spec.Containers[i].Args, pkgtls.CurrentProxyTLSArguments().Args...)
 		}
 	}
-	if err := controllerutil.SetControllerReference(nemoGuardrails, deployment, r.Scheme); err != nil {
+	if err := utils.SetOwnerReference(nemoGuardrails, deployment, r.Scheme); err != nil {
 		utils.LogErrorControllerReference(ctx, err, "deployment", deployment.Name, deployment.Namespace)
 		return nil, err
 	}

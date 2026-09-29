@@ -1293,6 +1293,10 @@ spec:
                 type: string
               phase:
                 type: string
+              workloadNamespace:
+                description: WorkloadNamespace is the namespace where the Deployment
+                  was last reconciled.
+                type: string
             type: object
         type: object
     served: true

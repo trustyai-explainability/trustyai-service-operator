@@ -20,10 +20,19 @@ func GetServiceAccountName(owner metav1.Object) string {
 }
 
 func ReconcileServiceAccount(ctx context.Context, c client.Client, owner metav1.Object) error {
+	return ReconcileServiceAccountInNamespace(ctx, c, owner, owner.GetNamespace())
+}
+
+// ReconcileServiceAccountInNamespace reconciles the auth ServiceAccount in namespace.
+// An empty namespace uses the owner's namespace.
+func ReconcileServiceAccountInNamespace(ctx context.Context, c client.Client, owner metav1.Object, namespace string) error {
+	if namespace == "" {
+		namespace = owner.GetNamespace()
+	}
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      GetServiceAccountName(owner),
-			Namespace: owner.GetNamespace(),
+			Namespace: namespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/managed-by": "trustyai-service-operator",
 				"app":                          owner.GetName(),

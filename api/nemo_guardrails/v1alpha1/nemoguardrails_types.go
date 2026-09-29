@@ -104,6 +104,9 @@ type NemoGuardrailStatus struct {
 	// Only set when the server is protected by authentication (security.opendatahub.io/enable-auth: "true").
 	// +optional
 	Endpoint string `json:"endpoint,omitempty"`
+	// WorkloadNamespace is the namespace where the Deployment was last reconciled.
+	// +optional
+	WorkloadNamespace string `json:"workloadNamespace,omitempty"`
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 }
