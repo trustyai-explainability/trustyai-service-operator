@@ -17,6 +17,7 @@ allowed_api_resources := {
 	["", "pods"],
 	["", "pods/exec"],
 	["", "pods/log"],
+	["", "pods/status"],
 	["", "resourcequotas"],
 	["", "secrets"],
 	["", "serviceaccounts"],

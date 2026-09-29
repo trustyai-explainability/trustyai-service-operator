@@ -129,8 +129,13 @@ func TestSandboxReconciler_ProvisionsNamespaceAndResources(t *testing.T) {
 	assert.NoError(t, fc.Get(ctx, types.NamespacedName{Name: sandboxBrokerServiceAccountName, Namespace: nsName}, &corev1.ServiceAccount{}))
 	role := &rbacv1.Role{}
 	require.NoError(t, fc.Get(ctx, types.NamespacedName{Name: sandboxBrokerRoleName, Namespace: nsName}, role))
-	require.Len(t, role.Rules, 1)
-	assert.ElementsMatch(t, []string{"pods", "pods/log", "pods/status", "services", "configmaps"}, role.Rules[0].Resources)
+	require.Len(t, role.Rules, 2)
+	// Full CRUD on the core workload resources.
+	assert.ElementsMatch(t, []string{"pods", "services", "configmaps"}, role.Rules[0].Resources)
+	assert.ElementsMatch(t, []string{"get", "list", "watch", "create", "update", "patch", "delete"}, role.Rules[0].Verbs)
+	// Read-only on the pod log/status subresources.
+	assert.ElementsMatch(t, []string{"pods/log", "pods/status"}, role.Rules[1].Resources)
+	assert.ElementsMatch(t, []string{"get"}, role.Rules[1].Verbs)
 	rb := &rbacv1.RoleBinding{}
 	require.NoError(t, fc.Get(ctx, types.NamespacedName{Name: sandboxBrokerRoleBindingName, Namespace: nsName}, rb))
 	assert.Equal(t, sandboxBrokerRoleName, rb.RoleRef.Name)
@@ -239,7 +244,15 @@ func TestSandboxReconciler_TeardownOnDelete(t *testing.T) {
 		Spec:   evalhubv1.SandboxNamespaceSpec{JobID: "job-del"},
 		Status: evalhubv1.SandboxNamespaceStatus{NamespaceName: nsName, Phase: sandboxPhaseReady},
 	}
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+	// The namespace carries this CR's ownership labels, so teardown will delete it.
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name: nsName,
+		Labels: map[string]string{
+			sandboxManagedByLabel:   sandboxManagedByValue,
+			sandboxCRNameLabel:      "job-del",
+			sandboxCRNamespaceLabel: "control-ns",
+		},
+	}}
 	r, fc := buildSandboxReconciler(t, sc, cr, ns)
 	ctx := context.Background()
 
@@ -314,6 +327,72 @@ func TestSandboxReconciler_NamespaceNameNotStampedBeforeCreation(t *testing.T) {
 	require.NoError(t, fc.Get(context.Background(), sandboxRequest(cr).NamespacedName, updated))
 	assert.Equal(t, sandboxPhaseError, updated.Status.Phase)
 	assert.Empty(t, updated.Status.NamespaceName, "namespace name must not be stamped before the namespace exists")
+}
+
+// TestSandboxReconciler_RefusesToAdoptUnownedNamespace verifies that a CR whose
+// resolved namespace name already exists but was not provisioned by the operator is
+// not relabelled, locked down, or otherwise mutated: provisioning fails and the CR
+// goes to phase Error instead.
+func TestSandboxReconciler_RefusesToAdoptUnownedNamespace(t *testing.T) {
+	sc := sandboxScheme(t)
+	cr := newSandboxCR("job-adopt", "control-ns")
+	cr.Finalizers = []string{evalhubv1.SandboxFinalizerName}
+	// The resolved namespace name (derived from the CR name) already exists and is
+	// owned by someone else — no operator ownership labels.
+	nsName := "evalhub-sandbox-job-adopt"
+	foreign := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name:   nsName,
+		Labels: map[string]string{"team": "platform"},
+	}}
+	r, fc := buildSandboxReconciler(t, sc, cr, foreign)
+	ctx := context.Background()
+
+	_, err := r.Reconcile(ctx, sandboxRequest(cr))
+	require.Error(t, err, "adopting a foreign namespace must fail")
+
+	// The foreign namespace is untouched: no sandbox labels, no resources applied.
+	ns := &corev1.Namespace{}
+	require.NoError(t, fc.Get(ctx, types.NamespacedName{Name: nsName}, ns))
+	assert.NotContains(t, ns.Labels, sandboxManagedByLabel, "foreign namespace must not be relabelled")
+	assert.Equal(t, "platform", ns.Labels["team"], "existing labels must be preserved")
+	err = fc.Get(ctx, types.NamespacedName{Name: sandboxResourceQuotaName, Namespace: nsName}, &corev1.ResourceQuota{})
+	assert.True(t, apierrors.IsNotFound(err), "no quota should be applied to a foreign namespace")
+
+	updated := &evalhubv1.SandboxNamespace{}
+	require.NoError(t, fc.Get(ctx, sandboxRequest(cr).NamespacedName, updated))
+	assert.Equal(t, sandboxPhaseError, updated.Status.Phase)
+}
+
+// TestSandboxReconciler_TeardownSkipsUnownedNamespace verifies that deleting a CR
+// whose spec.namespaceName points at a namespace the operator does not own never
+// deletes that namespace; the finalizer is still cleared so the CR can be removed.
+func TestSandboxReconciler_TeardownSkipsUnownedNamespace(t *testing.T) {
+	sc := sandboxScheme(t)
+	nsName := "shared-namespace"
+	cr := &evalhubv1.SandboxNamespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "job-foreign",
+			Namespace:  "control-ns",
+			Finalizers: []string{evalhubv1.SandboxFinalizerName},
+		},
+		Spec:   evalhubv1.SandboxNamespaceSpec{JobID: "job-foreign", NamespaceName: nsName},
+		Status: evalhubv1.SandboxNamespaceStatus{NamespaceName: nsName, Phase: sandboxPhaseReady},
+	}
+	// A namespace with no operator ownership labels.
+	foreign := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName, Labels: map[string]string{"team": "platform"}}}
+	r, fc := buildSandboxReconciler(t, sc, cr, foreign)
+	ctx := context.Background()
+
+	require.NoError(t, fc.Delete(ctx, cr))
+	_, err := r.Reconcile(ctx, sandboxRequest(cr))
+	require.NoError(t, err)
+
+	// The foreign namespace still exists.
+	require.NoError(t, fc.Get(ctx, types.NamespacedName{Name: nsName}, &corev1.Namespace{}), "unowned namespace must not be deleted")
+
+	// The CR's finalizer was still cleared, so it is gone.
+	err = fc.Get(ctx, sandboxRequest(cr).NamespacedName, &evalhubv1.SandboxNamespace{})
+	assert.True(t, apierrors.IsNotFound(err), "CR should be removed once the finalizer is cleared")
 }
 
 // TestHostIPFromEndpoint covers literal-IP extraction from the endpoint forms the

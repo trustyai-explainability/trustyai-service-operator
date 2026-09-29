@@ -296,6 +296,24 @@ rules:
   - patch
   - delete
 - apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - pods/status
+  verbs:
+  - get
+- apiGroups:
   - networking.k8s.io
   resources:
   - networkpolicies

@@ -78,6 +78,13 @@ const (
 //+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups="",resources=resourcequotas,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;delete
+// The manager must itself hold every permission it grants to the sandbox broker
+// Role, or RBAC escalation-prevention rejects the Role's creation. The broker gets
+// full CRUD on pods (plus services/configmaps, already covered by other markers)
+// and read-only access to the pods/log and pods/status subresources.
+//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=pods/log,verbs=get
+//+kubebuilder:rbac:groups="",resources=pods/status,verbs=get
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
@@ -111,7 +118,7 @@ func (r *SandboxNamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	// Deletion / terminal teardown.
 	if !instance.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(instance, evalhubv1.SandboxFinalizerName) {
-			if err := r.teardownSandbox(ctx, nsName); err != nil {
+			if err := r.teardownSandbox(ctx, instance, nsName); err != nil {
 				logger.Error(err, "Failed to tear down sandbox namespace", "namespace", nsName)
 				return ctrl.Result{}, err
 			}
@@ -191,15 +198,36 @@ func (r *SandboxNamespaceReconciler) provisionSandbox(ctx context.Context, insta
 
 // teardownSandbox deletes the sandbox namespace; the namespace delete cascades to
 // every resource inside it. It is idempotent (a missing namespace is success).
-func (r *SandboxNamespaceReconciler) teardownSandbox(ctx context.Context, nsName string) error {
+//
+// The namespace is deleted only when it carries this CR's ownership labels. A CR
+// whose spec.namespaceName points at a namespace the operator did not provision
+// (for example a pre-existing or foreign namespace) must never trigger a delete of
+// that namespace, so an unowned namespace is a no-op.
+func (r *SandboxNamespaceReconciler) teardownSandbox(ctx context.Context, instance *evalhubv1.SandboxNamespace, nsName string) error {
 	if nsName == "" {
 		return nil
 	}
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
-	if err := r.Delete(ctx, ns); err != nil && !errors.IsNotFound(err) {
+	existing := &corev1.Namespace{}
+	if err := r.Get(ctx, types.NamespacedName{Name: nsName}, existing); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	if !sandboxNamespaceOwnedBy(existing, instance) {
+		return nil
+	}
+	if err := r.Delete(ctx, existing); err != nil && !errors.IsNotFound(err) {
 		return err
 	}
 	return nil
+}
+
+// sandboxNamespaceOwnedBy reports whether ns was provisioned by the operator for
+// this specific SandboxNamespace CR, identified by the managed-by label plus the
+// CR name/namespace back-links stamped in sandboxLabels.
+func sandboxNamespaceOwnedBy(ns *corev1.Namespace, instance *evalhubv1.SandboxNamespace) bool {
+	labels := ns.GetLabels()
+	return labels[sandboxManagedByLabel] == sandboxManagedByValue &&
+		labels[sandboxCRNameLabel] == instance.Name &&
+		labels[sandboxCRNamespaceLabel] == instance.Namespace
 }
 
 // sandboxLabels returns the common labels stamped on the sandbox namespace and its
@@ -241,6 +269,13 @@ func (r *SandboxNamespaceReconciler) ensureNamespace(ctx context.Context, instan
 	}
 	if err != nil {
 		return err
+	}
+	// Refuse to adopt a namespace the operator did not provision for this CR. Without
+	// this guard a spec.namespaceName pointing at an existing namespace (e.g. a
+	// system namespace) would be relabelled, locked down with default-deny network
+	// policies, and ultimately deleted on teardown.
+	if !sandboxNamespaceOwnedBy(existing, instance) {
+		return fmt.Errorf("refusing to adopt namespace %q: not owned by SandboxNamespace %s/%s", nsName, instance.Namespace, instance.Name)
 	}
 	// If the namespace is being deleted, wait for it to disappear before recreating.
 	if !existing.DeletionTimestamp.IsZero() {
@@ -490,8 +525,14 @@ func (r *SandboxNamespaceReconciler) ensureBrokerRBAC(ctx context.Context, insta
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{""},
-				Resources: []string{"pods", "pods/log", "pods/status", "services", "configmaps"},
+				Resources: []string{"pods", "services", "configmaps"},
 				Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
+			},
+			{
+				// Log and status are read-only subresources used to observe sandbox pods.
+				APIGroups: []string{""},
+				Resources: []string{"pods/log", "pods/status"},
+				Verbs:     []string{"get"},
 			},
 		},
 	}
