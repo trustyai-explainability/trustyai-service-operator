@@ -10,11 +10,14 @@ import (
 )
 
 type ServiceConfig struct {
-	Name         string
-	Namespace    string
-	Owner        metav1.Object
-	Version      string
-	UseAuthProxy bool
+	Name          string
+	Namespace     string
+	Owner         metav1.Object
+	Version       string
+	UseAuthProxy  bool
+	WorkloadName  string
+	PortName      string
+	AdminPortName string
 }
 
 const serviceResourceKind = "service"

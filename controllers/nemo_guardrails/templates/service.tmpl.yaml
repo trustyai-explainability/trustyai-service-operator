@@ -4,25 +4,25 @@ metadata:
   name: {{.Name}}
   namespace: {{.Namespace}}
   labels:
-    app: {{.Owner.Name}}
-    component: {{.Owner.Name}}
+    app: {{.WorkloadName}}
+    component: {{.WorkloadName}}
   annotations:
-    service.beta.openshift.io/serving-cert-secret-name: {{.Owner.Name}}-tls
+    service.beta.openshift.io/serving-cert-secret-name: {{.WorkloadName}}-tls
 spec:
   ipFamilies:
     - IPv4
   ports:
     {{if .UseAuthProxy }}
-    - name: {{ .Name }}
+    - name: {{ .PortName }}
       protocol: TCP
       port: 443
       targetPort: 8443
-    - name: {{ .Name }}-admin
+    - name: {{ .AdminPortName }}
       protocol: TCP
       port: 444
       targetPort: 8444
     {{else}}
-    - name: {{ .Name }}
+    - name: {{ .PortName }}
       protocol: TCP
       port: 80
       targetPort: 8000
@@ -32,5 +32,5 @@ spec:
   ipFamilyPolicy: SingleStack
   sessionAffinity: None
   selector:
-    app: {{.Owner.Name}}
-    component: {{.Owner.Name}}
+    app: {{.WorkloadName}}
+    component: {{.WorkloadName}}

@@ -432,7 +432,7 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
 		r := &NemoGuardrailsReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Namespace: operatorNamespace}
-		ca, cms, _ := r.LoadCAConfigs(ctx, log.FromContext(ctx), *nemo)
+		ca, cms, _ := r.LoadCAConfigs(ctx, log.FromContext(ctx), *nemo, r.workloadNamespace(nemo))
 		baseline, err := r.createDeployment(ctx, nemo, ca, cms)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(baseline.Spec.Template.Spec.ResourceClaims).To(BeEmpty())
