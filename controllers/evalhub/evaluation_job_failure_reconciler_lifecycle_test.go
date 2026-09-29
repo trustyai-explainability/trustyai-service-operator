@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -139,6 +140,7 @@ func buildJobFailureReconciler(fc client.Client, tenantNamespace string) (*EvalH
 	tn.Add(tenantNamespace)
 	return &EvalHubEvaluationJobFailureReconciler{
 		Client:        fc,
+		APIReader:     fc,
 		RESTConfig:    &rest.Config{},
 		EventRecorder: rec,
 		tenantNS:      tn,
@@ -309,3 +311,86 @@ func TestJobFailureReconciler_ImagePullError_EmitsEventAndPatchesJob(t *testing.
 	require.NotNil(t, patchedLabels, "evaluation-phase=Failed patch was never applied to Job")
 	assert.Equal(t, labelEvaluationPhaseFailed, patchedLabels[labelEvaluationPhase])
 }
+
+// TestJobFailureReconciler_FailedMount_EmitsEventAndPatchesJob verifies missing Secret volume mounts
+// (Scheduled+Pending / ContainerCreating + FailedMount Event) are reported after the grace period.
+func TestJobFailureReconciler_FailedMount_EmitsEventAndPatchesJob(t *testing.T) {
+	sc := jobFailureLifecycleScheme(t)
+	ns := "tenant-ns"
+	srv := noopEvalHubServer(t)
+
+	eh := readyEvalHubCR("evalhub", "system", srv.URL)
+	job := evalHubEvaluationJob("eval-job-mount", ns, map[string]string{
+		evalHubInstanceNameLabel:      eh.Name,
+		evalHubInstanceNamespaceLabel: eh.Namespace,
+	})
+	podUID := types.UID("pod-uid-mount")
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      job.Name + "-pod",
+			Namespace: ns,
+			UID:       podUID,
+			Labels:    map[string]string{"batch.kubernetes.io/job-name": job.Name},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "batch/v1", Kind: "Job", Name: job.Name, UID: job.UID,
+			}},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodPending,
+			Conditions: []corev1.PodCondition{{
+				Type:               corev1.PodScheduled,
+				Status:             corev1.ConditionTrue,
+				LastTransitionTime: metav1.NewTime(time.Now().Add(-3 * time.Minute)),
+			}},
+			InitContainerStatuses: []corev1.ContainerStatus{{
+				Name: initContainerName,
+				State: corev1.ContainerState{
+					Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"},
+				},
+			}},
+		},
+	}
+	mountEvent := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Name: "mount-fail", Namespace: ns},
+		InvolvedObject: corev1.ObjectReference{
+			Kind: "Pod", Name: pod.Name, Namespace: ns, UID: podUID,
+		},
+		Reason:  eventReasonFailedMount,
+		Message: `MountVolume.SetUp failed for volume "test-data-hf-auth" : secret "missing-hf-token" not found`,
+		Type:    corev1.EventTypeWarning,
+	}
+
+	var patchedLabels map[string]string
+	fc := fake.NewClientBuilder().
+		WithScheme(sc).
+		WithObjects(eh, job, pod, mountEvent).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+				if j, ok := obj.(*batchv1.Job); ok && j.Labels[labelEvaluationPhase] == labelEvaluationPhaseFailed {
+					patchedLabels = j.Labels
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+
+	r, rec := buildJobFailureReconciler(fc, ns)
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: ns, Name: job.Name},
+	})
+	require.NoError(t, err)
+
+	select {
+	case ev := <-rec.Events:
+		assert.Contains(t, ev, corev1.EventTypeWarning)
+		assert.Contains(t, ev, eventReasonEvaluationFailed)
+		assert.Contains(t, ev, "missing-hf-token")
+	default:
+		t.Fatal("expected EvaluationFailed event but recorder is empty")
+	}
+
+	require.NotNil(t, patchedLabels, "evaluation-phase=Failed patch was never applied to Job")
+	assert.Equal(t, labelEvaluationPhaseFailed, patchedLabels[labelEvaluationPhase])
+}
+

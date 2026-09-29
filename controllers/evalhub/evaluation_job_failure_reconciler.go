@@ -103,7 +103,7 @@ func failureWatcherLogFields() []any {
 //+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=pods/log,verbs=get
-//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;list
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs,verbs=get;list;watch
 
 // EvalHubEvaluationJobFailureReconciler POSTs a failed benchmark event to EvalHub when init, adapter,
@@ -113,8 +113,13 @@ func failureWatcherLogFields() []any {
 // terminated Reason=Error / non-zero exit is ignored because the adapter often calls EvalHub with failed status after a normal run.
 //
 // Init and sidecar use broader terminated/Waiting rules. A Job that is “failed” in Kubernetes without those container signals is skipped.
+//
+// Volume mount failures (e.g. missing Secret for test-data-hf-auth) leave the pod Scheduled+Pending with
+// containers stuck before start; those are detected via FailedMount / FailedAttachVolume Events after a grace period.
 type EvalHubEvaluationJobFailureReconciler struct {
 	client.Client
+	// APIReader reads uncached objects (e.g. Pod Events) with field selectors.
+	APIReader client.Reader
 	// RESTConfig is used to build an HTTP transport that authenticates like the operator (SA token + cluster CA).
 	RESTConfig    *rest.Config
 	EventRecorder record.EventRecorder
@@ -185,6 +190,7 @@ func registerEvalHubEvaluationJobFailureController(mgr manager.Manager, tenantNS
 
 	r := &EvalHubEvaluationJobFailureReconciler{
 		Client:        mgr.GetClient(),
+		APIReader:     mgr.GetAPIReader(),
 		RESTConfig:    rest.CopyConfig(mgr.GetConfig()),
 		tenantNS:      tenantNS,
 		EventRecorder: mgr.GetEventRecorderFor("trustyai-service-operator"),
@@ -277,8 +283,8 @@ func podUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 				return false
 			}
 			// Replay and rare creates where status already shows operator-only failure.
-			// Also pass through Unschedulable pods so the reconciler can schedule a requeue.
-			return podIndicatesOperatorOnlyFailure(newPod) || podIsUnschedulable(newPod)
+			// Also pass through Unschedulable / volume-mount-stuck pods so the reconciler can schedule a requeue.
+			return podIndicatesOperatorOnlyFailure(newPod) || podIsUnschedulable(newPod) || podMayBeVolumeMountStuck(newPod)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			oldPod, okOld := e.ObjectOld.(*corev1.Pod)
@@ -287,9 +293,10 @@ func podUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 				return false
 			}
 			// Enqueue when transitioning into an operator-only failure state, or when a pod
-			// first becomes Unschedulable so the reconciler can schedule a grace-period requeue.
+			// first becomes Unschedulable / volume-mount-stuck so the reconciler can schedule a grace-period requeue.
 			return (!podIndicatesOperatorOnlyFailure(oldPod) && podIndicatesOperatorOnlyFailure(newPod)) ||
-				(!podIsUnschedulable(oldPod) && podIsUnschedulable(newPod))
+				(!podIsUnschedulable(oldPod) && podIsUnschedulable(newPod)) ||
+				(!podMayBeVolumeMountStuck(oldPod) && podMayBeVolumeMountStuck(newPod))
 		},
 		DeleteFunc:  func(event.DeleteEvent) bool { return false },
 		GenericFunc: func(event.GenericEvent) bool { return false },
@@ -373,9 +380,9 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 		log.Info("skip EvalHub POST: no operator-only container failure",
 			append(failureWatcherLogFields(), "action", "skip_no_operator_failure", "job", job.Name, "namespace", job.Namespace)...)
 		setJobFailureAction("skip")
-		if requeue := r.pendingSchedulingRequeueAfter(ctx, &job); requeue > 0 {
-			log.Info("pod unschedulable within grace period — requeuing",
-				append(failureWatcherLogFields(), "action", "requeue_scheduling_grace", "job", job.Name, "namespace", job.Namespace, "requeueAfter", requeue)...)
+		if requeue := r.pendingGraceRequeueAfter(ctx, &job); requeue > 0 {
+			log.Info("pod pending within grace period — requeuing",
+				append(failureWatcherLogFields(), "action", "requeue_pending_grace", "job", job.Name, "namespace", job.Namespace, "requeueAfter", requeue)...)
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
 		return ctrl.Result{}, nil
@@ -611,6 +618,14 @@ func (r *EvalHubEvaluationJobFailureReconciler) operatorOnlyFailureFromPods(ctx 
 		matchedOwner++
 		if msg, fatal := podOperatorOnlyFailureMessage(pod); fatal {
 			parts = append(parts, fmt.Sprintf("pod %s: %s", pod.Name, msg))
+			continue
+		}
+		msg, fatal, err := r.podVolumeMountFailureMessage(ctx, pod)
+		if err != nil {
+			return "", false, err
+		}
+		if fatal {
+			parts = append(parts, fmt.Sprintf("pod %s: %s", pod.Name, msg))
 		}
 	}
 	if len(parts) == 0 && len(list.Items) > 0 && matchedOwner == 0 {
@@ -692,22 +707,183 @@ func schedulingGracePeriodRemaining(pod *corev1.Pod) time.Duration {
 	return 0
 }
 
-// pendingSchedulingRequeueAfter returns the earliest requeue duration needed across all pods of the
-// job that are within the scheduling grace period, so the reconciler re-runs once the period expires.
-func (r *EvalHubEvaluationJobFailureReconciler) pendingSchedulingRequeueAfter(ctx context.Context, job *batchv1.Job) time.Duration {
+// eventReasonFailedMount / eventReasonFailedAttachVolume are kubelet Event reasons when a volume
+// cannot be set up (e.g. missing Secret referenced by a projected/secret volume).
+const (
+	eventReasonFailedMount        = "FailedMount"
+	eventReasonFailedAttachVolume = "FailedAttachVolume"
+)
+
+// podMayBeVolumeMountStuck is true when the pod is Pending, has been scheduled, and no workload
+// container has started yet (typical for FailedMount / ContainerCreating). Used by predicates to
+// enqueue a grace-period requeue — terminal failure still requires a FailedMount Event past grace.
+func podMayBeVolumeMountStuck(pod *corev1.Pod) bool {
+	if pod.Status.Phase != corev1.PodPending {
+		return false
+	}
+	if !podIsScheduled(pod) {
+		return false
+	}
+	return !podHasStartedWorkloadContainer(pod)
+}
+
+func podIsScheduled(pod *corev1.Pod) bool {
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+func podHasStartedWorkloadContainer(pod *corev1.Pod) bool {
+	for _, cs := range pod.Status.InitContainerStatuses {
+		if containerStatusStarted(&cs) {
+			return true
+		}
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		if containerStatusStarted(&cs) {
+			return true
+		}
+	}
+	return false
+}
+
+func containerStatusStarted(cs *corev1.ContainerStatus) bool {
+	if cs.State.Running != nil || cs.State.Terminated != nil {
+		return true
+	}
+	if cs.Started != nil && *cs.Started {
+		return true
+	}
+	// Waiting with a fatal reason means kubelet progressed past volume setup.
+	if cs.State.Waiting != nil && isFatalContainerWaitingReason(cs.State.Waiting.Reason) {
+		return true
+	}
+	return false
+}
+
+// volumeMountScheduledAt returns when the pod became scheduled (PodScheduled=True LastTransitionTime),
+// or zero if not scheduled / time unknown.
+func volumeMountScheduledAt(pod *corev1.Pod) time.Time {
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionTrue && !c.LastTransitionTime.IsZero() {
+			return c.LastTransitionTime.Time
+		}
+	}
+	return time.Time{}
+}
+
+// volumeMountGracePeriodRemaining returns remaining grace for a scheduled-but-not-started pending pod.
+func volumeMountGracePeriodRemaining(pod *corev1.Pod) time.Duration {
+	if !podMayBeVolumeMountStuck(pod) {
+		return 0
+	}
+	startedAt := volumeMountScheduledAt(pod)
+	if startedAt.IsZero() {
+		return 0
+	}
+	elapsed := time.Since(startedAt)
+	if elapsed < schedulingGracePeriod {
+		return schedulingGracePeriod - elapsed
+	}
+	return 0
+}
+
+// podVolumeMountFailureMessage returns a failure when a scheduled pending pod has not started any
+// container after the grace period and kubelet has emitted FailedMount / FailedAttachVolume.
+// Without a FailedMount Event we do not fail (avoids false positives on slow image pulls).
+func (r *EvalHubEvaluationJobFailureReconciler) podVolumeMountFailureMessage(ctx context.Context, pod *corev1.Pod) (string, bool, error) {
+	if !podMayBeVolumeMountStuck(pod) {
+		return "", false, nil
+	}
+	startedAt := volumeMountScheduledAt(pod)
+	if startedAt.IsZero() || time.Since(startedAt) <= schedulingGracePeriod {
+		return "", false, nil
+	}
+	msg, found, err := r.failedMountEventMessage(ctx, pod)
+	if err != nil {
+		return "", false, err
+	}
+	if !found {
+		return "", false, nil
+	}
+	if msg == "" {
+		return "volume mount failed", true, nil
+	}
+	return fmt.Sprintf("volume mount failed: %s", msg), true, nil
+}
+
+func (r *EvalHubEvaluationJobFailureReconciler) failedMountEventMessage(ctx context.Context, pod *corev1.Pod) (string, bool, error) {
+	reader := r.APIReader
+	if reader == nil {
+		reader = r.Client
+	}
+	list := &corev1.EventList{}
+	if err := reader.List(ctx, list, client.InNamespace(pod.Namespace), client.MatchingFields{
+		"involvedObject.uid": string(pod.UID),
+	}); err != nil {
+		// MatchingFields needs an indexer on the cached client; fall back to namespace list + filter.
+		list = &corev1.EventList{}
+		if err2 := reader.List(ctx, list, client.InNamespace(pod.Namespace)); err2 != nil {
+			return "", false, fmt.Errorf("list events for pod %s/%s: %w (field selector: %v)", pod.Namespace, pod.Name, err2, err)
+		}
+	}
+	var (
+		found    bool
+		best     string
+		bestTime time.Time
+	)
+	for i := range list.Items {
+		ev := &list.Items[i]
+		if ev.InvolvedObject.UID != pod.UID {
+			continue
+		}
+		if ev.InvolvedObject.Kind != "" && ev.InvolvedObject.Kind != "Pod" {
+			continue
+		}
+		if ev.Reason != eventReasonFailedMount && ev.Reason != eventReasonFailedAttachVolume {
+			continue
+		}
+		found = true
+		t := ev.LastTimestamp.Time
+		if t.IsZero() {
+			t = ev.EventTime.Time
+		}
+		if t.IsZero() {
+			t = ev.CreationTimestamp.Time
+		}
+		if best == "" || t.After(bestTime) {
+			best = strings.TrimSpace(ev.Message)
+			bestTime = t
+		}
+	}
+	if !found {
+		return "", false, nil
+	}
+	return best, true, nil
+}
+
+// pendingGraceRequeueAfter returns the earliest requeue duration needed across all pods of the
+// job that are within a scheduling or volume-mount grace period, so the reconciler re-runs once the period expires.
+func (r *EvalHubEvaluationJobFailureReconciler) pendingGraceRequeueAfter(ctx context.Context, job *batchv1.Job) time.Duration {
 	list := &corev1.PodList{}
 	if err := r.List(ctx, list, client.InNamespace(job.Namespace), client.MatchingLabels{
 		"batch.kubernetes.io/job-name": job.Name,
 	}); err != nil {
-		log.FromContext(ctx).Error(err, "pendingSchedulingRequeueAfter: failed to list pods",
+		log.FromContext(ctx).Error(err, "pendingGraceRequeueAfter: failed to list pods",
 			append(failureWatcherLogFields(), "job", job.Name, "namespace", job.Namespace)...)
 		return 0
 	}
 	var earliest time.Duration
 	for i := range list.Items {
 		pod := &list.Items[i]
-		if remaining := schedulingGracePeriodRemaining(pod); remaining > 0 {
-			if earliest == 0 || remaining < earliest {
+		for _, remaining := range []time.Duration{
+			schedulingGracePeriodRemaining(pod),
+			volumeMountGracePeriodRemaining(pod),
+		} {
+			if remaining > 0 && (earliest == 0 || remaining < earliest) {
 				earliest = remaining
 			}
 		}
@@ -718,6 +894,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) pendingSchedulingRequeueAfter(ct
 // podOperatorOnlyFailureMessage returns true when the eval-hub init, adapter, or sidecar is in a state
 // that typically means EvalHub was never notified (vs. adapter exiting after reporting failure).
 // Scheduling failures (pod stuck in Pending, e.g. missing PVC) are also detected here.
+// Volume mount failures (FailedMount) are handled separately in podVolumeMountFailureMessage (needs Events).
 func podOperatorOnlyFailureMessage(pod *corev1.Pod) (string, bool) {
 	// A pod that never scheduled cannot run any container and will never call EvalHub.
 	if msg, ok := podSchedulingFailureMessage(pod); ok {
