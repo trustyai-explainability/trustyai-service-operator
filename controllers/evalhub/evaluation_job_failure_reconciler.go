@@ -382,7 +382,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 			append(failureWatcherLogFields(), "action", "skip_no_operator_failure", "job", job.Name, "namespace", job.Namespace)...)
 		setJobFailureAction("skip")
 		if requeue := r.pendingGraceRequeueAfter(ctx, &job); requeue > 0 {
-			log.Info("pod pending within grace period — requeuing",
+			log.Info("pod pending — requeuing for scheduling/volume-mount check",
 				append(failureWatcherLogFields(), "action", "requeue_pending_grace", "job", job.Name, "namespace", job.Namespace, "requeueAfter", requeue)...)
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
@@ -664,8 +664,14 @@ func podIsUnschedulable(pod *corev1.Pod) bool {
 // schedulingGracePeriod is how long a pod may remain Unschedulable before the operator treats it as
 // a terminal failure. This allows transient conditions (e.g. autoscaler node provisioning) to resolve
 // before EvalHub is notified. Permanent conditions (e.g. missing PVC) still fire after the period.
-// The same window is used for volume-mount detection grace and for "recent" FailedMount Events.
+// The same window is used for volume-mount detection grace, "recent" FailedMount Events, and the
+// interval between post-grace FailedMount rechecks.
 const schedulingGracePeriod = 2 * time.Minute
+
+// volumeMountWatchMaxAge caps how long after schedule we keep rechecking for FailedMount Events.
+// After the initial grace period, requeues continue on schedulingGracePeriod until this cap so a
+// late-arriving FailedMount is still observed without unbounded polling.
+const volumeMountWatchMaxAge = 10 * time.Minute
 
 // podSchedulingFailureMessage returns a non-empty message and true when the pod has been stuck in
 // Pending/Unschedulable for longer than schedulingGracePeriod. The grace period prevents false
@@ -777,10 +783,12 @@ func volumeMountScheduledAt(pod *corev1.Pod) time.Time {
 	return time.Time{}
 }
 
-// volumeMountGracePeriodRemaining returns remaining grace for a scheduled-but-not-started pending pod.
-// After the grace period we do not keep polling: reconcile either fails on a recent FailedMount
-// Event or stops. Slow image pulls with no mount failure therefore do not generate further work;
-// later pod status changes (e.g. ImagePullBackOff) still enter via the pod watch.
+// volumeMountGracePeriodRemaining returns when to requeue for a scheduled-but-not-started pending pod.
+// Within the initial grace period it returns time until that period ends. After grace and until
+// volumeMountWatchMaxAge it returns the next recheck interval so a FailedMount that appears after
+// the first post-grace check is still detected. Past the watch max (or when the pod no longer
+// qualifies) it returns 0; later pod status changes (e.g. ImagePullBackOff) still enter via the
+// pod watch.
 func volumeMountGracePeriodRemaining(pod *corev1.Pod) time.Duration {
 	if !podMayBeVolumeMountStuck(pod) {
 		return 0
@@ -793,7 +801,14 @@ func volumeMountGracePeriodRemaining(pod *corev1.Pod) time.Duration {
 	if elapsed < schedulingGracePeriod {
 		return schedulingGracePeriod - elapsed
 	}
-	return 0
+	if elapsed >= volumeMountWatchMaxAge {
+		return 0
+	}
+	remaining := volumeMountWatchMaxAge - elapsed
+	if remaining < schedulingGracePeriod {
+		return remaining
+	}
+	return schedulingGracePeriod
 }
 
 // podVolumeMountFailureMessage returns a failure when a scheduled pending pod has not started any
@@ -887,7 +902,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) failedMountEventMessage(ctx cont
 }
 
 // pendingGraceRequeueAfter returns the earliest requeue duration needed across all pods of the
-// job that are within a scheduling or volume-mount grace period, so the reconciler re-runs once the period expires.
+// job that still need a scheduling grace wait or a bounded volume-mount FailedMount recheck.
 func (r *EvalHubEvaluationJobFailureReconciler) pendingGraceRequeueAfter(ctx context.Context, job *batchv1.Job) time.Duration {
 	list := &corev1.PodList{}
 	if err := r.List(ctx, list, client.InNamespace(job.Namespace), client.MatchingLabels{

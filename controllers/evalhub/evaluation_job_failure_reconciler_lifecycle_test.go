@@ -447,10 +447,13 @@ func TestJobFailureReconciler_StaleFailedMount_DoesNotFail(t *testing.T) {
 	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(eh, job, pod, staleEvent).Build()
 	r, rec := buildJobFailureReconciler(fc, ns)
 
-	_, err := r.Reconcile(context.Background(), ctrl.Request{
+	res, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Namespace: ns, Name: job.Name},
 	})
 	require.NoError(t, err)
+	// Stale Event must not fail the Job, but the pod is still mount-stuck within the watch
+	// window so we requeue to catch a later, recent FailedMount.
+	require.Greater(t, res.RequeueAfter, time.Duration(0), "expected bounded FailedMount recheck requeue")
 
 	select {
 	case ev := <-rec.Events:

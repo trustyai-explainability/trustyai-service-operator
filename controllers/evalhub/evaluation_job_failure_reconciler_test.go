@@ -262,7 +262,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 			Expect(remaining).To(BeNumerically("<=", schedulingGracePeriod))
 		})
 
-		It("returns 0 past grace period (no further polling)", func() {
+		It("returns recheck interval past grace within watch max", func() {
 			pod := &corev1.Pod{
 				Status: corev1.PodStatus{
 					Phase: corev1.PodPending,
@@ -270,6 +270,20 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 						Type:               corev1.PodScheduled,
 						Status:             corev1.ConditionTrue,
 						LastTransitionTime: metav1.NewTime(time.Now().Add(-3 * time.Minute)),
+					}},
+				},
+			}
+			Expect(volumeMountGracePeriodRemaining(pod)).To(Equal(schedulingGracePeriod))
+		})
+
+		It("returns 0 past volume-mount watch max", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(time.Now().Add(-(volumeMountWatchMaxAge + time.Minute))),
 					}},
 				},
 			}
