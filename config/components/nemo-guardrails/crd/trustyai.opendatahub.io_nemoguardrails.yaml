@@ -40,6 +40,97 @@ spec:
           spec:
             description: NemoGuardrailsSpec defines the desired state of NemoGuardrails
             properties:
+              allowedConsumers:
+                description: |-
+                  AllowedConsumers authorizes which namespaces may attach an AIGuardrail to this server.
+                  When omitted, only an AIGuardrail in this custom resource's namespace may reference it.
+                  AI Gateway evaluates the permission. This field validates the requested shape.
+                properties:
+                  namespaces:
+                    description: |-
+                      Namespaces selects namespaces whose AIGuardrail resources may reference this server.
+                      When omitted, only the NemoGuardrails namespace is allowed.
+                    properties:
+                      from:
+                        default: Same
+                        description: |-
+                          From selects how consumer namespaces are authorized.
+                          Same allows only the NemoGuardrails namespace. Selector matches Namespace labels.
+                          All allows any namespace. Defaults to Same.
+                        enum:
+                        - Same
+                        - Selector
+                        - All
+                        type: string
+                      selector:
+                        description: |-
+                          Selector is matched against the consumer Namespace's labels.
+                          Required when From is Selector. Forbidden when From is Same or All.
+                          An empty selector is rejected; use All to allow every namespace.
+                        properties:
+                          matchExpressions:
+                            description: matchExpressions is a list of label selector
+                              requirements. The requirements are ANDed.
+                            items:
+                              description: |-
+                                A label selector requirement is a selector that contains values, a key, and an operator that
+                                relates the key and values.
+                              properties:
+                                key:
+                                  description: key is the label key that the selector
+                                    applies to.
+                                  type: string
+                                operator:
+                                  description: |-
+                                    operator represents a key's relationship to a set of values.
+                                    Valid operators are In, NotIn, Exists and DoesNotExist.
+                                  type: string
+                                values:
+                                  description: |-
+                                    values is an array of string values. If the operator is In or NotIn,
+                                    the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                    the values array must be empty. This array is replaced during a strategic
+                                    merge patch.
+                                  items:
+                                    type: string
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                              required:
+                              - key
+                              - operator
+                              type: object
+                            type: array
+                            x-kubernetes-list-type: atomic
+                          matchLabels:
+                            additionalProperties:
+                              type: string
+                            description: |-
+                              matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                              map is equivalent to an element of matchExpressions, whose key field is "key", the
+                              operator is "In", and the values array contains only "value". The requirements are ANDed.
+                            type: object
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    type: object
+                    x-kubernetes-validations:
+                    - message: selector is required when from is Selector and must
+                        be omitted when from is Same or All
+                      rule: '(has(self.from) && self.from == ''Selector'') ? has(self.selector)
+                        : !has(self.selector)'
+                    - message: from Selector requires a nonempty selector with at
+                        least one matchLabels entry or matchExpressions requirement
+                      rule: '!has(self.from) || self.from != ''Selector'' || (has(self.selector.matchLabels)
+                        && size(self.selector.matchLabels) > 0) || (has(self.selector.matchExpressions)
+                        && size(self.selector.matchExpressions) > 0)'
+                    - message: matchExpressions operator must be In, NotIn, Exists,
+                        or DoesNotExist; In and NotIn require values, and Exists and
+                        DoesNotExist forbid them
+                      rule: '!has(self.selector) || !has(self.selector.matchExpressions)
+                        || self.selector.matchExpressions.all(e, size(e.key) > 0 &&
+                        e.operator in [''In'', ''NotIn'', ''Exists'', ''DoesNotExist'']
+                        && ((e.operator in [''In'', ''NotIn'']) ? (has(e.values) &&
+                        size(e.values) > 0) : !has(e.values)))'
+                type: object
               caBundleConfig:
                 description: CABundleConfig defines the CA bundle configuration for
                   custom certificates
