@@ -4,11 +4,6 @@ kind: Kustomization
 namePrefix: trustyai-operator-module-
 
 resources:
-- ../rbac
-- ../manager
-- ../crd
-images:
-- name: trustyai-operator-module-controller
-  newName: quay.io/rgeada/trustyai-operator-module-controller-debug
-  newTag: latest
-namespace: redhat-ods-applications
+  - ../rbac
+  - ../manager
+  - ../crd
