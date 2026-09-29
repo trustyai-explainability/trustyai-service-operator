@@ -29,20 +29,21 @@ func (r *NemoGuardrailsReconciler) updateStatus(ctx context.Context, original *n
 	return saved, err
 }
 
-func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails) (ctrl.Result, error) {
-	deploymentReady, deploymentErr := utils.CheckDeploymentReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
+func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) (ctrl.Result, error) {
+	identity := newWorkloadIdentity(nemoGuardrails, targetNamespace)
+	deploymentReady, deploymentErr := utils.CheckDeploymentReady(ctx, r.Client, identity.Name, targetNamespace)
 
 	exposeRoute := nemoGuardrails.Spec.ExposeRoute != nil && *nemoGuardrails.Spec.ExposeRoute
 	routeReady := !exposeRoute
 	if exposeRoute {
-		routeReady, _ = utils.CheckRouteReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
+		routeReady, _ = utils.CheckRouteReady(ctx, r.Client, identity.Name, targetNamespace)
 	}
 
 	// showEndpointStatus is true only when the server is protected by auth
 	showEndpointStatus := utils.RequiresAuth(nemoGuardrails)
 	endpoint := ""
 	if showEndpointStatus {
-		endpoint = fmt.Sprintf("https://%s.%s.svc.cluster.local", nemoGuardrails.Name, nemoGuardrails.Namespace)
+		endpoint = fmt.Sprintf("https://%s.%s.svc.cluster.local", identity.Name, targetNamespace)
 	}
 	// sets the endpoint status based on the showEndpointStatus flag
 	setEndpoint := func(saved *nemoguardrailsv1alpha1.NemoGuardrails) {
@@ -60,6 +61,7 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 			setEndpoint(saved)
 			utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionTrue, utils.ReconcileCompleted, utils.ReconcileCompletedMessage)
 			saved.Status.Phase = utils.PhaseReady
+			saved.Status.WorkloadNamespace = targetNamespace
 		})
 		if updateErr != nil {
 			log.FromContext(ctx).Error(updateErr, "Failed to update status")
@@ -85,9 +87,11 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 					message = "Deployment rollout is stuck: " + deploymentErr.Error()
 				}
 				utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionFalse, utils.ReconcileFailed, message)
+				saved.Status.WorkloadNamespace = targetNamespace
 				saved.Status.Phase = utils.PhaseError
 			} else {
 				utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionFalse, "WaitingForReady", "Waiting for required resources to become ready")
+				saved.Status.WorkloadNamespace = targetNamespace
 				saved.Status.Phase = utils.PhaseProgressing
 			}
 		})
