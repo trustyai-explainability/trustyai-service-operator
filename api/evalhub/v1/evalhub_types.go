@@ -255,6 +255,68 @@ type EvalHubSpec struct {
 	// +kubebuilder:validation:Enum=single;multi
 	// +optional
 	Tenancy TenancyMode `json:"tenancy,omitempty"`
+
+	// Sandbox declares which providers must run their evaluation jobs inside
+	// dedicated, locked-down sandbox namespaces, plus the default resource
+	// envelope enforced for those namespaces. This configuration is propagated
+	// into the eval-hub service config so the service knows which providers require
+	// a sandbox; the service then creates SandboxNamespace CRs, which the operator
+	// reconciles into isolated namespaces. When omitted, no providers are sandboxed.
+	// +optional
+	Sandbox *SandboxSpec `json:"sandbox,omitempty"`
+}
+
+// SandboxSpec configures sandboxed evaluation for an EvalHub instance.
+type SandboxSpec struct {
+	// Providers lists the provider names whose evaluation jobs must run in a
+	// dedicated sandbox namespace. Each name should match a provider mounted into
+	// the deployment (see spec.providers). Providers not listed here run normally.
+	// +optional
+	Providers []string `json:"providers,omitempty"`
+
+	// DefaultResources is the default resource envelope applied to sandbox
+	// namespaces when a per-job envelope is not otherwise specified. It bounds the
+	// CPU, memory, and pod count available to sandboxed workloads.
+	// +optional
+	DefaultResources *SandboxResourceEnvelope `json:"defaultResources,omitempty"`
+}
+
+// SandboxResourceEnvelope bounds the resources available inside a sandbox
+// namespace. It maps onto a ResourceQuota created in the sandbox namespace.
+type SandboxResourceEnvelope struct {
+	// CPU is the total CPU (requests and limits) available to the sandbox
+	// namespace, expressed as a positive Kubernetes quantity (e.g. "2", "500m").
+	// Negative values are rejected: they map onto ResourceQuota hard limits, which
+	// Kubernetes forbids from being negative.
+	// +optional
+	// +kubebuilder:validation:Pattern=`^\+?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$`
+	CPU string `json:"cpu,omitempty"`
+
+	// Memory is the total memory (requests and limits) available to the sandbox
+	// namespace, expressed as a positive Kubernetes quantity (e.g. "4Gi").
+	// Negative values are rejected: they map onto ResourceQuota hard limits, which
+	// Kubernetes forbids from being negative.
+	// +optional
+	// +kubebuilder:validation:Pattern=`^\+?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$`
+	Memory string `json:"memory,omitempty"`
+
+	// MaxPods is the maximum number of pods allowed in the sandbox namespace.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	MaxPods int32 `json:"maxPods,omitempty"`
+}
+
+// SandboxProviderSet returns the set of provider names configured to require a
+// sandbox, or an empty map when sandboxing is not configured.
+func (e *EvalHubSpec) SandboxProviderSet() map[string]struct{} {
+	set := map[string]struct{}{}
+	if e == nil || e.Sandbox == nil {
+		return set
+	}
+	for _, p := range e.Sandbox.Providers {
+		set[p] = struct{}{}
+	}
+	return set
 }
 
 // SystemCollectionOverride defines the supported instance-specific overrides for

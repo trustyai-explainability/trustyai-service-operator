@@ -395,6 +395,9 @@ func (r *EvalHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := registerEvalHubEvaluationJobFailureController(mgr, tenantNS); err != nil {
 		return err
 	}
+	if err := registerEvalHubSandboxNamespaceController(mgr); err != nil {
+		return err
+	}
 	if clusterSupportsKueueWorkloads(mgr.GetConfig()) {
 		return registerEvalHubEvaluationFailedKueueWorkloadsReconciler(mgr, tenantNS)
 	}
