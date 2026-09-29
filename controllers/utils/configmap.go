@@ -14,9 +14,10 @@ import (
 )
 
 type ConfigMapConfig struct {
-	Owner   metav1.Object
-	Name    string
-	Version string
+	Owner     metav1.Object
+	Name      string
+	Version   string
+	Namespace string
 }
 
 const configMapResourceKind = "configmap"
@@ -43,12 +44,22 @@ func ReconcileManuallyDefinedConfigMap(ctx context.Context, c client.Client, own
 // ReconcileConfigMap holds reconciliation logic for a generic ConfigMap created from a template in the owner's namespace.
 // Returns the created/found configmap, a boolean flag indicating whether the return configmap was created during this function, and any errors
 func ReconcileConfigMap(ctx context.Context, c client.Client, owner metav1.Object, configMapName string, version string, templatePath string, parserFunc ResourceParserFunc[*corev1.ConfigMap]) (*corev1.ConfigMap, bool, error) {
-	configMapConfig := ConfigMapConfig{
-		Owner:   owner,
-		Name:    configMapName,
-		Version: version,
+	return ReconcileConfigMapInNamespace(ctx, c, owner, configMapName, owner.GetNamespace(), version, templatePath, parserFunc)
+}
+
+// ReconcileConfigMapInNamespace reconciles a templated ConfigMap in namespace.
+// An empty namespace uses the owner's namespace.
+func ReconcileConfigMapInNamespace(ctx context.Context, c client.Client, owner metav1.Object, configMapName string, namespace string, version string, templatePath string, parserFunc ResourceParserFunc[*corev1.ConfigMap]) (*corev1.ConfigMap, bool, error) {
+	if namespace == "" {
+		namespace = owner.GetNamespace()
 	}
-	genericConfig := GetGenericConfig(StringPointer(configMapName), StringPointer(owner.GetNamespace()), configMapConfig)
+	configMapConfig := ConfigMapConfig{
+		Owner:     owner,
+		Name:      configMapName,
+		Version:   version,
+		Namespace: namespace,
+	}
+	genericConfig := GetGenericConfig(StringPointer(configMapName), StringPointer(namespace), configMapConfig)
 	return ReconcileGeneric[*corev1.ConfigMap](ctx, c, owner, configMapResourceKind, genericConfig, templatePath, parserFunc)
 }
 

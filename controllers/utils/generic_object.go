@@ -8,7 +8,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 type GenericConfig struct {
@@ -48,8 +47,8 @@ func DefineGeneric[T client.Object](ctx context.Context, c client.Client, owner 
 		return zero, err
 	}
 
-	// Set owner of the new object
-	err = controllerutil.SetControllerReference(owner, obj, c.Scheme())
+	// Set owner of the new object. A namespaced owner cannot own an object in another namespace.
+	err = SetOwnerReference(owner, obj, c.Scheme())
 	if err != nil {
 		LogErrorControllerReference(ctx, err, resourceKind, *config.Name, *config.Namespace)
 		var zero T
@@ -82,7 +81,7 @@ func ReconcileGenericManuallyDefined[T client.Object](ctx context.Context, c cli
 	// attempt to retrieve a matching object from the cluster
 	err := c.Get(ctx, types.NamespacedName{Name: preDefinedObject.GetName(), Namespace: preDefinedObject.GetNamespace()}, existingObj)
 	if err != nil && errors.IsNotFound(err) {
-		if err := controllerutil.SetControllerReference(owner, preDefinedObject, c.Scheme()); err != nil {
+		if err := SetOwnerReference(owner, preDefinedObject, c.Scheme()); err != nil {
 			LogErrorControllerReference(ctx, err, resourceKind, preDefinedObject.GetName(), preDefinedObject.GetNamespace())
 			return zero, false, err
 		}
@@ -197,5 +196,9 @@ func DeleteGeneric[T client.Object](ctx context.Context, c client.Client, owner 
 // isControlledBy reports whether obj's controller owner reference points to the proviced owner.
 func isControlledBy(obj metav1.Object, owner metav1.Object) bool {
 	ref := metav1.GetControllerOf(obj)
-	return ref != nil && ref.UID == owner.GetUID()
+	if ref != nil && ref.UID == owner.GetUID() {
+		return true
+	}
+	// Cross-namespace objects cannot carry a controller reference, so ownership is recorded on the object.
+	return obj.GetLabels()[OwnerUIDLabel] == string(owner.GetUID()) && owner.GetUID() != ""
 }

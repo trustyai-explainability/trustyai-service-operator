@@ -2,7 +2,9 @@ package utils
 
 import (
 	"context"
+
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -20,6 +22,10 @@ func GetAuthDelegatorClusterRoleName(owner metav1.Object) string {
 
 // createClusterRoleBinding creates a cluster role binding for the orchestrator oauth service account
 func createAuthDelegatorClusterRoleBinding(owner metav1.Object) *rbacv1.ClusterRoleBinding {
+	return createAuthDelegatorClusterRoleBindingInNamespace(owner, owner.GetNamespace())
+}
+
+func createAuthDelegatorClusterRoleBindingInNamespace(owner metav1.Object, subjectNamespace string) *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      GetAuthDelegatorClusterRoleName(owner),
@@ -34,7 +40,7 @@ func createAuthDelegatorClusterRoleBinding(owner metav1.Object) *rbacv1.ClusterR
 			{
 				Kind:      "ServiceAccount",
 				Name:      GetServiceAccountName(owner),
-				Namespace: owner.GetNamespace(),
+				Namespace: subjectNamespace,
 			},
 		},
 		RoleRef: rbacv1.RoleRef{
@@ -51,7 +57,24 @@ func ReconcileClusterRoleBinding(ctx context.Context, c client.Client, owner met
 }
 
 func ReconcileAuthDelegatorClusterRoleBinding(ctx context.Context, c client.Client, owner metav1.Object) error {
-	return ReconcileClusterRoleBinding(ctx, c, owner, createAuthDelegatorClusterRoleBinding(owner))
+	return ReconcileAuthDelegatorClusterRoleBindingInNamespace(ctx, c, owner, owner.GetNamespace())
+}
+
+// ReconcileAuthDelegatorClusterRoleBindingInNamespace binds the auth ServiceAccount in subjectNamespace.
+func ReconcileAuthDelegatorClusterRoleBindingInNamespace(ctx context.Context, c client.Client, owner metav1.Object, subjectNamespace string) error {
+	if subjectNamespace == "" {
+		subjectNamespace = owner.GetNamespace()
+	}
+	desired := createAuthDelegatorClusterRoleBindingInNamespace(owner, subjectNamespace)
+	existing, created, err := ReconcileGenericManuallyDefined[*rbacv1.ClusterRoleBinding](ctx, c, clusterRoleBindingResourceKind, owner, desired)
+	if err != nil || created {
+		return err
+	}
+	if equality.Semantic.DeepEqual(existing.Subjects, desired.Subjects) {
+		return nil
+	}
+	existing.Subjects = desired.Subjects
+	return c.Update(ctx, existing)
 }
 
 // cleanupClusterRoleBinding deletes the oauth cluster role upon orchestrator deletion

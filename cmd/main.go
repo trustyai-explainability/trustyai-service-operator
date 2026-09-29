@@ -179,6 +179,7 @@ func run() int {
 					&corev1.Secret{},
 					&corev1.Pod{},
 					&corev1.Service{},
+					&corev1.Namespace{},
 				},
 			},
 		},
