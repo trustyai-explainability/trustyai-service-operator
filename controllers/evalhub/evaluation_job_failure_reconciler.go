@@ -27,6 +27,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
@@ -663,6 +664,7 @@ func podIsUnschedulable(pod *corev1.Pod) bool {
 // schedulingGracePeriod is how long a pod may remain Unschedulable before the operator treats it as
 // a terminal failure. This allows transient conditions (e.g. autoscaler node provisioning) to resolve
 // before EvalHub is notified. Permanent conditions (e.g. missing PVC) still fire after the period.
+// The same window is used for volume-mount detection grace and for "recent" FailedMount Events.
 const schedulingGracePeriod = 2 * time.Minute
 
 // podSchedulingFailureMessage returns a non-empty message and true when the pod has been stuck in
@@ -776,6 +778,9 @@ func volumeMountScheduledAt(pod *corev1.Pod) time.Time {
 }
 
 // volumeMountGracePeriodRemaining returns remaining grace for a scheduled-but-not-started pending pod.
+// After the grace period we do not keep polling: reconcile either fails on a recent FailedMount
+// Event or stops. Slow image pulls with no mount failure therefore do not generate further work;
+// later pod status changes (e.g. ImagePullBackOff) still enter via the pod watch.
 func volumeMountGracePeriodRemaining(pod *corev1.Pod) time.Duration {
 	if !podMayBeVolumeMountStuck(pod) {
 		return 0
@@ -821,10 +826,20 @@ func (r *EvalHubEvaluationJobFailureReconciler) failedMountEventMessage(ctx cont
 		reader = r.Client
 	}
 	list := &corev1.EventList{}
-	if err := reader.List(ctx, list, client.InNamespace(pod.Namespace), client.MatchingFields{
-		"involvedObject.uid": string(pod.UID),
-	}); err != nil {
-		// MatchingFields needs an indexer on the cached client; fall back to namespace list + filter.
+	// Prefer an apiserver field selector so we do not list every Event in the namespace.
+	// involvedObject.uid uniquely identifies the pod; kind=Pod is an optional extra constraint.
+	err := reader.List(ctx, list, &client.ListOptions{
+		Namespace: pod.Namespace,
+		FieldSelector: fields.AndSelectors(
+			fields.OneTermEqualSelector("involvedObject.kind", "Pod"),
+			fields.OneTermEqualSelector("involvedObject.uid", string(pod.UID)),
+		),
+	})
+	if err != nil {
+		// Cached clients without an index (and some fake clients) reject FieldSelector; fall back
+		// and filter in memory. Production uses APIReader, which forwards the selector to the API.
+		log.FromContext(ctx).V(1).Info("event field selector list failed; falling back to namespace list",
+			append(failureWatcherLogFields(), "pod", pod.Name, "namespace", pod.Namespace, "error", err.Error())...)
 		list = &corev1.EventList{}
 		if err2 := reader.List(ctx, list, client.InNamespace(pod.Namespace)); err2 != nil {
 			return "", false, fmt.Errorf("list events for pod %s/%s: %w (field selector: %v)", pod.Namespace, pod.Name, err2, err)
@@ -860,6 +875,12 @@ func (r *EvalHubEvaluationJobFailureReconciler) failedMountEventMessage(ctx cont
 		}
 	}
 	if !found {
+		return "", false, nil
+	}
+	// Ignore stale mount warnings: a transient FailedMount can remain on the pod after the
+	// volume succeeds, while a slow image pull keeps containers in ContainerCreating.
+	// Kubelet re-emits FailedMount while the mount keeps failing, so a recent Event is required.
+	if !bestTime.IsZero() && time.Since(bestTime) > schedulingGracePeriod {
 		return "", false, nil
 	}
 	return best, true, nil

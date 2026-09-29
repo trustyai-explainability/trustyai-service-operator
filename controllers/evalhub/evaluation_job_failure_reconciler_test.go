@@ -262,7 +262,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 			Expect(remaining).To(BeNumerically("<=", schedulingGracePeriod))
 		})
 
-		It("returns 0 past grace period", func() {
+		It("returns 0 past grace period (no further polling)", func() {
 			pod := &corev1.Pod{
 				Status: corev1.PodStatus{
 					Phase: corev1.PodPending,

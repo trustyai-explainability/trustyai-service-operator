@@ -355,9 +355,10 @@ func TestJobFailureReconciler_FailedMount_EmitsEventAndPatchesJob(t *testing.T) 
 		InvolvedObject: corev1.ObjectReference{
 			Kind: "Pod", Name: pod.Name, Namespace: ns, UID: podUID,
 		},
-		Reason:  eventReasonFailedMount,
-		Message: `MountVolume.SetUp failed for volume "test-data-hf-auth" : secret "missing-hf-token" not found`,
-		Type:    corev1.EventTypeWarning,
+		Reason:        eventReasonFailedMount,
+		Message:       `MountVolume.SetUp failed for volume "test-data-hf-auth" : secret "missing-hf-token" not found`,
+		Type:          corev1.EventTypeWarning,
+		LastTimestamp: metav1.NewTime(time.Now()),
 	}
 
 	var patchedLabels map[string]string
@@ -392,5 +393,69 @@ func TestJobFailureReconciler_FailedMount_EmitsEventAndPatchesJob(t *testing.T) 
 
 	require.NotNil(t, patchedLabels, "evaluation-phase=Failed patch was never applied to Job")
 	assert.Equal(t, labelEvaluationPhaseFailed, patchedLabels[labelEvaluationPhase])
+}
+
+// TestJobFailureReconciler_StaleFailedMount_DoesNotFail verifies a transient old FailedMount Event
+// does not mark the Job failed while the pod is still only waiting on a slow start.
+func TestJobFailureReconciler_StaleFailedMount_DoesNotFail(t *testing.T) {
+	sc := jobFailureLifecycleScheme(t)
+	ns := "tenant-ns"
+	srv := noopEvalHubServer(t)
+
+	eh := readyEvalHubCR("evalhub", "system", srv.URL)
+	job := evalHubEvaluationJob("eval-job-stale-mount", ns, map[string]string{
+		evalHubInstanceNameLabel:      eh.Name,
+		evalHubInstanceNamespaceLabel: eh.Namespace,
+	})
+	podUID := types.UID("pod-uid-stale-mount")
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      job.Name + "-pod",
+			Namespace: ns,
+			UID:       podUID,
+			Labels:    map[string]string{"batch.kubernetes.io/job-name": job.Name},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "batch/v1", Kind: "Job", Name: job.Name, UID: job.UID,
+			}},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodPending,
+			Conditions: []corev1.PodCondition{{
+				Type:               corev1.PodScheduled,
+				Status:             corev1.ConditionTrue,
+				LastTransitionTime: metav1.NewTime(time.Now().Add(-3 * time.Minute)),
+			}},
+			InitContainerStatuses: []corev1.ContainerStatus{{
+				Name: initContainerName,
+				State: corev1.ContainerState{
+					Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"},
+				},
+			}},
+		},
+	}
+	staleEvent := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Name: "mount-fail-stale", Namespace: ns},
+		InvolvedObject: corev1.ObjectReference{
+			Kind: "Pod", Name: pod.Name, Namespace: ns, UID: podUID,
+		},
+		Reason:        eventReasonFailedMount,
+		Message:       `MountVolume.SetUp failed for volume "test-data-hf-auth" : secret "missing-hf-token" not found`,
+		Type:          corev1.EventTypeWarning,
+		LastTimestamp: metav1.NewTime(time.Now().Add(-3 * time.Minute)),
+	}
+
+	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(eh, job, pod, staleEvent).Build()
+	r, rec := buildJobFailureReconciler(fc, ns)
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: ns, Name: job.Name},
+	})
+	require.NoError(t, err)
+
+	select {
+	case ev := <-rec.Events:
+		t.Fatalf("did not expect EvaluationFailed for stale FailedMount, got %q", ev)
+	default:
+	}
 }
 
