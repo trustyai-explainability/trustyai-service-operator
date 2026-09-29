@@ -118,7 +118,7 @@ func (r *SandboxNamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	// Deletion / terminal teardown.
 	if !instance.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(instance, evalhubv1.SandboxFinalizerName) {
-			if err := r.teardownSandbox(ctx, instance, nsName); err != nil {
+			if err := r.teardownSandbox(ctx, instance); err != nil {
 				logger.Error(err, "Failed to tear down sandbox namespace", "namespace", nsName)
 				return ctrl.Result{}, err
 			}
@@ -196,26 +196,35 @@ func (r *SandboxNamespaceReconciler) provisionSandbox(ctx context.Context, insta
 	return nil
 }
 
-// teardownSandbox deletes the sandbox namespace; the namespace delete cascades to
-// every resource inside it. It is idempotent (a missing namespace is success).
+// teardownSandbox deletes every namespace this CR owns; the namespace delete
+// cascades to all resources inside it. It is idempotent (no owned namespace is
+// success).
 //
-// The namespace is deleted only when it carries this CR's ownership labels. A CR
-// whose spec.namespaceName points at a namespace the operator did not provision
-// (for example a pre-existing or foreign namespace) must never trigger a delete of
-// that namespace, so an unowned namespace is a no-op.
-func (r *SandboxNamespaceReconciler) teardownSandbox(ctx context.Context, instance *evalhubv1.SandboxNamespace, nsName string) error {
-	if nsName == "" {
-		return nil
-	}
-	existing := &corev1.Namespace{}
-	if err := r.Get(ctx, types.NamespacedName{Name: nsName}, existing); err != nil {
-		return client.IgnoreNotFound(err)
-	}
-	if !sandboxNamespaceOwnedBy(existing, instance) {
-		return nil
-	}
-	if err := r.Delete(ctx, existing); err != nil && !errors.IsNotFound(err) {
+// Teardown discovers namespaces by the CR's ownership labels rather than by the
+// currently-resolved name. This guarantees a namespace provisioned earlier is
+// still cleaned up even if its name later diverges from sandboxNamespaceName —
+// for example when the namespace was created but the status write recording its
+// name failed and spec.namespaceName was subsequently changed. A namespace the
+// operator did not provision for this CR (missing ownership labels) is never
+// deleted, so a spec.namespaceName pointing at a pre-existing or foreign
+// namespace remains untouched.
+func (r *SandboxNamespaceReconciler) teardownSandbox(ctx context.Context, instance *evalhubv1.SandboxNamespace) error {
+	namespaces := &corev1.NamespaceList{}
+	if err := r.List(ctx, namespaces, client.MatchingLabels{
+		sandboxManagedByLabel:   sandboxManagedByValue,
+		sandboxCRNameLabel:      instance.Name,
+		sandboxCRNamespaceLabel: instance.Namespace,
+	}); err != nil {
 		return err
+	}
+	for i := range namespaces.Items {
+		existing := &namespaces.Items[i]
+		if !sandboxNamespaceOwnedBy(existing, instance) {
+			continue
+		}
+		if err := r.Delete(ctx, existing); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
 	}
 	return nil
 }
