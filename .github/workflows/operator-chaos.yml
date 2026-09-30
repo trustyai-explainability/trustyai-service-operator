@@ -50,7 +50,6 @@ jobs:
             config/components/tas/crd
             config/components/evalhub/crd
             config/components/lmes/crd
-            config/components/gorch/crd
             config/components/nemo-guardrails/crd
           sparse-checkout-cone-mode: false
 

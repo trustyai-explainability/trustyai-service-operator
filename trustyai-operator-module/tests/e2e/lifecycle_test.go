@@ -43,7 +43,6 @@ func testLifecycle(t *testing.T) {
 			TAS:            true,
 			LMES:           true,
 			EvalHub:        true,
-			GORCH:          true,
 			NemoGuardrails: true,
 		}))
 

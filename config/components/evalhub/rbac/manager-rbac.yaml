@@ -42,6 +42,7 @@ rules:
   verbs:
   - create
   - patch
+  - list
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
@@ -367,6 +368,13 @@ rules:
   - jobs
   verbs:
   - get
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
   - patch
 - apiGroups:
   - trustyai.opendatahub.io

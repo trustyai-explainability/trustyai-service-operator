@@ -10,7 +10,6 @@ components:
   - ../../components/tas
   - ../../components/evalhub
   - ../../components/lmes
-  - ../../components/gorch
   - ../../components/nemo-guardrails
 
 labels:
@@ -30,7 +29,7 @@ patches:
         value: "--enable-services"
       - op: add
         path: /spec/template/spec/containers/0/args/-
-        value: "TAS,LMES,GORCH,NEMO_GUARDRAILS,EVALHUB"
+        value: "TAS,LMES,NEMO_GUARDRAILS,EVALHUB"
       - op: add
         path: /spec/template/spec/containers/0/args/-
         value: "--metrics-cert-path=/etc/metrics-certs"

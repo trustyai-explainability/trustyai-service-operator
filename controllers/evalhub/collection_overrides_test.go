@@ -2,9 +2,14 @@ package evalhub
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	yamlv3 "gopkg.in/yaml.v3"
@@ -13,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -288,4 +294,125 @@ func TestReconcileCollectionConfigMapsRejectsOverrideForTenantFallback(t *testin
 	if _, err := reconciler.reconcileCollectionConfigMaps(context.Background(), instance); err == nil || !strings.Contains(err.Error(), "operator-packaged system collection") {
 		t.Fatalf("error = %v, want system collection rejection", err)
 	}
+}
+
+var _ = Describe("EvalHub system collection ConfigMap propagation", func() {
+	const collectionName = "collection-a"
+
+	var (
+		operatorNamespace string
+		instanceNamespace string
+		operatorNS        *corev1.Namespace
+		instanceNS        *corev1.Namespace
+		instance          *evalhubv1.EvalHub
+		reconciler        *EvalHubReconciler
+	)
+
+	BeforeEach(func() {
+		suffix := time.Now().UnixNano()
+		operatorNamespace = fmt.Sprintf("evalhub-collection-source-%d", suffix)
+		instanceNamespace = fmt.Sprintf("evalhub-collection-target-%d", suffix)
+		operatorNS = createNamespace(operatorNamespace)
+		instanceNS = createNamespace(instanceNamespace)
+		Expect(k8sClient.Create(ctx, operatorNS)).To(Succeed())
+		Expect(k8sClient.Create(ctx, instanceNS)).To(Succeed())
+
+		instance = createEvalHubInstance("collection-propagation", instanceNamespace)
+		instance.Spec.Collections = []string{collectionName}
+		Expect(k8sClient.Create(ctx, instance)).To(Succeed())
+
+		reconciler = &EvalHubReconciler{
+			Client:    k8sClient,
+			Scheme:    scheme.Scheme,
+			Namespace: operatorNamespace,
+		}
+	})
+
+	AfterEach(func() {
+		deleteNamespace(instanceNS)
+		deleteNamespace(operatorNS)
+	})
+
+	It("propagates source curation_order changes on a later reconciliation", func() {
+		source := systemCollectionConfigMap(operatorNamespace, collectionName, "Initial Collection", 1)
+		Expect(k8sClient.Create(ctx, source)).To(Succeed())
+
+		_, err := reconciler.reconcileCollectionConfigMaps(ctx, instance)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(readCollectionConfig(instanceNamespace, instance.Name, collectionName)).To(Equal(collectionConfig{
+			ID: "collection-a", Name: "Initial Collection", CurationOrder: 1,
+		}))
+
+		source.Data["collection.yaml"] = "id: collection-a\nname: Updated Collection\ncuration_order: 7\n"
+		Expect(k8sClient.Update(ctx, source)).To(Succeed())
+
+		_, err = reconciler.reconcileCollectionConfigMaps(ctx, instance)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(readCollectionConfig(instanceNamespace, instance.Name, collectionName)).To(Equal(collectionConfig{
+			ID: "collection-a", Name: "Updated Collection", CurationOrder: 7,
+		}))
+	})
+
+	It("updates the target when the curation_order override in the EvalHub CR changes", func() {
+		source := systemCollectionConfigMap(operatorNamespace, collectionName, "Packaged Collection", 1)
+		Expect(k8sClient.Create(ctx, source)).To(Succeed())
+
+		instance.Spec.CollectionOverrides = []evalhubv1.SystemCollectionOverride{{
+			Collection:    collectionName,
+			CurationOrder: int32Pointer(2),
+		}}
+		Expect(k8sClient.Update(ctx, instance)).To(Succeed())
+
+		persisted := &evalhubv1.EvalHub{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, persisted)).To(Succeed())
+		_, err := reconciler.reconcileCollectionConfigMaps(ctx, persisted)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(readCollectionConfig(instanceNamespace, instance.Name, collectionName)).To(Equal(collectionConfig{
+			ID: "collection-a", Name: "Packaged Collection", CurationOrder: 2,
+		}))
+
+		persisted.Spec.CollectionOverrides[0].CurationOrder = int32Pointer(4)
+		Expect(k8sClient.Update(ctx, persisted)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, persisted)).To(Succeed())
+
+		_, err = reconciler.reconcileCollectionConfigMaps(ctx, persisted)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(readCollectionConfig(instanceNamespace, instance.Name, collectionName)).To(Equal(collectionConfig{
+			ID: "collection-a", Name: "Packaged Collection", CurationOrder: 4,
+		}))
+	})
+})
+
+type collectionConfig struct {
+	ID            string `yaml:"id"`
+	Name          string `yaml:"name"`
+	CurationOrder int32  `yaml:"curation_order"`
+}
+
+func systemCollectionConfigMap(namespace, collectionName, name string, curationOrder int32) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "system-" + collectionName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				collectionLabel:     "system",
+				collectionNameLabel: collectionName,
+			},
+		},
+		Data: map[string]string{
+			"collection.yaml": fmt.Sprintf("id: %s\nname: %s\ncuration_order: %d\n", collectionName, name, curationOrder),
+		},
+	}
+}
+
+func readCollectionConfig(namespace, instanceName, collectionName string) collectionConfig {
+	target := &corev1.ConfigMap{}
+	Expect(k8sClient.Get(ctx, types.NamespacedName{
+		Name:      instanceName + "-collection-" + collectionName,
+		Namespace: namespace,
+	}, target)).To(Succeed())
+
+	var collection collectionConfig
+	Expect(yamlv3.Unmarshal([]byte(target.Data["collection.yaml"]), &collection)).To(Succeed())
+	return collection
 }
