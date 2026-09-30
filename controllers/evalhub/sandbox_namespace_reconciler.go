@@ -14,12 +14,13 @@ import (
 	"net/url"
 	"strings"
 
-	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
+	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -69,14 +70,6 @@ const (
 	sandboxManagedByValue   = "trustyai-service-operator"
 )
 
-// Sandbox lifecycle phases surfaced on SandboxNamespace status.
-const (
-	sandboxPhasePending     = "Pending"
-	sandboxPhaseReady       = "Ready"
-	sandboxPhaseTerminating = "Terminating"
-	sandboxPhaseError       = "Error"
-)
-
 //+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups="",resources=resourcequotas,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;delete
@@ -110,7 +103,7 @@ type SandboxNamespaceReconciler struct {
 func (r *SandboxNamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	instance := &evalhubv1.SandboxNamespace{}
+	instance := &evalhubv1alpha1.SandboxNamespace{}
 	if err := r.Get(ctx, req.NamespacedName, instance); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -119,12 +112,12 @@ func (r *SandboxNamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	// Deletion / terminal teardown.
 	if !instance.DeletionTimestamp.IsZero() {
-		if controllerutil.ContainsFinalizer(instance, evalhubv1.SandboxFinalizerName) {
+		if controllerutil.ContainsFinalizer(instance, evalhubv1alpha1.SandboxFinalizerName) {
 			if err := r.teardownSandbox(ctx, instance); err != nil {
 				logger.Error(err, "Failed to tear down sandbox namespace", "namespace", nsName)
 				return ctrl.Result{}, err
 			}
-			controllerutil.RemoveFinalizer(instance, evalhubv1.SandboxFinalizerName)
+			controllerutil.RemoveFinalizer(instance, evalhubv1alpha1.SandboxFinalizerName)
 			if err := r.Update(ctx, instance); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -134,8 +127,8 @@ func (r *SandboxNamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	// Ensure the finalizer is present before provisioning anything, so a crash
 	// mid-provisioning still leaves cleanup guaranteed.
-	if !controllerutil.ContainsFinalizer(instance, evalhubv1.SandboxFinalizerName) {
-		controllerutil.AddFinalizer(instance, evalhubv1.SandboxFinalizerName)
+	if !controllerutil.ContainsFinalizer(instance, evalhubv1alpha1.SandboxFinalizerName) {
+		controllerutil.AddFinalizer(instance, evalhubv1alpha1.SandboxFinalizerName)
 		if err := r.Update(ctx, instance); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -147,18 +140,21 @@ func (r *SandboxNamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		// Preserve whatever namespace name is already recorded (set only once the
 		// namespace actually exists). Never stamp a not-yet-created candidate name
 		// here, or a later spec.namespaceName correction would be ignored.
-		r.setStatus(ctx, instance, sandboxPhaseError, instance.Status.NamespaceName)
+		r.setReadyCondition(ctx, instance, metav1.ConditionFalse,
+			evalhubv1alpha1.SandboxReasonProvisioningFailed, err.Error(), instance.Status.NamespaceName)
 		return ctrl.Result{}, err
 	}
 
-	r.setStatus(ctx, instance, sandboxPhaseReady, nsName)
+	r.setReadyCondition(ctx, instance, metav1.ConditionTrue,
+		evalhubv1alpha1.SandboxReasonProvisioned,
+		"Sandbox namespace and isolation resources provisioned", nsName)
 	return ctrl.Result{}, nil
 }
 
 // sandboxNamespaceName returns the name of the namespace to provision for this CR.
 // A caller-specified spec.namespaceName wins; otherwise a deterministic,
 // DNS-1123-safe name is derived from the CR name.
-func (r *SandboxNamespaceReconciler) sandboxNamespaceName(instance *evalhubv1.SandboxNamespace) string {
+func (r *SandboxNamespaceReconciler) sandboxNamespaceName(instance *evalhubv1alpha1.SandboxNamespace) string {
 	if instance.Status.NamespaceName != "" {
 		return instance.Status.NamespaceName
 	}
@@ -170,7 +166,7 @@ func (r *SandboxNamespaceReconciler) sandboxNamespaceName(instance *evalhubv1.Sa
 
 // provisionSandbox creates (idempotently) the sandbox namespace and all resources
 // scoped within it.
-func (r *SandboxNamespaceReconciler) provisionSandbox(ctx context.Context, instance *evalhubv1.SandboxNamespace, nsName string) error {
+func (r *SandboxNamespaceReconciler) provisionSandbox(ctx context.Context, instance *evalhubv1alpha1.SandboxNamespace, nsName string) error {
 	if err := r.ensureNamespace(ctx, instance, nsName); err != nil {
 		return fmt.Errorf("ensure namespace: %w", err)
 	}
@@ -210,7 +206,7 @@ func (r *SandboxNamespaceReconciler) provisionSandbox(ctx context.Context, insta
 // operator did not provision for this CR (missing ownership labels) is never
 // deleted, so a spec.namespaceName pointing at a pre-existing or foreign
 // namespace remains untouched.
-func (r *SandboxNamespaceReconciler) teardownSandbox(ctx context.Context, instance *evalhubv1.SandboxNamespace) error {
+func (r *SandboxNamespaceReconciler) teardownSandbox(ctx context.Context, instance *evalhubv1alpha1.SandboxNamespace) error {
 	namespaces := &corev1.NamespaceList{}
 	if err := r.List(ctx, namespaces, client.MatchingLabels{
 		sandboxManagedByLabel:   sandboxManagedByValue,
@@ -234,7 +230,7 @@ func (r *SandboxNamespaceReconciler) teardownSandbox(ctx context.Context, instan
 // sandboxNamespaceOwnedBy reports whether ns was provisioned by the operator for
 // this specific SandboxNamespace CR, identified by the managed-by label plus the
 // CR name/namespace back-links stamped in sandboxLabels.
-func sandboxNamespaceOwnedBy(ns *corev1.Namespace, instance *evalhubv1.SandboxNamespace) bool {
+func sandboxNamespaceOwnedBy(ns *corev1.Namespace, instance *evalhubv1alpha1.SandboxNamespace) bool {
 	labels := ns.GetLabels()
 	return labels[sandboxManagedByLabel] == sandboxManagedByValue &&
 		labels[sandboxCRNameLabel] == instance.Name &&
@@ -243,7 +239,7 @@ func sandboxNamespaceOwnedBy(ns *corev1.Namespace, instance *evalhubv1.SandboxNa
 
 // sandboxLabels returns the common labels stamped on the sandbox namespace and its
 // resources, linking them to the parent job and owning CR for tracking and cleanup.
-func sandboxLabels(instance *evalhubv1.SandboxNamespace) map[string]string {
+func sandboxLabels(instance *evalhubv1alpha1.SandboxNamespace) map[string]string {
 	labels := map[string]string{
 		sandboxManagedByLabel:   sandboxManagedByValue,
 		sandboxComponentLabel:   sandboxComponentValue,
@@ -264,7 +260,7 @@ func sandboxLabels(instance *evalhubv1.SandboxNamespace) map[string]string {
 }
 
 // ensureNamespace creates the sandbox namespace if absent, or reconciles its labels.
-func (r *SandboxNamespaceReconciler) ensureNamespace(ctx context.Context, instance *evalhubv1.SandboxNamespace, nsName string) error {
+func (r *SandboxNamespaceReconciler) ensureNamespace(ctx context.Context, instance *evalhubv1alpha1.SandboxNamespace, nsName string) error {
 	logger := log.FromContext(ctx)
 	desired := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -309,7 +305,7 @@ func (r *SandboxNamespaceReconciler) ensureNamespace(ctx context.Context, instan
 }
 
 // ensureResourceQuota creates or updates the ResourceQuota bounding the sandbox.
-func (r *SandboxNamespaceReconciler) ensureResourceQuota(ctx context.Context, instance *evalhubv1.SandboxNamespace, nsName string) error {
+func (r *SandboxNamespaceReconciler) ensureResourceQuota(ctx context.Context, instance *evalhubv1alpha1.SandboxNamespace, nsName string) error {
 	hard, err := buildResourceQuotaHard(instance.Spec.ResourceEnvelope)
 	if err != nil {
 		return err
@@ -348,26 +344,28 @@ func (r *SandboxNamespaceReconciler) ensureResourceQuota(ctx context.Context, in
 
 // buildResourceQuotaHard translates a resource envelope into ResourceQuota hard
 // limits. CPU/memory constrain both requests and limits; MaxPods caps pods.
-func buildResourceQuotaHard(env *evalhubv1.SandboxResourceEnvelope) (corev1.ResourceList, error) {
+func buildResourceQuotaHard(env *evalhubv1alpha1.SandboxResourceEnvelope) (corev1.ResourceList, error) {
 	hard := corev1.ResourceList{}
 	if env == nil {
 		return hard, nil
 	}
-	if env.CPU != "" {
-		q, err := resource.ParseQuantity(env.CPU)
-		if err != nil {
-			return nil, fmt.Errorf("parse sandbox cpu %q: %w", env.CPU, err)
+	// CPU/memory are typed resource.Quantity, so they are already parsed and, per
+	// the CRD schema, non-negative. Guard against a negative slipping past
+	// admission (e.g. an older CRD without the validation) since ResourceQuota
+	// hard limits forbid negatives.
+	if env.CPU != nil {
+		if env.CPU.Sign() < 0 {
+			return nil, fmt.Errorf("sandbox cpu %q must be non-negative", env.CPU.String())
 		}
-		hard[corev1.ResourceRequestsCPU] = q
-		hard[corev1.ResourceLimitsCPU] = q
+		hard[corev1.ResourceRequestsCPU] = *env.CPU
+		hard[corev1.ResourceLimitsCPU] = *env.CPU
 	}
-	if env.Memory != "" {
-		q, err := resource.ParseQuantity(env.Memory)
-		if err != nil {
-			return nil, fmt.Errorf("parse sandbox memory %q: %w", env.Memory, err)
+	if env.Memory != nil {
+		if env.Memory.Sign() < 0 {
+			return nil, fmt.Errorf("sandbox memory %q must be non-negative", env.Memory.String())
 		}
-		hard[corev1.ResourceRequestsMemory] = q
-		hard[corev1.ResourceLimitsMemory] = q
+		hard[corev1.ResourceRequestsMemory] = *env.Memory
+		hard[corev1.ResourceLimitsMemory] = *env.Memory
 	}
 	if env.MaxPods > 0 {
 		hard[corev1.ResourcePods] = *resource.NewQuantity(int64(env.MaxPods), resource.DecimalSI)
@@ -376,7 +374,7 @@ func buildResourceQuotaHard(env *evalhubv1.SandboxResourceEnvelope) (corev1.Reso
 }
 
 // ensureNetworkPolicies creates the default-deny + narrow-allow NetworkPolicy set.
-func (r *SandboxNamespaceReconciler) ensureNetworkPolicies(ctx context.Context, instance *evalhubv1.SandboxNamespace, nsName string) error {
+func (r *SandboxNamespaceReconciler) ensureNetworkPolicies(ctx context.Context, instance *evalhubv1alpha1.SandboxNamespace, nsName string) error {
 	for _, np := range buildNetworkPolicies(instance, nsName) {
 		if err := r.ensureNetworkPolicy(ctx, np); err != nil {
 			return err
@@ -430,7 +428,7 @@ func (r *SandboxNamespaceReconciler) ensureNetworkPolicy(ctx context.Context, de
 // implicitly by the default-deny egress policy (they appear in no allow rule). Each
 // allow peer is a host-sized ipBlock for a single resolved endpoint IP, and the
 // metadata endpoint is never emitted as a peer, so it can never be reached.
-func buildNetworkPolicies(instance *evalhubv1.SandboxNamespace, nsName string) []*networkingv1.NetworkPolicy {
+func buildNetworkPolicies(instance *evalhubv1alpha1.SandboxNamespace, nsName string) []*networkingv1.NetworkPolicy {
 	labels := sandboxLabels(instance)
 	tcp := corev1.ProtocolTCP
 	udp := corev1.ProtocolUDP
@@ -557,7 +555,7 @@ func hostIPFromEndpoint(endpoint string) string {
 
 // ensureBrokerRBAC creates the sandbox broker ServiceAccount and a namespaced Role
 // (pods, services, configmaps) + RoleBinding, all scoped to the sandbox namespace.
-func (r *SandboxNamespaceReconciler) ensureBrokerRBAC(ctx context.Context, instance *evalhubv1.SandboxNamespace, nsName string) error {
+func (r *SandboxNamespaceReconciler) ensureBrokerRBAC(ctx context.Context, instance *evalhubv1alpha1.SandboxNamespace, nsName string) error {
 	labels := sandboxLabels(instance)
 
 	sa := &corev1.ServiceAccount{
@@ -628,16 +626,37 @@ func (r *SandboxNamespaceReconciler) ensureObject(ctx context.Context, desired, 
 	return nil
 }
 
-// setStatus updates the SandboxNamespace status phase and provisioned namespace name.
-func (r *SandboxNamespaceReconciler) setStatus(ctx context.Context, instance *evalhubv1.SandboxNamespace, phase, nsName string) {
+// setReadyCondition records the SandboxNamespace Ready condition, observed
+// generation, and provisioned namespace name, persisting the status only when
+// something actually changed.
+func (r *SandboxNamespaceReconciler) setReadyCondition(ctx context.Context, instance *evalhubv1alpha1.SandboxNamespace, status metav1.ConditionStatus, reason, message, nsName string) {
 	logger := log.FromContext(ctx)
-	if instance.Status.Phase == phase && instance.Status.NamespaceName == nsName {
+	changed := false
+	if instance.Status.NamespaceName != nsName {
+		instance.Status.NamespaceName = nsName
+		changed = true
+	}
+	if instance.Status.ObservedGeneration != instance.Generation {
+		instance.Status.ObservedGeneration = instance.Generation
+		changed = true
+	}
+	// SetStatusCondition manages LastTransitionTime and reports whether the
+	// condition changed; it keeps Conditions a set keyed by type.
+	cond := metav1.Condition{
+		Type:               evalhubv1alpha1.SandboxNamespaceReady,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: instance.Generation,
+	}
+	if apimeta.SetStatusCondition(&instance.Status.Conditions, cond) {
+		changed = true
+	}
+	if !changed {
 		return
 	}
-	instance.Status.Phase = phase
-	instance.Status.NamespaceName = nsName
 	if err := r.Status().Update(ctx, instance); err != nil {
-		logger.Error(err, "Failed to update SandboxNamespace status", "phase", phase)
+		logger.Error(err, "Failed to update SandboxNamespace status", "reason", reason)
 	}
 }
 
@@ -662,7 +681,7 @@ func registerEvalHubSandboxNamespaceController(mgr manager.Manager) error {
 	enqueueOwner := handler.EnqueueRequestsFromMapFunc(mapSandboxLabelsToCR)
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(sandboxNamespaceControllerName).
-		For(&evalhubv1.SandboxNamespace{}).
+		For(&evalhubv1alpha1.SandboxNamespace{}).
 		Watches(&corev1.Namespace{}, enqueueOwner).
 		Watches(&corev1.ResourceQuota{}, enqueueOwner).
 		Watches(&networkingv1.NetworkPolicy{}, enqueueOwner).

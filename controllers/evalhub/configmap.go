@@ -292,11 +292,14 @@ func buildSandboxConfig(spec *evalhubv1.SandboxSpec) *SandboxConfig {
 		Providers: spec.Providers,
 	}
 	if r := spec.DefaultResources; r != nil {
-		cfg.DefaultResources = &SandboxResourcesConfig{
-			CPU:     r.CPU,
-			Memory:  r.Memory,
-			MaxPods: r.MaxPods,
+		res := &SandboxResourcesConfig{MaxPods: r.MaxPods}
+		if r.CPU != nil {
+			res.CPU = r.CPU.String()
 		}
+		if r.Memory != nil {
+			res.Memory = r.Memory.String()
+		}
+		cfg.DefaultResources = res
 	}
 	return cfg
 }

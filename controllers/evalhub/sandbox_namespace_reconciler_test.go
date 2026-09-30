@@ -14,11 +14,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
+	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -37,7 +38,7 @@ func sandboxScheme(t *testing.T) *runtime.Scheme {
 	require.NoError(t, corev1.AddToScheme(sc))
 	require.NoError(t, networkingv1.AddToScheme(sc))
 	require.NoError(t, rbacv1.AddToScheme(sc))
-	require.NoError(t, evalhubv1.AddToScheme(sc))
+	require.NoError(t, evalhubv1alpha1.AddToScheme(sc))
 	return sc
 }
 
@@ -47,7 +48,7 @@ func buildSandboxReconciler(t *testing.T, sc *runtime.Scheme, objs ...client.Obj
 	t.Helper()
 	fc := fake.NewClientBuilder().
 		WithScheme(sc).
-		WithStatusSubresource(&evalhubv1.SandboxNamespace{}).
+		WithStatusSubresource(&evalhubv1alpha1.SandboxNamespace{}).
 		WithObjects(objs...).
 		Build()
 	return &SandboxNamespaceReconciler{
@@ -57,12 +58,12 @@ func buildSandboxReconciler(t *testing.T, sc *runtime.Scheme, objs ...client.Obj
 	}, fc
 }
 
-func sandboxRequest(cr *evalhubv1.SandboxNamespace) ctrl.Request {
+func sandboxRequest(cr *evalhubv1alpha1.SandboxNamespace) ctrl.Request {
 	return ctrl.Request{NamespacedName: types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}}
 }
 
 // reconcileSandboxToReady runs the two reconcile passes (finalizer add, then provision).
-func reconcileSandboxToReady(t *testing.T, r *SandboxNamespaceReconciler, cr *evalhubv1.SandboxNamespace) {
+func reconcileSandboxToReady(t *testing.T, r *SandboxNamespaceReconciler, cr *evalhubv1alpha1.SandboxNamespace) {
 	t.Helper()
 	req := sandboxRequest(cr)
 
@@ -74,16 +75,36 @@ func reconcileSandboxToReady(t *testing.T, r *SandboxNamespaceReconciler, cr *ev
 	require.NoError(t, err)
 }
 
-func newSandboxCR(name, ns string) *evalhubv1.SandboxNamespace {
-	return &evalhubv1.SandboxNamespace{
+// quantityPtr returns a pointer to the parsed Kubernetes quantity, panicking on an
+// unparseable value (test-only helper).
+func quantityPtr(s string) *resource.Quantity {
+	q := resource.MustParse(s)
+	return &q
+}
+
+// readyStatus returns the status of the SandboxNamespaceReady condition, or "" if
+// the condition is absent.
+func readyStatus(instance *evalhubv1alpha1.SandboxNamespace) metav1.ConditionStatus {
+	if c := apimeta.FindStatusCondition(instance.Status.Conditions, evalhubv1alpha1.SandboxNamespaceReady); c != nil {
+		return c.Status
+	}
+	return ""
+}
+
+func newSandboxCR(name, ns string) *evalhubv1alpha1.SandboxNamespace {
+	return &evalhubv1alpha1.SandboxNamespace{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-		Spec: evalhubv1.SandboxNamespaceSpec{
+		Spec: evalhubv1alpha1.SandboxNamespaceSpec{
 			JobID:                    name,
 			EvalHubInstanceName:      "evalhub-1",
 			EvalHubInstanceNamespace: ns,
-			ResourceEnvelope:         &evalhubv1.SandboxResourceEnvelope{CPU: "2", Memory: "4Gi", MaxPods: 5},
-			ModelEndpointURL:         "http://10.0.0.5:8080",
-			EvalHubAPIEndpoint:       "http://10.0.0.6:9000",
+			ResourceEnvelope: &evalhubv1alpha1.SandboxResourceEnvelope{
+				CPU:     quantityPtr("2"),
+				Memory:  quantityPtr("4Gi"),
+				MaxPods: 5,
+			},
+			ModelEndpointURL:   "http://10.0.0.5:8080",
+			EvalHubAPIEndpoint: "http://10.0.0.6:9000",
 		},
 	}
 }
@@ -143,9 +164,9 @@ func TestSandboxReconciler_ProvisionsNamespaceAndResources(t *testing.T) {
 	assert.Equal(t, sandboxBrokerServiceAccountName, rb.Subjects[0].Name)
 
 	// Status reflects Ready with the provisioned namespace name.
-	updated := &evalhubv1.SandboxNamespace{}
+	updated := &evalhubv1alpha1.SandboxNamespace{}
 	require.NoError(t, fc.Get(ctx, sandboxRequest(cr).NamespacedName, updated))
-	assert.Equal(t, sandboxPhaseReady, updated.Status.Phase)
+	assert.Equal(t, metav1.ConditionTrue, readyStatus(updated))
 	assert.Equal(t, nsName, updated.Status.NamespaceName)
 }
 
@@ -218,16 +239,16 @@ func TestSandboxReconciler_Idempotent(t *testing.T) {
 		require.NoErrorf(t, err, "reconcile pass %d", i)
 	}
 
-	updated := &evalhubv1.SandboxNamespace{}
+	updated := &evalhubv1alpha1.SandboxNamespace{}
 	require.NoError(t, fc.Get(context.Background(), req.NamespacedName, updated))
 	count := 0
 	for _, f := range updated.Finalizers {
-		if f == evalhubv1.SandboxFinalizerName {
+		if f == evalhubv1alpha1.SandboxFinalizerName {
 			count++
 		}
 	}
 	assert.Equal(t, 1, count, "finalizer must be added exactly once")
-	assert.Equal(t, sandboxPhaseReady, updated.Status.Phase)
+	assert.Equal(t, metav1.ConditionTrue, readyStatus(updated))
 }
 
 // TestSandboxReconciler_TeardownOnDelete verifies the deletion branch: the finalizer
@@ -235,14 +256,14 @@ func TestSandboxReconciler_Idempotent(t *testing.T) {
 func TestSandboxReconciler_TeardownOnDelete(t *testing.T) {
 	sc := sandboxScheme(t)
 	nsName := "evalhub-sandbox-job-del"
-	cr := &evalhubv1.SandboxNamespace{
+	cr := &evalhubv1alpha1.SandboxNamespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "job-del",
 			Namespace:  "control-ns",
-			Finalizers: []string{evalhubv1.SandboxFinalizerName},
+			Finalizers: []string{evalhubv1alpha1.SandboxFinalizerName},
 		},
-		Spec:   evalhubv1.SandboxNamespaceSpec{JobID: "job-del"},
-		Status: evalhubv1.SandboxNamespaceStatus{NamespaceName: nsName, Phase: sandboxPhaseReady},
+		Spec:   evalhubv1alpha1.SandboxNamespaceSpec{JobID: "job-del"},
+		Status: evalhubv1alpha1.SandboxNamespaceStatus{NamespaceName: nsName},
 	}
 	// The namespace carries this CR's ownership labels, so teardown will delete it.
 	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
@@ -267,7 +288,7 @@ func TestSandboxReconciler_TeardownOnDelete(t *testing.T) {
 	assert.True(t, apierrors.IsNotFound(err), "sandbox namespace should be deleted")
 
 	// Finalizer removed → the CR is fully gone.
-	err = fc.Get(ctx, sandboxRequest(cr).NamespacedName, &evalhubv1.SandboxNamespace{})
+	err = fc.Get(ctx, sandboxRequest(cr).NamespacedName, &evalhubv1alpha1.SandboxNamespace{})
 	assert.True(t, apierrors.IsNotFound(err), "CR should be removed once the finalizer is cleared")
 }
 
@@ -275,14 +296,14 @@ func TestSandboxReconciler_TeardownOnDelete(t *testing.T) {
 // idempotent when the namespace is already gone (restart-safety).
 func TestSandboxReconciler_TeardownMissingNamespaceIsSuccess(t *testing.T) {
 	sc := sandboxScheme(t)
-	cr := &evalhubv1.SandboxNamespace{
+	cr := &evalhubv1alpha1.SandboxNamespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "job-gone",
 			Namespace:  "control-ns",
-			Finalizers: []string{evalhubv1.SandboxFinalizerName},
+			Finalizers: []string{evalhubv1alpha1.SandboxFinalizerName},
 		},
-		Spec:   evalhubv1.SandboxNamespaceSpec{JobID: "job-gone"},
-		Status: evalhubv1.SandboxNamespaceStatus{NamespaceName: "evalhub-sandbox-job-gone"},
+		Spec:   evalhubv1alpha1.SandboxNamespaceSpec{JobID: "job-gone"},
+		Status: evalhubv1alpha1.SandboxNamespaceStatus{NamespaceName: "evalhub-sandbox-job-gone"},
 	}
 	r, fc := buildSandboxReconciler(t, sc, cr)
 	ctx := context.Background()
@@ -291,7 +312,7 @@ func TestSandboxReconciler_TeardownMissingNamespaceIsSuccess(t *testing.T) {
 	_, err := r.Reconcile(ctx, sandboxRequest(cr))
 	require.NoError(t, err, "teardown with an already-absent namespace must succeed")
 
-	err = fc.Get(ctx, sandboxRequest(cr).NamespacedName, &evalhubv1.SandboxNamespace{})
+	err = fc.Get(ctx, sandboxRequest(cr).NamespacedName, &evalhubv1alpha1.SandboxNamespace{})
 	assert.True(t, apierrors.IsNotFound(err))
 }
 
@@ -303,11 +324,11 @@ func TestSandboxReconciler_NamespaceNameNotStampedBeforeCreation(t *testing.T) {
 	sc := sandboxScheme(t)
 	cr := newSandboxCR("job-fail", "control-ns")
 	// Finalizer already present so Reconcile proceeds straight to provisioning.
-	cr.Finalizers = []string{evalhubv1.SandboxFinalizerName}
+	cr.Finalizers = []string{evalhubv1alpha1.SandboxFinalizerName}
 
 	fc := fake.NewClientBuilder().
 		WithScheme(sc).
-		WithStatusSubresource(&evalhubv1.SandboxNamespace{}).
+		WithStatusSubresource(&evalhubv1alpha1.SandboxNamespace{}).
 		WithObjects(cr).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
@@ -323,9 +344,9 @@ func TestSandboxReconciler_NamespaceNameNotStampedBeforeCreation(t *testing.T) {
 	_, err := r.Reconcile(context.Background(), sandboxRequest(cr))
 	require.Error(t, err, "namespace creation failure must surface")
 
-	updated := &evalhubv1.SandboxNamespace{}
+	updated := &evalhubv1alpha1.SandboxNamespace{}
 	require.NoError(t, fc.Get(context.Background(), sandboxRequest(cr).NamespacedName, updated))
-	assert.Equal(t, sandboxPhaseError, updated.Status.Phase)
+	assert.Equal(t, metav1.ConditionFalse, readyStatus(updated))
 	assert.Empty(t, updated.Status.NamespaceName, "namespace name must not be stamped before the namespace exists")
 }
 
@@ -336,7 +357,7 @@ func TestSandboxReconciler_NamespaceNameNotStampedBeforeCreation(t *testing.T) {
 func TestSandboxReconciler_RefusesToAdoptUnownedNamespace(t *testing.T) {
 	sc := sandboxScheme(t)
 	cr := newSandboxCR("job-adopt", "control-ns")
-	cr.Finalizers = []string{evalhubv1.SandboxFinalizerName}
+	cr.Finalizers = []string{evalhubv1alpha1.SandboxFinalizerName}
 	// The resolved namespace name (derived from the CR name) already exists and is
 	// owned by someone else — no operator ownership labels.
 	nsName := "evalhub-sandbox-job-adopt"
@@ -358,9 +379,9 @@ func TestSandboxReconciler_RefusesToAdoptUnownedNamespace(t *testing.T) {
 	err = fc.Get(ctx, types.NamespacedName{Name: sandboxResourceQuotaName, Namespace: nsName}, &corev1.ResourceQuota{})
 	assert.True(t, apierrors.IsNotFound(err), "no quota should be applied to a foreign namespace")
 
-	updated := &evalhubv1.SandboxNamespace{}
+	updated := &evalhubv1alpha1.SandboxNamespace{}
 	require.NoError(t, fc.Get(ctx, sandboxRequest(cr).NamespacedName, updated))
-	assert.Equal(t, sandboxPhaseError, updated.Status.Phase)
+	assert.Equal(t, metav1.ConditionFalse, readyStatus(updated))
 }
 
 // TestSandboxReconciler_TeardownSkipsUnownedNamespace verifies that deleting a CR
@@ -369,14 +390,14 @@ func TestSandboxReconciler_RefusesToAdoptUnownedNamespace(t *testing.T) {
 func TestSandboxReconciler_TeardownSkipsUnownedNamespace(t *testing.T) {
 	sc := sandboxScheme(t)
 	nsName := "shared-namespace"
-	cr := &evalhubv1.SandboxNamespace{
+	cr := &evalhubv1alpha1.SandboxNamespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "job-foreign",
 			Namespace:  "control-ns",
-			Finalizers: []string{evalhubv1.SandboxFinalizerName},
+			Finalizers: []string{evalhubv1alpha1.SandboxFinalizerName},
 		},
-		Spec:   evalhubv1.SandboxNamespaceSpec{JobID: "job-foreign", NamespaceName: nsName},
-		Status: evalhubv1.SandboxNamespaceStatus{NamespaceName: nsName, Phase: sandboxPhaseReady},
+		Spec:   evalhubv1alpha1.SandboxNamespaceSpec{JobID: "job-foreign", NamespaceName: nsName},
+		Status: evalhubv1alpha1.SandboxNamespaceStatus{NamespaceName: nsName},
 	}
 	// A namespace with no operator ownership labels.
 	foreign := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName, Labels: map[string]string{"team": "platform"}}}
@@ -391,7 +412,7 @@ func TestSandboxReconciler_TeardownSkipsUnownedNamespace(t *testing.T) {
 	require.NoError(t, fc.Get(ctx, types.NamespacedName{Name: nsName}, &corev1.Namespace{}), "unowned namespace must not be deleted")
 
 	// The CR's finalizer was still cleared, so it is gone.
-	err = fc.Get(ctx, sandboxRequest(cr).NamespacedName, &evalhubv1.SandboxNamespace{})
+	err = fc.Get(ctx, sandboxRequest(cr).NamespacedName, &evalhubv1alpha1.SandboxNamespace{})
 	assert.True(t, apierrors.IsNotFound(err), "CR should be removed once the finalizer is cleared")
 }
 
@@ -467,7 +488,7 @@ func TestBuildResourceQuotaHard(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, empty)
 
-	hard, err := buildResourceQuotaHard(&evalhubv1.SandboxResourceEnvelope{CPU: "1", Memory: "512Mi", MaxPods: 3})
+	hard, err := buildResourceQuotaHard(&evalhubv1alpha1.SandboxResourceEnvelope{CPU: quantityPtr("1"), Memory: quantityPtr("512Mi"), MaxPods: 3})
 	require.NoError(t, err)
 	assert.Equal(t, "1", hard.Name(corev1.ResourceRequestsCPU, "").String())
 	assert.Equal(t, "1", hard.Name(corev1.ResourceLimitsCPU, "").String())
@@ -475,8 +496,10 @@ func TestBuildResourceQuotaHard(t *testing.T) {
 	assert.Equal(t, "512Mi", hard.Name(corev1.ResourceLimitsMemory, "").String())
 	assert.Equal(t, "3", hard.Name(corev1.ResourcePods, "").String())
 
-	_, err = buildResourceQuotaHard(&evalhubv1.SandboxResourceEnvelope{CPU: "not-a-quantity"})
-	assert.Error(t, err, "invalid quantity must surface a parse error")
+	// A negative quantity that slipped past CRD admission is rejected at build time,
+	// since ResourceQuota hard limits forbid negatives.
+	_, err = buildResourceQuotaHard(&evalhubv1alpha1.SandboxResourceEnvelope{CPU: quantityPtr("-1")})
+	assert.Error(t, err, "negative quantity must be rejected")
 }
 
 func TestEnsureResourceQuotaDeletesQuotaWhenEnvelopeIsEmpty(t *testing.T) {
@@ -487,7 +510,7 @@ func TestEnsureResourceQuotaDeletesQuotaWhenEnvelopeIsEmpty(t *testing.T) {
 		Spec:       corev1.ResourceQuotaSpec{Hard: corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("2")}},
 	}
 	r, fc := buildSandboxReconciler(t, sc, existing)
-	instance := &evalhubv1.SandboxNamespace{}
+	instance := &evalhubv1alpha1.SandboxNamespace{}
 	ctx := context.Background()
 
 	require.NoError(t, r.ensureResourceQuota(ctx, instance, nsName))
@@ -503,21 +526,21 @@ func TestSandboxNamespaceName(t *testing.T) {
 	r := &SandboxNamespaceReconciler{}
 
 	// Status wins.
-	statusSet := &evalhubv1.SandboxNamespace{
+	statusSet := &evalhubv1alpha1.SandboxNamespace{
 		ObjectMeta: metav1.ObjectMeta{Name: "cr"},
-		Spec:       evalhubv1.SandboxNamespaceSpec{NamespaceName: "spec-ns"},
-		Status:     evalhubv1.SandboxNamespaceStatus{NamespaceName: "status-ns"},
+		Spec:       evalhubv1alpha1.SandboxNamespaceSpec{NamespaceName: "spec-ns"},
+		Status:     evalhubv1alpha1.SandboxNamespaceStatus{NamespaceName: "status-ns"},
 	}
 	assert.Equal(t, "status-ns", r.sandboxNamespaceName(statusSet))
 
 	// Spec next.
-	specSet := &evalhubv1.SandboxNamespace{
+	specSet := &evalhubv1alpha1.SandboxNamespace{
 		ObjectMeta: metav1.ObjectMeta{Name: "cr"},
-		Spec:       evalhubv1.SandboxNamespaceSpec{NamespaceName: "spec-ns"},
+		Spec:       evalhubv1alpha1.SandboxNamespaceSpec{NamespaceName: "spec-ns"},
 	}
 	assert.Equal(t, "spec-ns", r.sandboxNamespaceName(specSet))
 
 	// Derived from CR name last.
-	derived := &evalhubv1.SandboxNamespace{ObjectMeta: metav1.ObjectMeta{Name: "abc"}}
+	derived := &evalhubv1alpha1.SandboxNamespace{ObjectMeta: metav1.ObjectMeta{Name: "abc"}}
 	assert.Equal(t, "evalhub-sandbox-abc", r.sandboxNamespaceName(derived))
 }

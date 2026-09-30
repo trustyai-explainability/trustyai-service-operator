@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/yaml"
@@ -339,11 +340,13 @@ var _ = Describe("EvalHub ConfigMap", func() {
 	Context("When configuring sandbox", func() {
 		It("should render spec.sandbox into config.yaml", func() {
 			By("Setting sandbox providers and default resources on the EvalHub spec")
+			cpu := resource.MustParse("2")
+			memory := resource.MustParse("4Gi")
 			evalHub.Spec.Sandbox = &evalhubv1.SandboxSpec{
 				Providers: []string{"provider-a", "provider-b"},
 				DefaultResources: &evalhubv1.SandboxResourceEnvelope{
-					CPU:     "2",
-					Memory:  "4Gi",
+					CPU:     &cpu,
+					Memory:  &memory,
 					MaxPods: 5,
 				},
 			}

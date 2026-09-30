@@ -3,6 +3,7 @@ package v1
 import (
 	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -285,20 +286,20 @@ type SandboxSpec struct {
 // namespace. It maps onto a ResourceQuota created in the sandbox namespace.
 type SandboxResourceEnvelope struct {
 	// CPU is the total CPU (requests and limits) available to the sandbox
-	// namespace, expressed as a positive Kubernetes quantity (e.g. "2", "500m").
-	// Negative values are rejected: they map onto ResourceQuota hard limits, which
+	// namespace, expressed as a Kubernetes resource quantity (e.g. "2", "500m").
+	// It must be non-negative: the value maps onto ResourceQuota hard limits, which
 	// Kubernetes forbids from being negative.
 	// +optional
-	// +kubebuilder:validation:Pattern=`^\+?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$`
-	CPU string `json:"cpu,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="!string(self).startsWith('-')",message="cpu must be non-negative"
+	CPU *resource.Quantity `json:"cpu,omitempty"`
 
 	// Memory is the total memory (requests and limits) available to the sandbox
-	// namespace, expressed as a positive Kubernetes quantity (e.g. "4Gi").
-	// Negative values are rejected: they map onto ResourceQuota hard limits, which
+	// namespace, expressed as a Kubernetes resource quantity (e.g. "4Gi").
+	// It must be non-negative: the value maps onto ResourceQuota hard limits, which
 	// Kubernetes forbids from being negative.
 	// +optional
-	// +kubebuilder:validation:Pattern=`^\+?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$`
-	Memory string `json:"memory,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="!string(self).startsWith('-')",message="memory must be non-negative"
+	Memory *resource.Quantity `json:"memory,omitempty"`
 
 	// MaxPods is the maximum number of pods allowed in the sandbox namespace.
 	// +optional

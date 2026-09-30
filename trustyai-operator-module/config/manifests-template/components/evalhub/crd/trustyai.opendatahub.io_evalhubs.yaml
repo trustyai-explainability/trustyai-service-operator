@@ -674,13 +674,19 @@ spec:
                       CPU, memory, and pod count available to sandboxed workloads.
                     properties:
                       cpu:
+                        anyOf:
+                        - type: integer
+                        - type: string
                         description: |-
                           CPU is the total CPU (requests and limits) available to the sandbox
-                          namespace, expressed as a positive Kubernetes quantity (e.g. "2", "500m").
-                          Negative values are rejected: they map onto ResourceQuota hard limits, which
+                          namespace, expressed as a Kubernetes resource quantity (e.g. "2", "500m").
+                          It must be non-negative: the value maps onto ResourceQuota hard limits, which
                           Kubernetes forbids from being negative.
-                        pattern: ^\+?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                        type: string
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                        x-kubernetes-validations:
+                        - message: cpu must be non-negative
+                          rule: '!string(self).startsWith(''-'')'
                       maxPods:
                         description: MaxPods is the maximum number of pods allowed
                           in the sandbox namespace.
@@ -688,13 +694,19 @@ spec:
                         minimum: 0
                         type: integer
                       memory:
+                        anyOf:
+                        - type: integer
+                        - type: string
                         description: |-
                           Memory is the total memory (requests and limits) available to the sandbox
-                          namespace, expressed as a positive Kubernetes quantity (e.g. "4Gi").
-                          Negative values are rejected: they map onto ResourceQuota hard limits, which
+                          namespace, expressed as a Kubernetes resource quantity (e.g. "4Gi").
+                          It must be non-negative: the value maps onto ResourceQuota hard limits, which
                           Kubernetes forbids from being negative.
-                        pattern: ^\+?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                        type: string
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                        x-kubernetes-validations:
+                        - message: memory must be non-negative
+                          rule: '!string(self).startsWith(''-'')'
                     type: object
                   providers:
                     description: |-
