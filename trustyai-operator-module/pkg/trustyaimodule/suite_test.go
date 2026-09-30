@@ -56,7 +56,6 @@ var _ = BeforeSuite(func() {
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "config", "crd", "bases"),
 			filepath.Join("..", "..", "config", "manifests-template", "components", "evalhub", "crd"),
-			filepath.Join("..", "..", "config", "manifests-template", "components", "gorch", "crd"),
 			filepath.Join("..", "..", "config", "manifests-template", "components", "lmes", "crd"),
 			filepath.Join("..", "..", "config", "manifests-template", "components", "nemo-guardrails", "crd"),
 			filepath.Join("..", "..", "config", "manifests-template", "components", "tas", "crd"),

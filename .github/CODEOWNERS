@@ -19,10 +19,6 @@
 /controllers/lmes/ @ruivieira
 /api/lmes/ @ruivieira
 
-# Guardrails Orchestrator
-/controllers/gorch/ @RobGeada @christinaexyou @m-misiura
-/api/gorch/ @RobGeada @christinaexyou @m-misiura
-
 # NeMo Guardrails
 /controllers/nemo_guardrails/ @RobGeada @m-misiura @christinaexyou
 /api/nemo_guardrails/ @RobGeada @m-misiura @christinaexyou

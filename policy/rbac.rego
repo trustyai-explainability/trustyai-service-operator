@@ -50,9 +50,6 @@ expected_crbs := {
 	"evalhub-jobs-writer-binding": "evalhub-jobs-writer",
 	"evalhub-job-config-binding": "evalhub-job-config",
 
-	# --- component: gorch ---
-	"trustyai-service-operator-gorch-manager-rolebinding": "trustyai-service-operator-gorch-manager-role",
-
 	# --- component: nemo-guardrails ---
 	"trustyai-service-operator-nemo-guardrails-manager-rolebinding": "trustyai-service-operator-nemo-guardrails-manager-role",
 

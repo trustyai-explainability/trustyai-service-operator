@@ -272,7 +272,6 @@ func effectiveEnabledServices(es platformv1alpha1.EnabledServices, mcpMode bool)
 			TAS:            true,
 			LMES:           true,
 			EvalHub:        true,
-			GORCH:          true,
 			NemoGuardrails: true,
 		}
 	}
@@ -321,9 +320,6 @@ func (r *TrustyAIModuleReconciler) buildHealthCheckers(es platformv1alpha1.Enabl
 	}
 	if es.EvalHub {
 		checkers = append(checkers, NewOperandHealthChecker("EVALHUB", r.Client))
-	}
-	if es.GORCH {
-		checkers = append(checkers, NewOperandHealthChecker("GORCH", r.Client))
 	}
 	if es.NemoGuardrails {
 		checkers = append(checkers, NewOperandHealthChecker("NEMO_GUARDRAILS", r.Client))

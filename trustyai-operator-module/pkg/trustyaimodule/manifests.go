@@ -175,14 +175,11 @@ func enabledServiceNames(es platformv1alpha1.EnabledServices) []string {
 	if es.EvalHub {
 		names = append(names, "EVALHUB")
 	}
-	if es.GORCH {
-		names = append(names, "GORCH")
-	}
 	if es.NemoGuardrails {
 		names = append(names, "NEMO_GUARDRAILS")
 	}
 	if len(names) == 0 {
-		names = []string{"TAS", "LMES", "EVALHUB", "GORCH", "NEMO_GUARDRAILS"}
+		names = []string{"TAS", "LMES", "EVALHUB", "NEMO_GUARDRAILS"}
 	}
 	return names
 }

@@ -19,6 +19,7 @@ package controllers
 import (
 	"errors"
 	"fmt"
+	"log"
 
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -34,6 +35,8 @@ var (
 	TasServices = map[string]ControllerSetupFunc{}
 	// convenient list to store all registered services
 	AllTasServices = []string{}
+	// accepted during flag parsing but filtered out before controller setup
+	LegacyServices = []string{"GORCH"}
 )
 
 type EnabledServices []string
@@ -71,7 +74,10 @@ func (es *EnabledServices) Set(services string) error {
 		if slices.Contains(*es, service) {
 			return fmt.Errorf("specify the same service twice: %s", service)
 		}
-		if _, ok := TasServices[service]; ok {
+		if slices.Contains(LegacyServices, service) {
+			log.Printf("service '%s' is no longer supported by TrustyAI and will be ignored", service)
+			continue
+		} else if _, ok := TasServices[service]; ok {
 			*es = append(*es, service)
 		} else {
 			return fmt.Errorf(
