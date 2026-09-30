@@ -54,14 +54,11 @@ type SandboxNamespaceSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	JobID string `json:"jobID"`
 
-	// EvalHubInstanceName is the name of the EvalHub CR that owns the parent job.
-	// +optional
-	EvalHubInstanceName string `json:"evalHubInstanceName,omitempty"`
-
-	// EvalHubInstanceNamespace is the namespace of the EvalHub CR that owns the
-	// parent job.
-	// +optional
-	EvalHubInstanceNamespace string `json:"evalHubInstanceNamespace,omitempty"`
+	// The owning EvalHub CR is identified by a controller owner reference on this
+	// resource's metadata rather than by spec fields. Because a SandboxNamespace is
+	// always created in the same namespace as its EvalHub, an owner reference is
+	// valid, gives cascading garbage collection of the CR, and avoids a redundant
+	// namespace field.
 
 	// NamespaceName optionally sets the name of the sandbox namespace to create.
 	// When empty, the operator derives a stable name from the CR name and job ID.

@@ -62,15 +62,6 @@ spec:
                   permitted to reach for status callbacks. Egress to this endpoint is allowed
                   by NetworkPolicy.
                 type: string
-              evalHubInstanceName:
-                description: EvalHubInstanceName is the name of the EvalHub CR that
-                  owns the parent job.
-                type: string
-              evalHubInstanceNamespace:
-                description: |-
-                  EvalHubInstanceNamespace is the namespace of the EvalHub CR that owns the
-                  parent job.
-                type: string
               jobID:
                 description: JobID is the identifier of the parent evaluation job
                   this sandbox serves.

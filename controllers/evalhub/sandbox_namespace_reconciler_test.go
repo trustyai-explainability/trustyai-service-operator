@@ -93,11 +93,13 @@ func readyStatus(instance *evalhubv1alpha1.SandboxNamespace) metav1.ConditionSta
 
 func newSandboxCR(name, ns string) *evalhubv1alpha1.SandboxNamespace {
 	return &evalhubv1alpha1.SandboxNamespace{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            name,
+			Namespace:       ns,
+			OwnerReferences: []metav1.OwnerReference{evalHubOwnerRef("evalhub-1")},
+		},
 		Spec: evalhubv1alpha1.SandboxNamespaceSpec{
-			JobID:                    name,
-			EvalHubInstanceName:      "evalhub-1",
-			EvalHubInstanceNamespace: ns,
+			JobID: name,
 			ResourceEnvelope: &evalhubv1alpha1.SandboxResourceEnvelope{
 				CPU:     quantityPtr("2"),
 				Memory:  quantityPtr("4Gi"),
@@ -106,6 +108,19 @@ func newSandboxCR(name, ns string) *evalhubv1alpha1.SandboxNamespace {
 			ModelEndpointURL:   "http://10.0.0.5:8080",
 			EvalHubAPIEndpoint: "http://10.0.0.6:9000",
 		},
+	}
+}
+
+// evalHubOwnerRef builds a controller owner reference to an EvalHub CR, as the
+// eval-hub application would stamp onto a SandboxNamespace it creates.
+func evalHubOwnerRef(name string) metav1.OwnerReference {
+	controller := true
+	return metav1.OwnerReference{
+		APIVersion: evalhubv1alpha1.GroupVersion.String(),
+		Kind:       evalhubv1alpha1.KindName,
+		Name:       name,
+		UID:        types.UID("uid-" + name),
+		Controller: &controller,
 	}
 }
 

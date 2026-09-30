@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
@@ -249,14 +250,33 @@ func sandboxLabels(instance *evalhubv1alpha1.SandboxNamespace) map[string]string
 	if instance.Spec.JobID != "" {
 		labels[evalHubJobIDLabel] = normalizeDNS1123LabelValue(instance.Spec.JobID)
 	}
-	if instance.Spec.EvalHubInstanceName != "" {
-		labels[evalHubInstanceNameLabel] = instance.Spec.EvalHubInstanceName
-	}
-	if instance.Spec.EvalHubInstanceNamespace != "" {
-		labels[evalHubInstanceNamespaceLabel] = instance.Spec.EvalHubInstanceNamespace
+	// The owning EvalHub is taken from the controller owner reference. Its namespace
+	// always equals the CR's own namespace, since owner references cannot cross
+	// namespaces.
+	if name := owningEvalHubName(instance); name != "" {
+		labels[evalHubInstanceNameLabel] = name
+		labels[evalHubInstanceNamespaceLabel] = instance.Namespace
 	}
 	labels["app.kubernetes.io/version"] = constants.Version
 	return labels
+}
+
+// owningEvalHubName returns the name of the EvalHub CR that owns this
+// SandboxNamespace via its controller owner reference, or "" when no such
+// reference is set.
+func owningEvalHubName(instance *evalhubv1alpha1.SandboxNamespace) string {
+	owner := metav1.GetControllerOf(instance)
+	if owner == nil {
+		return ""
+	}
+	gv, err := schema.ParseGroupVersion(owner.APIVersion)
+	if err != nil {
+		return ""
+	}
+	if gv.Group == evalhubv1alpha1.GroupName && owner.Kind == evalhubv1alpha1.KindName {
+		return owner.Name
+	}
+	return ""
 }
 
 // ensureNamespace creates the sandbox namespace if absent, or reconciles its labels.
