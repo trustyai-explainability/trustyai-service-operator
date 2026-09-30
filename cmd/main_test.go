@@ -6,43 +6,36 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers"
 )
 
-func TestFilterLegacyServices(t *testing.T) {
+func TestEnabledServicesSetIgnoresGORCH(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    controllers.EnabledServices
+		input    string
 		expected controllers.EnabledServices
 	}{
 		{
-			name:     "GORCH is removed",
-			input:    controllers.EnabledServices{"TAS", "GORCH", "LMES"},
-			expected: controllers.EnabledServices{"TAS", "LMES"},
-		},
-		{
-			name:     "GORCH only",
-			input:    controllers.EnabledServices{"GORCH"},
+			name:     "GORCH alone is silently dropped",
+			input:    "GORCH",
 			expected: controllers.EnabledServices{},
 		},
 		{
-			name:     "no GORCH is unchanged",
-			input:    controllers.EnabledServices{"TAS", "LMES"},
-			expected: controllers.EnabledServices{"TAS", "LMES"},
-		},
-		{
-			name:     "empty input",
-			input:    controllers.EnabledServices{},
-			expected: controllers.EnabledServices{},
+			name:     "GORCH mixed with valid services is dropped",
+			input:    "TAS,GORCH",
+			expected: controllers.EnabledServices{"TAS"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := filterLegacyServices(tt.input)
-			if len(result) != len(tt.expected) {
-				t.Fatalf("got %v, want %v", result, tt.expected)
+			var es controllers.EnabledServices
+			if err := es.Set(tt.input); err != nil {
+				t.Fatalf("Set(%q) returned error: %v", tt.input, err)
 			}
-			for i := range result {
-				if result[i] != tt.expected[i] {
-					t.Fatalf("got %v, want %v", result, tt.expected)
+			if len(es) != len(tt.expected) {
+				t.Fatalf("got %v, want %v", es, tt.expected)
+			}
+			for i := range es {
+				if es[i] != tt.expected[i] {
+					t.Fatalf("got %v, want %v", es, tt.expected)
 				}
 			}
 		})

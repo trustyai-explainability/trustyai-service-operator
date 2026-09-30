@@ -62,9 +62,8 @@ import (
 )
 
 const (
-	serviceEvalHub     = "EVALHUB"
-	serviceTAS         = "TAS"
-	serviceGorchLegacy = "GORCH"
+	serviceEvalHub = "EVALHUB"
+	serviceTAS     = "TAS"
 )
 
 var (
@@ -211,8 +210,6 @@ func run() int {
 		}
 	}
 
-	enabledServices = filterLegacyServices(enabledServices)
-
 	recorder := mgr.GetEventRecorderFor("trustyai-service-operator")
 
 	ns, err := utils.GetNamespace()
@@ -261,14 +258,4 @@ func run() int {
 	}
 
 	return 0
-}
-
-func filterLegacyServices(services controllers.EnabledServices) controllers.EnabledServices {
-	if slices.Contains(services, serviceGorchLegacy) {
-		setupLog.Info("service 'GORCH' is no longer supported by TrustyAI and will be ignored")
-		services = slices.DeleteFunc(services, func(item string) bool {
-			return item == serviceGorchLegacy
-		})
-	}
-	return services
 }
