@@ -192,17 +192,17 @@ func TestSandboxReconciler_NetworkPolicyContent(t *testing.T) {
 	}
 	assert.ElementsMatch(t, []corev1.Protocol{corev1.ProtocolUDP, corev1.ProtocolTCP}, protos)
 
-	// endpoint egress: an ipBlock per resolvable endpoint, each excluding the metadata IP.
+	// endpoint egress: a host-sized ipBlock per resolvable endpoint, none referencing the metadata IP.
 	egress := get(sandboxNetPolAllowEgress)
 	require.Len(t, egress.Spec.Egress, 1)
 	var allowedCIDRs []string
 	for _, peer := range egress.Spec.Egress[0].To {
 		require.NotNil(t, peer.IPBlock, "endpoint egress peers must be ipBlocks")
 		allowedCIDRs = append(allowedCIDRs, peer.IPBlock.CIDR)
-		assert.Contains(t, peer.IPBlock.Except, metadataEndpointCIDR, "metadata endpoint must be excepted from every allow ipBlock")
+		assert.Empty(t, peer.IPBlock.Except, "host-sized ipBlocks carry no except entries")
 	}
 	assert.ElementsMatch(t, []string{"10.0.0.5/32", "10.0.0.6/32"}, allowedCIDRs)
-	assert.NotContains(t, allowedCIDRs, metadataEndpointCIDR, "metadata endpoint must never be an allowed CIDR")
+	assert.NotContains(t, allowedCIDRs, metadataEndpointIP+"/32", "metadata endpoint must never be an allowed CIDR")
 }
 
 // TestSandboxReconciler_Idempotent verifies repeated reconciliation is safe: the
@@ -414,17 +414,29 @@ func TestHostIPFromEndpoint(t *testing.T) {
 }
 
 // TestEndpointEgressPeers verifies only literal IPs become peers, duplicates collapse,
-// and every ipBlock excepts the metadata endpoint.
+// host-sized CIDRs are emitted per family, and the metadata endpoint is never allowed.
 func TestEndpointEgressPeers(t *testing.T) {
 	// DNS-only endpoints produce no peers.
 	assert.Empty(t, endpointEgressPeers("http://a.svc", "b.svc.cluster.local"))
 
+	// The metadata endpoint is skipped entirely rather than allowed.
+	assert.Empty(t, endpointEgressPeers("http://"+metadataEndpointIP+":80"))
+
 	peers := endpointEgressPeers("http://10.0.0.5:8080", "http://10.0.0.5:9090", "https://10.0.0.6")
 	require.Len(t, peers, 2, "duplicate IPs must collapse")
+	var cidrs []string
 	for _, p := range peers {
 		require.NotNil(t, p.IPBlock)
-		assert.Contains(t, p.IPBlock.Except, metadataEndpointCIDR)
+		assert.Empty(t, p.IPBlock.Except, "host-sized ipBlocks carry no except entries")
+		cidrs = append(cidrs, p.IPBlock.CIDR)
 	}
+	assert.ElementsMatch(t, []string{"10.0.0.5/32", "10.0.0.6/32"}, cidrs)
+
+	// IPv6 endpoints get a /128 host CIDR.
+	v6 := endpointEgressPeers("http://[2001:db8::1]:8080")
+	require.Len(t, v6, 1)
+	require.NotNil(t, v6[0].IPBlock)
+	assert.Equal(t, "2001:db8::1/128", v6[0].IPBlock.CIDR)
 }
 
 // TestBuildResourceQuotaHard verifies envelope translation, including the empty case.

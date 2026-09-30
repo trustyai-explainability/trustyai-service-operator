@@ -37,9 +37,10 @@ import (
 const sandboxNamespaceControllerName = "evalhub-sandbox-namespace"
 
 const (
-	// metadataEndpointCIDR is the link-local node metadata endpoint that must never
-	// be reachable from a sandbox namespace (cloud instance metadata service).
-	metadataEndpointCIDR = "169.254.169.254/32"
+	// metadataEndpointIP is the link-local node metadata endpoint that must never
+	// be reachable from a sandbox namespace (cloud instance metadata service). It is
+	// never emitted as an allow peer, so egress to it stays blocked by default-deny.
+	metadataEndpointIP = "169.254.169.254"
 
 	// sandboxBrokerServiceAccountName is the name of the ServiceAccount the sandbox
 	// broker uses inside the sandbox namespace.
@@ -380,6 +381,31 @@ func (r *SandboxNamespaceReconciler) ensureNetworkPolicies(ctx context.Context, 
 			return err
 		}
 	}
+	// When no endpoint resolves to a literal IP the allow-egress policy is not
+	// built. Remove any copy left over from an earlier reconcile so a stale allow
+	// rule cannot outlive the endpoints that justified it.
+	if len(endpointEgressPeers(instance.Spec.EvalHubAPIEndpoint, instance.Spec.ModelEndpointURL)) == 0 {
+		if err := r.deleteNetworkPolicy(ctx, nsName, sandboxNetPolAllowEgress); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// deleteNetworkPolicy removes a NetworkPolicy by name, treating an already-absent
+// policy as success and surfacing any other Get/Delete error.
+func (r *SandboxNamespaceReconciler) deleteNetworkPolicy(ctx context.Context, nsName, name string) error {
+	existing := &networkingv1.NetworkPolicy{}
+	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: nsName}, existing)
+	if errors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := r.Delete(ctx, existing); err != nil && !errors.IsNotFound(err) {
+		return err
+	}
 	return nil
 }
 
@@ -400,9 +426,9 @@ func (r *SandboxNamespaceReconciler) ensureNetworkPolicy(ctx context.Context, de
 // buildNetworkPolicies returns the NetworkPolicy set enforcing sandbox isolation.
 //
 // The kube API server and the node metadata endpoint (169.254.169.254) are blocked
-// implicitly by the default-deny egress policy (they appear in no allow rule); the
-// metadata IP is additionally listed in the `except` of any broad ipBlock allow so
-// it can never be reached even if an allowed CIDR would otherwise include it.
+// implicitly by the default-deny egress policy (they appear in no allow rule). Each
+// allow peer is a host-sized ipBlock for a single resolved endpoint IP, and the
+// metadata endpoint is never emitted as a peer, so it can never be reached.
 func buildNetworkPolicies(instance *evalhubv1.SandboxNamespace, nsName string) []*networkingv1.NetworkPolicy {
 	labels := sandboxLabels(instance)
 	tcp := corev1.ProtocolTCP
@@ -470,8 +496,10 @@ func buildNetworkPolicies(instance *evalhubv1.SandboxNamespace, nsName string) [
 }
 
 // endpointEgressPeers turns endpoint URLs/hosts into NetworkPolicy peers. Only
-// endpoints that resolve to a literal IP become ipBlock peers; each ipBlock always
-// excludes the node metadata endpoint. Hostname-only endpoints yield no peer.
+// endpoints that resolve to a literal IP become ipBlock peers, each a host-sized
+// CIDR (/32 for IPv4, /128 for IPv6). The node metadata endpoint is skipped
+// entirely rather than allowed, so egress to it stays blocked by default-deny.
+// Hostname-only endpoints yield no peer.
 func endpointEgressPeers(endpoints ...string) []networkingv1.NetworkPolicyPeer {
 	var peers []networkingv1.NetworkPolicyPeer
 	seen := map[string]struct{}{}
@@ -480,16 +508,25 @@ func endpointEgressPeers(endpoints ...string) []networkingv1.NetworkPolicyPeer {
 		if ip == "" {
 			continue
 		}
-		cidr := ip + "/32"
+		parsed := net.ParseIP(ip)
+		if parsed == nil {
+			continue
+		}
+		// Never allow egress to the node metadata endpoint.
+		if parsed.Equal(net.ParseIP(metadataEndpointIP)) {
+			continue
+		}
+		prefix := "/128"
+		if parsed.To4() != nil {
+			prefix = "/32"
+		}
+		cidr := ip + prefix
 		if _, dup := seen[cidr]; dup {
 			continue
 		}
 		seen[cidr] = struct{}{}
 		peers = append(peers, networkingv1.NetworkPolicyPeer{
-			IPBlock: &networkingv1.IPBlock{
-				CIDR:   cidr,
-				Except: []string{metadataEndpointCIDR},
-			},
+			IPBlock: &networkingv1.IPBlock{CIDR: cidr},
 		})
 	}
 	return peers
