@@ -29,6 +29,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
@@ -649,8 +650,39 @@ func registerEvalHubSandboxNamespaceController(mgr manager.Manager) error {
 		Scheme:        mgr.GetScheme(),
 		EventRecorder: mgr.GetEventRecorderFor("trustyai-service-operator"),
 	}
+	// Child resources live in the sandbox namespace, which differs from the CR's
+	// namespace. Cross-namespace owner references are not permitted, so drift on the
+	// isolation resources (default-deny NetworkPolicy, ResourceQuota, broker Role/
+	// RoleBinding) or on the namespace's own labels would otherwise go uncorrected
+	// until the CR changed. Label-based watches map each child back to its owning CR
+	// request so tampering or deletion triggers a reconcile that restores desired
+	// state. ServiceAccount is deliberately not watched: it is high-cardinality
+	// (a cluster-wide informer would cache every namespace's built-in SAs) and its
+	// drift does not weaken the isolation guarantee.
+	enqueueOwner := handler.EnqueueRequestsFromMapFunc(mapSandboxLabelsToCR)
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(sandboxNamespaceControllerName).
 		For(&evalhubv1.SandboxNamespace{}).
+		Watches(&corev1.Namespace{}, enqueueOwner).
+		Watches(&corev1.ResourceQuota{}, enqueueOwner).
+		Watches(&networkingv1.NetworkPolicy{}, enqueueOwner).
+		Watches(&rbacv1.Role{}, enqueueOwner).
+		Watches(&rbacv1.RoleBinding{}, enqueueOwner).
 		Complete(r)
+}
+
+// mapSandboxLabelsToCR maps a labelled child object back to its owning
+// SandboxNamespace request using the CR name/namespace back-links stamped by
+// sandboxLabels. Objects missing either ownership label enqueue nothing, so
+// unrelated resources caught by the watch are ignored.
+func mapSandboxLabelsToCR(_ context.Context, obj client.Object) []ctrl.Request {
+	labels := obj.GetLabels()
+	name := labels[sandboxCRNameLabel]
+	namespace := labels[sandboxCRNamespaceLabel]
+	if name == "" || namespace == "" {
+		return nil
+	}
+	return []ctrl.Request{{
+		NamespacedName: types.NamespacedName{Name: name, Namespace: namespace},
+	}}
 }

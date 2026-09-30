@@ -439,6 +439,28 @@ func TestEndpointEgressPeers(t *testing.T) {
 	assert.Equal(t, "2001:db8::1/128", v6[0].IPBlock.CIDR)
 }
 
+// TestMapSandboxLabelsToCR verifies a labelled child maps back to its owning CR, and
+// that objects missing either ownership label enqueue nothing.
+func TestMapSandboxLabelsToCR(t *testing.T) {
+	owned := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{
+		Name:      sandboxNetPolDefaultDeny,
+		Namespace: "evalhub-sandbox-job-x",
+		Labels: map[string]string{
+			sandboxCRNameLabel:      "job-x",
+			sandboxCRNamespaceLabel: "control-ns",
+		},
+	}}
+	reqs := mapSandboxLabelsToCR(context.Background(), owned)
+	require.Len(t, reqs, 1)
+	assert.Equal(t, types.NamespacedName{Name: "job-x", Namespace: "control-ns"}, reqs[0].NamespacedName)
+
+	// Missing either back-link label → no request.
+	assert.Empty(t, mapSandboxLabelsToCR(context.Background(), &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{sandboxCRNameLabel: "job-x"}},
+	}))
+	assert.Empty(t, mapSandboxLabelsToCR(context.Background(), &corev1.ResourceQuota{}))
+}
+
 // TestBuildResourceQuotaHard verifies envelope translation, including the empty case.
 func TestBuildResourceQuotaHard(t *testing.T) {
 	empty, err := buildResourceQuotaHard(nil)
