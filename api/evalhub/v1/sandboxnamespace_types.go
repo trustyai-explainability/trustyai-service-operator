@@ -31,7 +31,11 @@ type SandboxNamespaceSpec struct {
 
 	// NamespaceName optionally sets the name of the sandbox namespace to create.
 	// When empty, the operator derives a stable name from the CR name and job ID.
+	// Must be a valid DNS-1123 label so the API server rejects an unusable name at
+	// admission rather than failing later during namespace creation.
 	// +optional
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	NamespaceName string `json:"namespaceName,omitempty"`
 
 	// ResourceEnvelope bounds the CPU, memory, and pod count enforced in the

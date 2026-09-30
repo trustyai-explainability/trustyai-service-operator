@@ -86,6 +86,10 @@ spec:
                 description: |-
                   NamespaceName optionally sets the name of the sandbox namespace to create.
                   When empty, the operator derives a stable name from the CR name and job ID.
+                  Must be a valid DNS-1123 label so the API server rejects an unusable name at
+                  admission rather than failing later during namespace creation.
+                maxLength: 63
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                 type: string
               resourceEnvelope:
                 description: |-
