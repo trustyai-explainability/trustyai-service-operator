@@ -63,6 +63,7 @@ const (
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments/finalizers,verbs=update
@@ -90,7 +91,10 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// define all the cleanup steps needed before the finalizer can be removed in the CleanupFunc
 	cleanupFunc := func() error {
-		return utils.CleanupClusterRoleBinding(ctx, r.Client, nemoGuardrails)
+		if err := utils.CleanupClusterRoleBinding(ctx, r.Client, nemoGuardrails); err != nil {
+			return err
+		}
+		return r.deleteOwnedInNamespace(ctx, nemoGuardrails, deployedNamespace(nemoGuardrails))
 	}
 	shouldExit, err := utils.HandleDeletionIfNeeded(ctx, r.Client, nemoGuardrails, finalizerName, cleanupFunc)
 	if err != nil {
@@ -112,9 +116,19 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	targetNamespace := workloadNamespace(nemoGuardrails)
+	if targetNamespace != nemoGuardrails.Namespace {
+		if err := r.validateWorkloadNamespace(ctx, targetNamespace); err != nil {
+			return r.markWorkloadNamespaceRejected(ctx, nemoGuardrails, err)
+		}
+	}
+	if err := r.releasePreviousWorkload(ctx, nemoGuardrails, targetNamespace); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// ====== Deploy the CA bundle configmap ============================================================================
 	caBundleConfigMapName := nemoGuardrails.Name + "-ca-bundle"
-	_, _, err = utils.ReconcileConfigMap(ctx, r.Client, nemoGuardrails, caBundleConfigMapName, constants.Version, caBundleTemplate, templateParser.ParseResource)
+	_, _, err = utils.ReconcileConfigMapInNamespace(ctx, r.Client, nemoGuardrails, caBundleConfigMapName, targetNamespace, constants.Version, caBundleTemplate, templateParser.ParseResource)
 	if err != nil {
 		utils.LogErrorReconciling(ctx, err, "configmap", caBundleConfigMapName, nemoGuardrails.Namespace)
 		return ctrl.Result{}, err
@@ -130,25 +144,25 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// ====== Deploy kube-rbac-proxy configmap if needed ================================================================
 	if utils.RequiresAuth(nemoGuardrails) {
-		_, _, err := utils.ReconcileConfigMap(ctx, r.Client, nemoGuardrails, GetRBACConfigName(*nemoGuardrails), constants.Version, "kube-rbac-proxy-config.tmpl.yaml", templateParser.ParseResource)
+		_, _, err := utils.ReconcileConfigMapInNamespace(ctx, r.Client, nemoGuardrails, GetRBACConfigName(*nemoGuardrails), targetNamespace, constants.Version, "kube-rbac-proxy-config.tmpl.yaml", templateParser.ParseResource)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 
 		// create auth serviceaccount
-		if err := utils.ReconcileServiceAccount(ctx, r.Client, nemoGuardrails); err != nil {
+		if err := utils.ReconcileServiceAccountInNamespace(ctx, r.Client, nemoGuardrails, targetNamespace); err != nil {
 			return ctrl.Result{}, err
 		}
 
 		// create auth CRB
-		if err := utils.ReconcileAuthDelegatorClusterRoleBinding(ctx, r.Client, nemoGuardrails); err != nil {
+		if err := utils.ReconcileAuthDelegatorClusterRoleBindingInNamespace(ctx, r.Client, nemoGuardrails, targetNamespace); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
 	// ====== Create deployment ========================================================================================
 	existingDeployment := &appsv1.Deployment{}
-	err = r.Get(ctx, types.NamespacedName{Name: nemoGuardrails.Name, Namespace: nemoGuardrails.Namespace}, existingDeployment)
+	err = r.Get(ctx, types.NamespacedName{Name: nemoGuardrails.Name, Namespace: targetNamespace}, existingDeployment)
 	if err != nil && errors.IsNotFound(err) {
 		// Create a new deployment
 		deployment, err := r.createDeployment(ctx, nemoGuardrails, caBundleInitContainerConfig, configMapsToMount)
@@ -185,7 +199,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// ====== Reconcile Service ===========================================================================================
 	serviceConfig := utils.ServiceConfig{
 		Name:         nemoGuardrails.Name,
-		Namespace:    nemoGuardrails.Namespace,
+		Namespace:    targetNamespace,
 		Owner:        nemoGuardrails,
 		Version:      constants.Version,
 		UseAuthProxy: utils.RequiresAuth(nemoGuardrails),
@@ -205,6 +219,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		routeConfig := utils.RouteConfig{
 			PortName:    nemoGuardrails.Name, // only one available port in the service, so don't need to specify any port name
 			ServiceName: nemoGuardrails.Name,
+			Namespace:   &targetNamespace,
 			Termination: utils.StringPointer(termination),
 		}
 		err = utils.ReconcileRoute(ctx, r.Client, nemoGuardrails, routeConfig, routeTemplate, templateParser.ParseResource)
@@ -213,7 +228,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 	} else {
-		err := utils.DeleteRoute(ctx, r.Client, nemoGuardrails, nemoGuardrails.Name, nemoGuardrails.Namespace)
+		err := utils.DeleteRoute(ctx, r.Client, nemoGuardrails, nemoGuardrails.Name, targetNamespace)
 		if err != nil {
 			return ctrl.Result{}, err
 		}

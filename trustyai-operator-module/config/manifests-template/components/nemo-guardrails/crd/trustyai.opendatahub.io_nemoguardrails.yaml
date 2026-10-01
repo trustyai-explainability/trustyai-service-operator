@@ -226,6 +226,15 @@ spec:
                 description: ExposeRoute controls whether an external route to the
                   NeMo Guardrails server is created. Defaults to true.
                 type: boolean
+              namespace:
+                description: |-
+                  Namespace is where the Deployment, Service, and Route are created.
+                  When empty, they are created in the same namespace as this custom resource.
+                  A different namespace must be labeled trustyai.opendatahub.io/nemo-guardrails-workload=true.
+                  ConfigMaps referenced by nemoConfigs are read from this custom resource's namespace and copied when the namespaces differ.
+                maxLength: 63
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
               nemoConfigs:
                 description: NemoConfig should be the names of the configmaps containing
                   NeMO server configuration files. All files in NemoConfigs will be
@@ -1287,6 +1296,10 @@ spec:
                   type: object
                 type: array
               phase:
+                type: string
+              workloadNamespace:
+                description: WorkloadNamespace is the namespace where the Deployment
+                  was last reconciled.
                 type: string
             type: object
         type: object

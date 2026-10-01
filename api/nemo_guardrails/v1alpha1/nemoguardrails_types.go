@@ -42,7 +42,15 @@ type NemoGuardrailsSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// NemoConfig should be the names of the configmaps containing NeMO server configuration files. All files in NemoConfigs will be mounted to /app/config/$Name
-	NemoConfigs    []NemoConfig           `json:"nemoConfigs"`
+	NemoConfigs []NemoConfig `json:"nemoConfigs"`
+	// Namespace is where the Deployment, Service, and Route are created.
+	// When empty, they are created in the same namespace as this custom resource.
+	// A different namespace must be labeled trustyai.opendatahub.io/nemo-guardrails-workload=true.
+	// ConfigMaps referenced by nemoConfigs are read from this custom resource's namespace and copied when the namespaces differ.
+	// +optional
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	Namespace      string                 `json:"namespace,omitempty"`
 	CABundleConfig *common.CABundleConfig `json:"caBundleConfig,omitempty"`
 	// Number of replicas for the NeMo Guardrails deployment
 	// +optional
@@ -100,6 +108,9 @@ type NemoGuardrailStatus struct {
 	// CA describes the status of the CA configmaps
 	// +optional
 	CA *CAStatus `json:"ca,omitempty"`
+	// WorkloadNamespace is the namespace where the Deployment was last reconciled.
+	// +optional
+	WorkloadNamespace string `json:"workloadNamespace,omitempty"`
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 }

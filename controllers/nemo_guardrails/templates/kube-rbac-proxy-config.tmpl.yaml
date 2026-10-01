@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ .Owner.Name}}-rbac-proxy-config
-  namespace: {{ .Owner.Namespace }}
+  namespace: {{ .Namespace }}
   labels:
     app: {{ .Owner.Name }}
     app.kubernetes.io/instance: {{ .Owner.Name }}
@@ -14,7 +14,7 @@ data:
   config.yaml: |
     authorization:
       resourceAttributes:
-        namespace: "{{ .Owner.Namespace }}"
+        namespace: "{{ .Namespace }}"
         resource: "services"
         resourceName: "{{ .Owner.Name }}-service"
         verb: "get"
