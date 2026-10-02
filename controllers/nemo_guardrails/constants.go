@@ -6,4 +6,6 @@ const (
 	nemoGuardrailsDefaultConfigPrefix = "trustyai-service-operator-nemo-guardrails-default"
 	configMapKubeRBACProxyImageKey    = "kube-rbac-proxy"
 	finalizerName                     = "trustyai.opendatahub.io/nemo-guardrails-finalizer"
+	invalidAllowedConsumersReason     = "InvalidAllowedConsumers"
+	validAllowedConsumersReason       = "ValidAllowedConsumers"
 )

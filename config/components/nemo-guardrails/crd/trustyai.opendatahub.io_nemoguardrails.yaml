@@ -42,20 +42,20 @@ spec:
             properties:
               allowedConsumers:
                 description: |-
-                  AllowedConsumers authorizes which namespaces may attach an AIGuardrail to this server.
-                  When omitted, only an AIGuardrail in this custom resource's namespace may reference it.
-                  AI Gateway evaluates the permission. This field validates the requested shape.
+                  AllowedConsumers authorizes which namespaces may attach a consumer to this server.
+                  The only valid consumer type is a MaaS AIGuardrail resource.
+                  When omitted, only a MaaS AIGuardrail in the same namespace as this CR may attach to it.
                 properties:
                   namespaces:
                     description: |-
-                      Namespaces selects namespaces whose AIGuardrail resources may reference this server.
-                      When omitted, only the NemoGuardrails namespace is allowed.
+                      Namespaces selects namespaces whose consumer resources may attach to this server.
+                      When omitted, only the NemoGuardrails CR's namespace is allowed.
                     properties:
                       from:
                         default: Same
                         description: |-
                           From selects how consumer namespaces are authorized.
-                          Same allows only the NemoGuardrails namespace. Selector matches Namespace labels.
+                          Same allows only the NemoGuardrails CR namespace. Selector matches Namespace labels.
                           All allows any namespace. Defaults to Same.
                         enum:
                         - Same
@@ -123,13 +123,14 @@ spec:
                         && size(self.selector.matchLabels) > 0) || (has(self.selector.matchExpressions)
                         && size(self.selector.matchExpressions) > 0)'
                     - message: matchExpressions operator must be In, NotIn, Exists,
-                        or DoesNotExist; In and NotIn require values, and Exists and
-                        DoesNotExist forbid them
+                        or DoesNotExist; In and NotIn require nonempty values, and
+                        Exists and DoesNotExist require values to be omitted or empty
                       rule: '!has(self.selector) || !has(self.selector.matchExpressions)
                         || self.selector.matchExpressions.all(e, size(e.key) > 0 &&
                         e.operator in [''In'', ''NotIn'', ''Exists'', ''DoesNotExist'']
                         && ((e.operator in [''In'', ''NotIn'']) ? (has(e.values) &&
-                        size(e.values) > 0) : !has(e.values)))'
+                        size(e.values) > 0) : (!has(e.values) || size(e.values) ==
+                        0)))'
                 type: object
               caBundleConfig:
                 description: CABundleConfig defines the CA bundle configuration for
