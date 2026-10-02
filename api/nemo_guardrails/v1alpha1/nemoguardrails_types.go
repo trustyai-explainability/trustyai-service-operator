@@ -100,6 +100,10 @@ type NemoGuardrailStatus struct {
 	// CA describes the status of the CA configmaps
 	// +optional
 	CA *CAStatus `json:"ca,omitempty"`
+	// Endpoint is the public URL for the NeMo Guardrails server. Only set when exposeRoute is true
+	// and the server is protected by authentication (security.opendatahub.io/enable-auth: "true").
+	// +optional
+	Endpoint string `json:"endpoint,omitempty"`
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 }

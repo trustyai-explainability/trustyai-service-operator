@@ -568,6 +568,136 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		}, time.Second*10, time.Millisecond*100).Should(Succeed())
 	})
 
+	It("should set status.endpoint from the Route host once the Route is admitted", func() {
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+
+		By("Reconciling to create the Route (exposeRoute defaults to true)")
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		route := &routev1.Route{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, typeNamespacedName, route)
+		}, time.Second*10, time.Millisecond*100).Should(Succeed())
+
+		By("Simulating the router admitting the Route and assigning a host")
+		routeHost := resourceName + "-" + namespace + ".apps.example.com"
+		route.Spec.Host = routeHost
+		Expect(k8sClient.Update(ctx, route)).To(Succeed())
+
+		route.Status.Ingress = []routev1.RouteIngress{
+			{
+				Host: routeHost,
+				Conditions: []routev1.RouteIngressCondition{
+					{
+						Type:   routev1.RouteAdmitted,
+						Status: corev1.ConditionTrue,
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Status().Update(ctx, route)).To(Succeed())
+
+		By("Reconciling again so the status picks up the admitted Route")
+		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Checking that status.endpoint reflects the Route host")
+		Eventually(func() string {
+			nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+			if err := k8sClient.Get(ctx, typeNamespacedName, nemo); err != nil {
+				return ""
+			}
+			return nemo.Status.Endpoint
+		}, time.Second*10, time.Millisecond*100).Should(Equal("https://" + routeHost))
+
+		By("Patching exposeRoute=false and reconciling clears status.endpoint")
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
+		exposeFalse := false
+		nemo.Spec.ExposeRoute = &exposeFalse
+		Expect(k8sClient.Update(ctx, nemo)).To(Succeed())
+
+		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(func() string {
+			nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+			if err := k8sClient.Get(ctx, typeNamespacedName, nemo); err != nil {
+				return "unexpected-get-error"
+			}
+			return nemo.Status.Endpoint
+		}, time.Second*10, time.Millisecond*100).Should(BeEmpty())
+	})
+
+	It("should not set status.endpoint when the Route is exposed but auth is disabled", func() {
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+
+		By("Disabling auth on the CR while keeping exposeRoute at its default (true)")
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
+		nemo.Annotations[constants.AuthAnnotationKey] = "false"
+		Expect(k8sClient.Update(ctx, nemo)).To(Succeed())
+
+		By("Reconciling to create the Route")
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		route := &routev1.Route{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, typeNamespacedName, route)
+		}, time.Second*10, time.Millisecond*100).Should(Succeed())
+
+		By("Simulating the router admitting the Route and assigning a host")
+		routeHost := resourceName + "-" + namespace + "-noauth.apps.example.com"
+		route.Spec.Host = routeHost
+		Expect(k8sClient.Update(ctx, route)).To(Succeed())
+
+		route.Status.Ingress = []routev1.RouteIngress{
+			{
+				Host: routeHost,
+				Conditions: []routev1.RouteIngressCondition{
+					{
+						Type:   routev1.RouteAdmitted,
+						Status: corev1.ConditionTrue,
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Status().Update(ctx, route)).To(Succeed())
+
+		By("Reconciling again so the status reconciler sees the admitted Route")
+		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Checking that status.endpoint stays empty even though the Route is admitted")
+		Consistently(func() string {
+			nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+			if err := k8sClient.Get(ctx, typeNamespacedName, nemo); err != nil {
+				return "unexpected-get-error"
+			}
+			return nemo.Status.Endpoint
+		}, time.Second*2, time.Millisecond*100).Should(BeEmpty())
+	})
+
 	It("should not delete an unrelated route that shares the CR name", func() {
 		const collisionName = "nemoguardrails-collision"
 		collisionKey := types.NamespacedName{Name: collisionName, Namespace: namespace}
