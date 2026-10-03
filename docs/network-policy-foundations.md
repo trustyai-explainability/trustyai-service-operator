@@ -18,12 +18,17 @@ hash as their label representation. Hashes are identifiers, not credentials.
 
 Every target selector must contain the exact reserved `MatchLabels`; additional
 valid constraints are allowed. Peer selectors must be valid and positively
-constrained. This initial interface conservatively rejects namespace-only or
-empty-Pod-selector grants, even for dedicated namespaces: those exceptions need
-an explicit reviewed interface rather than inferred trust. Cross-namespace AND
-constraints belong in one peer; separate peers are OR grants. CIDRs cannot be
-universal, and exceptions must be strict contained subprefixes. Allow rules need
-explicit validated ports; named ports and numeric ranges use Kubernetes rules.
+constrained. Namespace-only ingress peers are rejected unless the controller
+supplies an exact `NetworkPolicyNamespaceOnlyPeerIntent` through
+`NetworkPolicyIngressIntent`, with nonempty rationale and residual risk. The
+namespace selector must exactly match an actual peer; unused/mismatched
+exceptions are rejected. This explicit opt-in does not infer trust from a
+namespace label, authorize empty selectors, or allow namespace-only egress peers.
+The typed intent is recorded in a managed annotation; annotation edits alone do
+not authorize a peer. Cross-namespace AND constraints belong in one peer;
+separate peers are OR grants. CIDRs cannot be universal, and exceptions must be
+strict contained subprefixes. Allow rules need explicit validated ports; named
+ports and numeric ranges use Kubernetes rules.
 
 Labels alone do not authorize tenants, namespace membership or policy adoption.
 Controllers must protect reserved-label authority and use live workload owners.
@@ -51,11 +56,12 @@ For any Egress policy, pass a controller-supplied `NetworkPolicyEgressIntent`:
 | `AllowAll` | Exactly one empty rule (`egress: [{}]`), nonblank rationale and residual-risk text. No additional restricted rules may misleadingly accompany the permissive rule. |
 
 Reconciliation writes enumerated controller-owned egress mode, rationale,
-residual-risk and unrestricted-behavior annotations. These are records of typed
+residual-risk and unrestricted-behavior annotations, and records any explicitly
+authorized namespace-only ingress peer intent. These are records of typed
 intent, never permission to bypass validation. Altering an annotation alone
-cannot authorize AllowAll. No component is automatically assigned AllowAll.
-It permits unrestricted outbound traffic and may broaden pre-existing customer
-restrictions: NetworkPolicy grants are additive, and another restrictive policy
+cannot authorize AllowAll or a broad ingress peer. No component is automatically
+assigned AllowAll. It permits unrestricted outbound traffic and may broaden
+pre-existing customer restrictions: NetworkPolicy grants are additive, and another restrictive policy
 cannot narrow this allowance. Unrestricted ingress is never enabled.
 
 ## Reconciliation, authority and cleanup
@@ -77,6 +83,7 @@ are owned by this helper:
 - `trustyai.opendatahub.io/network-policy-egress-rationale`.
 - `trustyai.opendatahub.io/network-policy-egress-residual-risk`.
 - `trustyai.opendatahub.io/network-policy-egress-behavior`.
+- `trustyai.opendatahub.io/network-policy-ingress-namespace-only-peers`.
 
 Conflicting controller owners, managed owner labels or managers cause rejection
 before a spec write. Ownerless policies are refused unless the caller supplies

@@ -197,6 +197,118 @@ func TestNetworkPolicyValidationNonRegression(t *testing.T) {
 	}
 }
 
+func TestNetworkPolicyNamespaceOnlyIngressIntent(t *testing.T) {
+	identity, policy := policyFixture()
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	port := intstr.FromInt32(8443)
+	namespaceSelector := metav1.LabelSelector{MatchLabels: map[string]string{"network.openshift.io/policy-group": "ingress"}}
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{{
+		From:  []networkingv1.NetworkPolicyPeer{{NamespaceSelector: namespaceSelector.DeepCopy()}},
+		Ports: []networkingv1.NetworkPolicyPort{{Protocol: new(corev1.ProtocolTCP), Port: &port}},
+	}}
+	if err := ValidateWorkloadNetworkPolicy(policy, identity, nil); err == nil {
+		t.Fatal("namespace-only peer accepted without typed intent")
+	}
+
+	intent := &NetworkPolicyIngressIntent{NamespaceOnlyPeers: []NetworkPolicyNamespaceOnlyPeerIntent{{
+		NamespaceSelector: namespaceSelector,
+		Rationale:         "OpenShift Route traffic is sourced by router Pods in ingress namespaces.",
+		ResidualRisk:      "Any Pod in a namespace carrying the ingress policy-group label can reach TCP 8443.",
+	}}}
+	if err := ValidateWorkloadNetworkPolicyWithIngressIntent(policy, identity, nil, intent); err != nil {
+		t.Fatalf("reviewed namespace-only peer rejected: %v", err)
+	}
+
+	spoofed := policy.DeepCopy()
+	spoofed.Annotations = map[string]string{networkPolicyIngressIntentAnnotation: "approved"}
+	if err := ValidateWorkloadNetworkPolicy(spoofed, identity, nil); err == nil {
+		t.Fatal("annotation alone authorized a namespace-only peer")
+	}
+
+	mismatch := *intent
+	mismatch.NamespaceOnlyPeers = append([]NetworkPolicyNamespaceOnlyPeerIntent(nil), intent.NamespaceOnlyPeers...)
+	mismatch.NamespaceOnlyPeers[0].NamespaceSelector = *namespaceSelector.DeepCopy()
+	mismatch.NamespaceOnlyPeers[0].NamespaceSelector.MatchLabels["network.openshift.io/policy-group"] = "monitoring"
+	if err := ValidateWorkloadNetworkPolicyWithIngressIntent(policy, identity, nil, &mismatch); err == nil {
+		t.Fatal("mismatched namespace selector accepted")
+	}
+
+	missingRisk := *intent
+	missingRisk.NamespaceOnlyPeers = append([]NetworkPolicyNamespaceOnlyPeerIntent(nil), intent.NamespaceOnlyPeers...)
+	missingRisk.NamespaceOnlyPeers[0].ResidualRisk = " "
+	if err := ValidateWorkloadNetworkPolicyWithIngressIntent(policy, identity, nil, &missingRisk); err == nil {
+		t.Fatal("missing residual risk accepted")
+	}
+
+	unused := *intent
+	unused.NamespaceOnlyPeers = append(unused.NamespaceOnlyPeers, NetworkPolicyNamespaceOnlyPeerIntent{
+		NamespaceSelector: metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "other"}},
+		Rationale:         "unused", ResidualRisk: "unused",
+	})
+	if err := ValidateWorkloadNetworkPolicyWithIngressIntent(policy, identity, nil, &unused); err == nil {
+		t.Fatal("unused exception accepted")
+	}
+}
+
+func TestNetworkPolicyIngressIntentEncodingIsOrderIndependent(t *testing.T) {
+	first := NetworkPolicyNamespaceOnlyPeerIntent{
+		NamespaceSelector: metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "one"}},
+		Rationale:         "reviewed one", ResidualRisk: "risk one",
+	}
+	second := NetworkPolicyNamespaceOnlyPeerIntent{
+		NamespaceSelector: metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "two"}},
+		Rationale:         "reviewed two", ResidualRisk: "risk two",
+	}
+	forward, err := encodeNetworkPolicyIngressIntent(&NetworkPolicyIngressIntent{NamespaceOnlyPeers: []NetworkPolicyNamespaceOnlyPeerIntent{first, second}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reversed, err := encodeNetworkPolicyIngressIntent(&NetworkPolicyIngressIntent{NamespaceOnlyPeers: []NetworkPolicyNamespaceOnlyPeerIntent{second, first}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forward != reversed {
+		t.Fatal("namespace-only ingress intent encoding depends on slice order")
+	}
+}
+
+func TestNetworkPolicyIngressIntentReconciliation(t *testing.T) {
+	ctx := context.Background()
+	scheme, owner, c, identity, policy, authority := reconciliationFixture(t)
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	port := intstr.FromInt32(8443)
+	namespaceSelector := metav1.LabelSelector{MatchLabels: map[string]string{"network.openshift.io/policy-group": "ingress"}}
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{{
+		From:  []networkingv1.NetworkPolicyPeer{{NamespaceSelector: namespaceSelector.DeepCopy()}},
+		Ports: []networkingv1.NetworkPolicyPort{{Protocol: new(corev1.ProtocolTCP), Port: &port}},
+	}}
+	request := WorkloadNetworkPolicy{
+		Policy: policy,
+		Ingress: &NetworkPolicyIngressIntent{NamespaceOnlyPeers: []NetworkPolicyNamespaceOnlyPeerIntent{{
+			NamespaceSelector: namespaceSelector,
+			Rationale:         "OpenShift Route traffic is sourced by router Pods in ingress namespaces.",
+			ResidualRisk:      "Any Pod in a namespace carrying the ingress policy-group label can reach TCP 8443.",
+		}}},
+	}
+	if err := ReconcileWorkloadNetworkPolicy(ctx, c, scheme, owner, identity, request, authority); err != nil {
+		t.Fatal(err)
+	}
+	stored := &networkingv1.NetworkPolicy{}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(policy), stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored.Annotations[networkPolicyIngressIntentAnnotation] == "" {
+		t.Fatal("typed ingress exception was not recorded")
+	}
+	updates := c.updates
+	if err := ReconcileWorkloadNetworkPolicy(ctx, c, scheme, owner, identity, request, authority); err != nil {
+		t.Fatal(err)
+	}
+	if c.updates != updates {
+		t.Fatal("ingress intent reconciliation was not idempotent")
+	}
+}
+
 func TestNetworkPolicyIPBlock(t *testing.T) {
 	for _, test := range []struct {
 		cidr   string

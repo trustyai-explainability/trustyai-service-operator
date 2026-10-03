@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/netip"
 	"strings"
@@ -28,6 +29,22 @@ type NetworkPolicyEgressIntent struct {
 	Mode         NetworkPolicyEgressMode
 	Rationale    string
 	ResidualRisk string
+}
+
+// NetworkPolicyNamespaceOnlyPeerIntent is an explicit review record for a
+// namespace-wide ingress peer. It does not authorize the peer by itself: the
+// selector must exactly match a namespace-only peer in the desired policy.
+type NetworkPolicyNamespaceOnlyPeerIntent struct {
+	NamespaceSelector metav1.LabelSelector `json:"namespaceSelector"`
+	Rationale         string               `json:"rationale"`
+	ResidualRisk      string               `json:"residualRisk"`
+}
+
+// NetworkPolicyIngressIntent carries trusted exceptions to the default rule
+// that ingress peers require a Pod selector. Namespace-only peers are broad and
+// must be explicitly listed with rationale and residual risk.
+type NetworkPolicyIngressIntent struct {
+	NamespaceOnlyPeers []NetworkPolicyNamespaceOnlyPeerIntent
 }
 
 func positiveSelector(selector *metav1.LabelSelector) error {
@@ -58,33 +75,86 @@ func positiveSelector(selector *metav1.LabelSelector) error {
 	return fmt.Errorf("selector requires a positive nonempty identity constraint")
 }
 
-func validatePolicyPeer(peer networkingv1.NetworkPolicyPeer) error {
+func namespaceSelectorIntentKey(selector metav1.LabelSelector) (string, error) {
+	data, err := json.Marshal(selector)
+	return string(data), err
+}
+
+func validateNetworkPolicyIngressIntent(intent *NetworkPolicyIngressIntent) (map[string]NetworkPolicyNamespaceOnlyPeerIntent, error) {
+	allowed := make(map[string]NetworkPolicyNamespaceOnlyPeerIntent)
+	if intent == nil {
+		return allowed, nil
+	}
+	if len(intent.NamespaceOnlyPeers) == 0 {
+		return nil, fmt.Errorf("ingress intent must contain at least one explicit namespace-only peer")
+	}
+	for _, exception := range intent.NamespaceOnlyPeers {
+		if err := positiveSelector(&exception.NamespaceSelector); err != nil {
+			return nil, fmt.Errorf("namespace-only peer exception selector: %w", err)
+		}
+		if strings.TrimSpace(exception.Rationale) == "" || strings.TrimSpace(exception.ResidualRisk) == "" {
+			return nil, fmt.Errorf("namespace-only peer exception requires rationale and residual risk")
+		}
+		key, err := namespaceSelectorIntentKey(exception.NamespaceSelector)
+		if err != nil {
+			return nil, fmt.Errorf("encode namespace-only peer selector: %w", err)
+		}
+		if _, exists := allowed[key]; exists {
+			return nil, fmt.Errorf("duplicate namespace-only peer exception")
+		}
+		allowed[key] = exception
+	}
+	return allowed, nil
+}
+
+func validatePolicyPeerWithIngressIntent(peer networkingv1.NetworkPolicyPeer, allowedNamespaceOnlyPeers map[string]NetworkPolicyNamespaceOnlyPeerIntent) (string, error) {
 	if peer.IPBlock != nil {
 		if peer.PodSelector != nil || peer.NamespaceSelector != nil {
-			return fmt.Errorf("IPBlock cannot be combined with selectors")
+			return "", fmt.Errorf("IPBlock cannot be combined with selectors")
 		}
 		prefix, err := netip.ParsePrefix(peer.IPBlock.CIDR)
 		if err != nil || prefix.Bits() == 0 {
-			return fmt.Errorf("invalid or universal CIDR %q", peer.IPBlock.CIDR)
+			return "", fmt.Errorf("invalid or universal CIDR %q", peer.IPBlock.CIDR)
 		}
 		prefix = prefix.Masked()
 		for _, exception := range peer.IPBlock.Except {
 			child, err := netip.ParsePrefix(exception)
 			if err != nil || child.Addr().BitLen() != prefix.Addr().BitLen() || child.Bits() <= prefix.Bits() || !prefix.Contains(child.Masked().Addr()) {
-				return fmt.Errorf("exception %q is not a strict subprefix of %s", exception, prefix)
+				return "", fmt.Errorf("exception %q is not a strict subprefix of %s", exception, prefix)
 			}
 		}
-		return nil
+		return "", nil
 	}
-	// Dedicated-namespace broad grants require a separately reviewed interface;
-	// this foundation deliberately does not infer namespace trust from a label.
+	if peer.PodSelector == nil {
+		if peer.NamespaceSelector == nil {
+			return "", fmt.Errorf("peer requires a pod selector, namespace selector exception, or IPBlock")
+		}
+		if err := positiveSelector(peer.NamespaceSelector); err != nil {
+			return "", fmt.Errorf("namespace-only peer: %w", err)
+		}
+		key, err := namespaceSelectorIntentKey(*peer.NamespaceSelector)
+		if err != nil {
+			return "", fmt.Errorf("encode namespace-only peer selector: %w", err)
+		}
+		if _, ok := allowedNamespaceOnlyPeers[key]; !ok {
+			return "", fmt.Errorf("namespace-only peer requires an exact typed ingress exception")
+		}
+		return key, nil
+	}
 	if err := positiveSelector(peer.PodSelector); err != nil {
-		return fmt.Errorf("pod peer: %w", err)
+		return "", fmt.Errorf("pod peer: %w", err)
 	}
 	if peer.NamespaceSelector != nil {
-		return positiveSelector(peer.NamespaceSelector)
+		if err := positiveSelector(peer.NamespaceSelector); err != nil {
+			return "", fmt.Errorf("namespace peer: %w", err)
+		}
 	}
-	return nil
+	return "", nil
+}
+
+func validatePolicyPeer(peer networkingv1.NetworkPolicyPeer) error {
+	_, err := validatePolicyPeerWithIngressIntent(peer, nil)
+	return err
 }
 
 func validatePolicyPorts(ports []networkingv1.NetworkPolicyPort) error {
@@ -143,11 +213,19 @@ func policyDirections(policy *networkingv1.NetworkPolicy) (bool, bool, error) {
 
 // ValidateWorkloadNetworkPolicy validates one directional policy. An ingress-only
 // policy is valid here, but does not satisfy ValidateWorkloadNetworkPolicySet.
-// Nil/empty DenyAll slices are equivalent after API serialization; typed intent
-// and explicit Egress policyTypes retain the authored deny intent.
-func ValidateWorkloadNetworkPolicy(policy *networkingv1.NetworkPolicy, identity NetworkPolicyIdentity, intent *NetworkPolicyEgressIntent) error {
+func ValidateWorkloadNetworkPolicy(policy *networkingv1.NetworkPolicy, identity NetworkPolicyIdentity, egressIntent *NetworkPolicyEgressIntent) error {
+	return ValidateWorkloadNetworkPolicyWithIngressIntent(policy, identity, egressIntent, nil)
+}
+
+// ValidateWorkloadNetworkPolicyWithIngressIntent additionally validates the
+// controller-supplied namespace-only ingress peer exceptions.
+func ValidateWorkloadNetworkPolicyWithIngressIntent(policy *networkingv1.NetworkPolicy, identity NetworkPolicyIdentity, egressIntent *NetworkPolicyEgressIntent, ingressIntent *NetworkPolicyIngressIntent) error {
 	if policy == nil {
 		return fmt.Errorf("policy is required")
+	}
+	allowedNamespaceOnlyPeers, err := validateNetworkPolicyIngressIntent(ingressIntent)
+	if err != nil {
+		return err
 	}
 	expected, err := identity.Labels()
 	if err != nil {
@@ -168,9 +246,13 @@ func ValidateWorkloadNetworkPolicy(policy *networkingv1.NetworkPolicy, identity 
 	if !ingress && len(policy.Spec.Ingress) != 0 {
 		return fmt.Errorf("ingress rules without Ingress direction")
 	}
-	if !egress && (len(policy.Spec.Egress) != 0 || intent != nil) {
+	if !egress && (len(policy.Spec.Egress) != 0 || egressIntent != nil) {
 		return fmt.Errorf("egress intent/rules without Egress direction")
 	}
+	if !ingress && ingressIntent != nil {
+		return fmt.Errorf("ingress intent without Ingress direction")
+	}
+	usedNamespaceOnlyPeers := make(map[string]bool, len(allowedNamespaceOnlyPeers))
 	for _, rule := range policy.Spec.Ingress {
 		if len(rule.From) == 0 {
 			return fmt.Errorf("ingress allow requires peers")
@@ -179,18 +261,25 @@ func ValidateWorkloadNetworkPolicy(policy *networkingv1.NetworkPolicy, identity 
 			return err
 		}
 		for _, peer := range rule.From {
-			if err := validatePolicyPeer(peer); err != nil {
+			key, err := validatePolicyPeerWithIngressIntent(peer, allowedNamespaceOnlyPeers)
+			if err != nil {
 				return err
 			}
+			if key != "" {
+				usedNamespaceOnlyPeers[key] = true
+			}
 		}
+	}
+	if len(usedNamespaceOnlyPeers) != len(allowedNamespaceOnlyPeers) {
+		return fmt.Errorf("ingress intent contains an unused namespace-only peer exception")
 	}
 	if !egress {
 		return nil
 	}
-	if intent == nil {
+	if egressIntent == nil {
 		return fmt.Errorf("Egress direction requires controller-supplied intent")
 	}
-	switch intent.Mode {
+	switch egressIntent.Mode {
 	case NetworkPolicyDenyAll:
 		if len(policy.Spec.Egress) != 0 {
 			return fmt.Errorf("DenyAll cannot have allow rules")
@@ -213,7 +302,7 @@ func ValidateWorkloadNetworkPolicy(policy *networkingv1.NetworkPolicy, identity 
 			}
 		}
 	case NetworkPolicyAllowAll:
-		if strings.TrimSpace(intent.Rationale) == "" || strings.TrimSpace(intent.ResidualRisk) == "" {
+		if strings.TrimSpace(egressIntent.Rationale) == "" || strings.TrimSpace(egressIntent.ResidualRisk) == "" {
 			return fmt.Errorf("AllowAll requires rationale and residual risk")
 		}
 		if len(policy.Spec.Egress) != 1 || len(policy.Spec.Egress[0].To) != 0 || len(policy.Spec.Egress[0].Ports) != 0 {
@@ -225,10 +314,11 @@ func ValidateWorkloadNetworkPolicy(policy *networkingv1.NetworkPolicy, identity 
 	return nil
 }
 
-// WorkloadNetworkPolicy associates an authored policy with trusted egress intent.
+// WorkloadNetworkPolicy associates an authored policy with trusted ingress/egress intent.
 type WorkloadNetworkPolicy struct {
-	Policy *networkingv1.NetworkPolicy
-	Egress *NetworkPolicyEgressIntent
+	Policy  *networkingv1.NetworkPolicy
+	Ingress *NetworkPolicyIngressIntent
+	Egress  *NetworkPolicyEgressIntent
 }
 
 // ValidateWorkloadNetworkPolicySet requires both directions for one exact target
@@ -239,7 +329,7 @@ func ValidateWorkloadNetworkPolicySet(policies []WorkloadNetworkPolicy, identity
 	var egressMode NetworkPolicyEgressMode
 	seen := map[string]bool{}
 	for index, item := range policies {
-		if err := ValidateWorkloadNetworkPolicy(item.Policy, identity, item.Egress); err != nil {
+		if err := ValidateWorkloadNetworkPolicyWithIngressIntent(item.Policy, identity, item.Egress, item.Ingress); err != nil {
 			return err
 		}
 		key := item.Policy.Namespace + "/" + item.Policy.Name

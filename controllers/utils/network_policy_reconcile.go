@@ -2,8 +2,10 @@ package utils
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -19,10 +21,11 @@ import (
 )
 
 const (
-	networkPolicyEgressModeAnnotation = "trustyai.opendatahub.io/network-policy-egress-mode"
-	networkPolicyRationaleAnnotation  = "trustyai.opendatahub.io/network-policy-egress-rationale"
-	networkPolicyRiskAnnotation       = "trustyai.opendatahub.io/network-policy-egress-residual-risk"
-	networkPolicyBehaviorAnnotation   = "trustyai.opendatahub.io/network-policy-egress-behavior"
+	networkPolicyEgressModeAnnotation    = "trustyai.opendatahub.io/network-policy-egress-mode"
+	networkPolicyRationaleAnnotation     = "trustyai.opendatahub.io/network-policy-egress-rationale"
+	networkPolicyRiskAnnotation          = "trustyai.opendatahub.io/network-policy-egress-residual-risk"
+	networkPolicyBehaviorAnnotation      = "trustyai.opendatahub.io/network-policy-egress-behavior"
+	networkPolicyIngressIntentAnnotation = "trustyai.opendatahub.io/network-policy-ingress-namespace-only-peers"
 )
 
 // NetworkPolicyAuthority is supplied by a controller after its own placement and
@@ -82,8 +85,25 @@ func verifyExistingPolicy(existing *networkingv1.NetworkPolicy, owner client.Obj
 // ReconcileWorkloadNetworkPolicy creates or repairs one policy, preserving
 // unrelated metadata. API errors/conflicts are returned to the controller for
 // retry, never interpreted as absence. The input object is not modified.
+func encodeNetworkPolicyIngressIntent(intent *NetworkPolicyIngressIntent) (string, error) {
+	if intent == nil {
+		return "", nil
+	}
+	peers := append([]NetworkPolicyNamespaceOnlyPeerIntent(nil), intent.NamespaceOnlyPeers...)
+	sort.Slice(peers, func(i, j int) bool {
+		left, _ := namespaceSelectorIntentKey(peers[i].NamespaceSelector)
+		right, _ := namespaceSelectorIntentKey(peers[j].NamespaceSelector)
+		return left < right
+	})
+	data, err := json.Marshal(peers)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 func ReconcileWorkloadNetworkPolicy(ctx context.Context, c client.Client, scheme *runtime.Scheme, owner client.Object, identity NetworkPolicyIdentity, desired WorkloadNetworkPolicy, authority NetworkPolicyAuthority) error {
-	if err := ValidateWorkloadNetworkPolicy(desired.Policy, identity, desired.Egress); err != nil {
+	if err := ValidateWorkloadNetworkPolicyWithIngressIntent(desired.Policy, identity, desired.Egress, desired.Ingress); err != nil {
 		return err
 	}
 	policy := &networkingv1.NetworkPolicy{
@@ -114,6 +134,13 @@ func ReconcileWorkloadNetworkPolicy(ctx context.Context, c client.Client, scheme
 			policy.Annotations[networkPolicyBehaviorAnnotation] = "Unrestricted outbound traffic; other additive policies cannot narrow this grant."
 		}
 	}
+	if desired.Ingress != nil {
+		encoded, err := encodeNetworkPolicyIngressIntent(desired.Ingress)
+		if err != nil {
+			return fmt.Errorf("encode typed namespace-only ingress peer intent: %w", err)
+		}
+		policy.Annotations[networkPolicyIngressIntentAnnotation] = encoded
+	}
 	if err := controllerutil.SetControllerReference(owner, policy, scheme); err != nil {
 		return err
 	}
@@ -141,7 +168,7 @@ func ReconcileWorkloadNetworkPolicy(ctx context.Context, c client.Client, scheme
 	if updated.Annotations == nil {
 		updated.Annotations = map[string]string{}
 	}
-	for _, key := range []string{networkPolicyEgressModeAnnotation, networkPolicyRationaleAnnotation, networkPolicyRiskAnnotation, networkPolicyBehaviorAnnotation} {
+	for _, key := range []string{networkPolicyEgressModeAnnotation, networkPolicyRationaleAnnotation, networkPolicyRiskAnnotation, networkPolicyBehaviorAnnotation, networkPolicyIngressIntentAnnotation} {
 		delete(updated.Annotations, key)
 	}
 	for key, value := range policy.Annotations {
