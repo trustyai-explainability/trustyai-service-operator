@@ -32,6 +32,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -172,14 +173,15 @@ func (q *syncedMap4Reconciler) remove(key string) {
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=lmevaljobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=lmevaljobs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=lmevaljobs/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods/exec,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;watch;list;create;update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;watch;list
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=list;get;watch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=list;get;watch;create;update;patch;delete
 
-func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, reconcileErr error) {
 	log := log.FromContext(ctx)
 
 	job := &lmesv1alpha1.LMEvalJob{}
@@ -192,6 +194,14 @@ func (r *LMEvalJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// Handle deletion here
 		return r.handleDeletion(ctx, job, log)
 	}
+
+	policyErr := r.reconcileLMEvalJobNetworkPolicy(ctx, job)
+	if policyErr != nil && !mayContinueWithoutNetworkPolicy(job) {
+		return ctrl.Result{}, policyErr
+	}
+	// Continue status polling and safe termination even during policy failure,
+	// but preserve the error so controller-runtime retries the failed protection.
+	defer func() { reconcileErr = errors.Join(reconcileErr, policyErr) }()
 
 	// When a completed job's spec is edited, metadata.Generation is incremented
 	// by the API server. Detect that and reset the status so the job re-runs
@@ -335,7 +345,7 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
-	// watch the pods created by the controller but only for the deletion event
+	// Watch policy drift/deletion and Pod identity drift, without status-only loops.
 	return ctrl.NewControllerManagedBy(mgr).
 		// since we register the finalizer, no need to monitor deletion events
 		For(&lmesv1alpha1.LMEvalJob{}, builder.WithPredicates(predicate.Funcs{
@@ -344,21 +354,11 @@ func (r *LMEvalJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				return false
 			},
 		})).
+		Owns(&networkingv1.NetworkPolicy{}, builder.WithPredicates(lmevalPolicyPredicate())).
 		Watches(
 			&corev1.Pod{},
 			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetClient().RESTMapper(), &lmesv1alpha1.LMEvalJob{}, handler.OnlyControllerOwner()),
-			builder.WithPredicates(predicate.Funcs{
-				// drop all events except deletion
-				CreateFunc: func(event.CreateEvent) bool {
-					return false
-				},
-				UpdateFunc: func(event.UpdateEvent) bool {
-					return false
-				},
-				GenericFunc: func(event.GenericEvent) bool {
-					return false
-				},
-			}),
+			builder.WithPredicates(lmevalPodIdentityPredicate()),
 			builder.OnlyMetadata,
 		).
 		Complete(r)
@@ -421,6 +421,9 @@ func (r *LMEvalJobReconciler) shutdownDriver(ctx context.Context, job *lmesv1alp
 }
 
 func (r *LMEvalJobReconciler) remoteCommand(ctx context.Context, job *lmesv1alpha1.LMEvalJob, command string) ([]byte, []byte, error) {
+	if _, err := r.getPod(ctx, job); err != nil {
+		return nil, nil, err
+	}
 	request := r.restClient.Post().
 		Namespace(job.GetNamespace()).
 		Resource("pods").
@@ -460,6 +463,7 @@ func (r *LMEvalJobReconciler) handleDeletion(ctx context.Context, job *lmesv1alp
 
 			if err := r.deleteJobPod(ctx, job); err != nil && client.IgnoreNotFound(err) != nil {
 				log.Error(err, "failed to delete pod of the job")
+				return ctrl.Result{}, err
 			}
 		}
 
@@ -583,7 +587,10 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 
 	// construct a new pod and create a pod for the job
 	currentTime := v1.Now()
-	pod := CreatePod(Options, job, permConfig, caBundle, caBundleKey, log)
+	pod, err := r.prepareExecutionPod(ctx, job, permConfig, caBundle, caBundleKey, log)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	if err := r.Create(ctx, pod, &client.CreateOptions{}); err != nil {
 		// Failed to create the pod. Mark the status as complete with failed
 		job.Status.State = lmesv1alpha1.CompleteJobState
@@ -677,15 +684,10 @@ func (r *LMEvalJobReconciler) getPod(ctx context.Context, job *lmesv1alpha1.LMEv
 	if err := r.Get(ctx, types.NamespacedName{Namespace: job.Namespace, Name: job.Name}, &pod); err != nil {
 		return nil, err
 	}
-	for _, ref := range pod.OwnerReferences {
-		if ref.APIVersion == job.APIVersion &&
-			ref.Kind == job.Kind &&
-			ref.Name == job.Name {
-
-			return &pod, nil
-		}
+	if !controlledByLMEvalJob(&pod, job) {
+		return nil, fmt.Errorf("pod does not have the LMEvalJob controller identity")
 	}
-	return nil, fmt.Errorf("pod doesn't have proper entry in the OwnerReferences")
+	return &pod, nil
 }
 
 func (r *LMEvalJobReconciler) deleteJobPod(ctx context.Context, job *lmesv1alpha1.LMEvalJob) error {
@@ -693,24 +695,14 @@ func (r *LMEvalJobReconciler) deleteJobPod(ctx context.Context, job *lmesv1alpha
 		return nil
 	}
 
-	pod := corev1.Pod{
-		TypeMeta: v1.TypeMeta{
-			Kind:       "Pod",
-			APIVersion: "v1",
-		},
-		ObjectMeta: v1.ObjectMeta{
-			Name:      job.Status.PodName,
-			Namespace: job.Namespace,
-			OwnerReferences: []v1.OwnerReference{
-				{
-					APIVersion: job.APIVersion,
-					Kind:       job.Kind,
-					Name:       job.Name,
-				},
-			},
-		},
+	pod := &corev1.Pod{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: job.Namespace, Name: job.Status.PodName}, pod); err != nil {
+		return client.IgnoreNotFound(err)
 	}
-	return r.Delete(ctx, &pod, &client.DeleteOptions{})
+	if !controlledByLMEvalJob(pod, job) {
+		return fmt.Errorf("refusing to delete a Pod with a foreign controller identity")
+	}
+	return r.Delete(ctx, pod, client.Preconditions{UID: &pod.UID, ResourceVersion: &pod.ResourceVersion})
 }
 
 func (r *LMEvalJobReconciler) handleComplete(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
@@ -817,7 +809,10 @@ func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger,
 		return ctrl.Result{}, err
 	}
 
-	pod := CreatePod(Options, job, permConfig, caBundle, caBundleKey, log)
+	pod, err := r.prepareExecutionPod(ctx, job, permConfig, caBundle, caBundleKey, log)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	if createErr := r.Create(ctx, pod); createErr != nil {
 		log.Error(createErr, "failed to create pod to resume job")
 		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
