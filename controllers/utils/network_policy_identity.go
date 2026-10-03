@@ -89,8 +89,12 @@ func identityOwnedBy(i NetworkPolicyIdentity, owner client.Object) bool {
 
 func matchesController(obj metav1.Object, owner client.Object) bool {
 	ref := metav1.GetControllerOf(obj)
+	if ref == nil {
+		return false
+	}
 	gvk := owner.GetObjectKind().GroupVersionKind()
-	return ref != nil && ref.UID == owner.GetUID() && ref.Name == owner.GetName() && ref.Kind == gvk.Kind && ref.APIVersion == gvk.GroupVersion().String()
+	refGV, err := schema.ParseGroupVersion(ref.APIVersion)
+	return err == nil && ref.UID == owner.GetUID() && ref.Name == owner.GetName() && ref.Kind == gvk.Kind && refGV.Group == gvk.Group
 }
 
 // LabelOwnedNetworkPolicyDeployment stamps only a directly owned Deployment's
