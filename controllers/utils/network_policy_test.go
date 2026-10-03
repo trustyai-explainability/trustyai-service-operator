@@ -397,6 +397,56 @@ func TestNetworkPolicyReconciliation(t *testing.T) {
 	}
 }
 
+func TestNetworkPolicyReconciliationAcceptsOlderControllerAPIVersion(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := networkingv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	owner := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "instance", Namespace: "operand", UID: "deployment-uid"}}
+	identity := NetworkPolicyIdentity{OwnerKind: schema.GroupKind{Group: "apps", Kind: "Deployment"}, OwnerUID: owner.UID, Component: "evalhub", Role: "api"}
+	labels, err := identity.Labels()
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, err := identity.Name("egress")
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: owner.Namespace}, Spec: networkingv1.NetworkPolicySpec{PodSelector: metav1.LabelSelector{MatchLabels: labels}, PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress}}}
+	c := &policyCountingClient{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner).Build()}
+	authority := NetworkPolicyAuthority{Namespaces: map[string]bool{owner.Namespace: true}}
+	request := WorkloadNetworkPolicy{Policy: policy, Egress: &NetworkPolicyEgressIntent{Mode: NetworkPolicyDenyAll}}
+	if err := ReconcileWorkloadNetworkPolicy(ctx, c, scheme, owner, identity, request, authority); err != nil {
+		t.Fatal(err)
+	}
+	key := client.ObjectKeyFromObject(policy)
+	stored := &networkingv1.NetworkPolicy{}
+	if err := c.Get(ctx, key, stored); err != nil {
+		t.Fatal(err)
+	}
+	stored.OwnerReferences[0].APIVersion = "apps/v1beta1"
+	if err := c.Client.Update(ctx, stored); err != nil {
+		t.Fatal(err)
+	}
+	updates := c.updates
+	if err := ReconcileWorkloadNetworkPolicy(ctx, c, scheme, owner, identity, request, authority); err != nil {
+		t.Fatal(err)
+	}
+	if c.updates != updates+1 {
+		t.Fatal("older-version controller reference was not rewritten")
+	}
+	if err := c.Get(ctx, key, stored); err != nil {
+		t.Fatal(err)
+	}
+	if got := metav1.GetControllerOf(stored); got == nil || got.APIVersion != "apps/v1" {
+		t.Fatalf("controller API version not canonicalized: %#v", got)
+	}
+}
+
 func TestNetworkPolicyOwnershipAndAuthority(t *testing.T) {
 	for _, test := range []string{"foreign controller", "ownerless", "wrong namespace", "owner label conflict", "foreign manager", "stale live owner", "approved adoption", "wrong adoption UID"} {
 		t.Run(test, func(t *testing.T) {
