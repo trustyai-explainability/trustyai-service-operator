@@ -52,6 +52,8 @@ allowed_api_resources := {
 	["config.openshift.io", "apiservers"],
 
 	# --- networking / routes ---
+	# Per-LMEvalJob execution policy reconciliation and verified legacy cleanup.
+	["networking.k8s.io", "networkpolicies"],
 	["networking.istio.io", "destinationrules"],
 	["networking.istio.io", "virtualservices"],
 	["route.openshift.io", "routes"],
