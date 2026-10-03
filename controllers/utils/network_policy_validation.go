@@ -64,6 +64,9 @@ func positiveSelector(selector *metav1.LabelSelector) error {
 		}
 	}
 	for _, expr := range selector.MatchExpressions {
+		if expr.Operator == metav1.LabelSelectorOpExists {
+			return nil
+		}
 		if expr.Operator == metav1.LabelSelectorOpIn && len(expr.Values) > 0 {
 			for _, value := range expr.Values {
 				if value != "" {

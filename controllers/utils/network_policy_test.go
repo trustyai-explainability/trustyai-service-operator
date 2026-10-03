@@ -250,6 +250,24 @@ func TestNetworkPolicyNamespaceOnlyIngressIntent(t *testing.T) {
 	}
 }
 
+func TestNetworkPolicyAllowsPositiveExistsNamespacePeer(t *testing.T) {
+	identity, policy := policyFixture()
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	port := intstr.FromInt32(8443)
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{{
+		From: []networkingv1.NetworkPolicyPeer{{
+			NamespaceSelector: &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
+				Key: "evalhub.trustyai.opendatahub.io/tenant", Operator: metav1.LabelSelectorOpExists,
+			}}},
+			PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "evalhub"}},
+		}},
+		Ports: []networkingv1.NetworkPolicyPort{{Protocol: new(corev1.ProtocolTCP), Port: &port}},
+	}}
+	if err := ValidateWorkloadNetworkPolicy(policy, identity, nil); err != nil {
+		t.Fatalf("positive Exists namespace peer rejected: %v", err)
+	}
+}
+
 func TestNetworkPolicyIngressIntentEncodingIsOrderIndependent(t *testing.T) {
 	first := NetworkPolicyNamespaceOnlyPeerIntent{
 		NamespaceSelector: metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "one"}},
