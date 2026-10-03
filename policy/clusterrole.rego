@@ -17,6 +17,8 @@ allowed_api_resources := {
 	["", "pods"],
 	["", "pods/exec"],
 	["", "pods/log"],
+	["", "pods/status"],
+	["", "resourcequotas"],
 	["", "secrets"],
 	["", "serviceaccounts"],
 	["", "services"],
@@ -54,6 +56,7 @@ allowed_api_resources := {
 	# --- networking / routes ---
 	["networking.istio.io", "destinationrules"],
 	["networking.istio.io", "virtualservices"],
+	["networking.k8s.io", "networkpolicies"],
 	["route.openshift.io", "routes"],
 
 	# --- monitoring ---
@@ -92,6 +95,9 @@ allowed_api_resources := {
 	["trustyai.opendatahub.io", "nemoguardrails/finalizers"],
 	["trustyai.opendatahub.io", "nemoguardrails/status"],
 	["trustyai.opendatahub.io", "providers"],
+	["trustyai.opendatahub.io", "sandboxnamespaces"],
+	["trustyai.opendatahub.io", "sandboxnamespaces/finalizers"],
+	["trustyai.opendatahub.io", "sandboxnamespaces/status"],
 	["trustyai.opendatahub.io", "status-events"],
 	["trustyai.opendatahub.io", "trustyaiservices"],
 	["trustyai.opendatahub.io", "trustyaiservices/finalizers"],

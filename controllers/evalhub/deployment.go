@@ -154,7 +154,8 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	// API_HOST and PORT are fixed for the loopback HTTP listener; TLS is terminated by kube-rbac-proxy only.
 	// METRICS_PORT and METRICS_HOST are fixed for the dedicated Prometheus metrics server.
 	// EVALHUB_HARDWARE_PROFILES_NAMESPACE is fixed to the applications namespace (r.Namespace).
-	env := mergeEnvVars(defaultEnvVars, instance.Spec.Env, "API_HOST", "PORT", "TLS_CERT_FILE", "TLS_KEY_FILE", "METRICS_PORT", "METRICS_HOST", "EVALHUB_HARDWARE_PROFILES_NAMESPACE")
+	// EVALHUB_INSTANCE_NAME is the CR identity the service stamps onto SandboxNamespace CRs; it must not be overridable.
+	env := mergeEnvVars(defaultEnvVars, instance.Spec.Env, "API_HOST", "PORT", "TLS_CERT_FILE", "TLS_KEY_FILE", "METRICS_PORT", "METRICS_HOST", "EVALHUB_HARDWARE_PROFILES_NAMESPACE", "EVALHUB_INSTANCE_NAME")
 
 	// Build volume mounts for the evalhub container
 	volumeMounts := []corev1.VolumeMount{

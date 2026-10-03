@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/yaml"
@@ -333,6 +334,53 @@ var _ = Describe("EvalHub ConfigMap", func() {
 
 			By("Checking otel section is absent")
 			Expect(config.OTEL).To(BeNil())
+		})
+	})
+
+	Context("When configuring sandbox", func() {
+		It("should render spec.sandbox into config.yaml", func() {
+			By("Setting sandbox providers and default resources on the EvalHub spec")
+			cpu := resource.MustParse("2")
+			memory := resource.MustParse("4Gi")
+			evalHub.Spec.Sandbox = &evalhubv1.SandboxSpec{
+				Providers: []string{"provider-a", "provider-b"},
+				DefaultResources: &evalhubv1.SandboxResourceEnvelope{
+					CPU:     &cpu,
+					Memory:  &memory,
+					MaxPods: 5,
+				},
+			}
+
+			By("Generating configuration data")
+			configData, err := reconciler.generateConfigData(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Parsing config.yaml")
+			var config EvalHubConfig
+			err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking the sandbox section")
+			Expect(config.Sandbox).NotTo(BeNil())
+			Expect(config.Sandbox.Providers).To(ConsistOf("provider-a", "provider-b"))
+			Expect(config.Sandbox.DefaultResources).NotTo(BeNil())
+			Expect(config.Sandbox.DefaultResources.CPU).To(Equal("2"))
+			Expect(config.Sandbox.DefaultResources.Memory).To(Equal("4Gi"))
+			Expect(config.Sandbox.DefaultResources.MaxPods).To(Equal(int32(5)))
+		})
+
+		It("should omit sandbox section when no providers are configured", func() {
+			By("Generating configuration data for a standard EvalHub (no sandbox)")
+			configData, err := reconciler.generateConfigData(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Parsing config.yaml")
+			var config EvalHubConfig
+			err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking sandbox section is absent")
+			Expect(config.Sandbox).To(BeNil())
 		})
 	})
 
