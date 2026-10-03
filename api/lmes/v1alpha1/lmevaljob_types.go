@@ -658,6 +658,14 @@ func (o *Outputs) HasOCI() bool {
 type LMEvalJobStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
+	// Conditions record controller-owned infrastructure readiness independently
+	// of evaluation progress and results. NetworkPolicyReady does not imply CNI
+	// realization or outbound restriction: the compatibility profile is AllowAll.
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
 	// The name of the Pod that runs the evaluation job
 	// +optional
 	PodName string `json:"podName,omitempty"`
