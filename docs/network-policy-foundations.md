@@ -18,7 +18,8 @@ hash as their label representation. Hashes are identifiers, not credentials.
 
 Every target selector must contain the exact reserved `MatchLabels`; additional
 valid constraints are allowed. Peer selectors must be valid and positively
-constrained. Namespace-only ingress peers are rejected unless the controller
+constrained by nonempty MatchLabels/In values or an `Exists` expression.
+Namespace-only ingress peers are rejected unless the controller
 supplies an exact `NetworkPolicyNamespaceOnlyPeerIntent` through
 `NetworkPolicyIngressIntent`, with nonempty rationale and residual risk. The
 namespace selector must exactly match an actual peer; unused/mismatched
@@ -61,8 +62,9 @@ authorized namespace-only ingress peer intent. These are records of typed
 intent, never permission to bypass validation. Altering an annotation alone
 cannot authorize AllowAll or a broad ingress peer. No component is automatically
 assigned AllowAll. It permits unrestricted outbound traffic and may broaden
-pre-existing customer restrictions: NetworkPolicy grants are additive, and another restrictive policy
-cannot narrow this allowance. Unrestricted ingress is never enabled.
+pre-existing customer restrictions: NetworkPolicy grants are additive, and
+another restrictive policy cannot narrow this allowance. Unrestricted ingress
+is never enabled.
 
 ## Reconciliation, authority and cleanup
 
