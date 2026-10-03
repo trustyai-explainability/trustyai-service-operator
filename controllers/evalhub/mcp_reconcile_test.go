@@ -65,6 +65,16 @@ var _ = Describe("EvalHub MCP reconciliation", func() {
 
 			deploy := waitForDeployment(mcpDeploymentName(evalHub), testNamespace)
 			Expect(deploy.Spec.Template.Labels["component"]).To(Equal("mcp"))
+			mcpIdentity, err := evalHubMCPNetworkPolicyIdentity(evalHub)
+			Expect(err).NotTo(HaveOccurred())
+			mcpIdentityLabels, err := mcpIdentity.Labels()
+			Expect(err).NotTo(HaveOccurred())
+			for key, value := range mcpIdentityLabels {
+				Expect(deploy.Spec.Template.Labels).To(HaveKeyWithValue(key, value))
+			}
+			Expect(deploy.Spec.Selector.MatchLabels).To(Equal(map[string]string{
+				"app": "eval-hub", "instance": evalHubName, "component": "mcp",
+			}))
 			Expect(deploy.Spec.Template.Spec.Containers).To(HaveLen(2))
 			mcpContainer := deploy.Spec.Template.Spec.Containers[0]
 			Expect(mcpContainer.Name).To(Equal(mcpContainerName))
