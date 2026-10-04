@@ -802,6 +802,11 @@ func (r *LMEvalJobReconciler) handleSuspend(ctx context.Context, log logr.Logger
 func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
 	log.Info("Resume job")
 
+	// A suspended job may have been edited since its initial validation.
+	if err := validateResourceClaims(job.Spec.Pod); err != nil {
+		return ctrl.Result{}, fmt.Errorf("invalid resource claims: %w", err)
+	}
+
 	// Read effective permissions for this job deployment
 	permConfig, err := ReadEffectivePermissions(ctx, r.Client, r.Namespace, r.ConfigMap, &log)
 	if err != nil {
@@ -944,7 +949,10 @@ func unmarshal(custom string, props []string) (map[string]interface{}, error) {
 
 func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig *PermissionConfig, caBundle *corev1.ConfigMap, caBundleKey string, log logr.Logger) *corev1.Pod {
 
-	var envVars = removeProtectedEnvVars(job.Spec.Pod.GetContainer().GetEnv())
+	// Do not alias mutable resource declarations or container configuration from
+	// the CR, which may be held in the controller's cache.
+	podSpec := job.Spec.Pod.DeepCopy()
+	var envVars = removeProtectedEnvVars(podSpec.GetContainer().GetEnv())
 
 	disableTelemetryEnvVars := []corev1.EnvVar{
 		{
@@ -1314,8 +1322,8 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 		envVars = append(envVars, ociEnvVars...)
 	}
 
-	volumes = append(volumes, job.Spec.Pod.GetVolumes()...)
-	volumeMounts = append(volumeMounts, job.Spec.Pod.GetContainer().GetVolumMounts()...)
+	volumes = append(volumes, podSpec.GetVolumes()...)
+	volumeMounts = append(volumeMounts, podSpec.GetContainer().GetVolumMounts()...)
 
 	// Mount the merged CA bundle so REQUESTS_CA_BUNDLE lets Python's requests
 	// library verify certificates signed by cluster or service-serving CAs.
@@ -1344,10 +1352,10 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 
 	labels := getPodLabels(job.Labels, log)
 	annotations := getAnnotations(job.Annotations, log)
-	resources := getResources(job.Spec.Pod.GetContainer().GetResources())
-	affinity := job.Spec.Pod.GetAffinity()
-	podSecurityContext := getPodSecurityContext(job.Spec.Pod.GetSecurityContext())
-	mainSecurityContext := getMainSecurityContext(job.Spec.Pod.GetContainer().GetSecurityContext())
+	resources := getResources(podSpec.GetContainer().GetResources())
+	affinity := podSpec.GetAffinity()
+	podSecurityContext := getPodSecurityContext(podSpec.GetSecurityContext())
+	mainSecurityContext := getMainSecurityContext(podSpec.GetContainer().GetSecurityContext())
 	containers := []corev1.Container{
 		{
 			Name:            "main",
@@ -1366,7 +1374,7 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 			},
 		},
 	}
-	containers = append(containers, job.Spec.Pod.GetSideCards()...)
+	containers = append(containers, podSpec.GetSideCards()...)
 
 	// Then compose the Pod CR
 	pod := corev1.Pod{
@@ -1409,6 +1417,7 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 			SecurityContext: podSecurityContext,
 			Affinity:        affinity,
 			Volumes:         volumes,
+			ResourceClaims:  podSpec.GetResourceClaims(),
 			RestartPolicy:   corev1.RestartPolicyNever,
 		},
 	}

@@ -389,6 +389,13 @@ func (in *LMEvalPodSpec) DeepCopyInto(out *LMEvalPodSpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.ResourceClaims != nil {
+		in, out := &in.ResourceClaims, &out.ResourceClaims
+		*out = make([]v1.PodResourceClaim, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	if in.SideCars != nil {
 		in, out := &in.SideCars, &out.SideCars
 		*out = make([]v1.Container, len(*in))
