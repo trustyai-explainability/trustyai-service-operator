@@ -66,11 +66,11 @@ run:
 
 # Refresh Pipfile.lock from Pipfile. Runs pipenv in a container so the lock is always resolved
 # against the interpreter declared in Pipfile, whatever python the developer has installed.
-# Keep PYTHON_IMAGE in sync with python_version in Pipfile. No --platform: the resolution depends
-# only on the interpreter version and PyPI metadata, so the lock is identical on every arch.
+# Keep PYTHON_IMAGE in sync with python_version in Pipfile. Resolve for PLATFORM because Pipenv
+# lock hashes can depend on the target platform.
 PYTHON_IMAGE?=registry.access.redhat.com/ubi9/python-312:latest
 lock:
-	${BUILD_TOOL} run --rm --user 0 -e PIPENV_IGNORE_VIRTUALENVS=1 \
+	${BUILD_TOOL} run --rm --platform=$(PLATFORM) --user 0 -e PIPENV_IGNORE_VIRTUALENVS=1 \
 		-v $(CURDIR):/work:z -w /work $(PYTHON_IMAGE) \
 		sh -c 'pip install --no-cache-dir --quiet pipenv && pipenv lock --clear'
 
