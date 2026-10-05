@@ -27,11 +27,15 @@ import (
 
 // NemoConfig holds information related to a single configuration of the NeMo Guardrails server
 type NemoConfig struct {
-	//Name sets the id of this particular config within the NeMo Guardrails server. This will create a directory called /app/config/$Name. Since it $Name will be used a directory, it must only contain alphanumeric characters, dashes, and underscores.
+	//Name sets the id of this particular config within the NeMo Guardrails server. This will create a directory called /app/config/$Name. Since it $Name will be used a directory, it must only contain alphanumeric characters, dashes, and underscores. Consumers such as AIGuardrail reference this value via checks[].configId, so it must always be set.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_-]+$`
-	Name string `json:"name,omitempty"`
+	Name string `json:"name"`
 	//ConfigMaps is a list of configmaps that comprise the configuration. All files from these configmaps will be mounted within /app/config/$Name
-	ConfigMaps []string `json:"configMaps,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	ConfigMaps []string `json:"configMaps"`
 	//The Default flag determines whether config is treated as the default config for the nemo-server. If no config is set to default, the first entry in NemoConfigs will be used as the default
 	Default bool `json:"default,omitempty"`
 }

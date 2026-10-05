@@ -240,6 +240,7 @@ spec:
                         mounted within /app/config/$Name
                       items:
                         type: string
+                      minItems: 1
                       type: array
                     default:
                       description: The Default flag determines whether config is treated
@@ -252,9 +253,14 @@ spec:
                         the NeMo Guardrails server. This will create a directory called
                         /app/config/$Name. Since it $Name will be used a directory,
                         it must only contain alphanumeric characters, dashes, and
-                        underscores.
+                        underscores. Consumers such as AIGuardrail reference this
+                        value via checks[].configId, so it must always be set.
+                      minLength: 1
                       pattern: ^[a-zA-Z0-9_-]+$
                       type: string
+                  required:
+                  - configMaps
+                  - name
                   type: object
                 type: array
               replicas:
