@@ -79,6 +79,41 @@ func positiveSelector(selector *metav1.LabelSelector) error {
 	return fmt.Errorf("selector requires a positive nonempty identity constraint")
 }
 
+const namespaceNameLabel = "kubernetes.io/metadata.name"
+
+// positiveNamespaceSelector rejects the Kubernetes-provided namespace name
+// label's universal Exists form while preserving useful Exists selectors on
+// workload/tenant labels.
+func positiveNamespaceSelector(selector *metav1.LabelSelector) error {
+	if err := positiveSelector(selector); err != nil {
+		return err
+	}
+
+	// A non-empty equality or finite In requirement narrows the selector. An
+	// Exists requirement on kubernetes.io/metadata.name alone does not: that
+	// label is present on every namespace in supported Kubernetes versions.
+	for _, value := range selector.MatchLabels {
+		if value != "" {
+			return nil
+		}
+	}
+	for _, expr := range selector.MatchExpressions {
+		if expr.Operator == metav1.LabelSelectorOpIn {
+			for _, value := range expr.Values {
+				if value != "" {
+					return nil
+				}
+			}
+		}
+	}
+	for _, expr := range selector.MatchExpressions {
+		if expr.Key == namespaceNameLabel && expr.Operator == metav1.LabelSelectorOpExists {
+			return fmt.Errorf("namespace selector uses universal Exists constraint on %q", namespaceNameLabel)
+		}
+	}
+	return nil
+}
+
 func namespaceSelectorIntentKey(selector metav1.LabelSelector) (string, error) {
 	data, err := json.Marshal(selector)
 	return string(data), err
@@ -93,7 +128,7 @@ func validateNetworkPolicyIngressIntent(intent *NetworkPolicyIngressIntent) (map
 		return nil, fmt.Errorf("ingress intent must contain at least one explicit namespace-only peer")
 	}
 	for _, exception := range intent.NamespaceOnlyPeers {
-		if err := positiveSelector(&exception.NamespaceSelector); err != nil {
+		if err := positiveNamespaceSelector(&exception.NamespaceSelector); err != nil {
 			return nil, fmt.Errorf("namespace-only peer exception selector: %w", err)
 		}
 		if strings.TrimSpace(exception.Rationale) == "" || strings.TrimSpace(exception.ResidualRisk) == "" {
@@ -133,7 +168,7 @@ func validatePolicyPeerWithIngressIntent(peer networkingv1.NetworkPolicyPeer, al
 		if peer.NamespaceSelector == nil {
 			return "", fmt.Errorf("peer requires a pod selector, namespace selector exception, or IPBlock")
 		}
-		if err := positiveSelector(peer.NamespaceSelector); err != nil {
+		if err := positiveNamespaceSelector(peer.NamespaceSelector); err != nil {
 			return "", fmt.Errorf("namespace-only peer: %w", err)
 		}
 		key, err := namespaceSelectorIntentKey(*peer.NamespaceSelector)
@@ -149,7 +184,7 @@ func validatePolicyPeerWithIngressIntent(peer networkingv1.NetworkPolicyPeer, al
 		return "", fmt.Errorf("pod peer: %w", err)
 	}
 	if peer.NamespaceSelector != nil {
-		if err := positiveSelector(peer.NamespaceSelector); err != nil {
+		if err := positiveNamespaceSelector(peer.NamespaceSelector); err != nil {
 			return "", fmt.Errorf("namespace peer: %w", err)
 		}
 	}

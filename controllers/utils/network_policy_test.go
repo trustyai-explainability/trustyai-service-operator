@@ -316,6 +316,35 @@ func TestNetworkPolicyAllowsPositiveExistsNamespacePeer(t *testing.T) {
 	}
 }
 
+func TestNetworkPolicyRejectsUniversalNamespaceNameExists(t *testing.T) {
+	identity, policy := policyFixture()
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	port := intstr.FromInt32(8443)
+	universalNamespaceSelector := metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
+		Key: namespaceNameLabel, Operator: metav1.LabelSelectorOpExists,
+	}}}
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{{
+		From: []networkingv1.NetworkPolicyPeer{{
+			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{"app": "evalhub"}},
+			NamespaceSelector: universalNamespaceSelector.DeepCopy(),
+		}},
+		Ports: []networkingv1.NetworkPolicyPort{{Port: &port}},
+	}}
+	if err := ValidateWorkloadNetworkPolicy(policy, identity, nil); err == nil {
+		t.Fatal("universal namespace Exists peer accepted")
+	}
+
+	policy.Spec.Ingress[0].From = []networkingv1.NetworkPolicyPeer{{NamespaceSelector: universalNamespaceSelector.DeepCopy()}}
+	intent := &NetworkPolicyIngressIntent{NamespaceOnlyPeers: []NetworkPolicyNamespaceOnlyPeerIntent{{
+		NamespaceSelector: universalNamespaceSelector,
+		Rationale:         "reviewed namespace-only peer",
+		ResidualRisk:      "all namespace Pods can connect",
+	}}}
+	if err := ValidateWorkloadNetworkPolicyWithIngressIntent(policy, identity, nil, intent); err == nil {
+		t.Fatal("universal namespace Exists peer accepted with typed intent")
+	}
+}
+
 func TestNetworkPolicyIngressIntentEncodingIsOrderIndependent(t *testing.T) {
 	first := NetworkPolicyNamespaceOnlyPeerIntent{
 		NamespaceSelector: metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "one"}},
