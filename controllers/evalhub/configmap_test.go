@@ -104,6 +104,23 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
+		It("should configure the post-processing adapter from the application config", func() {
+			configData, err := reconciler.generateConfigData(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+
+			var config EvalHubConfig
+			err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(config.PostProcessing).NotTo(BeNil())
+			Expect(config.PostProcessing.Runtime.K8s).NotTo(BeNil())
+			Expect(config.PostProcessing.Runtime.K8s.Image).To(Equal(testEvalHubPostProcessorImage))
+			Expect(config.PostProcessing.Runtime.K8s.Entrypoint).To(Equal([]string{"python", "main.py"}))
+			Expect(config.PostProcessing.Runtime.K8s.CPURequest).To(Equal("500m"))
+			Expect(config.PostProcessing.Runtime.K8s.MemoryRequest).To(Equal("1Gi"))
+			Expect(config.PostProcessing.Runtime.K8s.CPULimit).To(Equal("2"))
+			Expect(config.PostProcessing.Runtime.K8s.MemoryLimit).To(Equal("4Gi"))
+		})
+
 		It("should update existing configmap", func() {
 			By("Creating initial configmap")
 			err := reconciler.reconcileConfigMap(ctx, evalHub)

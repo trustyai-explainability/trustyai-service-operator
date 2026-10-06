@@ -36,8 +36,9 @@ var ctx context.Context
 var cancel context.CancelFunc
 
 const (
-	timeout  = time.Second * 10
-	interval = time.Millisecond * 250
+	timeout                       = time.Second * 10
+	interval                      = time.Millisecond * 250
+	testEvalHubPostProcessorImage = "quay.io/test/evalhub-post-processor:v1"
 )
 
 func TestControllers(t *testing.T) {
@@ -204,8 +205,9 @@ func setupReconciler(namespace string) (*EvalHubReconciler, context.Context) {
 			Namespace: namespace,
 		},
 		Data: map[string]string{
-			configMapEvalHubImageKey:       testReconcilerEvalHubImage,
-			configMapKubeRBACProxyImageKey: testReconcilerKubeRBACProxyImage,
+			configMapEvalHubImageKey:        testReconcilerEvalHubImage,
+			configMapKubeRBACProxyImageKey:  testReconcilerKubeRBACProxyImage,
+			postProcessingImageConfigMapKey: testEvalHubPostProcessorImage,
 		},
 	}
 	if err := k8sClient.Create(ctx, operatorCM); err != nil {

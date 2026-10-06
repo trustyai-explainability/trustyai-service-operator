@@ -20,6 +20,11 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+const (
+	postProcessingImageConfigMapKey = "evalhub-post-processor-image"
+	defaultPostProcessingImage      = "quay.io/evalhub/evalhub-post-processor:latest"
+)
+
 // ServiceConfig represents the service section in config.yaml
 type ServiceConfig struct {
 	Port            int    `json:"port"`
@@ -101,15 +106,36 @@ type SidecarConfig struct {
 	SidecarContainer *SidecarContainerConfig `json:"sidecar_container,omitempty"`
 }
 
+// PostProcessingConfig contains runtime configuration for the internal adapter.
+type PostProcessingConfig struct {
+	Runtime PostProcessingRuntimeConfig `json:"runtime"`
+}
+
+// PostProcessingRuntimeConfig contains the runtime settings used by EvalHub.
+type PostProcessingRuntimeConfig struct {
+	K8s *PostProcessingK8sRuntimeConfig `json:"k8s,omitempty"`
+}
+
+// PostProcessingK8sRuntimeConfig configures the adapter container for Kubernetes jobs.
+type PostProcessingK8sRuntimeConfig struct {
+	Image         string   `json:"image"`
+	Entrypoint    []string `json:"entrypoint,omitempty"`
+	CPURequest    string   `json:"cpu_request,omitempty"`
+	MemoryRequest string   `json:"memory_request,omitempty"`
+	CPULimit      string   `json:"cpu_limit,omitempty"`
+	MemoryLimit   string   `json:"memory_limit,omitempty"`
+}
+
 // EvalHubConfig represents the eval-hub configuration structure
 type EvalHubConfig struct {
-	Service     ServiceConfig   `json:"service"`
-	Secrets     *SecretsMapping `json:"secrets,omitempty"`
-	EnvMappings EnvMappings     `json:"env_mappings"`
-	Database    *DatabaseConfig `json:"database"`
-	OTEL        *OTELConfig     `json:"otel,omitempty"`
-	Prometheus  map[string]any  `json:"prometheus,omitempty"`
-	Sidecar     *SidecarConfig  `json:"sidecar,omitempty"`
+	Service        ServiceConfig         `json:"service"`
+	Secrets        *SecretsMapping       `json:"secrets,omitempty"`
+	EnvMappings    EnvMappings           `json:"env_mappings"`
+	Database       *DatabaseConfig       `json:"database"`
+	OTEL           *OTELConfig           `json:"otel,omitempty"`
+	Prometheus     map[string]any        `json:"prometheus,omitempty"`
+	Sidecar        *SidecarConfig        `json:"sidecar,omitempty"`
+	PostProcessing *PostProcessingConfig `json:"post_processing,omitempty"`
 }
 
 // reconcileConfigMap creates or updates the ConfigMap for EvalHub configuration
@@ -160,6 +186,10 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 	if err != nil {
 		return nil, fmt.Errorf("resolving EvalHub image: %w", err)
 	}
+	postProcessingImage, err := images.ResolveImage(ctx, r.Client, postProcessingImageConfigMapKey, r.effectiveOperatorConfigMapName(), r.Namespace, defaultPostProcessingImage)
+	if err != nil {
+		return nil, fmt.Errorf("resolving post-processing adapter image: %w", err)
+	}
 
 	config := EvalHubConfig{
 		Service: ServiceConfig{
@@ -201,6 +231,18 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 						CPU:    "500m",
 						Memory: "2Gi",
 					},
+				},
+			},
+		},
+		PostProcessing: &PostProcessingConfig{
+			Runtime: PostProcessingRuntimeConfig{
+				K8s: &PostProcessingK8sRuntimeConfig{
+					Image:         postProcessingImage,
+					Entrypoint:    []string{"python", "main.py"},
+					CPURequest:    "500m",
+					MemoryRequest: "1Gi",
+					CPULimit:      "2",
+					MemoryLimit:   "4Gi",
 				},
 			},
 		},
