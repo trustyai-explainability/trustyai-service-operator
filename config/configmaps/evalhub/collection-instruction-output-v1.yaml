@@ -10,6 +10,11 @@ data:
     id: instruction-output-v1
     name: Instruction & Output Reliability v1
     category: instruction_output
+    domains: [instruction_and_output_reliability]
+    tasks: [structured_output, instruction_following]
+    modalities: [text]
+    evaluation_targets: [model]
+    curation_order: 3
     description: >
       Evaluates whether models produce outputs that conform to structural constraints.
       JSONSchemaBench tests JSON schema compliance across easy, medium, and hard splits.
@@ -24,8 +29,6 @@ data:
       - lm_eval
       - ifbench
       - curated
-    domains:
-      - instruction_and_output_reliability
     pass_criteria:
       threshold: 0.325
     benchmarks:

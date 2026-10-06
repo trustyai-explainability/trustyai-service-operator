@@ -10,6 +10,11 @@ data:
     id: software-v1
     name: Software v1
     category: software
+    domains: [software]
+    tasks: [code_generation, code_understanding]
+    modalities: [text]
+    evaluation_targets: [model]
+    curation_order: 5
     description: >
       Evaluates code generation and program comprehension. LiveCodeBench uses post-cutoff
       competitive programming problems (contamination-free). BigCodeBench tests practical
@@ -20,8 +25,6 @@ data:
       - software
       - competitive-programming
       - curated
-    domains:
-      - software
     pass_criteria:
       threshold: 0.20
     benchmarks:
