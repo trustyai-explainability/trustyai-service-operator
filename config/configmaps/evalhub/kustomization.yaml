@@ -11,6 +11,7 @@ resources:
   - provider-nemo-guardrails.yaml
   - provider-ragas.yaml
   - provider-ruler.yaml
+  - provider-tooleval.yaml
   - collection-coding-v1.yaml
   - collection-document-understanding-v1.yaml
   - collection-evaluate-model-accuracy.yaml
