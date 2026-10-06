@@ -737,10 +737,11 @@ func TestNetworkPolicyCleanup(t *testing.T) {
 }
 
 func TestNetworkPolicyOwnedTemplate(t *testing.T) {
-	_, owner, _, identity, _, _ := reconciliationFixture(t)
+	scheme, owner, _, identity, _, _ := reconciliationFixture(t)
+	owner.TypeMeta = metav1.TypeMeta{} // API-decoded typed objects need not retain TypeMeta.
 	d := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: owner.Namespace, OwnerReferences: []metav1.OwnerReference{{APIVersion: "v1", Kind: "ConfigMap", Name: owner.Name, UID: owner.UID, Controller: new(true)}}}, Spec: appsv1.DeploymentSpec{Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "legacy"}}, Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "legacy", NetworkPolicyRoleLabel: "user-override"}}}}}
 	selector, _ := json.Marshal(d.Spec.Selector)
-	if err := LabelOwnedNetworkPolicyDeployment(d, owner, identity); err != nil {
+	if err := LabelOwnedNetworkPolicyDeployment(d, scheme, owner, identity); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := json.Marshal(d.Spec.Selector)
@@ -749,7 +750,7 @@ func TestNetworkPolicyOwnedTemplate(t *testing.T) {
 	}
 	d.OwnerReferences = nil
 	before, _ := json.Marshal(d)
-	if err := LabelOwnedNetworkPolicyDeployment(d, owner, identity); err == nil {
+	if err := LabelOwnedNetworkPolicyDeployment(d, scheme, owner, identity); err == nil {
 		t.Fatal("foreign deployment labeled")
 	}
 	after, _ = json.Marshal(d)

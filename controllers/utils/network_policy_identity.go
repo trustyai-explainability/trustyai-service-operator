@@ -10,10 +10,12 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	klabels "k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
 const (
@@ -98,10 +100,23 @@ func matchesController(obj metav1.Object, owner client.Object) bool {
 }
 
 // LabelOwnedNetworkPolicyDeployment stamps only a directly owned Deployment's
-// template. The caller must retain legacy policies until old replicas drain and
+// template. The scheme resolves the owner's GVK without relying on TypeMeta being
+// populated. The caller must retain legacy policies until old replicas drain and
 // protect reserved-label authority. Immutable selectors are never modified.
-func LabelOwnedNetworkPolicyDeployment(deployment *appsv1.Deployment, owner client.Object, identity NetworkPolicyIdentity) error {
-	if deployment == nil || owner == nil || !identityOwnedBy(identity, owner) || deployment.Namespace != owner.GetNamespace() || !matchesController(deployment, owner) {
+func LabelOwnedNetworkPolicyDeployment(deployment *appsv1.Deployment, scheme *runtime.Scheme, owner client.Object, identity NetworkPolicyIdentity) error {
+	if deployment == nil || owner == nil {
+		return fmt.Errorf("deployment and policy owner are required")
+	}
+	if scheme == nil {
+		return fmt.Errorf("owner scheme is required")
+	}
+	gvk, err := apiutil.GVKForObject(owner, scheme)
+	if err != nil {
+		return fmt.Errorf("resolve policy owner GVK: %w", err)
+	}
+	ownerWithGVK := owner.DeepCopyObject().(client.Object)
+	ownerWithGVK.GetObjectKind().SetGroupVersionKind(gvk)
+	if !identityOwnedBy(identity, ownerWithGVK) || deployment.Namespace != owner.GetNamespace() || !matchesController(deployment, ownerWithGVK) {
 		return fmt.Errorf("deployment does not belong to the supplied policy owner")
 	}
 	labels, err := identity.Labels()

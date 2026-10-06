@@ -152,7 +152,7 @@ func TestNetworkPolicyPreservesNonControllerReferences(t *testing.T) {
 }
 
 func TestNetworkPolicyTemplateSelectorConflicts(t *testing.T) {
-	_, owner, _, identity, _, _ := reconciliationFixture(t)
+	scheme, owner, _, identity, _, _ := reconciliationFixture(t)
 	// Reuse the positive test's setup but exercise both MatchLabels/expressions.
 	for _, selector := range []*metav1.LabelSelector{
 		nil,
@@ -162,7 +162,7 @@ func TestNetworkPolicyTemplateSelectorConflicts(t *testing.T) {
 		deployment := ownedDeploymentFixture(owner)
 		deployment.Spec.Selector = selector
 		original := deployment.DeepCopy()
-		if err := LabelOwnedNetworkPolicyDeployment(deployment, owner, identity); err == nil {
+		if err := LabelOwnedNetworkPolicyDeployment(deployment, scheme, owner, identity); err == nil {
 			t.Fatal("selector conflict accepted")
 		}
 		if deployment.Spec.Template.Labels[NetworkPolicyRoleLabel] != original.Spec.Template.Labels[NetworkPolicyRoleLabel] {
