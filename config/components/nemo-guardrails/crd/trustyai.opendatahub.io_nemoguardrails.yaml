@@ -227,9 +227,10 @@ spec:
                   NeMo Guardrails server is created. Defaults to true.
                 type: boolean
               nemoConfigs:
-                description: NemoConfig should be the names of the configmaps containing
-                  NeMO server configuration files. All files in NemoConfigs will be
-                  mounted to /app/config/$Name
+                description: |-
+                  NemoConfig should be the names of the configmaps containing NeMO server configuration files. All files in NemoConfigs will be mounted to /app/config/$Name
+                  Names must be unique: they are the id consumers reference (AIGuardrail checks[].configId) and they determine the /app/config/$Name mount path, so a duplicate is both an ambiguous reference and a colliding mount.
+                  MaxItems bounds the uniqueness rule below, which is quadratic and is rejected by the apiserver's CEL cost estimator on an unbounded list.
                 items:
                   description: NemoConfig holds information related to a single configuration
                     of the NeMo Guardrails server
@@ -255,6 +256,7 @@ spec:
                         it must only contain alphanumeric characters, dashes, and
                         underscores. Consumers such as AIGuardrail reference this
                         value via checks[].configId, so it must always be set.
+                      maxLength: 253
                       minLength: 1
                       pattern: ^[a-zA-Z0-9_-]+$
                       type: string
@@ -262,7 +264,11 @@ spec:
                   - configMaps
                   - name
                   type: object
+                maxItems: 64
                 type: array
+                x-kubernetes-validations:
+                - message: nemoConfigs names must be unique
+                  rule: self.all(c, self.exists_one(o, o.name == c.name))
               replicas:
                 default: 1
                 description: Number of replicas for the NeMo Guardrails deployment

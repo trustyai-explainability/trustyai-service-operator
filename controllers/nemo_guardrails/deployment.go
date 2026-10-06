@@ -4,10 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"reflect"
 	"sort"
 	"strings"
+
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/google/uuid"
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
@@ -78,12 +79,13 @@ func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGua
 	hasher := sha256.New()
 
 	for idx, nemoConfig := range nemoGuardrails.Spec.NemoConfigs {
-		// Take the first config as default for now. If any config manually specifies default-ness, we'll override this
-		if idx == 0 {
-			defaultConfig = nemoConfig.Name
-		}
 		if nemoConfig.ConfigMaps == nil || len(nemoConfig.ConfigMaps) == 0 {
 			return fmt.Errorf("no configmaps provided inside NemoConfig=%s", nemoConfig.Name)
+		}
+		// Take the first config as default for now. If any config manually specifies default-ness, we'll override this
+		// Check first if the configMap is empty, if not set the first Nemo as default.
+		if idx == 0 {
+			defaultConfig = nemoConfig.Name
 		}
 
 		for _, configCM := range nemoConfig.ConfigMaps {

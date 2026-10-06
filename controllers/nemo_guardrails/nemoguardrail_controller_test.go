@@ -807,6 +807,34 @@ var _ = Describe("NemoConfig schema validation", func() {
 			Expect(err.Error()).To(ContainSubstring("spec.nemoConfigs[1].name"))
 		})
 
+		It("should reject two configs sharing a name", func() {
+			resource := newNemoGuardrails(
+				nemoguardrailsv1alpha1.NemoConfig{Name: "pii", ConfigMaps: []string{"pii-cm"}},
+				nemoguardrailsv1alpha1.NemoConfig{Name: "pii", ConfigMaps: []string{"other-pii-cm"}},
+			)
+			err := k8sClient.Create(ctx, resource)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue(), "expected an Invalid error, got: %v", err)
+			Expect(err.Error()).To(ContainSubstring("nemoConfigs names must be unique"))
+		})
+
+		It("should reject a duplicate name introduced by an update", func() {
+			resource := newNemoGuardrails(
+				nemoguardrailsv1alpha1.NemoConfig{Name: "pii", ConfigMaps: []string{"pii-cm"}},
+				nemoguardrailsv1alpha1.NemoConfig{Name: "jailbreak", ConfigMaps: []string{"jailbreak-cm"}},
+			)
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			defer func() {
+				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			}()
+
+			resource.Spec.NemoConfigs[1].Name = "pii"
+			err := k8sClient.Update(ctx, resource)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue(), "expected an Invalid error, got: %v", err)
+			Expect(err.Error()).To(ContainSubstring("nemoConfigs names must be unique"))
+		})
+
 		It("should accept distinct named configs that AIGuardrail checks can reference by configId", func() {
 			resource := newNemoGuardrails(
 				nemoguardrailsv1alpha1.NemoConfig{Name: "pii", ConfigMaps: []string{"pii-cm"}},
