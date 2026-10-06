@@ -3820,3 +3820,546 @@ data:
         lower_is_better: false
       pass_criteria:
         threshold: 0.15
+
+    # Multilingual tasks require the PR #208 LM Evaluation Harness image or newer.
+
+    - id: mmlu_prox_af
+      name: "MMLU-ProX (af)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream af task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_ar
+      name: "MMLU-ProX (ar)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream ar task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_bn
+      name: "MMLU-ProX (bn)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream bn task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_cs
+      name: "MMLU-ProX (cs)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream cs task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_de
+      name: "MMLU-ProX (de)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream de task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_en
+      name: "MMLU-ProX (en)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream en task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_es
+      name: "MMLU-ProX (es)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream es task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_fr
+      name: "MMLU-ProX (fr)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream fr task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_hi
+      name: "MMLU-ProX (hi)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream hi task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_hu
+      name: "MMLU-ProX (hu)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream hu task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_id
+      name: "MMLU-ProX (id)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream id task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_it
+      name: "MMLU-ProX (it)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream it task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_ja
+      name: "MMLU-ProX (ja)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream ja task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_ko
+      name: "MMLU-ProX (ko)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream ko task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_mr
+      name: "MMLU-ProX (mr)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream mr task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_ne
+      name: "MMLU-ProX (ne)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream ne task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_pt
+      name: "MMLU-ProX (pt)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream pt task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_ru
+      name: "MMLU-ProX (ru)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream ru task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_sr
+      name: "MMLU-ProX (sr)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream sr task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_sw
+      name: "MMLU-ProX (sw)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream sw task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_te
+      name: "MMLU-ProX (te)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream te task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_th
+      name: "MMLU-ProX (th)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream th task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_uk
+      name: "MMLU-ProX (uk)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream uk task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_ur
+      name: "MMLU-ProX (ur)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream ur task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_vi
+      name: "MMLU-ProX (vi)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream vi task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_wo
+      name: "MMLU-ProX (wo)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream wo task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_yo
+      name: "MMLU-ProX (yo)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream yo task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_zh
+      name: "MMLU-ProX (zh)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream zh task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: mmlu_prox_zu
+      name: "MMLU-ProX (zu)"
+      description: >
+        Multilingual expert-level reasoning across 14 subjects, using the
+        upstream zu task group and its weighted exact-match score.
+      category: knowledge_reasoning
+      metrics:
+      - exact_match
+      num_few_shot: 5
+      tags: [knowledge, reasoning, multilingual, lm_eval]
+      primary_score:
+        metric: exact_match
+        lower_is_better: false
+
+    - id: tydiqa_goldp_ar
+      name: "TyDiQA GoldP (ar)"
+      description: >
+        Gold-passage question answering in ar, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_bn
+      name: "TyDiQA GoldP (bn)"
+      description: >
+        Gold-passage question answering in bn, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_en
+      name: "TyDiQA GoldP (en)"
+      description: >
+        Gold-passage question answering in en, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_fi
+      name: "TyDiQA GoldP (fi)"
+      description: >
+        Gold-passage question answering in fi, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_id
+      name: "TyDiQA GoldP (id)"
+      description: >
+        Gold-passage question answering in id, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_ko
+      name: "TyDiQA GoldP (ko)"
+      description: >
+        Gold-passage question answering in ko, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_ru
+      name: "TyDiQA GoldP (ru)"
+      description: >
+        Gold-passage question answering in ru, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_sw
+      name: "TyDiQA GoldP (sw)"
+      description: >
+        Gold-passage question answering in sw, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_te
+      name: "TyDiQA GoldP (te)"
+      description: >
+        Gold-passage question answering in te, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
