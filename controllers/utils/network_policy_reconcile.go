@@ -83,10 +83,6 @@ func verifyExistingPolicy(existing *networkingv1.NetworkPolicy, owner client.Obj
 	return nil
 }
 
-// ReconcileWorkloadNetworkPolicy creates or repairs one policy, preserving
-// unrelated metadata. API errors/conflicts are returned to the controller for
-// retry, never interpreted as absence. Neither owner nor desired policy input
-// is modified.
 func encodeNetworkPolicyIngressIntent(intent *NetworkPolicyIngressIntent) (string, error) {
 	if intent == nil {
 		return "", nil
@@ -107,6 +103,10 @@ func encodeNetworkPolicyIngressIntent(intent *NetworkPolicyIngressIntent) (strin
 	return string(data), nil
 }
 
+// ReconcileWorkloadNetworkPolicy creates or repairs one policy, preserving
+// unrelated metadata. API errors/conflicts are returned to the controller for
+// retry, never interpreted as absence. Neither owner nor desired policy input
+// is modified.
 func ReconcileWorkloadNetworkPolicy(ctx context.Context, c client.Client, scheme *runtime.Scheme, owner client.Object, identity NetworkPolicyIdentity, desired WorkloadNetworkPolicy, authority NetworkPolicyAuthority) error {
 	if err := ValidateWorkloadNetworkPolicyWithIngressIntent(desired.Policy, identity, desired.Egress, desired.Ingress); err != nil {
 		return err
