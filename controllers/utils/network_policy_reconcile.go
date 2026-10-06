@@ -37,26 +37,27 @@ type NetworkPolicyAuthority struct {
 	VerifiedAdoptionUID types.UID
 }
 
-func verifyPolicyAuthority(ctx context.Context, c client.Client, scheme *runtime.Scheme, owner client.Object, namespace string, authority NetworkPolicyAuthority, allowDeleting bool) error {
+func verifyPolicyAuthority(ctx context.Context, c client.Client, scheme *runtime.Scheme, owner client.Object, namespace string, authority NetworkPolicyAuthority, allowDeleting bool) (client.Object, error) {
 	if owner == nil || owner.GetUID() == "" || namespace == "" || !authority.Namespaces[namespace] || owner.GetNamespace() != namespace {
-		return fmt.Errorf("policy namespace/owner is outside authorized scope")
+		return nil, fmt.Errorf("policy namespace/owner is outside authorized scope")
 	}
 	if scheme == nil {
-		return fmt.Errorf("owner scheme is required")
+		return nil, fmt.Errorf("owner scheme is required")
 	}
 	gvk, err := apiutil.GVKForObject(owner, scheme)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	owner.GetObjectKind().SetGroupVersionKind(gvk)
-	live := owner.DeepCopyObject().(client.Object)
-	if err := c.Get(ctx, client.ObjectKeyFromObject(owner), live); err != nil {
-		return fmt.Errorf("verify live policy owner: %w", err)
+	ownerWithGVK := owner.DeepCopyObject().(client.Object)
+	ownerWithGVK.GetObjectKind().SetGroupVersionKind(gvk)
+	live := ownerWithGVK.DeepCopyObject().(client.Object)
+	if err := c.Get(ctx, client.ObjectKeyFromObject(ownerWithGVK), live); err != nil {
+		return nil, fmt.Errorf("verify live policy owner: %w", err)
 	}
-	if live.GetUID() != owner.GetUID() || (!allowDeleting && !live.GetDeletionTimestamp().IsZero()) {
-		return fmt.Errorf("policy owner was replaced or is deleting")
+	if live.GetUID() != ownerWithGVK.GetUID() || (!allowDeleting && !live.GetDeletionTimestamp().IsZero()) {
+		return nil, fmt.Errorf("policy owner was replaced or is deleting")
 	}
-	return nil
+	return ownerWithGVK, nil
 }
 
 func verifyExistingPolicy(existing *networkingv1.NetworkPolicy, owner client.Object, authority NetworkPolicyAuthority) error {
@@ -84,7 +85,8 @@ func verifyExistingPolicy(existing *networkingv1.NetworkPolicy, owner client.Obj
 
 // ReconcileWorkloadNetworkPolicy creates or repairs one policy, preserving
 // unrelated metadata. API errors/conflicts are returned to the controller for
-// retry, never interpreted as absence. The input object is not modified.
+// retry, never interpreted as absence. Neither owner nor desired policy input
+// is modified.
 func encodeNetworkPolicyIngressIntent(intent *NetworkPolicyIngressIntent) (string, error) {
 	if intent == nil {
 		return "", nil
@@ -113,10 +115,11 @@ func ReconcileWorkloadNetworkPolicy(ctx context.Context, c client.Client, scheme
 		ObjectMeta: metav1.ObjectMeta{Name: desired.Policy.Name, Namespace: desired.Policy.Namespace},
 		Spec:       *desired.Policy.Spec.DeepCopy(),
 	}
-	if err := verifyPolicyAuthority(ctx, c, scheme, owner, policy.Namespace, authority, false); err != nil {
+	ownerWithGVK, err := verifyPolicyAuthority(ctx, c, scheme, owner, policy.Namespace, authority, false)
+	if err != nil {
 		return err
 	}
-	if !identityOwnedBy(identity, owner) {
+	if !identityOwnedBy(identity, ownerWithGVK) {
 		return fmt.Errorf("policy identity differs from live owner")
 	}
 	if policy.Name == "" || desired.Policy.GenerateName != "" || len(validation.IsDNS1123Subdomain(policy.Name)) > 0 {
@@ -144,7 +147,7 @@ func ReconcileWorkloadNetworkPolicy(ctx context.Context, c client.Client, scheme
 		}
 		policy.Annotations[networkPolicyIngressIntentAnnotation] = encoded
 	}
-	if err := controllerutil.SetControllerReference(owner, policy, scheme); err != nil {
+	if err := controllerutil.SetControllerReference(ownerWithGVK, policy, scheme); err != nil {
 		return err
 	}
 	existing := &networkingv1.NetworkPolicy{}
@@ -154,7 +157,7 @@ func ReconcileWorkloadNetworkPolicy(ctx context.Context, c client.Client, scheme
 		}
 		return err
 	}
-	if err := verifyExistingPolicy(existing, owner, authority); err != nil {
+	if err := verifyExistingPolicy(existing, ownerWithGVK, authority); err != nil {
 		return err
 	}
 	if !existing.DeletionTimestamp.IsZero() {
@@ -177,7 +180,7 @@ func ReconcileWorkloadNetworkPolicy(ctx context.Context, c client.Client, scheme
 	for key, value := range policy.Annotations {
 		updated.Annotations[key] = value
 	}
-	if err := controllerutil.SetControllerReference(owner, updated, scheme); err != nil {
+	if err := controllerutil.SetControllerReference(ownerWithGVK, updated, scheme); err != nil {
 		return err
 	}
 	normalizePolicy(updated)
@@ -232,7 +235,8 @@ func DeleteOwnedWorkloadNetworkPolicy(ctx context.Context, c client.Client, sche
 	if policyUID == "" {
 		return fmt.Errorf("policy UID is required for cleanup")
 	}
-	if err := verifyPolicyAuthority(ctx, c, scheme, owner, key.Namespace, authority, true); err != nil {
+	ownerWithGVK, err := verifyPolicyAuthority(ctx, c, scheme, owner, key.Namespace, authority, true)
+	if err != nil {
 		return err
 	}
 	existing := &networkingv1.NetworkPolicy{}
@@ -244,7 +248,7 @@ func DeleteOwnedWorkloadNetworkPolicy(ctx context.Context, c client.Client, sche
 	}
 	// Cleanup never adopts ownerless policies, even when adoption was authorized.
 	authority.VerifiedAdoptionUID = ""
-	if err := verifyExistingPolicy(existing, owner, authority); err != nil {
+	if err := verifyExistingPolicy(existing, ownerWithGVK, authority); err != nil {
 		return err
 	}
 	return client.IgnoreNotFound(c.Delete(ctx, existing, client.Preconditions{UID: &policyUID, ResourceVersion: &existing.ResourceVersion}))

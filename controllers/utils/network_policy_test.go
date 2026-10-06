@@ -758,6 +758,19 @@ func TestNetworkPolicyOwnershipAndAuthority(t *testing.T) {
 	}
 }
 
+func TestNetworkPolicyReconciliationDoesNotMutateOwner(t *testing.T) {
+	ctx := context.Background()
+	scheme, owner, c, identity, policy, authority := reconciliationFixture(t)
+	owner.TypeMeta = metav1.TypeMeta{}
+	intent := &NetworkPolicyEgressIntent{Mode: NetworkPolicyDenyAll}
+	if err := ReconcileWorkloadNetworkPolicy(ctx, c, scheme, owner, identity, WorkloadNetworkPolicy{Policy: policy, Egress: intent}, authority); err != nil {
+		t.Fatal(err)
+	}
+	if gvk := owner.GetObjectKind().GroupVersionKind(); !gvk.Empty() {
+		t.Fatalf("reconciliation mutated owner TypeMeta: %s", gvk)
+	}
+}
+
 func TestNetworkPolicyCleanup(t *testing.T) {
 	ctx := context.Background()
 	scheme, owner, c, identity, p, authority := reconciliationFixture(t)
