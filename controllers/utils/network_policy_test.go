@@ -365,6 +365,60 @@ func TestNetworkPolicyIngressIntentEncodingIsOrderIndependent(t *testing.T) {
 	if forward != reversed {
 		t.Fatal("namespace-only ingress intent encoding depends on slice order")
 	}
+
+	intentSelector := metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{
+		{Key: "b", Operator: metav1.LabelSelectorOpExists},
+		{Key: "a", Operator: metav1.LabelSelectorOpIn, Values: []string{"z", "a"}},
+	}}
+	peerSelector := metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{
+		{Key: "a", Operator: metav1.LabelSelectorOpIn, Values: []string{"a", "z"}},
+		{Key: "b", Operator: metav1.LabelSelectorOpExists},
+	}}
+	intentKey, err := namespaceSelectorIntentKey(intentSelector)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peerKey, err := namespaceSelectorIntentKey(peerSelector)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if intentKey != peerKey {
+		t.Fatal("equivalent namespace selectors have different intent keys")
+	}
+	encodedIntent, err := encodeNetworkPolicyIngressIntent(&NetworkPolicyIngressIntent{NamespaceOnlyPeers: []NetworkPolicyNamespaceOnlyPeerIntent{{
+		NamespaceSelector: intentSelector, Rationale: "reviewed", ResidualRisk: "documented",
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encodedPeerOrder, err := encodeNetworkPolicyIngressIntent(&NetworkPolicyIngressIntent{NamespaceOnlyPeers: []NetworkPolicyNamespaceOnlyPeerIntent{{
+		NamespaceSelector: peerSelector, Rationale: "reviewed", ResidualRisk: "documented",
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if encodedIntent != encodedPeerOrder {
+		t.Fatal("namespace-only intent encoding depends on expression/value order")
+	}
+	if intentSelector.MatchExpressions[0].Key != "b" || intentSelector.MatchExpressions[1].Values[0] != "z" {
+		t.Fatal("canonicalization mutated the original selector")
+	}
+
+	identity, policy := policyFixture()
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	port := intstr.FromInt32(8443)
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{{
+		From:  []networkingv1.NetworkPolicyPeer{{NamespaceSelector: peerSelector.DeepCopy()}},
+		Ports: []networkingv1.NetworkPolicyPort{{Port: &port}},
+	}}
+	intent := &NetworkPolicyIngressIntent{NamespaceOnlyPeers: []NetworkPolicyNamespaceOnlyPeerIntent{{
+		NamespaceSelector: intentSelector,
+		Rationale:         "reviewed",
+		ResidualRisk:      "documented",
+	}}}
+	if err := ValidateWorkloadNetworkPolicyWithIngressIntent(policy, identity, nil, intent); err != nil {
+		t.Fatalf("equivalent namespace selector did not match its intent: %v", err)
+	}
 }
 
 func TestNetworkPolicyIngressIntentReconciliation(t *testing.T) {

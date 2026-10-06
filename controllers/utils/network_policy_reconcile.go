@@ -90,6 +90,9 @@ func encodeNetworkPolicyIngressIntent(intent *NetworkPolicyIngressIntent) (strin
 		return "", nil
 	}
 	peers := append([]NetworkPolicyNamespaceOnlyPeerIntent(nil), intent.NamespaceOnlyPeers...)
+	for i := range peers {
+		peers[i].NamespaceSelector = canonicalizeNamespaceSelector(peers[i].NamespaceSelector)
+	}
 	sort.Slice(peers, func(i, j int) bool {
 		left, _ := namespaceSelectorIntentKey(peers[i].NamespaceSelector)
 		right, _ := namespaceSelectorIntentKey(peers[j].NamespaceSelector)

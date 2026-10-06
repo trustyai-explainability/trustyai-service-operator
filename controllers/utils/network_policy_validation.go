@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/netip"
+	"slices"
+	"sort"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -114,8 +116,26 @@ func positiveNamespaceSelector(selector *metav1.LabelSelector) error {
 	return nil
 }
 
+func canonicalizeNamespaceSelector(selector metav1.LabelSelector) metav1.LabelSelector {
+	canonical := *selector.DeepCopy()
+	for i := range canonical.MatchExpressions {
+		sort.Strings(canonical.MatchExpressions[i].Values)
+	}
+	sort.Slice(canonical.MatchExpressions, func(i, j int) bool {
+		left, right := canonical.MatchExpressions[i], canonical.MatchExpressions[j]
+		if left.Key != right.Key {
+			return left.Key < right.Key
+		}
+		if left.Operator != right.Operator {
+			return left.Operator < right.Operator
+		}
+		return slices.Compare(left.Values, right.Values) < 0
+	})
+	return canonical
+}
+
 func namespaceSelectorIntentKey(selector metav1.LabelSelector) (string, error) {
-	data, err := json.Marshal(selector)
+	data, err := json.Marshal(canonicalizeNamespaceSelector(selector))
 	return string(data), err
 }
 
