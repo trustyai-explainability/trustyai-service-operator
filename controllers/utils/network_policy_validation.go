@@ -10,6 +10,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	metav1validation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
@@ -241,6 +242,13 @@ func ValidateWorkloadNetworkPolicyWithIngressIntent(policy *networkingv1.Network
 		if policy.Spec.PodSelector.MatchLabels[key] != value {
 			return fmt.Errorf("target selector lacks %s identity", key)
 		}
+	}
+	selector, err := metav1.LabelSelectorAsSelector(&policy.Spec.PodSelector)
+	if err != nil {
+		return fmt.Errorf("target selector: %w", err)
+	}
+	if !selector.Matches(labels.Set(expected)) {
+		return fmt.Errorf("target selector does not select its own identity")
 	}
 	ingress, egress, err := policyDirections(policy)
 	if err != nil {

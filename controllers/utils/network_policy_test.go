@@ -197,6 +197,54 @@ func TestNetworkPolicyValidationNonRegression(t *testing.T) {
 	}
 }
 
+func TestNetworkPolicyTargetSelectorMustMatchIdentity(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*metav1.LabelSelector)
+	}{
+		{
+			name: "expression excludes identity",
+			mutate: func(selector *metav1.LabelSelector) {
+				selector.MatchExpressions = append(selector.MatchExpressions, metav1.LabelSelectorRequirement{
+					Key: NetworkPolicyRoleLabel, Operator: metav1.LabelSelectorOpNotIn, Values: []string{"api"},
+				})
+			},
+		},
+		{
+			name: "extra label is not stamped",
+			mutate: func(selector *metav1.LabelSelector) {
+				selector.MatchLabels["app"] = "typo-never-stamped"
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			identity, policy := policyFixture()
+			policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{{}}
+			intent := allowIntent()
+			test.mutate(&policy.Spec.PodSelector)
+			if err := ValidateWorkloadNetworkPolicy(policy, identity, intent); err == nil {
+				t.Fatal("selector that excludes its own identity accepted")
+			}
+
+			ingress := policy.DeepCopy()
+			ingress.Name += "-ingress"
+			ingress.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+			ingress.Spec.Egress = nil
+			port := intstr.FromInt32(443)
+			ingress.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{{
+				From:  []networkingv1.NetworkPolicyPeer{{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "backend"}}}},
+				Ports: []networkingv1.NetworkPolicyPort{{Port: &port}},
+			}}
+			policies := []WorkloadNetworkPolicy{{Policy: ingress}, {Policy: policy, Egress: intent}}
+			if err := ValidateWorkloadNetworkPolicySet(policies, identity); err == nil {
+				t.Fatal("policy set with a selector that excludes its own identity accepted")
+			}
+		})
+	}
+}
+
 func TestNetworkPolicyNamespaceOnlyIngressIntent(t *testing.T) {
 	identity, policy := policyFixture()
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
