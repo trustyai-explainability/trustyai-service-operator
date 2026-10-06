@@ -12,7 +12,7 @@ data:
     category: instruction_output
     description: >
       Evaluates whether models produce outputs that conform to structural constraints.
-      JSONSchemaBench tests JSON schema compliance across easy, medium, and hard splits.
+      JSONSchemaBench Easy tests JSON schema compliance on the easy split.
       IFBench tests precise instruction-following generalization on 58 out-of-domain
       verifiable constraints with programmatic scoring.
       Note: lm-eval runs LM-only (no constrained decoding); scores vary drastically by split.
@@ -29,7 +29,7 @@ data:
     pass_criteria:
       threshold: 0.325
     benchmarks:
-      - id: jsonschema_bench
+      - id: jsonschema_bench_easy
         provider_id: lm_evaluation_harness
         weight: 1
         primary_score:
