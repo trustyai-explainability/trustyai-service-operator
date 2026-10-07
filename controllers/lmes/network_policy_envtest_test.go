@@ -67,6 +67,10 @@ var _ = Describe("LMEval execution policy API convergence", func() {
 			return k8sClient.Status().Update(ctx, job)
 		}, defaultTimeout, defaultPolling).Should(Succeed())
 		for _, label := range []string{lmes.LMEvalJobUIDLabel, utils.NetworkPolicyOwnerUIDLabel, utils.NetworkPolicyComponentLabel, utils.NetworkPolicyRoleLabel} {
+			expected := policy.Spec.PodSelector.MatchLabels[label]
+			if label == lmes.LMEvalJobUIDLabel {
+				expected = string(job.UID)
+			}
 			Eventually(func() error {
 				if err := k8sClient.Get(ctx, key, pod); err != nil {
 					return err
@@ -79,7 +83,7 @@ var _ = Describe("LMEval execution policy API convergence", func() {
 					return ""
 				}
 				return pod.Labels[label]
-			}, 3*time.Second, defaultPolling).Should(Equal(policy.Spec.PodSelector.MatchLabels[label]))
+			}, 3*time.Second, defaultPolling).Should(Equal(expected))
 		}
 		Expect(k8sClient.Get(ctx, policyKey, policy)).To(Succeed())
 		policy.Spec.Egress = nil
