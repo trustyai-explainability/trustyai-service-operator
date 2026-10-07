@@ -142,7 +142,7 @@ func TestLMEvalNetworkPolicyBuilder(t *testing.T) {
 		require.NotEmpty(t, desired.Egress.ResidualRisk)
 		require.Equal(t, "lmes", desired.Policy.Spec.PodSelector.MatchLabels[utils.NetworkPolicyComponentLabel])
 		require.Equal(t, "evaluation", desired.Policy.Spec.PodSelector.MatchLabels[utils.NetworkPolicyRoleLabel])
-		require.Equal(t, string(job.UID), desired.Policy.Spec.PodSelector.MatchLabels[LMEvalJobUIDLabel])
+		require.NotContains(t, desired.Policy.Spec.PodSelector.MatchLabels, LMEvalJobUIDLabel)
 		require.Empty(t, desired.Policy.OwnerReferences)
 		other := job.DeepCopy()
 		other.UID = "replacement-uid"

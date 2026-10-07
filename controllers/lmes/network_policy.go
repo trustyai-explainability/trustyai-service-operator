@@ -66,6 +66,8 @@ func buildLMEvalJobNetworkPolicy(job *lmesv1alpha1.LMEvalJob) (utils.WorkloadNet
 	if err != nil {
 		return utils.WorkloadNetworkPolicy{}, err
 	}
+	selectorLabels := maps.Clone(labels)
+	delete(selectorLabels, LMEvalJobUIDLabel)
 	name, err := identity.Name("execution")
 	if err != nil {
 		return utils.WorkloadNetworkPolicy{}, err
@@ -74,7 +76,7 @@ func buildLMEvalJobNetworkPolicy(job *lmesv1alpha1.LMEvalJob) (utils.WorkloadNet
 		Policy: &networkingv1.NetworkPolicy{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: job.Namespace},
 			Spec: networkingv1.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{MatchLabels: labels},
+				PodSelector: metav1.LabelSelector{MatchLabels: selectorLabels},
 				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
 				// The driver listens on loopback and is managed using pods/exec. Reply
 				// traffic for outbound connections needs no Pod-network ingress grant.
