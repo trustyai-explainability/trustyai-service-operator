@@ -10,6 +10,11 @@ data:
     id: standard-llm-evals-v1
     name: Standard LLM Evaluation Suite v1
     category: general
+    domains: [knowledge_and_reasoning, instruction_and_output_reliability, software]
+    tasks: [reasoning, instruction_following, code_generation]
+    modalities: [text]
+    evaluation_targets: [model]
+    curation_order: 0
     description: >
       Standard evaluation protocol for instruction-tuned chat LLMs covering instruction following,
       reasoning, math, coding, and long-context tasks. Uses lm-eval (LM Evaluation Harness) for

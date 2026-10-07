@@ -10,6 +10,11 @@ data:
     id: multimodal-v1
     name: Multimodal v1
     category: multimodal
+    domains: [multimodal]
+    tasks: [document_chart_vqa]
+    modalities: [multimodal]
+    evaluation_targets: [model]
+    curation_order: 7
     description: >
       Evaluates vision-language understanding. DocVQA tests document visual question
       answering — reading and reasoning over scanned document images. Requires a
@@ -21,8 +26,6 @@ data:
       - document-understanding
       - inspect-evals
       - curated
-    domains:
-      - multimodal
     pass_criteria:
       threshold: 0.50
     benchmarks:
