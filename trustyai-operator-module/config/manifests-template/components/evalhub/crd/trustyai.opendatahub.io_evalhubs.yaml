@@ -658,6 +658,65 @@ spec:
                 format: int32
                 minimum: 1
                 type: integer
+              sandbox:
+                description: |-
+                  Sandbox declares which providers must run their evaluation jobs inside
+                  dedicated, locked-down sandbox namespaces, plus the default resource
+                  envelope enforced for those namespaces. This configuration is propagated
+                  into the eval-hub service config so the service knows which providers require
+                  a sandbox; the service then creates SandboxNamespace CRs, which the operator
+                  reconciles into isolated namespaces. When omitted, no providers are sandboxed.
+                properties:
+                  defaultResources:
+                    description: |-
+                      DefaultResources is the default resource envelope applied to sandbox
+                      namespaces when a per-job envelope is not otherwise specified. It bounds the
+                      CPU, memory, and pod count available to sandboxed workloads.
+                    properties:
+                      cpu:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: |-
+                          CPU is the total CPU (requests and limits) available to the sandbox
+                          namespace, expressed as a Kubernetes resource quantity (e.g. "2", "500m").
+                          It must be non-negative: the value maps onto ResourceQuota hard limits, which
+                          Kubernetes forbids from being negative.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                        x-kubernetes-validations:
+                        - message: cpu must be non-negative
+                          rule: '!string(self).startsWith(''-'')'
+                      maxPods:
+                        description: MaxPods is the maximum number of pods allowed
+                          in the sandbox namespace.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      memory:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: |-
+                          Memory is the total memory (requests and limits) available to the sandbox
+                          namespace, expressed as a Kubernetes resource quantity (e.g. "4Gi").
+                          It must be non-negative: the value maps onto ResourceQuota hard limits, which
+                          Kubernetes forbids from being negative.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                        x-kubernetes-validations:
+                        - message: memory must be non-negative
+                          rule: '!string(self).startsWith(''-'')'
+                    type: object
+                  providers:
+                    description: |-
+                      Providers lists the provider names whose evaluation jobs must run in a
+                      dedicated sandbox namespace. Each name should match a provider mounted into
+                      the deployment (see spec.providers). Providers not listed here run normally.
+                    items:
+                      type: string
+                    type: array
+                type: object
               tenancy:
                 default: multi
                 description: |-

@@ -113,6 +113,25 @@ type EvalHubConfig struct {
 	OTEL        *OTELConfig     `json:"otel,omitempty"`
 	Prometheus  map[string]any  `json:"prometheus,omitempty"`
 	Sidecar     *SidecarConfig  `json:"sidecar,omitempty"`
+	Sandbox     *SandboxConfig  `json:"sandbox,omitempty"`
+}
+
+// SandboxConfig represents the sandbox section in config.yaml. It tells the
+// running eval-hub service which providers must be executed in a dedicated
+// sandbox namespace (so the service creates a SandboxNamespace CR for those jobs)
+// and the default resource envelope to stamp onto those CRs.
+type SandboxConfig struct {
+	// Providers is the list of provider names whose jobs require a sandbox.
+	Providers []string `json:"providers,omitempty"`
+	// DefaultResources is the default resource envelope for sandbox namespaces.
+	DefaultResources *SandboxResourcesConfig `json:"default_resources,omitempty"`
+}
+
+// SandboxResourcesConfig represents the sandbox resource envelope in config.yaml.
+type SandboxResourcesConfig struct {
+	CPU     string `json:"cpu,omitempty"`
+	Memory  string `json:"memory,omitempty"`
+	MaxPods int32  `json:"max_pods,omitempty"`
 }
 
 // reconcileConfigMap creates or updates the ConfigMap for EvalHub configuration
@@ -244,6 +263,12 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		config.OTEL = otelCfg
 	}
 
+	// Propagate sandbox configuration so the service knows which providers must
+	// run in a dedicated sandbox namespace.
+	if sandboxCfg := buildSandboxConfig(instance.Spec.Sandbox); sandboxCfg != nil {
+		config.Sandbox = sandboxCfg
+	}
+
 	// Convert to YAML
 	configYAML, err := yaml.Marshal(config)
 	if err != nil {
@@ -254,6 +279,29 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		"config.yaml": string(configYAML),
 		"auth.yaml":   generateAuthConfigData(),
 	}, nil
+}
+
+// buildSandboxConfig translates the EvalHub sandbox spec into the config.yaml
+// sandbox section, or returns nil when sandboxing is not configured or lists no
+// providers.
+func buildSandboxConfig(spec *evalhubv1.SandboxSpec) *SandboxConfig {
+	if spec == nil || len(spec.Providers) == 0 {
+		return nil
+	}
+	cfg := &SandboxConfig{
+		Providers: spec.Providers,
+	}
+	if r := spec.DefaultResources; r != nil {
+		res := &SandboxResourcesConfig{MaxPods: r.MaxPods}
+		if r.CPU != nil {
+			res.CPU = r.CPU.String()
+		}
+		if r.Memory != nil {
+			res.Memory = r.Memory.String()
+		}
+		cfg.DefaultResources = res
+	}
+	return cfg
 }
 
 func buildOTELConfig(spec *evalhubv1.OTELSpec) (*OTELConfig, error) {
