@@ -1286,6 +1286,11 @@ spec:
                   - type
                   type: object
                 type: array
+              endpoint:
+                description: |-
+                  Endpoint is the internal Service URL for the NeMo Guardrails server.
+                  Only set when the server is protected by authentication (security.opendatahub.io/enable-auth: "true").
+                type: string
               phase:
                 type: string
             type: object

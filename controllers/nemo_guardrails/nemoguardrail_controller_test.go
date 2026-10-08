@@ -2,6 +2,8 @@ package nemo_guardrails
 
 import (
 	"context"
+	"fmt"
+
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/tas"
@@ -566,6 +568,80 @@ var _ = Describe("NemoGuardrails Controller", func() {
 			crb := &rbacv1.ClusterRoleBinding{}
 			return k8sClient.Get(ctx, types.NamespacedName{Name: crbName, Namespace: namespace}, crb)
 		}, time.Second*10, time.Millisecond*100).Should(Succeed())
+	})
+
+	It("should set status.endpoint to the internal Service address when auth is enabled", func() {
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+
+		expectedEndpoint := fmt.Sprintf("https://%s.%s.svc.cluster.local", resourceName, namespace)
+
+		By("Reconciling the resource (auth is enabled by default)")
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Checking that status.endpoint reports the internal Service address")
+		Eventually(func() string {
+			nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+			if err := k8sClient.Get(ctx, typeNamespacedName, nemo); err != nil {
+				return ""
+			}
+			return nemo.Status.Endpoint
+		}, time.Second*10, time.Millisecond*100).Should(Equal(expectedEndpoint))
+
+		By("Patching exposeRoute=false and reconciling should not affect the internal endpoint")
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
+		exposeFalse := false
+		nemo.Spec.ExposeRoute = &exposeFalse
+		Expect(k8sClient.Update(ctx, nemo)).To(Succeed())
+
+		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Consistently(func() string {
+			nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+			if err := k8sClient.Get(ctx, typeNamespacedName, nemo); err != nil {
+				return "unexpected-get-error"
+			}
+			return nemo.Status.Endpoint
+		}, time.Second*2, time.Millisecond*100).Should(Equal(expectedEndpoint))
+	})
+
+	It("should not set status.endpoint when auth is disabled even if the Route is exposed", func() {
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+
+		By("Disabling auth on the CR while keeping exposeRoute at its default (true)")
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
+		nemo.Annotations[constants.AuthAnnotationKey] = "false"
+		Expect(k8sClient.Update(ctx, nemo)).To(Succeed())
+
+		By("Reconciling")
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Checking that status.endpoint stays empty")
+		Consistently(func() string {
+			nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+			if err := k8sClient.Get(ctx, typeNamespacedName, nemo); err != nil {
+				return "unexpected-get-error"
+			}
+			return nemo.Status.Endpoint
+		}, time.Second*2, time.Millisecond*100).Should(BeEmpty())
 	})
 
 	It("should not delete an unrelated route that shares the CR name", func() {

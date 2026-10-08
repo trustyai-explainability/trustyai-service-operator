@@ -10,6 +10,11 @@ data:
     id: document-understanding-v1
     name: Grounded Document Understanding v1
     category: document_understanding
+    domains: [grounded_document_understanding]
+    tasks: [long_context_understanding, full_document_qa]
+    modalities: [text]
+    evaluation_targets: [model]
+    curation_order: 2
     description: >
       Evaluates long-context retrieval, comprehension, and reasoning over extended documents.
       RULER tests 13 synthetic tasks (needle-in-a-haystack, variable tracking, aggregation,
@@ -22,8 +27,6 @@ data:
       - comprehension
       - ruler
       - curated
-    domains:
-      - grounded_document_understanding
     pass_criteria:
       threshold: 0.35
     benchmarks:

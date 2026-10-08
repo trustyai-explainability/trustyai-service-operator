@@ -3,6 +3,7 @@ package nemo_guardrails
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
@@ -37,6 +38,17 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 		routeReady, _ = utils.CheckRouteReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
 	}
 
+	// showEndpointStatus is true only when the server is protected by auth
+	showEndpointStatus := utils.RequiresAuth(nemoGuardrails)
+	endpoint := ""
+	if showEndpointStatus {
+		endpoint = fmt.Sprintf("https://%s.%s.svc.cluster.local", nemoGuardrails.Name, nemoGuardrails.Namespace)
+	}
+	// sets the endpoint status based on the showEndpointStatus flag
+	setEndpoint := func(saved *nemoguardrailsv1alpha1.NemoGuardrails) {
+		saved.Status.Endpoint = endpoint
+	}
+
 	if deploymentReady && routeReady {
 		_, updateErr := r.updateStatus(ctx, nemoGuardrails, func(saved *nemoguardrailsv1alpha1.NemoGuardrails) {
 			utils.SetResourceCondition(&saved.Status.Conditions, "Deployment", "DeploymentReady", "Deployment is ready", corev1.ConditionTrue)
@@ -45,6 +57,7 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 			} else {
 				utils.SetResourceCondition(&saved.Status.Conditions, "Route", "RouteDisabled", "Route is not required", corev1.ConditionFalse)
 			}
+			setEndpoint(saved)
 			utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionTrue, utils.ReconcileCompleted, utils.ReconcileCompletedMessage)
 			saved.Status.Phase = utils.PhaseReady
 		})
@@ -65,6 +78,7 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 			} else {
 				utils.SetResourceCondition(&saved.Status.Conditions, "Route", "RouteDisabled", "Route is not required", corev1.ConditionFalse)
 			}
+			setEndpoint(saved)
 			if deploymentErr != nil {
 				message := "Deployment readiness check failed: " + deploymentErr.Error()
 				if errors.Is(deploymentErr, utils.ErrDeploymentProgressDeadlineExceeded) {

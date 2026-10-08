@@ -86,6 +86,20 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.evalhub-provider-ibm-clear-image
+  - name: evalhub-provider-ifbench-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-ifbench-image
+  - name: evalhub-provider-followbench-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-followbench-image
   - name: evalhub-provider-inspect-image
     objref:
       kind: ConfigMap
