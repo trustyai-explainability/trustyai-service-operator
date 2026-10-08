@@ -168,7 +168,7 @@ func createDefaultProviderConfigMaps(namespace string) []*corev1.ConfigMap {
 // createDefaultCollectionConfigMaps creates source collection ConfigMaps in the given namespace
 // to satisfy the CRD default collections list during integration tests.
 func createDefaultCollectionConfigMaps(namespace string) []*corev1.ConfigMap {
-	defaultCollections := []string{"leaderboard-v2", "safety-and-fairness-v1", "toxicity-and-ethical-principles"}
+	defaultCollections := []string{"leaderboard-v2", "safety-and-fairness-v1", "toxicity-and-ethical-principles", "knowledge-reasoning-v1", "document-understanding-v1", "instruction-output-v1", "tool-use-v1", "software-v1", "trustworthiness-v1", "multimodal-v1"}
 	var cms []*corev1.ConfigMap
 	for _, id := range defaultCollections {
 		cm := &corev1.ConfigMap{
