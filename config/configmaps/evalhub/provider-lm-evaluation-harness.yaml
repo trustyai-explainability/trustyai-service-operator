@@ -3860,3 +3860,140 @@ data:
         lower_is_better: false
       pass_criteria:
         threshold: 0.15
+
+    # Multilingual tasks require the PR #208 LM Evaluation Harness image or newer.
+
+    - id: tydiqa_goldp_ar
+      name: "TyDiQA GoldP (ar)"
+      description: >
+        Gold-passage question answering in ar, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_bn
+      name: "TyDiQA GoldP (bn)"
+      description: >
+        Gold-passage question answering in bn, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_en
+      name: "TyDiQA GoldP (en)"
+      description: >
+        Gold-passage question answering in en, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_fi
+      name: "TyDiQA GoldP (fi)"
+      description: >
+        Gold-passage question answering in fi, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_id
+      name: "TyDiQA GoldP (id)"
+      description: >
+        Gold-passage question answering in id, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_ko
+      name: "TyDiQA GoldP (ko)"
+      description: >
+        Gold-passage question answering in ko, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_ru
+      name: "TyDiQA GoldP (ru)"
+      description: >
+        Gold-passage question answering in ru, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_sw
+      name: "TyDiQA GoldP (sw)"
+      description: >
+        Gold-passage question answering in sw, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
+
+    - id: tydiqa_goldp_te
+      name: "TyDiQA GoldP (te)"
+      description: >
+        Gold-passage question answering in te, evaluated with the upstream
+        language-specific exact-match and token F1 scorers.
+      category: reading_comprehension
+      metrics:
+      - exact_match
+      - f1
+      num_few_shot: 0
+      tags: [reading_comprehension, multilingual, lm_eval]
+      primary_score:
+        metric: f1
+        lower_is_better: false
