@@ -11,6 +11,50 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+func TestEvalHubNetworkPolicyRBACIsMinimalAndSynchronized(t *testing.T) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", ".."))
+	manifestPaths := []string{
+		filepath.Join(moduleRoot, "config", "components", "evalhub", "rbac", "manager-rbac.yaml"),
+		filepath.Join(moduleRoot, "trustyai-operator-module", "config", "manifests-template", "components", "evalhub", "rbac", "manager-rbac.yaml"),
+	}
+	wantVerbs := []string{"create", "get", "list", "update", "watch"}
+	sort.Strings(wantVerbs)
+	for _, path := range manifestPaths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		var role rbacv1.ClusterRole
+		if err := yaml.Unmarshal(raw, &role); err != nil {
+			t.Fatalf("unmarshal %s: %v", path, err)
+		}
+		var gotVerbs []string
+		for _, rule := range role.Rules {
+			if len(rule.APIGroups) != 1 || rule.APIGroups[0] != "networking.k8s.io" {
+				continue
+			}
+			for _, resource := range rule.Resources {
+				if resource == "networkpolicies" {
+					gotVerbs = append(gotVerbs, rule.Verbs...)
+				}
+			}
+		}
+		sort.Strings(gotVerbs)
+		if len(gotVerbs) != len(wantVerbs) {
+			t.Fatalf("%s networkpolicy verbs = %v, want %v", path, gotVerbs, wantVerbs)
+		}
+		for i := range wantVerbs {
+			if gotVerbs[i] != wantVerbs[i] {
+				t.Fatalf("%s networkpolicy verbs = %v, want %v", path, gotVerbs, wantVerbs)
+			}
+		}
+	}
+}
+
 func TestEvalHubHardwareProfilesReaderClusterRoleVerbsAreMinimalAndSufficient(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {

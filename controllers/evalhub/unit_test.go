@@ -11,6 +11,7 @@ import (
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1574,6 +1575,7 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
@@ -1585,6 +1587,7 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evalHubName,
 			Namespace: testNamespace,
+			UID:       types.UID("test-evalhub-uid"),
 		},
 		Spec: evalhubv1.EvalHubSpec{
 			Database: &evalhubv1.DatabaseSpec{
@@ -1711,6 +1714,7 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	require.NoError(t, evalhubv1.AddToScheme(scheme))
 
 	ctx := context.Background()
@@ -1833,6 +1837,7 @@ func TestEvalHubReconciler_reconcileProviderConfigMaps(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      evalHubName,
 				Namespace: instanceNamespace,
+				UID:       types.UID("test-evalhub-uid"),
 			},
 			Spec: evalhubv1.EvalHubSpec{
 				Providers: []string{"testprovider"},
