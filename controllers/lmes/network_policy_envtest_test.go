@@ -3,7 +3,6 @@ package lmes_test
 import (
 	"context"
 	"fmt"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -83,7 +82,7 @@ var _ = Describe("LMEval execution policy API convergence", func() {
 					return ""
 				}
 				return pod.Labels[label]
-			}, 3*time.Second, defaultPolling).Should(Equal(expected))
+				}, defaultTimeout, defaultPolling).Should(Equal(expected))
 		}
 		Expect(k8sClient.Get(ctx, policyKey, policy)).To(Succeed())
 		policy.Spec.Egress = nil
@@ -94,11 +93,11 @@ var _ = Describe("LMEval execution policy API convergence", func() {
 				return -1
 			}
 			return len(policy.Spec.Egress)
-		}, 3*time.Second, defaultPolling).Should(Equal(1))
+			}, defaultTimeout, defaultPolling).Should(Equal(1))
 		Expect(policy.Annotations["test-custom"]).To(Equal("preserve"))
 		uid := policy.UID
 		Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
-		Eventually(func() bool { return k8sClient.Get(ctx, policyKey, policy) == nil && policy.UID != uid }, 3*time.Second, defaultPolling).Should(BeTrue())
+		Eventually(func() bool { return k8sClient.Get(ctx, policyKey, policy) == nil && policy.UID != uid }, defaultTimeout, defaultPolling).Should(BeTrue())
 		Expect(k8sClient.Get(ctx, key, job)).To(Succeed())
 		Expect(job.Status.State).To(Equal(lmesv1alpha1.CompleteJobState))
 		Expect(job.Status.Results).To(Equal("retained-result"))
