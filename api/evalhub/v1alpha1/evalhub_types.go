@@ -140,7 +140,7 @@ type EvalHubSpec struct {
 
 	// Collections is the list of OOTB collection names to mount into the deployment.
 	// Each name must match a collection-name label on a ConfigMap in the operator namespace.
-	// +kubebuilder:default:={"leaderboard-v2","safety-and-fairness-v1","toxicity-and-ethical-principles","knowledge-reasoning-v1","document-understanding-v1","instruction-output-v1","tool-use-v1","software-v1","trustworthiness-v1","multimodal-v1"}
+	// +kubebuilder:default:={"leaderboard-v2","safety-and-fairness-v1","toxicity-and-ethical-principles"}
 	// +optional
 	Collections []string `json:"collections,omitempty"`
 
