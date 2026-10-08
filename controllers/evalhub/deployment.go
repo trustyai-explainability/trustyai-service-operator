@@ -55,7 +55,7 @@ func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *e
 		if err := controllerutil.SetControllerReference(instance, deployment, r.Scheme); err != nil {
 			return err
 		}
-		if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, evalHubNetworkPolicyOwner(instance), identity); err != nil {
+		if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, evalHubNetworkPolicyOwner(instance), identity); err != nil {
 			return err
 		}
 		log.Info("Creating Deployment", "name", deployment.Name)
@@ -66,7 +66,7 @@ func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *e
 		if err := controllerutil.SetControllerReference(instance, deployment, r.Scheme); err != nil {
 			return err
 		}
-		if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, evalHubNetworkPolicyOwner(instance), identity); err != nil {
+		if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, evalHubNetworkPolicyOwner(instance), identity); err != nil {
 			return err
 		}
 		log.Info("Updating Deployment", "name", deployment.Name)
