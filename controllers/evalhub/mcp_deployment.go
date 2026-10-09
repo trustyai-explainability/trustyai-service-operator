@@ -7,6 +7,7 @@ import (
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -59,9 +60,17 @@ func (r *EvalHubReconciler) reconcileMCPDeployment(ctx context.Context, instance
 		return err
 	}
 
+	identity, err := evalHubMCPNetworkPolicyIdentity(instance)
+	if err != nil {
+		return err
+	}
+
 	if errors.IsNotFound(getErr) {
 		deployment.Spec = desiredSpec
 		if err := controllerutil.SetControllerReference(instance, deployment, r.Scheme); err != nil {
+			return err
+		}
+		if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, evalHubNetworkPolicyOwner(instance), identity); err != nil {
 			return err
 		}
 		log.Info("Creating MCP Deployment", "name", name)
@@ -70,6 +79,9 @@ func (r *EvalHubReconciler) reconcileMCPDeployment(ctx context.Context, instance
 
 	deployment.Spec = desiredSpec
 	if err := controllerutil.SetControllerReference(instance, deployment, r.Scheme); err != nil {
+		return err
+	}
+	if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, evalHubNetworkPolicyOwner(instance), identity); err != nil {
 		return err
 	}
 	log.Info("Updating MCP Deployment", "name", name)
