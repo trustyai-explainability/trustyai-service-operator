@@ -17,6 +17,10 @@ spec:
       protocol: TCP
       port: 443
       targetPort: 8443
+    - name: {{ .Name }}-admin
+      protocol: TCP
+      port: 444
+      targetPort: 8444
     {{else}}
     - name: {{ .Name }}
       protocol: TCP

@@ -130,7 +130,12 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// ====== Deploy kube-rbac-proxy configmap if needed ================================================================
 	if utils.RequiresAuth(nemoGuardrails) {
-		_, _, err := utils.ReconcileConfigMap(ctx, r.Client, nemoGuardrails, GetRBACConfigName(*nemoGuardrails), constants.Version, "kube-rbac-proxy-config.tmpl.yaml", templateParser.ParseResource)
+		_, _, err := utils.ReconcileConfigMap(ctx, r.Client, nemoGuardrails, GetRBACConfigName(*nemoGuardrails, false), constants.Version, "kube-rbac-proxy-config.tmpl.yaml", templateParser.ParseResource)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		_, _, err = utils.ReconcileConfigMap(ctx, r.Client, nemoGuardrails, GetRBACConfigName(*nemoGuardrails, true), constants.Version, "kube-rbac-proxy-admin-config.tmpl.yaml", templateParser.ParseResource)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -203,7 +208,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			termination = utils.Reencrypt
 		}
 		routeConfig := utils.RouteConfig{
-			PortName:    nemoGuardrails.Name, // only one available port in the service, so don't need to specify any port name
+			PortName:    nemoGuardrails.Name,
 			ServiceName: nemoGuardrails.Name,
 			Termination: utils.StringPointer(termination),
 		}
@@ -215,6 +220,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	} else {
 		err := utils.DeleteRoute(ctx, r.Client, nemoGuardrails, nemoGuardrails.Name, nemoGuardrails.Namespace)
 		if err != nil {
+
 			return ctrl.Result{}, err
 		}
 	}
