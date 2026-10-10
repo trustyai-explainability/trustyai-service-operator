@@ -56,7 +56,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{.NemoGuardrails.Name}}
-  namespace: {{.NemoGuardrails.Namespace}}
+  namespace: {{.Namespace}}
   labels:
     app: {{.NemoGuardrails.Name}}
     component: {{.NemoGuardrails.Name}}
