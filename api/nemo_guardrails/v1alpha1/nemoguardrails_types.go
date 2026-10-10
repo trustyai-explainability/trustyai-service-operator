@@ -59,6 +59,11 @@ type NemoGuardrailsSpec struct {
 	// +optional
 	// +kubebuilder:default=true
 	ExposeRoute *bool `json:"exposeRoute,omitempty"`
+	// AllowedConsumers authorizes which namespaces may attach a consumer to this server.
+	// The only valid consumer type is a MaaS AIGuardrail resource.
+	// When omitted, only a MaaS AIGuardrail in the same namespace as this CR may attach to it.
+	// +optional
+	AllowedConsumers *AllowedConsumers `json:"allowedConsumers,omitempty"`
 }
 
 // NemoGuardrailsTemplate defines the template for the NemoGuardrails deployment
@@ -79,6 +84,46 @@ type NemoGuardrailsPodTemplate struct {
 	// NodeSelector is a map of key-value pairs for node scheduling
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+}
+
+// AllowedConsumers is the NeMo Guardrails server-owned permission for consumer attachments.
+type AllowedConsumers struct {
+	// Namespaces selects namespaces whose consumer resources may attach to this server.
+	// When omitted, only the NemoGuardrails CR's namespace is allowed.
+	// +optional
+	Namespaces *ConsumerNamespaces `json:"namespaces,omitempty"`
+}
+
+// ConsumerNamespaceFrom selects how consumer namespaces are authorized.
+type ConsumerNamespaceFrom string
+
+const (
+	// ConsumerNamespaceFromSame allows only the NemoGuardrails CR's namespace.
+	ConsumerNamespaceFromSame ConsumerNamespaceFrom = "Same"
+	// ConsumerNamespaceFromSelector allows namespaces whose labels match Selector.
+	// The NemoGuardrails CR namespace must match the selector too.
+	ConsumerNamespaceFromSelector ConsumerNamespaceFrom = "Selector"
+	// ConsumerNamespaceFromAll allows any namespace.
+	ConsumerNamespaceFromAll ConsumerNamespaceFrom = "All"
+)
+
+// ConsumerNamespaces is the namespace scope of allowed consumers.
+// +kubebuilder:validation:XValidation:rule="(has(self.from) && self.from == 'Selector') ? has(self.selector) : !has(self.selector)",message="selector is required when from is Selector and must be omitted when from is Same or All"
+// +kubebuilder:validation:XValidation:rule="!has(self.from) || self.from != 'Selector' || (has(self.selector.matchLabels) && size(self.selector.matchLabels) > 0) || (has(self.selector.matchExpressions) && size(self.selector.matchExpressions) > 0)",message="from Selector requires a nonempty selector with at least one matchLabels entry or matchExpressions requirement"
+// +kubebuilder:validation:XValidation:rule="!has(self.selector) || !has(self.selector.matchExpressions) || self.selector.matchExpressions.all(e, size(e.key) > 0 && e.operator in ['In', 'NotIn', 'Exists', 'DoesNotExist'] && ((e.operator in ['In', 'NotIn']) ? (has(e.values) && size(e.values) > 0) : (!has(e.values) || size(e.values) == 0)))",message="matchExpressions operator must be In, NotIn, Exists, or DoesNotExist; In and NotIn require nonempty values, and Exists and DoesNotExist require values to be omitted or empty"
+type ConsumerNamespaces struct {
+	// From selects how consumer namespaces are authorized.
+	// Same allows only the NemoGuardrails CR namespace. Selector matches Namespace labels.
+	// All allows any namespace. Defaults to Same.
+	// +optional
+	// +kubebuilder:default=Same
+	// +kubebuilder:validation:Enum=Same;Selector;All
+	From ConsumerNamespaceFrom `json:"from,omitempty"`
+	// Selector is matched against the consumer Namespace's labels.
+	// Required when From is Selector. Forbidden when From is Same or All.
+	// An empty selector is rejected; use All to allow every namespace.
+	// +optional
+	Selector *metav1.LabelSelector `json:"selector,omitempty"`
 }
 
 type CAStatus struct {

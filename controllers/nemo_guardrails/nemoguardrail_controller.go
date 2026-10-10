@@ -100,6 +100,32 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
+	// ====== Validate spec.allowedConsumers ============================================================================
+	if errs := validateAllowedConsumers(nemoGuardrails.Spec.AllowedConsumers); len(errs) > 0 {
+		msg := errs.ToAggregate().Error()
+		logger.Error(errs.ToAggregate(), "Invalid spec.allowedConsumers", "name", nemoGuardrails.Name, "namespace", nemoGuardrails.Namespace)
+		if _, updateErr := r.updateStatus(ctx, nemoGuardrails, func(saved *nemoguardrailsv1alpha1.NemoGuardrails) {
+			utils.SetResourceCondition(&saved.Status.Conditions, "AllowedConsumers", invalidAllowedConsumersReason, msg, corev1.ConditionFalse)
+			utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionFalse, utils.ReconcileFailed, msg)
+			saved.Status.Phase = utils.PhaseError
+		}); updateErr != nil {
+			utils.LogErrorUpdating(ctx, updateErr, "NemoGuardrails status", nemoGuardrails.Name, nemoGuardrails.Namespace)
+			return ctrl.Result{}, updateErr
+		}
+		return ctrl.Result{}, nil
+	}
+	// update status to indicate that the allowed consumers selector is valid
+	if cond := utils.GetStatusCondition(nemoGuardrails.Status.Conditions, "AllowedConsumersReady"); cond == nil || cond.Status != corev1.ConditionTrue || cond.Reason != validAllowedConsumersReason {
+		if _, updateErr := r.updateStatus(ctx, nemoGuardrails, func(saved *nemoguardrailsv1alpha1.NemoGuardrails) {
+			utils.SetResourceCondition(&saved.Status.Conditions, "AllowedConsumers", validAllowedConsumersReason, "allowedConsumers selector is valid", corev1.ConditionTrue)
+			if saved.Status.Phase == utils.PhaseError {
+				saved.Status.Phase = utils.PhaseProgressing
+			}
+		}); updateErr != nil {
+			utils.LogErrorUpdating(ctx, updateErr, "NemoGuardrails status", nemoGuardrails.Name, nemoGuardrails.Namespace)
+			return ctrl.Result{}, updateErr
+		}
+	}
 	// ====== Ensure that old CRs without ExposeRoute are set to ExposeRoute = true ====================================
 	if nemoGuardrails.Spec.ExposeRoute == nil {
 		exposeRouteTrue := true
