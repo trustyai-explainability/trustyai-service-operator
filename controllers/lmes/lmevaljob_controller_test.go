@@ -275,6 +275,18 @@ func Test_WithCustomPod(t *testing.T) {
 						},
 					},
 				},
+				Tolerations: []corev1.Toleration{
+					{
+						Key:      "example.com/gpu",
+						Operator: corev1.TolerationOpEqual,
+						Value:    "true",
+						Effect:   corev1.TaintEffectNoSchedule,
+					},
+				},
+				NodeSelector: map[string]string{
+					"disktype": "ssd",
+				},
+				NodeName: "gpu-worker",
 				SideCars: []corev1.Container{
 					{
 						Name:    "sidecar1",
@@ -449,6 +461,18 @@ func Test_WithCustomPod(t *testing.T) {
 					},
 				},
 			},
+			Tolerations: []corev1.Toleration{
+				{
+					Key:      "example.com/gpu",
+					Operator: corev1.TolerationOpEqual,
+					Value:    "true",
+					Effect:   corev1.TaintEffectNoSchedule,
+				},
+			},
+			NodeSelector: map[string]string{
+				"disktype": "ssd",
+			},
+			NodeName:      "gpu-worker",
 			RestartPolicy: corev1.RestartPolicyNever,
 		},
 	}
