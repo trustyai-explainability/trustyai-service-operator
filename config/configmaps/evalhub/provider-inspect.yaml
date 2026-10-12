@@ -779,9 +779,9 @@ data:
           subjects. ~14% of questions require image understanding. Designed to measure capabilities
           beyond existing saturated benchmarks.
         category: knowledge
-        metrics: [accuracy/accuracy]
+        metrics: [regex_judge/accuracy]
         primary_score:
-          metric: accuracy/accuracy
+          metric: regex_judge/accuracy
           lower_is_better: false
         pass_criteria:
           threshold: 0.12

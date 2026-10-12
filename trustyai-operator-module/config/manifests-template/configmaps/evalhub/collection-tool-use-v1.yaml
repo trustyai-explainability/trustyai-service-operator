@@ -10,6 +10,11 @@ data:
     id: tool-use-v1
     name: Tool Use & Function Calling v1
     category: tool_use
+    domains: [tool_use_and_function_calling]
+    tasks: [call_generation, parameter_type_correctness, relevance_no_call_detection]
+    modalities: [text]
+    evaluation_targets: [model]
+    curation_order: 4
     description: >
       Evaluates LLM ability to correctly invoke APIs and tools. BFCL (Berkeley Function Calling
       Leaderboard) tests simple, parallel, multiple, and executable API invocations.
@@ -20,8 +25,6 @@ data:
       - api
       - inspect-evals
       - curated
-    domains:
-      - tool_use_and_function_calling
     pass_criteria:
       threshold: 0.60
     benchmarks:

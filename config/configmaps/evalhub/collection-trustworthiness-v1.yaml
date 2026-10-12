@@ -10,6 +10,11 @@ data:
     id: trustworthiness-v1
     name: Trustworthiness v1
     category: trustworthiness
+    domains: [trustworthiness]
+    tasks: [safety, adversarial_prompt_injection_resistance]
+    modalities: [text]
+    evaluation_targets: [model]
+    curation_order: 6
     description: >
       Evaluates model safety and robustness. StrongREJECT measures jailbreak resistance
       (lower score = safer). CyberSecEval-PI tests prompt injection resistance (lower
@@ -23,8 +28,6 @@ data:
       - prompt-injection
       - inspect-evals
       - curated
-    domains:
-      - trustworthiness
     pass_criteria:
       threshold: 0.325
     benchmarks:

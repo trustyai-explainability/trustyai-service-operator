@@ -86,6 +86,20 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.evalhub-provider-ibm-clear-image
+  - name: evalhub-provider-ifbench-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-ifbench-image
+  - name: evalhub-provider-followbench-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-followbench-image
   - name: evalhub-provider-inspect-image
     objref:
       kind: ConfigMap
@@ -107,6 +121,20 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.evalhub-provider-ragas-image
+  - name: evalhub-provider-ruler-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-ruler-image
+  - name: evalhub-provider-tooleval-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-tooleval-image
   - name: lmes-pod-image
     objref:
       kind: ConfigMap

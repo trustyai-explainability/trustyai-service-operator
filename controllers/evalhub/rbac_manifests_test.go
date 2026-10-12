@@ -4,12 +4,62 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"testing"
 
 	rbacv1 "k8s.io/api/rbac/v1"
 	"sigs.k8s.io/yaml"
 )
+
+func TestEvalHubNetworkPolicyRBACIsMinimalAndSynchronized(t *testing.T) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", ".."))
+	manifestPaths := []string{
+		filepath.Join(moduleRoot, "config", "components", "evalhub", "rbac", "manager-rbac.yaml"),
+		filepath.Join(moduleRoot, "trustyai-operator-module", "config", "manifests-template", "components", "evalhub", "rbac", "manager-rbac.yaml"),
+	}
+	// The manager serves both EvalHub and SandboxNamespace controllers. Sandbox
+	// policies also require patch/delete permissions for lifecycle management.
+	wantVerbs := []string{"create", "delete", "get", "list", "patch", "update", "watch"}
+	sort.Strings(wantVerbs)
+	for _, path := range manifestPaths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		var role rbacv1.ClusterRole
+		if err := yaml.Unmarshal(raw, &role); err != nil {
+			t.Fatalf("unmarshal %s: %v", path, err)
+		}
+		var gotVerbs []string
+		for _, rule := range role.Rules {
+			if len(rule.APIGroups) != 1 || rule.APIGroups[0] != "networking.k8s.io" {
+				continue
+			}
+			for _, resource := range rule.Resources {
+				if resource == "networkpolicies" {
+					gotVerbs = append(gotVerbs, rule.Verbs...)
+				}
+			}
+		}
+		sort.Strings(gotVerbs)
+		// RBAC grants the union of permissions across rules, including overlapping
+		// rules generated from the two controllers' markers.
+		gotVerbs = slices.Compact(gotVerbs)
+		if len(gotVerbs) != len(wantVerbs) {
+			t.Fatalf("%s networkpolicy verbs = %v, want %v", path, gotVerbs, wantVerbs)
+		}
+		for i := range wantVerbs {
+			if gotVerbs[i] != wantVerbs[i] {
+				t.Fatalf("%s networkpolicy verbs = %v, want %v", path, gotVerbs, wantVerbs)
+			}
+		}
+	}
+}
 
 func TestEvalHubHardwareProfilesReaderClusterRoleVerbsAreMinimalAndSufficient(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)

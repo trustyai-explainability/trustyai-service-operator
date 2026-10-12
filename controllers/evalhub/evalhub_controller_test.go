@@ -10,6 +10,7 @@ import (
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -255,6 +256,8 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		Expect(result.RequeueAfter).To(Equal(time.Second * 5))
 
 		By("Performing third reconciliation to create resources")
+		orderClient := &evalHubReconcileOrderClient{Client: reconciler.Client}
+		reconciler.Client = orderClient
 		result, err = performReconcile(reconciler, evalHubName, testNamespace)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -262,9 +265,30 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		configMapCreated := waitForConfigMap(evalHubName+"-config", testNamespace)
 		Expect(configMapCreated.Data).To(HaveKey("config.yaml"))
 
+		By("Checking that the NetworkPolicy precedes Deployment creation")
+		Expect(orderClient.writes).To(Equal([]string{"networkpolicy", "deployment"}))
+		identity, err := evalHubNetworkPolicyIdentity(evalHub)
+		Expect(err).NotTo(HaveOccurred())
+		policyName, err := identity.Name("api-ingress")
+		Expect(err).NotTo(HaveOccurred())
+		policy := &networkingv1.NetworkPolicy{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: policyName, Namespace: testNamespace}, policy)).To(Succeed())
+		Expect(policy.OwnerReferences).To(HaveLen(1))
+		Expect(policy.OwnerReferences[0].UID).To(Equal(evalHub.UID))
+		Expect(policy.Spec.PolicyTypes).To(Equal([]networkingv1.PolicyType{networkingv1.PolicyTypeIngress}))
+		Expect(policy.Spec.Egress).To(BeEmpty())
+
 		By("Checking that Deployment is created")
 		deployment := waitForDeployment(evalHubName, testNamespace)
 		Expect(deployment.Spec.Replicas).To(Equal(evalHub.Spec.Replicas))
+		Expect(deployment.Spec.Selector.MatchLabels).To(Equal(map[string]string{
+			"app": "eval-hub", "instance": evalHubName, "component": "api",
+		}))
+		policyIdentityLabels, err := identity.Labels()
+		Expect(err).NotTo(HaveOccurred())
+		for key, value := range policyIdentityLabels {
+			Expect(deployment.Spec.Template.Labels).To(HaveKeyWithValue(key, value))
+		}
 		Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(2))
 
 		// Find the evalhub container

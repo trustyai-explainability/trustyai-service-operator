@@ -10,6 +10,11 @@ data:
     id: knowledge-reasoning-v1
     name: Knowledge & Reasoning v1
     category: knowledge_reasoning
+    domains: [knowledge_and_reasoning]
+    tasks: [reasoning]
+    modalities: [text]
+    evaluation_targets: [model]
+    curation_order: 1
     description: >
       Evaluates broad academic knowledge and expert-level reasoning. GPQA-Diamond tests
       graduate-level science questions that resist internet lookup. HLE (Humanity's Last Exam)
@@ -22,8 +27,6 @@ data:
       - science
       - inspect-evals
       - curated
-    domains:
-      - knowledge_and_reasoning
     pass_criteria:
       threshold: 0.235
     benchmarks:
@@ -40,7 +43,7 @@ data:
         provider_id: inspect
         weight: 1
         primary_score:
-          metric: accuracy/accuracy
+          metric: regex_judge/accuracy
           lower_is_better: false
         pass_criteria:
           threshold: 0.12
