@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	utilvalidation "k8s.io/apimachinery/pkg/util/validation"
 )
 
 // ValidateJSON checks that the input is a valid standalone JSON
@@ -76,6 +78,10 @@ func ValidateCustomArtifactValue(input string) error {
 func ValidateUserInput(job *lmesv1alpha1.LMEvalJob) error {
 	if job == nil {
 		return fmt.Errorf("job cannot be nil")
+	}
+
+	if err := validateResourceClaims(job.Spec.Pod); err != nil {
+		return fmt.Errorf("invalid resource claims: %w", err)
 	}
 
 	// Validate model name
@@ -149,6 +155,66 @@ func ValidateUserInput(job *lmesv1alpha1.LMEvalJob) error {
 		}
 	}
 
+	return nil
+}
+
+// validateResourceClaims checks the pod-local claim contract without requiring
+// DRA APIs or permissions to read the referenced namespace-local resources.
+func validateResourceClaims(pod *lmesv1alpha1.LMEvalPodSpec) error {
+	if pod == nil {
+		return nil
+	}
+	declared := make(map[string]struct{}, len(pod.ResourceClaims))
+	for i, claim := range pod.ResourceClaims {
+		if errs := utilvalidation.IsDNS1123Label(claim.Name); len(errs) != 0 {
+			return fmt.Errorf("spec.pod.resourceClaims[%d].name: %s", i, strings.Join(errs, "; "))
+		}
+		if _, exists := declared[claim.Name]; exists {
+			return fmt.Errorf("spec.pod.resourceClaims[%d]: duplicate name %q", i, claim.Name)
+		}
+		if (claim.ResourceClaimName == nil) == (claim.ResourceClaimTemplateName == nil) {
+			return fmt.Errorf("spec.pod.resourceClaims[%d]: exactly one of resourceClaimName and resourceClaimTemplateName must be set", i)
+		}
+		source := claim.ResourceClaimName
+		if source == nil {
+			source = claim.ResourceClaimTemplateName
+		}
+		if errs := utilvalidation.IsDNS1123Subdomain(*source); len(errs) != 0 {
+			return fmt.Errorf("spec.pod.resourceClaims[%d] source: %s", i, strings.Join(errs, "; "))
+		}
+		declared[claim.Name] = struct{}{}
+	}
+
+	validateReferences := func(resources *corev1.ResourceRequirements, container string) error {
+		if resources == nil {
+			return nil
+		}
+		for i, claim := range resources.Claims {
+			if _, exists := declared[claim.Name]; !exists {
+				return fmt.Errorf("%s.resources.claims[%d]: name %q must reference spec.pod.resourceClaims", container, i, claim.Name)
+			}
+			if claim.Request != "" {
+				parts := strings.Split(claim.Request, "/")
+				if len(parts) > 2 {
+					return fmt.Errorf("%s.resources.claims[%d].request: expected request or request/subrequest", container, i)
+				}
+				for _, part := range parts {
+					if errs := utilvalidation.IsDNS1123Label(part); len(errs) != 0 {
+						return fmt.Errorf("%s.resources.claims[%d].request: %s", container, i, strings.Join(errs, "; "))
+					}
+				}
+			}
+		}
+		return nil
+	}
+	if err := validateReferences(pod.GetContainer().GetResources(), "main"); err != nil {
+		return err
+	}
+	for i := range pod.SideCars {
+		if err := validateReferences(&pod.SideCars[i].Resources, fmt.Sprintf("spec.pod.sideCars[%d] (%s)", i, pod.SideCars[i].Name)); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

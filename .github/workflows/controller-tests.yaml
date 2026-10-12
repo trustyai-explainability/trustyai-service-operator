@@ -5,6 +5,10 @@ on: [push, pull_request]
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Retain legacy coverage and exercise DRA Pods on the GA baseline.
+        envtest-k8s-version: ["1.29.0", "1.34.0"]
 
     steps:
       - name: Checkout code
@@ -16,4 +20,4 @@ jobs:
           go-version-file: "go.mod"
 
       - name: Test
-        run: make test
+        run: make test ENVTEST_K8S_VERSION=${{ matrix.envtest-k8s-version }}

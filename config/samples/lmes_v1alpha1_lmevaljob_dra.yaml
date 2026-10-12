@@ -1,0 +1,34 @@
+# Create the evaluation-gpu ResourceClaimTemplate separately in this namespace.
+# It must request a device named gpu from a qualified DRA driver/DeviceClass.
+# This example demonstrates field propagation, not driver installation.
+---
+apiVersion: trustyai.opendatahub.io/v1alpha1
+kind: LMEvalJob
+metadata:
+  name: local-gpu-evaluation
+spec:
+  allowOnline: true
+  model: hf
+  modelArgs:
+    - name: pretrained
+      value: google/flan-t5-small
+    - name: device
+      value: cuda
+  taskList:
+    taskNames:
+      - arc_easy
+  limit: "1"
+  pod:
+    resourceClaims:
+      - name: evaluation-device
+        resourceClaimTemplateName: evaluation-gpu
+    container:
+      resources:
+        requests:
+          cpu: "1"
+          memory: 4Gi
+        limits:
+          memory: 8Gi
+        claims:
+          - name: evaluation-device
+            request: gpu
