@@ -37,6 +37,35 @@ make manifest-gen NAMESPACE=$OPERATOR_NAMESPACE OPERATOR_IMAGE=$OPERATOR_IMAGE K
 oc apply -f release/trustyai_bundle.yaml -n $OPERATOR_NAMESPACE
 ```
 
+## Upgrading
+
+### EvalHub authorization configuration
+
+The operator reconciles EvalHub authorization rules in the `<evalhub-name>-config`
+ConfigMap. The `kube-rbac-proxy` container mounts its `auth.yaml` key using a
+`subPath` volume mount, so existing pods do not receive updates to that file.
+Changing the ConfigMap alone does not trigger a Deployment rollout. Updated
+authorization rules take effect only after the EvalHub pods are recreated, for
+example when an operand image update changes the pod template.
+
+After upgrading the operator, wait for it to reconcile the EvalHub ConfigMap. If
+the upgrade changes authorization rules without recreating the pods, recreate
+the API pods for each affected EvalHub instance:
+
+```shell
+EVALHUB_NAMESPACE=your-namespace
+EVALHUB_NAME=your-evalhub
+oc delete pod -n "$EVALHUB_NAMESPACE" \
+  -l "app=eval-hub,instance=$EVALHUB_NAME,component=api"
+oc rollout status deployment/"$EVALHUB_NAME" -n "$EVALHUB_NAMESPACE"
+```
+
+This can briefly interrupt API access while replacement pods become ready. In
+particular, `GET /api/v1/info` can continue returning HTTP 403 after an operator
+upgrade until the pods load the new authorization mapping. Once recreated,
+access requires permission to list `evaluations` in the
+`trustyai.opendatahub.io` API group in the namespace supplied by `X-Tenant`.
+
 ## Usage
 For usage information, please see the [OpenDataHub documentation of TrustyAI](https://opendatahub.io/docs/monitoring-data-science-models/#configuring-trustyai_monitor).
 
