@@ -3321,6 +3321,59 @@ func TestEvalHubReconciler_cleanupDiscoveryConfigMaps(t *testing.T) {
 	})
 }
 
+func TestGenerateAuthConfigData_MethodsPresent(t *testing.T) {
+	var parsed struct {
+		Authorization struct {
+			Endpoints []struct {
+				Path     string `yaml:"path"`
+				Mappings []struct {
+					Methods   []string `yaml:"methods"`
+					Resources []struct {
+						Rewrites struct {
+							ByHTTPHeader struct {
+								Name string `yaml:"name"`
+							} `yaml:"byHttpHeader"`
+						} `yaml:"rewrites"`
+						ResourceAttributes struct {
+							Namespace string `yaml:"namespace"`
+							APIGroup  string `yaml:"apiGroup"`
+							Resource  string `yaml:"resource"`
+							Verb      string `yaml:"verb"`
+						} `yaml:"resourceAttributes"`
+					} `yaml:"resources"`
+				} `yaml:"mappings"`
+			} `yaml:"endpoints"`
+		} `yaml:"authorization"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(generateAuthConfigData()), &parsed), "auth.yaml must be valid YAML")
+	require.NotEmpty(t, parsed.Authorization.Endpoints)
+
+	infoEndpoints := 0
+	for _, endpoint := range parsed.Authorization.Endpoints {
+		require.NotEmpty(t, endpoint.Mappings, "endpoint %s must declare mappings", endpoint.Path)
+		for _, mapping := range endpoint.Mappings {
+			// kube-rbac-proxy rejects mappings without an explicit methods list.
+			assert.NotEmpty(t, mapping.Methods, "endpoint %s must declare methods", endpoint.Path)
+		}
+		if endpoint.Path != "/api/v1/info" {
+			continue
+		}
+
+		infoEndpoints++
+		require.Len(t, endpoint.Mappings, 1, "info endpoint must have one GET mapping")
+		mapping := endpoint.Mappings[0]
+		assert.Equal(t, []string{"get"}, mapping.Methods)
+		require.Len(t, mapping.Resources, 1, "info endpoint must have one tenant-scoped RBAC check")
+		resource := mapping.Resources[0]
+		assert.Equal(t, "X-Tenant", resource.Rewrites.ByHTTPHeader.Name)
+		assert.Equal(t, "{{.FromHeader}}", resource.ResourceAttributes.Namespace)
+		assert.Equal(t, "trustyai.opendatahub.io", resource.ResourceAttributes.APIGroup)
+		assert.Equal(t, "evaluations", resource.ResourceAttributes.Resource)
+		assert.Equal(t, "list", resource.ResourceAttributes.Verb)
+	}
+	assert.Equal(t, 1, infoEndpoints, "info endpoint must be declared exactly once")
+}
+
 func TestGenerateMCPAuthConfigData_MethodsPresent(t *testing.T) {
 	instance := &evalhubv1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "eh", Namespace: "team-a"},
