@@ -16,9 +16,9 @@ data:
       resourceAttributes:
         namespace: "{{ .Owner.Namespace }}"
         resource: "nemoguardrails"
-        resourceName: "{{ .Owner.Name }}-service"
+        name: "{{ .Owner.Name }}"
         verb: "create"
-        apiGroup: ""
+        apiGroup: "trustyai.opendatahub.io"
     upstreamConfig:
       url: "http://127.0.0.1:8000"
       proxyTimeout: "30s"

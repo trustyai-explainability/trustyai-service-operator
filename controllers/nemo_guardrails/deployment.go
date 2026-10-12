@@ -4,10 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"reflect"
 	"sort"
 	"strings"
+
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/google/uuid"
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
@@ -263,8 +264,9 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 		return nil, err
 	}
 	for i := range deployment.Spec.Template.Spec.Containers {
-		if deployment.Spec.Template.Spec.Containers[i].Name == "kube-rbac-proxy" {
-			deployment.Spec.Template.Spec.Containers[i].Args = append(deployment.Spec.Template.Spec.Containers[i].Args, pkgtls.CurrentProxyTLSArguments().Args...)
+		c := &deployment.Spec.Template.Spec.Containers[i]
+		if c.Name == "kube-rbac-proxy" || c.Name == "kube-rbac-proxy-admin" {
+			c.Args = append(c.Args, pkgtls.CurrentProxyTLSArguments().Args...)
 		}
 	}
 	if err := controllerutil.SetControllerReference(nemoGuardrails, deployment, r.Scheme); err != nil {

@@ -195,7 +195,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Version:      constants.Version,
 		UseAuthProxy: utils.RequiresAuth(nemoGuardrails),
 	}
-	err = utils.ReconcileService(ctx, r.Client, nemoGuardrails, serviceConfig, serviceTemplate, templateParser.ParseResource)
+	err = utils.EnsureService(ctx, r.Client, nemoGuardrails, serviceConfig, serviceTemplate, templateParser.ParseResource)
 	if err != nil {
 		utils.LogErrorReconciling(ctx, err, "service", serviceConfig.Name, serviceConfig.Namespace)
 		return ctrl.Result{}, err

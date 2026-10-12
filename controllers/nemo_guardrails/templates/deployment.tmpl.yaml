@@ -63,7 +63,6 @@
           - --tls-private-key-file=/etc/tls/private/tls.key
           - --upstream-ca-file=/etc/ssl/certs/ca-certificates.crt
           - --proxy-endpoints-port={{ .HealthPort }}
-          - --allow-paths=/v1/*,/v1/*/*,/admin/*
           - --v=0
         ports:
           - containerPort: {{ .DownstreamPort }}
