@@ -30,13 +30,12 @@ func ReconcileService(ctx context.Context, c client.Client, owner metav1.Object,
 	return err
 }
 
-// CompareAndUpdateService updates svc in-cluster if its Spec or Labels differ from expectedSvc.
-func CompareAndUpdateService(ctx context.Context, c client.Client, svc *corev1.Service, expectedSvc *corev1.Service) error {
-	if !reflect.DeepEqual(svc.Spec, expectedSvc.Spec) || !reflect.DeepEqual(svc.Labels, expectedSvc.Labels) {
+// CompareAndUpdateServicePorts updates svc in-cluster if its Spec.Ports differ from expectedSvc.
+func CompareAndUpdateServicePorts(ctx context.Context, c client.Client, svc *corev1.Service, expectedSvc *corev1.Service) error {
+	if !reflect.DeepEqual(svc.Spec.Ports, expectedSvc.Spec.Ports) {
 		LogInfoUpdating(ctx, serviceResourceKind, svc.Name, svc.Namespace)
 
-		svc.Spec = expectedSvc.Spec
-		svc.Labels = expectedSvc.Labels
+		svc.Spec.Ports = expectedSvc.Spec.Ports
 
 		if err := c.Update(ctx, svc); err != nil {
 			LogErrorUpdating(ctx, err, serviceResourceKind, svc.Name, svc.Namespace)
@@ -63,5 +62,5 @@ func EnsureService(ctx context.Context, c client.Client, owner metav1.Object, se
 		return err
 	}
 
-	return CompareAndUpdateService(ctx, c, svc, expectedSvc)
+	return CompareAndUpdateServicePorts(ctx, c, svc, expectedSvc)
 }
