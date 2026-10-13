@@ -18,4 +18,5 @@ const (
 	// lands.
 	manifestAnnotationKey = "trustyai.opendatahub.io/nemo-guardrails-manifest-url"
 	manifestPath          = "/admin/info"
+	manifestAdminPort     = ":444"
 )

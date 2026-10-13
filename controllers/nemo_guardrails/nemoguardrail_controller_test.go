@@ -560,7 +560,7 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("Checking if the CR has the manifest URL annotation")
-		expectedURL := "https://" + resourceName + "." + namespace + ".svc" + manifestPath
+		expectedURL := "https://" + resourceName + "." + namespace + ".svc" + manifestAdminPort + manifestPath
 		Eventually(func() string {
 			nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
 			err := k8sClient.Get(ctx, typeNamespacedName, nemo)
@@ -822,6 +822,34 @@ var _ = Describe("NemoGuardrails Controller", func() {
 			err := k8sClient.Get(ctx, routeKey, route)
 			return errors.IsNotFound(err)
 		}, time.Second*10, time.Millisecond*250).Should(BeTrue())
+	})
+
+	It("should use the admin proxy port for an authenticated manifest url", func() {
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      resourceName,
+				Namespace: namespace,
+				Annotations: map[string]string{
+					constants.AuthAnnotationKey: "true",
+				},
+			},
+		}
+		Expect(buildManifestURL(nemo)).To(Equal(
+			"https://" + resourceName + "." + namespace + ".svc" +
+				manifestAdminPort + manifestPath,
+		))
+	})
+
+	It("should use the direct Service URL for an unauthenticated manifest URL", func() {
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      resourceName,
+				Namespace: namespace,
+			},
+		}
+		Expect(buildManifestURL(nemo)).To(Equal(
+			"http://" + resourceName + "." + namespace + ".svc" + manifestPath,
+		))
 	})
 })
 

@@ -29,7 +29,10 @@ import (
 func buildManifestURL(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails) string {
 	base := utils.GenerateNonTLSServiceURL(nemoGuardrails.Name, nemoGuardrails.Namespace)
 	if utils.RequiresAuth(nemoGuardrails) {
-		base = utils.GenerateTLSServiceURL(nemoGuardrails.Name, nemoGuardrails.Namespace)
+		base = utils.GenerateTLSServiceURL(
+			nemoGuardrails.Name,
+			nemoGuardrails.Namespace,
+		) + manifestAdminPort
 	}
 	return base + manifestPath
 }
