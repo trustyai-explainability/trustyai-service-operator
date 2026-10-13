@@ -21,6 +21,17 @@ const (
 	evalHubPrometheusComponentLabel         = "app.kubernetes.io/component"
 	evalHubPrometheusNameValue              = "prometheus"
 	evalHubPrometheusComponentValue         = "prometheus"
+	// evalHubDashboardNamespaceNameLabel is the immutable Kubernetes-provided
+	// namespace name label, used to select the applications namespace by name.
+	evalHubDashboardNamespaceNameLabel = "kubernetes.io/metadata.name"
+	// Stable pod identity of the ODH Dashboard eval-hub-ui module Deployment
+	// (manifests/modules/eval-hub/deployment.yaml in opendatahub-io/odh-dashboard).
+	// The Dashboard's BFF proxy runs in these Pods and forwards browser requests
+	// to the EvalHub API service.
+	evalHubDashboardDeploymentLabel = "deployment"
+	evalHubDashboardDeploymentValue = "eval-hub-ui"
+	evalHubDashboardPartOfLabel     = "app.kubernetes.io/part-of"
+	evalHubDashboardPartOfValue     = "odh-dashboard"
 )
 
 func evalHubWorkloadNetworkPolicyIdentity(instance *evalhubv1.EvalHub, role string) (utils.NetworkPolicyIdentity, error) {
@@ -64,13 +75,31 @@ func evalHubNetworkPolicyTCPPort(port int32) networkingv1.NetworkPolicyPort {
 	return networkingv1.NetworkPolicyPort{Protocol: &protocol, Port: &value}
 }
 
+// evalHubDashboardUIPodLabels returns the stable pod identity of the ODH
+// Dashboard's eval-hub-ui module Deployment. The Dashboard's BFF proxy runs in
+// these Pods and forwards browser API requests (providers, collections,
+// evaluations) to the EvalHub API service, so the API ingress policy must
+// authorize them or the EvalHub UI hangs on Loading (RHOAIENG-100577).
+func evalHubDashboardUIPodLabels() map[string]string {
+	return map[string]string{
+		evalHubDashboardDeploymentLabel: evalHubDashboardDeploymentValue,
+		evalHubDashboardPartOfLabel:     evalHubDashboardPartOfValue,
+	}
+}
+
 // buildEvalHubNetworkPolicy builds the ingress-only policy for one EvalHub API
-// workload. The API Route and evaluation-job callbacks reach kube-rbac-proxy on
-// servicePort; Prometheus scrapes the unauthenticated metrics listener directly.
-func buildEvalHubNetworkPolicy(instance *evalhubv1.EvalHub) (utils.WorkloadNetworkPolicy, error) {
+// workload. The API Route, the Dashboard's eval-hub-ui proxy and evaluation-job
+// callbacks reach kube-rbac-proxy on servicePort; Prometheus scrapes the
+// unauthenticated metrics listener directly. applicationsNamespace is the ODH
+// applications namespace (opendatahub on ODH, redhat-ods-applications on RHOAI)
+// where the Dashboard deploys the eval-hub-ui module.
+func buildEvalHubNetworkPolicy(instance *evalhubv1.EvalHub, applicationsNamespace string) (utils.WorkloadNetworkPolicy, error) {
 	identity, err := evalHubNetworkPolicyIdentity(instance)
 	if err != nil {
 		return utils.WorkloadNetworkPolicy{}, err
+	}
+	if applicationsNamespace == "" {
+		return utils.WorkloadNetworkPolicy{}, fmt.Errorf("applications namespace is required to authorize the Dashboard eval-hub-ui ingress peer")
 	}
 	identityLabels, err := identity.Labels()
 	if err != nil {
@@ -84,6 +113,9 @@ func buildEvalHubNetworkPolicy(instance *evalhubv1.EvalHub) (utils.WorkloadNetwo
 	routerNamespaceSelector := metav1.LabelSelector{MatchLabels: map[string]string{
 		evalHubNetworkPolicyNamespaceGroupLabel: evalHubNetworkPolicyIngressGroup,
 	}}
+	dashboardNamespaceSelector := metav1.LabelSelector{MatchLabels: map[string]string{
+		evalHubDashboardNamespaceNameLabel: applicationsNamespace,
+	}}
 	jobLabels := evalHubEvaluationJobPodLabels(instance)
 	jobNamespaceSelector := &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
 		Key: tenantLabel, Operator: metav1.LabelSelectorOpExists,
@@ -95,6 +127,15 @@ func buildEvalHubNetworkPolicy(instance *evalhubv1.EvalHub) (utils.WorkloadNetwo
 	ingress := []networkingv1.NetworkPolicyIngressRule{
 		{
 			From: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: routerNamespaceSelector.DeepCopy()}},
+			Ports: []networkingv1.NetworkPolicyPort{
+				evalHubNetworkPolicyTCPPort(servicePort),
+			},
+		},
+		{
+			From: []networkingv1.NetworkPolicyPeer{{
+				NamespaceSelector: dashboardNamespaceSelector.DeepCopy(),
+				PodSelector:       &metav1.LabelSelector{MatchLabels: evalHubDashboardUIPodLabels()},
+			}},
 			Ports: []networkingv1.NetworkPolicyPort{
 				evalHubNetworkPolicyTCPPort(servicePort),
 			},
@@ -171,7 +212,7 @@ func (r *EvalHubReconciler) reconcileNetworkPolicy(ctx context.Context, instance
 	if err != nil {
 		return err
 	}
-	desired, err := buildEvalHubNetworkPolicy(instance)
+	desired, err := buildEvalHubNetworkPolicy(instance, r.Namespace)
 	if err != nil {
 		return err
 	}
