@@ -46,9 +46,9 @@ data:
         modalities: [text]
         evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - niah_single_1.overall
         primary_score:
-          metric: string_match_all
+          metric: niah_single_1.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.50
@@ -88,9 +88,9 @@ data:
         modalities: [text]
         evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - niah_single_3.overall
         primary_score:
-          metric: string_match_all
+          metric: niah_single_3.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.50
@@ -110,9 +110,9 @@ data:
         modalities: [text]
         evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - niah_multikey_1.overall
         primary_score:
-          metric: string_match_all
+          metric: niah_multikey_1.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.50
@@ -131,9 +131,9 @@ data:
         modalities: [text]
         evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - niah_multikey_2.overall
         primary_score:
-          metric: string_match_all
+          metric: niah_multikey_2.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.50
@@ -152,9 +152,9 @@ data:
         modalities: [text]
         evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - niah_multikey_3.overall
         primary_score:
-          metric: string_match_all
+          metric: niah_multikey_3.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.50
@@ -173,9 +173,9 @@ data:
         modalities: [text]
         evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - niah_multivalue.overall
         primary_score:
-          metric: string_match_all
+          metric: niah_multivalue.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.50
@@ -194,9 +194,9 @@ data:
         modalities: [text]
         evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - niah_multiquery.overall
         primary_score:
-          metric: string_match_all
+          metric: niah_multiquery.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.50
