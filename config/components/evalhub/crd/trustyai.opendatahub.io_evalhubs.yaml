@@ -92,6 +92,8 @@ spec:
                 - software-v1
                 - trustworthiness-v1
                 - multimodal-v1
+                - fairness-bias-v1
+                - safety-ethical-principles-v1
                 description: |-
                   Collections is the list of OOTB collection names to mount into the deployment.
                   Each name must match a collection-name label on a ConfigMap in the operator namespace.
@@ -652,7 +654,11 @@ spec:
                 default:
                 - garak
                 - garak-kfp
-                - lm-evaluation-harness
+                - lm-evaluation-harness- inspect
+                - lighteval
+                - ruler
+                - ifbench
+                - followbench
                 description: |-
                   Providers is the list of OOTB provider names to mount into the deployment.
                   Each name must match a provider-name label on a ConfigMap in the operator namespace.
