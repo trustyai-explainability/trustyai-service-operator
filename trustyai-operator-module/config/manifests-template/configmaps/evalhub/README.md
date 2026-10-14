@@ -34,7 +34,7 @@
 
       1. Add the image for ODH to the `params.env` file (with a pinned version)
 
-         [../../overlays/odh/params.env](../../base/params.env)
+         [../../overlays/odh/params.env](../../overlays/odh/params.env)
 
          ```shell
          evalhub-provider-databench-image=quay.io/evalhub/community-databench:v0.6.7
@@ -42,7 +42,7 @@
 
       1. Add the image for RHOAI to the `params.env` file (with a pinned version)
 
-         [../../overlays/rhoai/params.env](../../base/params.env)
+         [../../overlays/rhoai/params.env](../../overlays/rhoai/params.env)
 
          ```shell
          evalhub-provider-databench-image=quay.io/evalhub/community-databench:v0.6.7
