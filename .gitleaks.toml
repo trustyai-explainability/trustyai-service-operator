@@ -1,0 +1,19 @@
+title = "trustyai-service-operator gitleaks configuration"
+
+[extend]
+# Keep the default gitleaks rules; without this, a repo-level config
+# would replace them entirely.
+useDefault = true
+
+[allowlist]
+description = "Known false positives"
+paths = [
+    # generic-api-key matches a historical Go call site (introduced in
+    # f7cb3c7e, file removed from main in 7f6270c6):
+    #   utils.MountSecret(deployment, tlsSecretToMount,
+    #                     tlsSecretToMount+"-vol", "/etc/tls/"+tlsSecretToMount, []int{0})
+    # tlsSecretToMount is a variable holding a Kubernetes Secret *name*,
+    # not a secret value. The workflow scans full history, so the finding
+    # persists even though the file no longer exists at the tip.
+    '''controllers/gorch/tls\.go''',
+]
