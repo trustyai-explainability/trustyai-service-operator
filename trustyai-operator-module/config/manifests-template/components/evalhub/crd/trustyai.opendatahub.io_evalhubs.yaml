@@ -654,7 +654,8 @@ spec:
                 default:
                 - garak
                 - garak-kfp
-                - lm-evaluation-harness- inspect
+                - lm-evaluation-harness
+                - inspect
                 - lighteval
                 - ruler
                 - ifbench
