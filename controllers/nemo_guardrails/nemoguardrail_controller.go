@@ -112,6 +112,12 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			utils.LogErrorUpdating(ctx, updateErr, "NemoGuardrails status", nemoGuardrails.Name, nemoGuardrails.Namespace)
 			return ctrl.Result{}, updateErr
 		}
+		// enforce exposeRoute: false, so an invalid selector cannot leave the server published.
+		if nemoGuardrails.Spec.ExposeRoute != nil && !*nemoGuardrails.Spec.ExposeRoute {
+			if err := utils.DeleteRoute(ctx, r.Client, nemoGuardrails, nemoGuardrails.Name, nemoGuardrails.Namespace); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
 		return ctrl.Result{}, nil
 	}
 	// update status to indicate that the allowed consumers selector is valid
