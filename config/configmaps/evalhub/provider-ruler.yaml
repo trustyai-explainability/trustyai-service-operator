@@ -41,10 +41,14 @@ data:
         name: NIAH Single (Noise Haystack)
         description: Single needle/value pair hidden in random noise background
         category: needle_in_a_haystack
+        domains: [grounded_document_understanding]
+        tasks: [long_context_understanding]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - niah_single_1.overall
         primary_score:
-          metric: string_match_all
+          metric: niah_single_1.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.50
@@ -58,10 +62,14 @@ data:
         name: NIAH Single (Essay Haystack)
         description: Single needle/value pair hidden in Paul Graham essays
         category: needle_in_a_haystack
+        domains: [grounded_document_understanding]
+        tasks: [long_context_understanding]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - niah_single_2.overall
         primary_score:
-          metric: string_match_all
+          metric: niah_single_2.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.50
@@ -75,10 +83,14 @@ data:
         name: NIAH Single (UUID Values)
         description: Single needle/UUID-value pair hidden in essay background
         category: needle_in_a_haystack
+        domains: [grounded_document_understanding]
+        tasks: [long_context_understanding]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - niah_single_3.overall
         primary_score:
-          metric: string_match_all
+          metric: niah_single_3.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.50
@@ -93,10 +105,14 @@ data:
         name: NIAH Multi-Key
         description: Multiple distinct needle keys hidden in essay background
         category: needle_in_a_haystack
+        domains: [grounded_document_understanding]
+        tasks: [long_context_understanding]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - niah_multikey_1.overall
         primary_score:
-          metric: string_match_all
+          metric: niah_multikey_1.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.50
@@ -110,10 +126,14 @@ data:
         name: NIAH Needle Background
         description: Single needle with other needles used as background noise
         category: needle_in_a_haystack
+        domains: [grounded_document_understanding]
+        tasks: [long_context_understanding]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - niah_multikey_2.overall
         primary_score:
-          metric: string_match_all
+          metric: niah_multikey_2.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.50
@@ -127,10 +147,14 @@ data:
         name: NIAH Multi-Key UUID
         description: UUID keys and UUID values — hardest retrieval variant
         category: needle_in_a_haystack
+        domains: [grounded_document_understanding]
+        tasks: [long_context_understanding]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - niah_multikey_3.overall
         primary_score:
-          metric: string_match_all
+          metric: niah_multikey_3.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.50
@@ -144,10 +168,14 @@ data:
         name: NIAH Multi-Value
         description: Single key associated with multiple values in essay background
         category: needle_in_a_haystack
+        domains: [grounded_document_understanding]
+        tasks: [long_context_understanding]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - niah_multivalue.overall
         primary_score:
-          metric: string_match_all
+          metric: niah_multivalue.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.50
@@ -161,10 +189,14 @@ data:
         name: NIAH Multi-Query
         description: Multiple queries each targeting a distinct needle/value pair
         category: needle_in_a_haystack
+        domains: [grounded_document_understanding]
+        tasks: [long_context_understanding]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - niah_multiquery.overall
         primary_score:
-          metric: string_match_all
+          metric: niah_multiquery.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.50
@@ -179,10 +211,14 @@ data:
         name: Variable Tracking
         description: Track chains of variable assignments and return the final value
         category: variable_tracking
+        domains: [grounded_document_understanding]
+        tasks: [long_context_understanding]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - vt.overall
         primary_score:
-          metric: string_match_all
+          metric: vt.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.10
@@ -196,10 +232,14 @@ data:
         name: Common Words Extraction
         description: Identify the 10 most frequently appearing words in a long list
         category: aggregation
+        domains: [grounded_document_understanding]
+        tasks: [long_context_understanding]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - cwe.overall
         primary_score:
-          metric: string_match_all
+          metric: cwe.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.10
@@ -212,10 +252,14 @@ data:
         name: Frequency Words Extraction
         description: Find the three most frequent coded words in a Zipf-distributed list
         category: aggregation
+        domains: [grounded_document_understanding]
+        tasks: [long_context_understanding]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - string_match_all
+          - fwe.overall
         primary_score:
-          metric: string_match_all
+          metric: fwe.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.10
@@ -229,10 +273,14 @@ data:
         name: QA — SQuAD
         description: Long-context question answering with SQuAD passages as context
         category: question_answering
+        domains: [grounded_document_understanding]
+        tasks: [full_document_qa, long_context_understanding]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - string_match_part
+          - qa_1.overall
         primary_score:
-          metric: string_match_part
+          metric: qa_1.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.15
@@ -246,10 +294,14 @@ data:
         name: QA — HotpotQA
         description: Multi-hop long-context question answering with HotpotQA passages
         category: question_answering
+        domains: [grounded_document_understanding]
+        tasks: [full_document_qa, long_context_understanding]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - string_match_part
+          - qa_2.overall
         primary_score:
-          metric: string_match_part
+          metric: qa_2.overall
           lower_is_better: false
         pass_criteria:
           threshold: 0.15

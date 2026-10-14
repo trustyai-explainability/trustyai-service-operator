@@ -31,6 +31,10 @@ data:
         description: |-
           Aggregated commonsense tests: activity completion, pronoun resolution, open-book QA, and science reasoning.
         category: reasoning
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
           - acc_norm
@@ -48,6 +52,10 @@ data:
         name: Science reasoning suite
         description: Combined easy and hard science question answering (ARC Easy + Challenge).
         category: reasoning
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
           - acc_norm
@@ -65,6 +73,10 @@ data:
         name: Physical world understanding suite
         description: Tests intuition about how everyday physical objects and actions work.
         category: reasoning
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
         tags:
@@ -81,6 +93,10 @@ data:
         name: Honesty & hallucination suite
         description: Combined multiple-choice and generative tests of model truthfulness.
         category: safety
+        domains: [trustworthiness]
+        tasks: [safety]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - mc1
           - mc2
@@ -98,6 +114,10 @@ data:
         name: Mathematical problem-solving suite
         description: "Aggregated math benchmarks: grade-school word problems, algebra, and probability."
         category: math
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - exact_match
           - acc
@@ -115,6 +135,10 @@ data:
         name: Factual knowledge suite
         description: Combined factual recall across 57 academic subjects and trivia.
         category: knowledge
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
           - acc_norm
@@ -131,6 +155,10 @@ data:
         name: Language understanding suite
         description: "Core NLU tasks: grammaticality, sentiment, and paraphrase detection (GLUE)."
         category: language_understanding
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
           - matthews_correlation
@@ -150,6 +178,10 @@ data:
         name: Everyday activity completion
         description: Picks the most plausible continuation of an everyday scenario (10,042 examples).
         category: reasoning
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
           - acc_norm
@@ -168,6 +200,10 @@ data:
         name: Pronoun common sense
         description: Resolves ambiguous pronouns using real-world common sense (1,267 examples).
         category: reasoning
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
         num_few_shot: 0
@@ -186,6 +222,10 @@ data:
         description: |-
           Answers science questions with access to core facts — tests multi-hop reasoning (500 examples).
         category: knowledge
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
           - acc_norm
@@ -204,6 +244,10 @@ data:
         name: "Basic science Q&A"
         description: Easy grade-school science questions (2,376 examples).
         category: reasoning
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
           - acc_norm
@@ -222,6 +266,10 @@ data:
         name: "Hard science Q&A"
         description: Difficult science questions requiring deeper reasoning than ARC Easy (1,172 examples).
         category: reasoning
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
           - acc_norm
@@ -240,6 +288,10 @@ data:
         name: Physical interaction intuition
         description: Tests understanding of everyday physical actions and their outcomes (1,838 examples).
         category: reasoning
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
         num_few_shot: 0
@@ -257,6 +309,10 @@ data:
         name: Misconception resistance (multiple choice)
         description: Tests whether the model avoids popular myths and common misconceptions (817 questions).
         category: safety
+        domains: [trustworthiness]
+        tasks: [safety]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - mc1
           - mc2
@@ -275,6 +331,10 @@ data:
         name: Misconception resistance (generative)
         description: Tests whether generated answers are truthful and non-misleading (817 questions).
         category: safety
+        domains: [trustworthiness]
+        tasks: [safety]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - exact_match
         num_few_shot: 0
@@ -293,6 +353,10 @@ data:
         description: |-
           Multi-step arithmetic word problems requiring 2-8 reasoning steps (8-shot, 1,319 examples).
         category: math
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - extractive_match
         num_few_shot: 8
@@ -310,6 +374,10 @@ data:
         name: Competition algebra
         description: Competition-level algebra problems requiring symbolic manipulation and proof strategies.
         category: math
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
         num_few_shot: 0
@@ -326,6 +394,10 @@ data:
         name: "Counting & probability problems"
         description: Competition-level combinatorics and probability reasoning.
         category: math
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
         num_few_shot: 0
@@ -342,8 +414,12 @@ data:
         name: Aime 2024
         description: American Invitational Mathematics Examination 2024 - competition-level mathematical reasoning
         category: reasoning
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - pass@1
+          - aime24.pass@1
         num_few_shot: 0
         dataset_size: 30
         tags:
@@ -352,7 +428,7 @@ data:
           - competition
           - lighteval
         primary_score:
-          metric: pass@1
+          metric: aime24.pass@1
           lower_is_better: false
         pass_criteria:
           threshold: 0.25
@@ -360,8 +436,12 @@ data:
         name: Aime 2025
         description: American Invitational Mathematics Examination 2025 - competition-level mathematical reasoning
         category: reasoning
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - pass@1
+          - aime25.pass@1
         num_few_shot: 0
         dataset_size: 30
         tags:
@@ -370,7 +450,7 @@ data:
           - competition
           - lighteval
         primary_score:
-          metric: pass@1
+          metric: aime25.pass@1
           lower_is_better: false
         pass_criteria:
           threshold: 0.25
@@ -379,6 +459,10 @@ data:
         description: |-
           Factual recall and reasoning across 57 academic subjects from STEM to humanities (5-shot, 15,908 examples).
         category: knowledge
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
           - acc_norm
@@ -397,6 +481,10 @@ data:
         name: Trivia factual recall
         description: Answers trivia questions using evidence from web pages and Wikipedia.
         category: knowledge
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
           - exact_match
@@ -414,6 +502,10 @@ data:
         name: Grammatical acceptability
         description: Judges whether English sentences are grammatically acceptable.
         category: language_understanding
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - matthews_correlation
         num_few_shot: 0
@@ -430,6 +522,10 @@ data:
         name: Sentiment classification
         description: Classifies movie review sentences as positive or negative.
         category: language_understanding
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
         num_few_shot: 0
@@ -447,6 +543,10 @@ data:
         name: Paraphrase detection
         description: Determines whether two sentences express the same meaning.
         category: language_understanding
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - acc
           - f1
@@ -466,11 +566,16 @@ data:
         description: |-
           500 hand-picked problems from the MATH dataset spanning 7 subject areas (algebra,
           counting, geometry, number theory, probability, pre-calculus, intermediate algebra).
-          Tests competition-level mathematical reasoning with multi-step solutions. Primary
-          metric is pass@1 averaged over 3 random seeds (k=1, n=3 in lighteval syntax).
+          Tests competition-level mathematical reasoning with multi-step solutions.
+          Declared primary metric is math_500.pass@1; repeated seeded sampling must be verified
+          against the configured adapter before interpreting results as repeated runs.
         category: math
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - pass@1
+          - math_500.pass@1
         num_few_shot: 0
         dataset_size: 500
         tags:
@@ -479,7 +584,7 @@ data:
           - competition
           - lighteval
         primary_score:
-          metric: pass@1
+          metric: math_500.pass@1
           lower_is_better: false
         pass_criteria:
           threshold: 0.30
@@ -489,10 +594,15 @@ data:
           Expert-crafted PhD-level multiple-choice questions in biology, chemistry, and physics
           requiring deep domain synthesis across topics rarely co-occurring in training data.
           Diamond subset is the hardest tier — domain experts answer correctly ~65% of the time.
-          Primary metric is gpqa_pass@1 averaged over 3 random seeds.
+          Declared primary metric is gpqa:diamond.gpqa_pass@1; repeated seeded sampling must be
+          verified against the configured adapter.
         category: reasoning
+        domains: [knowledge_and_reasoning]
+        tasks: [reasoning]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
-          - gpqa_pass@1
+          - gpqa:diamond.gpqa_pass@1
         num_few_shot: 0
         dataset_size: 198
         tags:
@@ -502,7 +612,7 @@ data:
           - competition
           - lighteval
         primary_score:
-          metric: gpqa_pass@1
+          metric: gpqa:diamond.gpqa_pass@1
           lower_is_better: false
         pass_criteria:
           threshold: 0.35
@@ -510,10 +620,16 @@ data:
         name: LiveCodeBench v6 — code generation
         description: |-
           Real-world competitive programming problems collected from Codeforces, LeetCode, and
-          AtCoder after the model knowledge cutoff — eliminates data contamination risk.
+          AtCoder. The fixed v6 release does not establish whether problems postdate
+          the evaluated model's knowledge cutoff or exclude training contamination.
           Execution-based evaluation: generated code is run against hidden test cases.
-          Primary metric is codegen_pass@1 averaged over 3 random seeds.
+          Declared primary metric is codegen_pass@1; repeated seeded sampling must be
+          verified against the configured adapter.
         category: code
+        domains: [software]
+        tasks: [code_generation]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - codegen_pass@1
         num_few_shot: 0
@@ -521,7 +637,6 @@ data:
           - code
           - competitive-programming
           - execution
-          - contamination-free
           - lighteval
         primary_score:
           metric: codegen_pass@1

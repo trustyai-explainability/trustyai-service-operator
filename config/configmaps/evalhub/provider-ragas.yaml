@@ -83,6 +83,10 @@ data:
         name: RAG Default Suite
         description: Default RAG evaluation with answer relevancy, context precision, faithfulness, and context recall
         category: rag_evaluation
+        domains: [grounded_document_understanding]
+        tasks: [rag, grounding_discipline]
+        modalities: [text]
+        evaluation_targets: [rag_system]
         metrics:
           - answer_relevancy
           - context_precision
@@ -102,6 +106,10 @@ data:
         name: RAG Full Suite
         description: Comprehensive RAG evaluation with all available RAGAS metrics
         category: rag_evaluation
+        domains: [grounded_document_understanding]
+        tasks: [rag, grounding_discipline]
+        modalities: [text]
+        evaluation_targets: [rag_system]
         metrics:
           - answer_relevancy
           - answer_similarity

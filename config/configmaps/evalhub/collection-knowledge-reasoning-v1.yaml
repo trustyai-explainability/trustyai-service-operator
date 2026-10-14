@@ -8,46 +8,150 @@ metadata:
 data:
   knowledge-reasoning-v1.yaml: |
     id: knowledge-reasoning-v1
-    name: Knowledge & Reasoning v1
-    category: knowledge_reasoning
-    domains: [knowledge_and_reasoning]
-    tasks: [reasoning]
-    modalities: [text]
-    evaluation_targets: [model]
-    curation_order: 1
+    curation_order: 2
+    name: Knowledge and Reasoning v1
     description: >
-      Evaluates broad academic knowledge and expert-level reasoning. GPQA-Diamond tests
-      graduate-level science questions that resist internet lookup. HLE (Humanity's Last Exam)
-      is a 2,500-question frontier benchmark across dozens of subjects, designed to remain
-      unsaturated by current models.
-      Part of the Curated Collections taxonomy (#916).
+      Evaluates closed-book, text-only knowledge and reasoning across difficult
+      scientific, academic and mathematical problems using GPQA Diamond, HLE and
+      MATH-500.
+    # The collection measures bare-model reasoning without browsing,
+    # retrieval or tool assistance. Structured-table and structured-data analysis
+    # remain coverage gaps.
+    # HLE is capped at 50 examples for screening.
+    # Scores are diagnostic summaries, not deployment qualification criteria.
+    domains:
+      - knowledge_and_reasoning
+    tasks:
+      - reasoning
+    modalities:
+      - text
+    evaluation_targets:
+      - model
+    industries:
+      - enterprise
     tags:
       - knowledge
       - reasoning
-      - science
-      - inspect-evals
-      - curated
+      - scientific-reasoning
+      - mathematical-reasoning
+      - bare-model
+      - lighteval
+      - inspect
+      - standard
+
     pass_criteria:
-      threshold: 0.235
+      threshold: 0.256667
+
     benchmarks:
+      # Existing LightEval sampling controls do not establish repeated seeded runs.
       - id: gpqa:diamond
         provider_id: lighteval
-        weight: 1
+        weight: 0.3333333333333333
         primary_score:
-          metric: gpqa_pass@1
+          metric: gpqa:diamond.gpqa_pass@1
           lower_is_better: false
         pass_criteria:
           threshold: 0.35
+        parameters:
+          apply_chat_template: true
+          num_fewshot: 0
+          num_samples: 3
+          pass_at_k: 1
 
       - id: inspect/hle
         provider_id: inspect
-        weight: 1
+        weight: 0.3333333333333333
         primary_score:
-          metric: regex_judge/accuracy
+          metric: hle/regex_judge/hle/accuracy
           lower_is_better: false
         pass_criteria:
           threshold: 0.12
         parameters:
+          # Screening cap; override num_examples in the request for other run sizes.
+          num_examples: 50
           task_args:
             include_multi_modal: false
-            graders: [grader]
+            only_hle_verified_gold: false
+            scorer:
+              scorer: inspect_evals/hle/regex_judge
+              graders: [grader]
+              metrics:
+                - inspect_evals/hle/accuracy
+                - inspect_evals/hle/stderr
+                - inspect_evals/hle/cerr
+                - inspect_evals/hle/unscored
+              args:
+                template: regex_judge_template
+                instructions: regex_judge_instructions
+                max_grader_attempts: 3
+
+      - id: math_500
+        provider_id: lighteval
+        weight: 0.3333333333333333
+        primary_score:
+          metric: math_500.pass@1
+          lower_is_better: false
+        pass_criteria:
+          threshold: 0.30
+        parameters:
+          apply_chat_template: true
+          num_fewshot: 0
+          num_samples: 3
+          pass_at_k: 1
+
+
+    documentation:
+      purpose: >-
+        Diagnose closed-book, text-only scientific, academic, and mathematical reasoning
+        without browsing, retrieval, or tools.
+      selection:
+      - provider_id: lighteval
+        benchmark_id: gpqa:diamond
+        rationale: Difficult scientific questions.
+      - provider_id: inspect
+        benchmark_id: inspect/hle
+        rationale: Frontier-difficulty academic questions, restricted to text-only data.
+      - provider_id: lighteval
+        benchmark_id: math_500
+        rationale: Competition-level mathematical reasoning.
+      scoring:
+        configuration: >-
+          Each benchmarks entry defines its primary metric, direction, weight, and threshold.
+          Primary scores are fractions on a 0-1 scale.
+        aggregation: >-
+          Use the raw score for higher-is-better metrics and 1 - raw score for lower-is-better
+          metrics, then take the weighted mean. Equal weights give each benchmark one-third
+          of the summary, irrespective of dataset size.
+        threshold_provenance: >-
+          The collection threshold is the equally weighted mean of the benchmark thresholds,
+          rounded to six decimal places. These targets are diagnostic, not calibrated
+          deployment acceptance criteria.
+        interpretation: >-
+          An aggregate pass does not guarantee that every benchmark passes. Missing primary
+          metrics can omit benchmark tests and their contributions to the aggregate;
+          check completeness and per-benchmark results before interpreting the summary.
+      runtime:
+        configuration: >-
+          Benchmark parameters are defined in benchmarks above. Provider image pins are in
+          config/providers/inspect.yaml and config/providers/lighteval.yaml.
+        hle: >-
+          Uses the static text-only dataset without restricting it to verified-gold questions,
+          with a screening cap and one regex_judge grader. Bind model_roles.grader and its
+          credentials in the request. See examples/inspect-hle/README.md for the supported
+          runtime and a standalone request generated from this collection's settings.
+      limitations:
+      - >-
+        Structured-table and structured-data analysis are outside this collection's scope.
+        Difficult tasks may give little discrimination among smaller models.
+      - >-
+        LightEval sampling controls do not establish independently seeded runs. Verify the
+        effective few-shot settings and sample counts when changing the run configuration.
+      - >-
+        HLE task arguments and result keys depend on the installed inspect-evals version.
+        Revalidate judge, dataset, and scoring semantics when upgrading the pinned runtime.
+      - >-
+        The HLE screening cap is not a full-benchmark evaluation. Supply an independent grader
+        and choose the evaluation size explicitly for each deployment.
+      - >-
+        YAML documentation is not currently persisted or exposed as a documentation field
+        by the collection API.
