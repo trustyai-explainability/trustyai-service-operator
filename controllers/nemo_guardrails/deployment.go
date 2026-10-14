@@ -4,10 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"reflect"
 	"sort"
 	"strings"
+
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/google/uuid"
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
@@ -31,16 +32,21 @@ type ContainerImages struct {
 }
 
 type DeploymentConfig struct {
-	NemoGuardrails      *nemoguardrailsv1alpha1.NemoGuardrails
-	ContainerImages     ContainerImages
-	UseAuthProxy        bool
-	KubeRbacProxyConfig *utils.KubeRBACProxyConfig
+	NemoGuardrails           *nemoguardrailsv1alpha1.NemoGuardrails
+	ContainerImages          ContainerImages
+	UseAuthProxy             bool
+	KubeRbacProxyConfig      *utils.KubeRBACProxyConfig
+	KubeRbacProxyAdminConfig *utils.KubeRBACProxyConfig
 }
 
 const deploymentTemplateFilename = "deployment.tmpl.yaml"
 
-func GetRBACConfigName(nemoGuardrails nemoguardrailsv1alpha1.NemoGuardrails) string {
-	return nemoGuardrails.Name + "-rbac-proxy-config"
+func GetRBACConfigName(nemoGuardrails nemoguardrailsv1alpha1.NemoGuardrails, isAdmin bool) string {
+	if isAdmin {
+		return nemoGuardrails.Name + "-rbac-proxy-admin-config"
+	} else {
+		return nemoGuardrails.Name + "-rbac-proxy-config"
+	}
 }
 
 // setAuthConfig will create a KubeRBACProxyConfig inside the DeploymentConfig for use in template parsing
@@ -56,10 +62,21 @@ func (r *NemoGuardrailsReconciler) setAuthConfig(ctx context.Context, nemoGuardr
 	deploymentConfig.KubeRbacProxyConfig = &utils.KubeRBACProxyConfig{
 		Suffix:             "",
 		Namespace:          nemoGuardrails.Namespace,
-		Name:               GetRBACConfigName(*nemoGuardrails),
+		Name:               GetRBACConfigName(*nemoGuardrails, false),
 		KubeRBACProxyImage: authImage,
 		DownstreamPort:     8443,
 		HealthPort:         9444,
+		UpstreamProtocol:   "http",
+		UpstreamHost:       "localhost",
+		UpstreamPort:       8000,
+	}
+	deploymentConfig.KubeRbacProxyAdminConfig = &utils.KubeRBACProxyConfig{
+		Suffix:             "",
+		Namespace:          nemoGuardrails.Namespace,
+		Name:               GetRBACConfigName(*nemoGuardrails, true),
+		KubeRBACProxyImage: authImage,
+		DownstreamPort:     8444,
+		HealthPort:         9445,
 		UpstreamProtocol:   "http",
 		UpstreamHost:       "localhost",
 		UpstreamPort:       8000,
@@ -247,8 +264,9 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 		return nil, err
 	}
 	for i := range deployment.Spec.Template.Spec.Containers {
-		if deployment.Spec.Template.Spec.Containers[i].Name == "kube-rbac-proxy" {
-			deployment.Spec.Template.Spec.Containers[i].Args = append(deployment.Spec.Template.Spec.Containers[i].Args, pkgtls.CurrentProxyTLSArguments().Args...)
+		c := &deployment.Spec.Template.Spec.Containers[i]
+		if c.Name == "kube-rbac-proxy" || c.Name == "kube-rbac-proxy-admin" {
+			c.Args = append(c.Args, pkgtls.CurrentProxyTLSArguments().Args...)
 		}
 	}
 	if err := controllerutil.SetControllerReference(nemoGuardrails, deployment, r.Scheme); err != nil {

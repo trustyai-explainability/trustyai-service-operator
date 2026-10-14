@@ -16,7 +16,7 @@ data:
       resourceAttributes:
         namespace: "{{ .Owner.Namespace }}"
         resource: "services"
-        resourceName: "{{ .Owner.Name }}-service"
+        name: "{{ .Owner.Name }}"
         verb: "get"
         apiGroup: ""
     upstreamConfig:
