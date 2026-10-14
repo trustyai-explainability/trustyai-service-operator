@@ -5,6 +5,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	routev1 "github.com/openshift/api/route/v1"
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	corev1 "k8s.io/api/core/v1"
@@ -13,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -330,5 +332,61 @@ var _ = Describe("NemoGuardrails reconcile with an invalid allowedConsumers sele
 		Expect(fixedCond).NotTo(BeNil())
 		Expect(fixedCond.Status).To(Equal(corev1.ConditionTrue))
 		Expect(fixedCond.Reason).To(Equal(validAllowedConsumersReason))
+	})
+
+	It("deletes an owned Route when exposeRoute is false", func() {
+		const name = "invalid-selector-unexpose"
+		key := types.NamespacedName{Name: name, Namespace: namespace}
+		cr := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "trustyai.opendatahub.io/v1alpha1",
+			"kind":       "NemoGuardrails",
+			"metadata": map[string]any{
+				"name":      name,
+				"namespace": namespace,
+			},
+			"spec": map[string]any{
+				"exposeRoute": false,
+				"nemoConfigs": []any{
+					map[string]any{"name": "config", "configMaps": []any{"config"}},
+				},
+				"allowedConsumers": map[string]any{
+					"namespaces": map[string]any{
+						"from": "Selector",
+						"selector": map[string]any{
+							"matchLabels": map[string]any{"???": "team-a"},
+						},
+					},
+				},
+			},
+		}}
+		Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+
+		owner := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, key, owner)).To(Succeed())
+
+		route := &routev1.Route{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+			Spec: routev1.RouteSpec{
+				To: routev1.RouteTargetReference{Kind: "Service", Name: name},
+			},
+		}
+		Expect(controllerutil.SetControllerReference(owner, route, k8sClient.Scheme())).To(Succeed())
+		Expect(k8sClient.Create(ctx, route)).To(Succeed())
+
+		reconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: namespace,
+		}
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key})
+		Expect(err).NotTo(HaveOccurred())
+
+		deleted := &routev1.Route{}
+		err = k8sClient.Get(ctx, key, deleted)
+		Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+		updated := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, key, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(utils.PhaseError))
 	})
 })

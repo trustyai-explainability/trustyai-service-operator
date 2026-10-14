@@ -101,7 +101,7 @@ const (
 	// ConsumerNamespaceFromSame allows only the NemoGuardrails CR's namespace.
 	ConsumerNamespaceFromSame ConsumerNamespaceFrom = "Same"
 	// ConsumerNamespaceFromSelector allows namespaces whose labels match Selector.
-	// The NemoGuardrails CR namespace must match the selector too.
+	// The NemoGuardrails CR namespace must match the selector too. The selector is ver
 	ConsumerNamespaceFromSelector ConsumerNamespaceFrom = "Selector"
 	// ConsumerNamespaceFromAll allows any namespace.
 	ConsumerNamespaceFromAll ConsumerNamespaceFrom = "All"
