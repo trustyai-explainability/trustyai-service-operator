@@ -31,5 +31,7 @@ resources:
   - collection-tool-use-v1.yaml
   - collection-toxicity-and-ethical-principles.yaml
   - collection-trustworthiness-v1.yaml
+  - collection-fairness-bias-v1.yaml
+  - collection-safety-ethical-principles-v1.yaml
 
 namespace: system

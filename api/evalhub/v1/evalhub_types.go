@@ -208,13 +208,13 @@ type EvalHubSpec struct {
 
 	// Providers is the list of OOTB provider names to mount into the deployment.
 	// Each name must match a provider-name label on a ConfigMap in the operator namespace.
-	// +kubebuilder:default:={"garak","garak-kfp","lm-evaluation-harness"}
+	// +kubebuilder:default:={"garak","garak-kfp","lm-evaluation-harness","inspect","lighteval","ruler","ifbench","followbench"}
 	// +optional
 	Providers []string `json:"providers,omitempty"`
 
 	// Collections is the list of OOTB collection names to mount into the deployment.
 	// Each name must match a collection-name label on a ConfigMap in the operator namespace.
-	// +kubebuilder:default:={"leaderboard-v2","safety-and-fairness-v1","toxicity-and-ethical-principles","knowledge-reasoning-v1","document-understanding-v1","instruction-output-v1","tool-use-v1","software-v1","trustworthiness-v1","multimodal-v1"}
+	// +kubebuilder:default:={"leaderboard-v2","safety-and-fairness-v1","toxicity-and-ethical-principles","knowledge-reasoning-v1","document-understanding-v1","instruction-output-v1","tool-use-v1","software-v1","trustworthiness-v1","multimodal-v1","fairness-bias-v1","safety-ethical-principles-v1"}
 	// +optional
 	Collections []string `json:"collections,omitempty"`
 

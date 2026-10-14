@@ -7,6 +7,14 @@ metadata:
     trustyai.opendatahub.io/evalhub-provider-name: followbench
 data:
   followbench.yaml: |
+    # FollowBench provider definition for EvalHub.
+    #
+    # Upstream:
+    # https://github.com/YJiangcm/FollowBench
+    #
+    # Revision:
+    # 6278f4c1377b4eafab737267b8b21acd52ea0e52
+
     id: followbench
     name: FollowBench
     description: >
@@ -86,7 +94,7 @@ data:
       - name: temperature
         type: number
         default: 0.0
-        description: Sampling temperature for model and judge.
+        description: Model and judge sampling temperature.
 
       - name: request_timeout
         type: integer
