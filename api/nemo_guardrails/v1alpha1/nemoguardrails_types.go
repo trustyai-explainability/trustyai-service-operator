@@ -27,7 +27,10 @@ import (
 
 // NemoConfig holds information related to a single configuration of the NeMo Guardrails server
 type NemoConfig struct {
-	//Name sets the id of this particular config within the NeMo Guardrails server. This will create a directory called /app/config/$Name. Since it $Name will be used a directory, it must only contain alphanumeric characters, dashes, and underscores. Consumers such as AIGuardrail reference this value via checks[].configId, so it must always be set.
+	// Name sets the id of this particular config within the NeMo Guardrails server. This will create a
+	// directory called /app/config/$Name. Since it $Name will be used a directory, it must only
+	// contain alphanumeric characters, dashes, and underscores. Consumers such as AIGuardrail reference
+	// this value via checks[].configId, so it must always be set.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
@@ -46,9 +49,11 @@ type NemoGuardrailsSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// NemoConfig should be the names of the configmaps containing NeMO server configuration files. All files in NemoConfigs will be mounted to /app/config/$Name
-	// Names must be unique: they are the id consumers reference (AIGuardrail checks[].configId) and they determine the /app/config/$Name mount path, so a duplicate is both an ambiguous reference and a colliding mount.
-	// MaxItems bounds the uniqueness rule below, which is quadratic and is rejected by the apiserver's CEL cost estimator on an unbounded list.
+	// Names must be unique: they are the id consumers reference (AIGuardrail checks[].configId)
+	// and they determine the /app/config/$Name mount path, so a duplicate is both an ambiguous
+	// reference and a colliding mount.
+	// MaxItems bounds the uniqueness rule below, which is quadratic and is rejected by the apiserver's
+	// CEL cost estimator on an unbounded list.
 	// +kubebuilder:validation:MaxItems=64
 	// +kubebuilder:validation:XValidation:rule="self.all(c, self.exists_one(o, o.name == c.name))",message="nemoConfigs names must be unique"
 	NemoConfigs    []NemoConfig           `json:"nemoConfigs"`
