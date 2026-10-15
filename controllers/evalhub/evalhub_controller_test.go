@@ -277,6 +277,7 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		Expect(policy.OwnerReferences[0].UID).To(Equal(evalHub.UID))
 		Expect(policy.Spec.PolicyTypes).To(Equal([]networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}))
 		Expect(policy.Spec.Egress).To(HaveLen(1))
+		Expect(policy.Spec.Egress[0].To).To(BeEmpty())
 		Expect(policy.Spec.Egress[0].Ports).To(BeEmpty())
 
 		By("Checking that Deployment is created")

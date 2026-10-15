@@ -45,8 +45,8 @@ func TestBuildEvalHubNetworkPolicy(t *testing.T) {
 	if len(desired.Policy.Spec.PolicyTypes) != 2 || desired.Policy.Spec.PolicyTypes[0] != networkingv1.PolicyTypeIngress || desired.Policy.Spec.PolicyTypes[1] != networkingv1.PolicyTypeEgress {
 		t.Fatalf("policyTypes = %v, want Ingress and Egress", desired.Policy.Spec.PolicyTypes)
 	}
-	if len(desired.Policy.Spec.Egress) != 1 || len(desired.Policy.Spec.Egress[0].Ports) != 0 {
-		t.Fatalf("egress rules = %#v, want exactly one port-less AllowAll rule", desired.Policy.Spec.Egress)
+	if len(desired.Policy.Spec.Egress) != 1 || len(desired.Policy.Spec.Egress[0].To) != 0 || len(desired.Policy.Spec.Egress[0].Ports) != 0 {
+		t.Fatalf("egress rules = %#v, want exactly one port-less AllowAll rule with no peers", desired.Policy.Spec.Egress)
 	}
 	if desired.Egress == nil || desired.Egress.Mode != utils.NetworkPolicyAllowAll || desired.Egress.Rationale == "" || desired.Egress.ResidualRisk == "" {
 		t.Fatalf("egress intent = %#v, want a documented AllowAll compatibility profile", desired.Egress)
@@ -308,6 +308,103 @@ func TestReconcileEvalHubNetworkPolicyRepairsDriftAndDeletion(t *testing.T) {
 	actual = &networkingv1.NetworkPolicy{}
 	if err := c.Get(ctx, key, actual); err != nil {
 		t.Fatalf("get recreated NetworkPolicy: %v", err)
+	}
+}
+
+// TestReconcileEvalHubNetworkPolicyUpgradesIngressOnlyPolicy pins the upgrade
+// path from the ingress-only policy shipped by #983: an existing CR-owned
+// policy without egress converges in place to the documented AllowAll egress
+// shape — same object, egress rule and intent annotations added — and the
+// converged object is stable on a second reconcile.
+func TestReconcileEvalHubNetworkPolicyUpgradesIngressOnlyPolicy(t *testing.T) {
+	scheme := runtime.NewScheme()
+	for _, addToScheme := range []func(*runtime.Scheme) error{
+		corev1.AddToScheme,
+		networkingv1.AddToScheme,
+		evalhubv1.AddToScheme,
+	} {
+		if err := addToScheme(scheme); err != nil {
+			t.Fatalf("register test types: %v", err)
+		}
+	}
+	owner := testEvalHubNetworkPolicyOwner()
+	owner.GetObjectKind().SetGroupVersionKind(evalhubv1.GroupVersion.WithKind("EvalHub"))
+	identity, err := evalHubNetworkPolicyIdentity(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, err := identity.Name("api-ingress")
+	if err != nil {
+		t.Fatal(err)
+	}
+	identityLabels, err := identity.Labels()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Seed the pre-upgrade shape from #983: ingress-only PolicyTypes, no
+	// egress rules, no egress annotations, owned by the EvalHub CR.
+	legacy := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: owner.Namespace,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: evalhubv1.GroupVersion.String(),
+				Kind:       "EvalHub",
+				Name:       owner.Name,
+				UID:        owner.UID,
+				Controller: &[]bool{true}[0],
+			}},
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{MatchLabels: identityLabels},
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+			Ingress: []networkingv1.NetworkPolicyIngressRule{{
+				From:  []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"network.openshift.io/policy-group": "ingress"}}}},
+				Ports: []networkingv1.NetworkPolicyPort{evalHubNetworkPolicyTCPPort(servicePort)},
+			}},
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner, legacy).Build()
+	reconciler := &EvalHubReconciler{Client: c, Scheme: scheme, Namespace: "redhat-ods-applications"}
+	ctx := context.Background()
+
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
+		t.Fatalf("upgrade reconcile: %v", err)
+	}
+	upgraded := &networkingv1.NetworkPolicy{}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(legacy), upgraded); err != nil {
+		t.Fatalf("get upgraded NetworkPolicy: %v", err)
+	}
+	if upgraded.UID != legacy.UID {
+		t.Fatal("upgrade replaced the policy object instead of converging it in place")
+	}
+	if len(upgraded.Spec.PolicyTypes) != 2 || upgraded.Spec.PolicyTypes[0] != networkingv1.PolicyTypeIngress ||
+		upgraded.Spec.PolicyTypes[1] != networkingv1.PolicyTypeEgress {
+		t.Fatalf("policyTypes = %v, want the egress direction added", upgraded.Spec.PolicyTypes)
+	}
+	if len(upgraded.Spec.Egress) != 1 || len(upgraded.Spec.Egress[0].To) != 0 || len(upgraded.Spec.Egress[0].Ports) != 0 {
+		t.Fatalf("egress rules = %#v, want exactly one empty AllowAll rule", upgraded.Spec.Egress)
+	}
+	if mode := upgraded.Annotations["trustyai.opendatahub.io/network-policy-egress-mode"]; mode != string(utils.NetworkPolicyAllowAll) {
+		t.Fatalf("egress mode annotation = %q, want the recorded AllowAll mode", mode)
+	}
+	if upgraded.Annotations["trustyai.opendatahub.io/network-policy-egress-rationale"] == "" ||
+		upgraded.Annotations["trustyai.opendatahub.io/network-policy-egress-residual-risk"] == "" {
+		t.Fatalf("egress intent annotations = %#v, want persisted rationale and residual risk", upgraded.Annotations)
+	}
+
+	// The converged object is stable: a second reconcile must not rewrite it.
+	before := upgraded.ResourceVersion
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
+		t.Fatalf("idempotent reconcile: %v", err)
+	}
+	stable := &networkingv1.NetworkPolicy{}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(legacy), stable); err != nil {
+		t.Fatalf("get stable NetworkPolicy: %v", err)
+	}
+	if stable.ResourceVersion != before {
+		t.Fatalf("second reconcile rewrote the converged policy: resourceVersion %q -> %q", before, stable.ResourceVersion)
 	}
 }
 
