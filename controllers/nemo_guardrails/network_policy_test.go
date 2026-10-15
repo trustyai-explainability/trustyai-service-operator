@@ -260,15 +260,15 @@ func TestReconcileNemoNetworkPolicyRefusesForeignDeployment(t *testing.T) {
 	}
 }
 
-func TestReconcileNemoNetworkPolicyRefusesPodFromForeignReplicaSet(t *testing.T) {
+func TestReconcileNemoNetworkPolicySkipsPodFromForeignReplicaSet(t *testing.T) {
 	ctx := context.Background()
 	scheme, owner := nemoNetworkPolicyFixture(t)
 	deployment, replicaSet, pod := nemoNetworkPolicyWorkloadFixture(owner)
 	replicaSet.OwnerReferences[0].UID = types.UID("foreign-deployment-uid")
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner, deployment, replicaSet, pod).Build()
 	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
-	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err == nil {
-		t.Fatal("Pod controlled by a foreign ReplicaSet was accepted")
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
+		t.Fatalf("foreign ReplicaSet candidate blocked reconciliation: %v", err)
 	}
 	actualPod := &corev1.Pod{}
 	if err := c.Get(ctx, client.ObjectKeyFromObject(pod), actualPod); err != nil {
@@ -276,6 +276,92 @@ func TestReconcileNemoNetworkPolicyRefusesPodFromForeignReplicaSet(t *testing.T)
 	}
 	if _, found := actualPod.Labels[utils.NetworkPolicyOwnerUIDLabel]; found {
 		t.Fatal("foreign-owned Pod received reserved NemoGuardrails identity labels")
+	}
+	// The owned workload keeps reconciling: the policy exists even though the
+	// foreign candidate was skipped.
+	policies := &networkingv1.NetworkPolicyList{}
+	if err := c.List(ctx, policies, client.InNamespace(owner.Namespace)); err != nil {
+		t.Fatal(err)
+	}
+	if len(policies.Items) != 1 {
+		t.Fatalf("policy was not reconciled alongside the foreign Pod candidate: %#v", policies.Items)
+	}
+}
+
+func TestBuildNemoGuardrailsNetworkPolicyWithoutRouteExposure(t *testing.T) {
+	instance := testNemoNetworkPolicyOwner()
+	exposeRoute := false
+	instance.Spec.ExposeRoute = &exposeRoute
+	desired, err := buildNemoGuardrailsNetworkPolicy(instance)
+	if err != nil {
+		t.Fatalf("buildNemoGuardrailsNetworkPolicy(exposeRoute=false) error = %v", err)
+	}
+	identity, err := nemoNetworkPolicyIdentity(instance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := utils.ValidateWorkloadNetworkPolicyWithIngressIntent(desired.Policy, identity, desired.Egress, desired.Ingress); err != nil {
+		t.Fatalf("ValidateWorkloadNetworkPolicyWithIngressIntent() error = %v", err)
+	}
+	// Route exposure disabled keeps the Ingress direction (the listener stays
+	// isolated) while removing the router allow rule and its intent entirely.
+	if len(desired.Policy.Spec.PolicyTypes) != 2 || desired.Policy.Spec.PolicyTypes[0] != networkingv1.PolicyTypeIngress ||
+		desired.Policy.Spec.PolicyTypes[1] != networkingv1.PolicyTypeEgress {
+		t.Fatalf("policyTypes = %v, want [Ingress Egress] even with Route exposure disabled", desired.Policy.Spec.PolicyTypes)
+	}
+	if len(desired.Policy.Spec.Ingress) != 0 {
+		t.Fatalf("ingress rules = %#v, want none with Route exposure disabled", desired.Policy.Spec.Ingress)
+	}
+	if desired.Ingress != nil {
+		t.Fatalf("ingress intent = %#v, want none with Route exposure disabled", desired.Ingress)
+	}
+	if len(desired.Policy.Spec.Egress) != 1 || len(desired.Policy.Spec.Egress[0].To) != 0 || len(desired.Policy.Spec.Egress[0].Ports) != 0 {
+		t.Fatalf("egress rules = %#v, want exactly one empty AllowAll rule", desired.Policy.Spec.Egress)
+	}
+}
+
+func TestReconcileNemoNetworkPolicyRemovesRouterPeerWhenRouteExposureDisabled(t *testing.T) {
+	ctx := context.Background()
+	scheme, owner := nemoNetworkPolicyFixture(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner).Build()
+	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
+
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
+		t.Fatalf("initial reconcile with Route exposure enabled: %v", err)
+	}
+	desired, err := buildNemoGuardrailsNetworkPolicy(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policyKey := client.ObjectKeyFromObject(desired.Policy)
+	exposed := &networkingv1.NetworkPolicy{}
+	if err := c.Get(ctx, policyKey, exposed); err != nil {
+		t.Fatalf("get NetworkPolicy after exposed reconcile: %v", err)
+	}
+	if len(exposed.Spec.Ingress) != 1 {
+		t.Fatalf("ingress rules = %d, want the router rule while Route exposure is enabled", len(exposed.Spec.Ingress))
+	}
+
+	// Flipping exposeRoute to false must converge the same owned policy object
+	// to the ingress-isolated shape instead of leaving the stale router grant.
+	exposeRoute := false
+	owner.Spec.ExposeRoute = &exposeRoute
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
+		t.Fatalf("reconcile after disabling Route exposure: %v", err)
+	}
+	isolated := &networkingv1.NetworkPolicy{}
+	if err := c.Get(ctx, policyKey, isolated); err != nil {
+		t.Fatalf("get NetworkPolicy after isolated reconcile: %v", err)
+	}
+	if isolated.UID != exposed.UID {
+		t.Fatal("policy object was replaced instead of updated in place")
+	}
+	if len(isolated.Spec.Ingress) != 0 {
+		t.Fatalf("ingress rules = %#v, want the router rule removed after disabling Route exposure", isolated.Spec.Ingress)
+	}
+	if len(isolated.Spec.PolicyTypes) != 2 || isolated.Spec.PolicyTypes[0] != networkingv1.PolicyTypeIngress ||
+		isolated.Spec.PolicyTypes[1] != networkingv1.PolicyTypeEgress {
+		t.Fatalf("policyTypes = %v, want [Ingress Egress] preserved", isolated.Spec.PolicyTypes)
 	}
 }
 

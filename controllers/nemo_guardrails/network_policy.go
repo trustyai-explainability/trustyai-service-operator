@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -67,11 +68,24 @@ func nemoIngressListenerPort(instance *nemoguardrailsv1alpha1.NemoGuardrails) in
 	return nemoServerPort
 }
 
+// nemoRouteExposureEnabled reports whether the CR exposes an external Route.
+// It mirrors the controller's default: nil is treated as enabled.
+func nemoRouteExposureEnabled(instance *nemoguardrailsv1alpha1.NemoGuardrails) bool {
+	return instance.Spec.ExposeRoute == nil || *instance.Spec.ExposeRoute
+}
+
 // buildNemoGuardrailsNetworkPolicy authors the NemoGuardrails NetworkPolicy:
 // a router ingress peer on the exposed listener plus a documented AllowAll
 // egress baseline. The egress mode is a reviewed compatibility profile, not
 // exfiltration protection; callers must not treat the policy as complete
 // workload network isolation.
+//
+// The router peer is installed only while Route exposure is enabled
+// (spec.exposeRoute, defaulting to true, mirroring the controller's Route
+// reconciliation). With exposure disabled the policy keeps the Ingress
+// direction with no allow rules, so the listener is isolated from every
+// peer — the Service remains for in-cluster callers, but no traffic is
+// authorized until separately agreed peer rules exist.
 func buildNemoGuardrailsNetworkPolicy(instance *nemoguardrailsv1alpha1.NemoGuardrails) (utils.WorkloadNetworkPolicy, error) {
 	identity, err := nemoNetworkPolicyIdentity(instance)
 	if err != nil {
@@ -96,16 +110,24 @@ func buildNemoGuardrailsNetworkPolicy(instance *nemoguardrailsv1alpha1.NemoGuard
 	// (app, component, deploy-name) stay on the Pods and Deployment template.
 	podSelector := identityLabels
 
-	ingressIntent := &utils.NetworkPolicyIngressIntent{NamespaceOnlyPeers: []utils.NetworkPolicyNamespaceOnlyPeerIntent{{
-		NamespaceSelector: routerNamespaceSelector,
-		Rationale: "OpenShift Route traffic is sourced by router Pods in ingress namespaces; no stable supported " +
-			"router Pod selector is assumed.",
-		ResidualRisk: "Any Pod in a namespace carrying the OpenShift ingress policy-group label can reach the " +
-			"exposed NemoGuardrails listener. In-cluster Service callers (for example an AI Gateway) and the " +
-			"authenticated admin listener are not yet granted; their peers remain pending decisions with the " +
-			"component and platform owners. Kubelet probes are node-originated and not constrainable by " +
-			"NetworkPolicy peer selectors.",
-	}}}
+	ingress := []networkingv1.NetworkPolicyIngressRule{}
+	var ingressIntent *utils.NetworkPolicyIngressIntent
+	if nemoRouteExposureEnabled(instance) {
+		ingress = append(ingress, networkingv1.NetworkPolicyIngressRule{
+			From:  []networkingv1.NetworkPolicyPeer{{NamespaceSelector: routerNamespaceSelector.DeepCopy()}},
+			Ports: []networkingv1.NetworkPolicyPort{nemoNetworkPolicyTCPPort(nemoIngressListenerPort(instance))},
+		})
+		ingressIntent = &utils.NetworkPolicyIngressIntent{NamespaceOnlyPeers: []utils.NetworkPolicyNamespaceOnlyPeerIntent{{
+			NamespaceSelector: routerNamespaceSelector,
+			Rationale: "OpenShift Route traffic is sourced by router Pods in ingress namespaces; no stable supported " +
+				"router Pod selector is assumed. The peer is installed only while Route exposure is enabled.",
+			ResidualRisk: "Any Pod in a namespace carrying the OpenShift ingress policy-group label can reach the " +
+				"exposed NemoGuardrails listener. In-cluster Service callers (for example an AI Gateway) and the " +
+				"authenticated admin listener are not yet granted; their peers remain pending decisions with the " +
+				"component and platform owners. Kubelet probes are node-originated and not constrainable by " +
+				"NetworkPolicy peer selectors.",
+		}}}
+	}
 
 	egressIntent := &utils.NetworkPolicyEgressIntent{
 		Mode: utils.NetworkPolicyAllowAll,
@@ -127,13 +149,8 @@ func buildNemoGuardrailsNetworkPolicy(instance *nemoguardrailsv1alpha1.NemoGuard
 					networkingv1.PolicyTypeIngress,
 					networkingv1.PolicyTypeEgress,
 				},
-				Ingress: []networkingv1.NetworkPolicyIngressRule{
-					{
-						From:  []networkingv1.NetworkPolicyPeer{{NamespaceSelector: routerNamespaceSelector.DeepCopy()}},
-						Ports: []networkingv1.NetworkPolicyPort{nemoNetworkPolicyTCPPort(nemoIngressListenerPort(instance))},
-					},
-				},
-				Egress: []networkingv1.NetworkPolicyEgressRule{{}},
+				Ingress: ingress,
+				Egress:  []networkingv1.NetworkPolicyEgressRule{{}},
 			},
 		},
 		Ingress: ingressIntent,
@@ -185,7 +202,10 @@ func (r *NemoGuardrailsReconciler) reconcileNetworkPolicy(ctx context.Context, i
 
 // labelOwnedNemoPods upgrades already-running Pods after the identity-selected
 // policy has been reconciled. It edits metadata only after validating the
-// Deployment -> ReplicaSet -> Pod controller chain.
+// Deployment -> ReplicaSet -> Pod controller chain. Selected Pods that fail
+// the chain are foreign or stale candidates: they are skipped with a
+// diagnostic and never labelled, but they do not block reconciliation of the
+// owned workload.
 func (r *NemoGuardrailsReconciler) labelOwnedNemoPods(ctx context.Context, instance *nemoguardrailsv1alpha1.NemoGuardrails, deployment *appsv1.Deployment, identity utils.NetworkPolicyIdentity) error {
 	owner := nemoNetworkPolicyOwner(instance)
 	if !nemoControllerReferenceMatches(deployment, owner, nemoguardrailsv1alpha1.GroupVersion.Group, "NemoGuardrails") {
@@ -214,20 +234,38 @@ func (r *NemoGuardrailsReconciler) labelOwnedNemoPods(ctx context.Context, insta
 
 	for index := range pods.Items {
 		pod := &pods.Items[index]
+		// Pods matching the Deployment's public selector are not necessarily
+		// part of this workload: a principal with Pod-create permission can
+		// reproduce the selector labels, and stale Pods can outlive the
+		// ReplicaSet of a replaced Deployment. Confirmed non-owned candidates
+		// are skipped with a diagnostic instead of blocking the instance;
+		// they never receive identity labels. Genuine API failures and
+		// failures updating verified-owned Pods remain reconcile errors.
 		replicaSetRef := metav1.GetControllerOf(pod)
 		if replicaSetRef == nil || replicaSetRef.Kind != "ReplicaSet" {
-			return fmt.Errorf("NemoGuardrails-selected Pod %s/%s has no ReplicaSet controller; refusing identity migration", pod.Namespace, pod.Name)
+			log.FromContext(ctx).Info("Skipping NemoGuardrails-selected Pod without a ReplicaSet controller during identity migration",
+				"pod", client.ObjectKeyFromObject(pod))
+			continue
 		}
 		replicaSetGV, err := schema.ParseGroupVersion(replicaSetRef.APIVersion)
 		if err != nil || replicaSetGV.Group != "apps" {
-			return fmt.Errorf("NemoGuardrails-selected Pod %s/%s has an invalid ReplicaSet controller reference", pod.Namespace, pod.Name)
+			log.FromContext(ctx).Info("Skipping NemoGuardrails-selected Pod with an invalid ReplicaSet controller reference during identity migration",
+				"pod", client.ObjectKeyFromObject(pod))
+			continue
 		}
 		replicaSet := &appsv1.ReplicaSet{}
 		if err := reader.Get(ctx, client.ObjectKey{Namespace: pod.Namespace, Name: replicaSetRef.Name}, replicaSet); err != nil {
+			if apierrors.IsNotFound(err) {
+				log.FromContext(ctx).Info("Skipping stale NemoGuardrails-selected Pod whose ReplicaSet no longer exists during identity migration",
+					"pod", client.ObjectKeyFromObject(pod))
+				continue
+			}
 			return fmt.Errorf("verify ReplicaSet for NemoGuardrails Pod %s/%s: %w", pod.Namespace, pod.Name, err)
 		}
 		if replicaSet.UID != replicaSetRef.UID || !nemoControllerReferenceMatches(replicaSet, deployment, "apps", "Deployment") {
-			return fmt.Errorf("NemoGuardrails-selected Pod %s/%s is not controlled by the current Deployment", pod.Namespace, pod.Name)
+			log.FromContext(ctx).Info("Skipping NemoGuardrails-selected Pod not controlled by the current Deployment during identity migration",
+				"pod", client.ObjectKeyFromObject(pod))
+			continue
 		}
 
 		changed := false
