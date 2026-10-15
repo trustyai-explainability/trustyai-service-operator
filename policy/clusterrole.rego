@@ -68,6 +68,9 @@ allowed_api_resources := {
 	["serving.kserve.io", "servingruntimes"],
 
 	# --- kueue ---
+	# localqueues: read-only listing by the EvalHub API service in tenant
+	# namespaces (queue-backed hardware profiles for GET /api/v1/info).
+	["kueue.x-k8s.io", "localqueues"],
 	["kueue.x-k8s.io", "resourceflavors"],
 	["kueue.x-k8s.io", "workloads"],
 	["kueue.x-k8s.io", "workloads/finalizers"],

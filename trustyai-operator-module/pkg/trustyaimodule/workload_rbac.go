@@ -60,6 +60,7 @@ package trustyaimodule
 // +kubebuilder:rbac:groups=mlflow.kubeflow.org,resources=experiments,verbs=get;list;create;update;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=infrastructure.opendatahub.io,resources=hardwareprofiles,verbs=get;list
+// +kubebuilder:rbac:groups=kueue.x-k8s.io,resources=localqueues,verbs=list
 // +kubebuilder:rbac:groups=kueue.x-k8s.io,resources=workloads,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs,verbs=get

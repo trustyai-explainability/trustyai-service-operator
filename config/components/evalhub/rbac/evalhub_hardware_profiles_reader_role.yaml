@@ -12,3 +12,8 @@ rules:
   - apiGroups: ["infrastructure.opendatahub.io"]
     resources: ["hardwareprofiles"]
     verbs: ["get", "list"]
+  # The EvalHub API lists Kueue LocalQueues in the tenant namespace to resolve
+  # queue-backed hardware profiles for GET /api/v1/info (single List call).
+  - apiGroups: ["kueue.x-k8s.io"]
+    resources: ["localqueues"]
+    verbs: ["list"]
