@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -64,7 +65,15 @@ func tasNetworkPolicyTCPPort(port int32) networkingv1.NetworkPolicyPort {
 // peers plus a documented AllowAll egress baseline. The egress mode is a
 // reviewed compatibility profile, not exfiltration protection; callers must
 // not treat the policy as complete workload network isolation.
-func buildTASNetworkPolicy(instance *trustyaiopendatahubiov1.TrustyAIService) (utils.WorkloadNetworkPolicy, error) {
+//
+// kServeServerlessEnabled mirrors the operator's kServeServerless
+// configuration: when enabled, KServe Serverless/Knative InferenceServices
+// are patched with an HTTP logger URL (http://<tas>.<ns>.svc.cluster.local),
+// which the Service maps to Pod port 8080. The HTTP path is therefore
+// authorized for the qualified KServe peer in addition to the HTTPS logger
+// port 4443 used by Raw/Standard deployments. Port 8080 is never opened to
+// namespace Pods at large.
+func buildTASNetworkPolicy(instance *trustyaiopendatahubiov1.TrustyAIService, kServeServerlessEnabled bool) (utils.WorkloadNetworkPolicy, error) {
 	identity, err := tasNetworkPolicyIdentity(instance)
 	if err != nil {
 		return utils.WorkloadNetworkPolicy{}, err
@@ -115,6 +124,49 @@ func buildTASNetworkPolicy(instance *trustyaiopendatahubiov1.TrustyAIService) (u
 			"with platform and security owners.",
 	}
 
+	kServePeerSelector := &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
+		Key:      tasKServeInferenceServiceLabel,
+		Operator: metav1.LabelSelectorOpExists,
+	}}}
+
+	ingress := []networkingv1.NetworkPolicyIngressRule{
+		{
+			From:  []networkingv1.NetworkPolicyPeer{{NamespaceSelector: routerNamespaceSelector.DeepCopy()}},
+			Ports: []networkingv1.NetworkPolicyPort{tasNetworkPolicyTCPPort(8443)},
+		},
+		{
+			From: []networkingv1.NetworkPolicyPeer{{
+				NamespaceSelector: monitoringNamespaceSelector.DeepCopy(),
+				PodSelector:       prometheusPodSelector.DeepCopy(),
+			}},
+			Ports: []networkingv1.NetworkPolicyPort{
+				tasNetworkPolicyTCPPort(8443),
+				tasNetworkPolicyTCPPort(8080),
+			},
+		},
+		{
+			From: []networkingv1.NetworkPolicyPeer{
+				{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
+					tasModelMeshServiceLabel: tasModelMeshServiceValue,
+				}}},
+				{PodSelector: kServePeerSelector.DeepCopy()},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{tasNetworkPolicyTCPPort(4443)},
+		},
+	}
+
+	// KServe Serverless/Knative mode patches InferenceServices with an HTTP
+	// logger URL that reaches the TAS Pod on port 8080 through the Service
+	// (Service port 80 -> targetPort 8080). Only the qualified KServe peer
+	// receives this path; Raw/Standard deployments use the HTTPS logger URL
+	// on port 4443 above.
+	if kServeServerlessEnabled {
+		ingress = append(ingress, networkingv1.NetworkPolicyIngressRule{
+			From:  []networkingv1.NetworkPolicyPeer{{PodSelector: kServePeerSelector.DeepCopy()}},
+			Ports: []networkingv1.NetworkPolicyPort{tasNetworkPolicyTCPPort(8080)},
+		})
+	}
+
 	desired := utils.WorkloadNetworkPolicy{
 		Policy: &networkingv1.NetworkPolicy{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: instance.Namespace},
@@ -124,35 +176,8 @@ func buildTASNetworkPolicy(instance *trustyaiopendatahubiov1.TrustyAIService) (u
 					networkingv1.PolicyTypeIngress,
 					networkingv1.PolicyTypeEgress,
 				},
-				Ingress: []networkingv1.NetworkPolicyIngressRule{
-					{
-						From:  []networkingv1.NetworkPolicyPeer{{NamespaceSelector: routerNamespaceSelector.DeepCopy()}},
-						Ports: []networkingv1.NetworkPolicyPort{tasNetworkPolicyTCPPort(8443)},
-					},
-					{
-						From: []networkingv1.NetworkPolicyPeer{{
-							NamespaceSelector: monitoringNamespaceSelector.DeepCopy(),
-							PodSelector:       prometheusPodSelector.DeepCopy(),
-						}},
-						Ports: []networkingv1.NetworkPolicyPort{
-							tasNetworkPolicyTCPPort(8443),
-							tasNetworkPolicyTCPPort(8080),
-						},
-					},
-					{
-						From: []networkingv1.NetworkPolicyPeer{
-							{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
-								tasModelMeshServiceLabel: tasModelMeshServiceValue,
-							}}},
-							{PodSelector: &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
-								Key:      tasKServeInferenceServiceLabel,
-								Operator: metav1.LabelSelectorOpExists,
-							}}}},
-						},
-						Ports: []networkingv1.NetworkPolicyPort{tasNetworkPolicyTCPPort(4443)},
-					},
-				},
-				Egress: []networkingv1.NetworkPolicyEgressRule{{}},
+				Ingress: ingress,
+				Egress:  []networkingv1.NetworkPolicyEgressRule{{}},
 			},
 		},
 		Ingress: ingressIntent,
@@ -169,7 +194,19 @@ func (r *TrustyAIServiceReconciler) reconcileNetworkPolicy(ctx context.Context, 
 	if err != nil {
 		return err
 	}
-	desired, err := buildTASNetworkPolicy(instance)
+	// KServe Serverless/Knative deployments receive an HTTP logger URL that
+	// reaches the TAS Pod on port 8080 (Service port 80 -> targetPort 8080),
+	// so the policy must authorize that path for the qualified KServe peer
+	// exactly when the operator's kServeServerless configuration enables it.
+	// A read failure defaults to disabled, matching the InferenceService
+	// patching path, which also skips HTTP logger URLs when the configuration
+	// cannot be read.
+	kServeServerlessEnabled, err := r.getKServeServerlessConfig(ctx)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Could not read KServeServerless configuration for the NetworkPolicy. Defaulting to disabled")
+		kServeServerlessEnabled = false
+	}
+	desired, err := buildTASNetworkPolicy(instance, kServeServerlessEnabled)
 	if err != nil {
 		return err
 	}
@@ -204,7 +241,10 @@ func (r *TrustyAIServiceReconciler) reconcileNetworkPolicy(ctx context.Context, 
 
 // labelOwnedTASPods upgrades already-running Pods after the identity-selected
 // policy has been reconciled. It edits metadata only after validating the
-// Deployment -> ReplicaSet -> Pod controller chain.
+// Deployment -> ReplicaSet -> Pod controller chain. Selected Pods that fail
+// the chain are foreign or stale candidates: they are skipped with a
+// diagnostic and never labelled, but they do not block reconciliation of the
+// owned workload.
 func (r *TrustyAIServiceReconciler) labelOwnedTASPods(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, deployment *appsv1.Deployment, identity utils.NetworkPolicyIdentity) error {
 	owner := tasNetworkPolicyOwner(instance)
 	if !controllerReferenceMatches(deployment, owner, trustyaiopendatahubiov1.GroupVersion.Group, "TrustyAIService") {
@@ -233,20 +273,38 @@ func (r *TrustyAIServiceReconciler) labelOwnedTASPods(ctx context.Context, insta
 
 	for index := range pods.Items {
 		pod := &pods.Items[index]
+		// Pods matching the Deployment's public selector are not necessarily
+		// part of this workload: a principal with Pod-create permission can
+		// reproduce the selector labels, and stale Pods can outlive the
+		// ReplicaSet of a replaced Deployment. Confirmed non-owned candidates
+		// are skipped with a diagnostic instead of blocking the instance;
+		// they never receive identity labels. Genuine API failures and
+		// failures updating verified-owned Pods remain reconcile errors.
 		replicaSetRef := metav1.GetControllerOf(pod)
 		if replicaSetRef == nil || replicaSetRef.Kind != "ReplicaSet" {
-			return fmt.Errorf("TAS-selected Pod %s/%s has no ReplicaSet controller; refusing identity migration", pod.Namespace, pod.Name)
+			log.FromContext(ctx).Info("Skipping TAS-selected Pod without a ReplicaSet controller during identity migration",
+				"pod", client.ObjectKeyFromObject(pod))
+			continue
 		}
 		replicaSetGV, err := schema.ParseGroupVersion(replicaSetRef.APIVersion)
 		if err != nil || replicaSetGV.Group != "apps" {
-			return fmt.Errorf("TAS-selected Pod %s/%s has an invalid ReplicaSet controller reference", pod.Namespace, pod.Name)
+			log.FromContext(ctx).Info("Skipping TAS-selected Pod with an invalid ReplicaSet controller reference during identity migration",
+				"pod", client.ObjectKeyFromObject(pod))
+			continue
 		}
 		replicaSet := &appsv1.ReplicaSet{}
 		if err := reader.Get(ctx, client.ObjectKey{Namespace: pod.Namespace, Name: replicaSetRef.Name}, replicaSet); err != nil {
+			if apierrors.IsNotFound(err) {
+				log.FromContext(ctx).Info("Skipping stale TAS-selected Pod whose ReplicaSet no longer exists during identity migration",
+					"pod", client.ObjectKeyFromObject(pod))
+				continue
+			}
 			return fmt.Errorf("verify ReplicaSet for TAS Pod %s/%s: %w", pod.Namespace, pod.Name, err)
 		}
 		if replicaSet.UID != replicaSetRef.UID || !controllerReferenceMatches(replicaSet, deployment, "apps", "Deployment") {
-			return fmt.Errorf("TAS-selected Pod %s/%s is not controlled by the current Deployment", pod.Namespace, pod.Name)
+			log.FromContext(ctx).Info("Skipping TAS-selected Pod not controlled by the current Deployment during identity migration",
+				"pod", client.ObjectKeyFromObject(pod))
+			continue
 		}
 
 		changed := false

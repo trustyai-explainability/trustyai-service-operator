@@ -34,6 +34,7 @@ rules:
   - list
   - patch
   - update
+  - watch
 - apiGroups:
   - ""
   resources:
@@ -110,6 +111,12 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - apps
+  resources:
+  - replicasets
+  verbs:
+  - get
 - apiGroups:
   - authentication.k8s.io
   resources:
@@ -203,12 +210,38 @@ rules:
 - apiGroups:
   - kueue.x-k8s.io
   resources:
-  - workloads
+  - resourceflavors
+  - workloadpriorityclasses
   verbs:
   - get
   - list
-  - patch
   - watch
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - workloads
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - workloads/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - workloads/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - mcp.kuadrant.io
   resources:
@@ -315,6 +348,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - scheduling.k8s.io
+  resources:
+  - priorityclasses
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - serving.kserve.io

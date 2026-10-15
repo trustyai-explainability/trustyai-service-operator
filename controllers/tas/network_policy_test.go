@@ -20,7 +20,7 @@ import (
 
 func TestBuildTASNetworkPolicy(t *testing.T) {
 	instance := testTASNetworkPolicyOwner()
-	desired, err := buildTASNetworkPolicy(instance)
+	desired, err := buildTASNetworkPolicy(instance, false)
 	if err != nil {
 		t.Fatalf("buildTASNetworkPolicy() error = %v", err)
 	}
@@ -92,14 +92,87 @@ func TestBuildTASNetworkPolicy(t *testing.T) {
 }
 
 func TestBuildTASNetworkPolicyRequiresPersistedIdentity(t *testing.T) {
-	if _, err := buildTASNetworkPolicy(nil); err == nil {
-		t.Fatal("buildTASNetworkPolicy(nil) succeeded")
+	if _, err := buildTASNetworkPolicy(nil, false); err == nil {
+		t.Fatal("buildTASNetworkPolicy(nil, false) succeeded")
 	}
 	instance := testTASNetworkPolicyOwner()
 	instance.UID = ""
-	if _, err := buildTASNetworkPolicy(instance); err == nil {
+	if _, err := buildTASNetworkPolicy(instance, false); err == nil {
 		t.Fatal("buildTASNetworkPolicy without UID succeeded")
 	}
+}
+
+// TestBuildTASNetworkPolicyCoversKServeLoggerPorts couples the KServe
+// InferenceService logger URLs the controller generates to the ports the
+// policy authorizes for the qualified KServe peer:
+//
+//	Raw/Standard:   https://<tas>.<ns>.svc.cluster.local -> Service 443 -> Pod 4443
+//	Serverless:     http://<tas>.<ns>.svc.cluster.local  -> Service 80  -> Pod 8080
+//
+// The HTTP path is granted only when the operator's kServeServerless
+// configuration is enabled, and never to namespace Pods at large.
+func TestBuildTASNetworkPolicyCoversKServeLoggerPorts(t *testing.T) {
+	instance := testTASNetworkPolicyOwner()
+
+	raw, err := buildTASNetworkPolicy(instance, false)
+	if err != nil {
+		t.Fatalf("buildTASNetworkPolicy(serverless disabled) error = %v", err)
+	}
+	if got := len(raw.Policy.Spec.Ingress); got != 3 {
+		t.Fatalf("got %d ingress rules with serverless disabled, want router, monitoring and model-serving rules", got)
+	}
+	for _, rule := range raw.Policy.Spec.Ingress {
+		for _, port := range rule.Ports {
+			if port.Port.IntValue() == 8080 && !ruleGrantsMonitoringPeer(rule) {
+				t.Fatalf("port 8080 granted to a non-monitoring peer with serverless disabled: %#v", rule)
+			}
+		}
+	}
+	if !ruleGrantsKServePeerPort(raw.Policy.Spec.Ingress, 4443) {
+		t.Fatal("HTTPS KServe logger port 4443 (Raw/Standard) is not authorized for the KServe peer")
+	}
+
+	serverless, err := buildTASNetworkPolicy(instance, true)
+	if err != nil {
+		t.Fatalf("buildTASNetworkPolicy(serverless enabled) error = %v", err)
+	}
+	if got := len(serverless.Policy.Spec.Ingress); got != 4 {
+		t.Fatalf("got %d ingress rules with serverless enabled, want router, monitoring, model-serving and KServe HTTP logger rules", got)
+	}
+	if !ruleGrantsKServePeerPort(serverless.Policy.Spec.Ingress, 4443) {
+		t.Fatal("HTTPS KServe logger port 4443 is not authorized for the KServe peer with serverless enabled")
+	}
+	if !ruleGrantsKServePeerPort(serverless.Policy.Spec.Ingress, 8080) {
+		t.Fatal("HTTP KServe logger port 8080 (Serverless/Knative) is not authorized for the KServe peer")
+	}
+}
+
+func ruleGrantsMonitoringPeer(rule networkingv1.NetworkPolicyIngressRule) bool {
+	for _, peer := range rule.From {
+		if peer.NamespaceSelector != nil && peer.PodSelector != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func ruleGrantsKServePeerPort(rules []networkingv1.NetworkPolicyIngressRule, port int32) bool {
+	for _, rule := range rules {
+		kservePeer := false
+		for _, peer := range rule.From {
+			if peer.PodSelector != nil && peer.NamespaceSelector == nil && len(peer.PodSelector.MatchExpressions) == 1 &&
+				peer.PodSelector.MatchExpressions[0].Key == tasKServeInferenceServiceLabel &&
+				peer.PodSelector.MatchExpressions[0].Operator == metav1.LabelSelectorOpExists {
+				kservePeer = true
+			}
+		}
+		for _, rulePort := range rule.Ports {
+			if kservePeer && rulePort.Port.IntValue() == int(port) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func TestReconcileTASNetworkPolicyRepairsDriftAndDeletion(t *testing.T) {
@@ -111,7 +184,7 @@ func TestReconcileTASNetworkPolicyRepairsDriftAndDeletion(t *testing.T) {
 	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
 		t.Fatalf("initial reconcile: %v", err)
 	}
-	desired, err := buildTASNetworkPolicy(owner)
+	desired, err := buildTASNetworkPolicy(owner, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,15 +370,15 @@ func TestReconcileTASNetworkPolicyRefusesForeignDeployment(t *testing.T) {
 	}
 }
 
-func TestReconcileTASNetworkPolicyRefusesPodFromForeignReplicaSet(t *testing.T) {
+func TestReconcileTASNetworkPolicySkipsPodFromForeignReplicaSet(t *testing.T) {
 	ctx := context.Background()
 	scheme, owner := tasNetworkPolicyFixture(t)
 	deployment, replicaSet, pod := tasNetworkPolicyWorkloadFixture(owner)
 	replicaSet.OwnerReferences[0].UID = types.UID("foreign-deployment-uid")
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner, deployment, replicaSet, pod).Build()
 	reconciler := &TrustyAIServiceReconciler{Client: c, Scheme: scheme}
-	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err == nil {
-		t.Fatal("Pod controlled by a foreign ReplicaSet was accepted")
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
+		t.Fatalf("foreign ReplicaSet candidate blocked reconciliation: %v", err)
 	}
 	actualPod := &corev1.Pod{}
 	if err := c.Get(ctx, client.ObjectKeyFromObject(pod), actualPod); err != nil {
@@ -313,6 +386,43 @@ func TestReconcileTASNetworkPolicyRefusesPodFromForeignReplicaSet(t *testing.T) 
 	}
 	if _, found := actualPod.Labels[utils.NetworkPolicyOwnerUIDLabel]; found {
 		t.Fatal("foreign-owned Pod received reserved TAS identity labels")
+	}
+	// The owned workload keeps reconciling: the policy exists even though the
+	// foreign candidate was skipped.
+	policies := &networkingv1.NetworkPolicyList{}
+	if err := c.List(ctx, policies, client.InNamespace(owner.Namespace)); err != nil {
+		t.Fatal(err)
+	}
+	if len(policies.Items) != 1 {
+		t.Fatalf("policy was not reconciled alongside the foreign Pod candidate: %#v", policies.Items)
+	}
+}
+
+func TestReconcileTASNetworkPolicySkipsSelectorMatchingPodWithoutReplicaSet(t *testing.T) {
+	ctx := context.Background()
+	scheme, owner := tasNetworkPolicyFixture(t)
+	deployment, _, pod := tasNetworkPolicyWorkloadFixture(owner)
+	// Simulate a principal reproducing the Deployment's public selector
+	// labels on a bare Pod it controls: no ReplicaSet owner at all.
+	pod.OwnerReferences = nil
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner, deployment, pod).Build()
+	reconciler := &TrustyAIServiceReconciler{Client: c, Scheme: scheme}
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
+		t.Fatalf("bare selector-matching Pod blocked reconciliation: %v", err)
+	}
+	actualPod := &corev1.Pod{}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(pod), actualPod); err != nil {
+		t.Fatal(err)
+	}
+	if _, found := actualPod.Labels[utils.NetworkPolicyOwnerUIDLabel]; found {
+		t.Fatal("unowned selector-matching Pod received reserved TAS identity labels")
+	}
+	policies := &networkingv1.NetworkPolicyList{}
+	if err := c.List(ctx, policies, client.InNamespace(owner.Namespace)); err != nil {
+		t.Fatal(err)
+	}
+	if len(policies.Items) != 1 {
+		t.Fatalf("policy was not reconciled alongside the unowned Pod candidate: %#v", policies.Items)
 	}
 }
 
