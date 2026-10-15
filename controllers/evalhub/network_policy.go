@@ -87,12 +87,16 @@ func evalHubDashboardUIPodLabels() map[string]string {
 	}
 }
 
-// buildEvalHubNetworkPolicy builds the ingress-only policy for one EvalHub API
-// workload. The API Route, the Dashboard's eval-hub-ui proxy and evaluation-job
-// callbacks reach kube-rbac-proxy on servicePort; Prometheus scrapes the
-// unauthenticated metrics listener directly. applicationsNamespace is the ODH
-// applications namespace (opendatahub on ODH, redhat-ods-applications on RHOAI)
-// where the Dashboard deploys the eval-hub-ui module.
+// buildEvalHubNetworkPolicy builds the operand policy for one EvalHub API
+// workload. Ingress: the API Route, the Dashboard's eval-hub-ui proxy and
+// evaluation-job callbacks reach kube-rbac-proxy on servicePort; Prometheus
+// scrapes the unauthenticated metrics listener directly. applicationsNamespace
+// is the ODH applications namespace (opendatahub on ODH, redhat-ods-applications
+// on RHOAI) where the Dashboard deploys the eval-hub-ui module. Egress carries
+// a documented AllowAll compatibility profile: the API reaches DNS, the
+// Kubernetes API, and CR- or deployment-configured database (PostgreSQL),
+// MLflow, telemetry and provider/collection destinations, so no complete
+// outbound allowlist is established.
 func buildEvalHubNetworkPolicy(instance *evalhubv1.EvalHub, applicationsNamespace string) (utils.WorkloadNetworkPolicy, error) {
 	identity, err := evalHubNetworkPolicyIdentity(instance)
 	if err != nil {
@@ -105,6 +109,10 @@ func buildEvalHubNetworkPolicy(instance *evalhubv1.EvalHub, applicationsNamespac
 	if err != nil {
 		return utils.WorkloadNetworkPolicy{}, err
 	}
+	// The policy name keeps the historical "api-ingress" purpose: policies
+	// reconciled by the ingress-only implementation shipped first (#983) are
+	// owned by the EvalHub CR under this name, and renaming would orphan them
+	// enforcing stale rules additively alongside the replacement.
 	name, err := identity.Name("api-ingress")
 	if err != nil {
 		return utils.WorkloadNetworkPolicy{}, err
@@ -190,18 +198,31 @@ func buildEvalHubNetworkPolicy(instance *evalhubv1.EvalHub, applicationsNamespac
 		})
 	}
 
+	egressIntent := &utils.NetworkPolicyEgressIntent{
+		Mode: utils.NetworkPolicyAllowAll,
+		Rationale: "The EvalHub API reaches cluster DNS, the Kubernetes API, and CR- or " +
+			"deployment-configured PostgreSQL database, MLflow, telemetry, and provider or " +
+			"collection destinations; outbound endpoints vary per deployment and no complete " +
+			"outbound allowlist is established.",
+		ResidualRisk: "Outbound traffic is unrestricted. This provides no exfiltration " +
+			"protection and can broaden customer NetworkPolicies because ordinary grants are " +
+			"additive. All containers share the Pod network boundary. A Restricted egress " +
+			"profile remains a follow-up decision with platform and security owners.",
+	}
 	desired := utils.WorkloadNetworkPolicy{
 		Policy: &networkingv1.NetworkPolicy{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: instance.Namespace},
 			Spec: networkingv1.NetworkPolicySpec{
 				PodSelector: metav1.LabelSelector{MatchLabels: identityLabels},
-				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
 				Ingress:     ingress,
+				Egress:      []networkingv1.NetworkPolicyEgressRule{{}},
 			},
 		},
 		Ingress: intent,
+		Egress:  egressIntent,
 	}
-	if err := utils.ValidateWorkloadNetworkPolicyWithIngressIntent(desired.Policy, identity, nil, intent); err != nil {
+	if err := utils.ValidateWorkloadNetworkPolicyWithIngressIntent(desired.Policy, identity, egressIntent, intent); err != nil {
 		return utils.WorkloadNetworkPolicy{}, err
 	}
 	return desired, nil

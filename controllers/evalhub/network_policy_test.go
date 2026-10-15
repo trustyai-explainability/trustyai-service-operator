@@ -31,7 +31,7 @@ func TestBuildEvalHubNetworkPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := utils.ValidateWorkloadNetworkPolicyWithIngressIntent(desired.Policy, identity, nil, desired.Ingress); err != nil {
+	if err := utils.ValidateWorkloadNetworkPolicyWithIngressIntent(desired.Policy, identity, desired.Egress, desired.Ingress); err != nil {
 		t.Fatalf("ValidateWorkloadNetworkPolicyWithIngressIntent() error = %v", err)
 	}
 
@@ -42,11 +42,14 @@ func TestBuildEvalHubNetworkPolicy(t *testing.T) {
 	if !equalNetworkPolicyLabels(desired.Policy.Spec.PodSelector.MatchLabels, wantTarget) {
 		t.Errorf("target selector = %#v, want identity labels %#v", desired.Policy.Spec.PodSelector.MatchLabels, wantTarget)
 	}
-	if len(desired.Policy.Spec.PolicyTypes) != 1 || desired.Policy.Spec.PolicyTypes[0] != networkingv1.PolicyTypeIngress {
-		t.Fatalf("policyTypes = %v, want only Ingress", desired.Policy.Spec.PolicyTypes)
+	if len(desired.Policy.Spec.PolicyTypes) != 2 || desired.Policy.Spec.PolicyTypes[0] != networkingv1.PolicyTypeIngress || desired.Policy.Spec.PolicyTypes[1] != networkingv1.PolicyTypeEgress {
+		t.Fatalf("policyTypes = %v, want Ingress and Egress", desired.Policy.Spec.PolicyTypes)
 	}
-	if len(desired.Policy.Spec.Egress) != 0 {
-		t.Fatalf("egress rules = %#v, want none", desired.Policy.Spec.Egress)
+	if len(desired.Policy.Spec.Egress) != 1 || len(desired.Policy.Spec.Egress[0].Ports) != 0 {
+		t.Fatalf("egress rules = %#v, want exactly one port-less AllowAll rule", desired.Policy.Spec.Egress)
+	}
+	if desired.Egress == nil || desired.Egress.Mode != utils.NetworkPolicyAllowAll || desired.Egress.Rationale == "" || desired.Egress.ResidualRisk == "" {
+		t.Fatalf("egress intent = %#v, want a documented AllowAll compatibility profile", desired.Egress)
 	}
 	if len(desired.Policy.Spec.Ingress) != 4 {
 		t.Fatalf("got %d ingress rules with MCP disabled, want router, dashboard, evaluation-job, and metrics rules", len(desired.Policy.Spec.Ingress))
@@ -172,7 +175,7 @@ func TestBuildEvalHubNetworkPolicyAuthorizesDashboardUIPeer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := utils.ValidateWorkloadNetworkPolicyWithIngressIntent(desired.Policy, identity, nil, desired.Ingress); err != nil {
+	if err := utils.ValidateWorkloadNetworkPolicyWithIngressIntent(desired.Policy, identity, desired.Egress, desired.Ingress); err != nil {
 		t.Fatalf("ValidateWorkloadNetworkPolicyWithIngressIntent() error = %v", err)
 	}
 
