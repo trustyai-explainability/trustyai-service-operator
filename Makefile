@@ -75,6 +75,12 @@ SHELL = /usr/bin/env bash -o pipefail
 all: build
 
 ##@ General
+# GO_TEST_FLAGS are passed to `go test` by the test target. CI pins -p 1 so
+# only one envtest suite (kube-apiserver + etcd + manager) runs at a time:
+# parallel suites oversubscribe the runner's shared vCPUs and stall the
+# apiserver's watch event delivery, which the lmes drift-repair spec depends
+# on (see #1011).
+GO_TEST_FLAGS ?=
 
 # The help target prints out all targets with their descriptions organized
 # beneath their categories. The categories are represented by '##@' and the
@@ -134,7 +140,7 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out -v
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(GO_TEST_FLAGS) ./... -coverprofile cover.out -v
 
 ##@ Policy
 
