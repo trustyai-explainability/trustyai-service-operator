@@ -104,6 +104,65 @@ func TestEvalHubHardwareProfilesReaderClusterRoleVerbsAreMinimalAndSufficient(t 
 	}
 }
 
+// The EvalHub server lists Kueue LocalQueues in each tenant namespace to resolve
+// queue-backed hardware profiles for GET /api/v1/info — a single List call per
+// request (see eval-hub internal/eval_hub/runtimes/k8s/k8s_helper.go
+// ListLocalQueues). The hardware-profiles-reader ClusterRole is bound to the API
+// service account in every tenant namespace, so it must grant exactly the list
+// verb on localqueues — nothing broader.
+func TestEvalHubHardwareProfilesReaderLocalQueueVerbsAreMinimalAndSufficient(t *testing.T) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+
+	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", ".."))
+	manifestPaths := []string{
+		filepath.Join(moduleRoot, "config", "components", "evalhub", "rbac", "evalhub_hardware_profiles_reader_role.yaml"),
+		filepath.Join(moduleRoot, "trustyai-operator-module", "config", "manifests-template", "components", "evalhub", "rbac", "evalhub_hardware_profiles_reader_role.yaml"),
+	}
+
+	wantVerbs := []string{"list"}
+	sort.Strings(wantVerbs)
+
+	for _, path := range manifestPaths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+
+		var cr rbacv1.ClusterRole
+		if err := yaml.Unmarshal(raw, &cr); err != nil {
+			t.Fatalf("unmarshal %s: %v", path, err)
+		}
+
+		var gotVerbs []string
+		for _, rule := range cr.Rules {
+			if len(rule.APIGroups) != 1 || rule.APIGroups[0] != "kueue.x-k8s.io" {
+				continue
+			}
+			for _, res := range rule.Resources {
+				if res == "localqueues" {
+					gotVerbs = append(gotVerbs, rule.Verbs...)
+				}
+			}
+		}
+		if len(gotVerbs) == 0 {
+			t.Fatalf("expected %s to contain a policy rule for kueue.x-k8s.io/localqueues", path)
+		}
+
+		sort.Strings(gotVerbs)
+		if len(gotVerbs) != len(wantVerbs) {
+			t.Fatalf("unexpected verbs for localqueues in %s: got=%v want=%v", path, gotVerbs, wantVerbs)
+		}
+		for i := range wantVerbs {
+			if gotVerbs[i] != wantVerbs[i] {
+				t.Fatalf("unexpected verbs for localqueues in %s: got=%v want=%v", path, gotVerbs, wantVerbs)
+			}
+		}
+	}
+}
+
 func TestEvalHubJobConfigClusterRoleVerbsAreMinimalAndSufficient(t *testing.T) {
 	// EvalHub sets ConfigMap ownerReferences after creating the Job:
 	// it does a Get+Update on the ConfigMap (see eval-hub/internal/runtimes/k8s/k8s_helper.go:SetConfigMapOwner).
