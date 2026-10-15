@@ -21,14 +21,30 @@ type EnabledServices struct {
 	NemoGuardrails bool `json:"nemoGuardrails,omitempty"`
 }
 
+// Values accepted by the spec.eval.lmeval permit fields.
+const (
+	// PermitAllow enables a permitted capability.
+	PermitAllow = "allow"
+	// PermitDeny disables a permitted capability.
+	PermitDeny = "deny"
+)
+
 // LMEvalConfig defines LMEval-specific configuration
 type LMEvalConfig struct {
-	// +kubebuilder:default=false
+	// PermitCodeExecution controls whether code execution is allowed during
+	// evaluations. Kept as the 3.5 string enum so TrustyAI CRs written by
+	// earlier releases (which stored "allow"/"deny") remain valid.
+	// +kubebuilder:default="deny"
+	// +kubebuilder:validation:Enum=allow;deny
 	// +optional
-	PermitCodeExecution bool `json:"permitCodeExecution,omitempty"`
-	// +kubebuilder:default=false
+	PermitCodeExecution string `json:"permitCodeExecution,omitempty"`
+	// PermitOnline controls whether online access is allowed during
+	// evaluations. Kept as the 3.5 string enum so TrustyAI CRs written by
+	// earlier releases (which stored "allow"/"deny") remain valid.
+	// +kubebuilder:default="deny"
+	// +kubebuilder:validation:Enum=allow;deny
 	// +optional
-	PermitOnline bool `json:"permitOnline,omitempty"`
+	PermitOnline string `json:"permitOnline,omitempty"`
 }
 
 // EvalConfig defines evaluation-related configuration

@@ -69,8 +69,8 @@ var _ = Describe("DSC ConfigMap reconciliation", func() {
 	It("creates the DSC ConfigMap from spec.eval settings", func() {
 		module := &platformv1alpha1.TrustyAI{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
-		module.Spec.Eval.LMEval.PermitCodeExecution = true
-		module.Spec.Eval.LMEval.PermitOnline = true
+		module.Spec.Eval.LMEval.PermitCodeExecution = platformv1alpha1.PermitAllow
+		module.Spec.Eval.LMEval.PermitOnline = platformv1alpha1.PermitAllow
 		Expect(k8sClient.Update(ctx, module)).To(Succeed())
 
 		r := newReconciler()
@@ -94,7 +94,7 @@ var _ = Describe("DSC ConfigMap reconciliation", func() {
 
 		module := &platformv1alpha1.TrustyAI{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
-		module.Spec.Eval.LMEval.PermitCodeExecution = true
+		module.Spec.Eval.LMEval.PermitCodeExecution = platformv1alpha1.PermitAllow
 		Expect(k8sClient.Update(ctx, module)).To(Succeed())
 
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})

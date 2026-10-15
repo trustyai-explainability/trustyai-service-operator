@@ -70,16 +70,27 @@ spec:
                     description: LMEvalConfig defines LMEval-specific configuration
                     properties:
                       permitCodeExecution:
-                        default: false
-                        type: boolean
+                        default: deny
+                        description: |-
+                          PermitCodeExecution controls whether code execution is allowed during
+                          evaluations. Kept as the 3.5 string enum so TrustyAI CRs written by
+                          earlier releases (which stored "allow"/"deny") remain valid.
+                        enum:
+                        - allow
+                        - deny
+                        type: string
                       permitOnline:
-                        default: false
-                        type: boolean
+                        default: deny
+                        description: |-
+                          PermitOnline controls whether online access is allowed during
+                          evaluations. Kept as the 3.5 string enum so TrustyAI CRs written by
+                          earlier releases (which stored "allow"/"deny") remain valid.
+                        enum:
+                        - allow
+                        - deny
+                        type: string
                     type: object
                 type: object
-              mcpGuardrailsMode:
-                description: MCPGuardrailsMode deploys only the NeMo Guardrails service. It takes precedence over EnabledServices when enabled.
-                type: boolean
               managementState:
                 default: Managed
                 description: |-
@@ -89,6 +100,11 @@ spec:
                 - Managed
                 - Removed
                 type: string
+              mcpGuardrailsMode:
+                description: |-
+                  MCPGuardrailsMode deploys only the NeMo Guardrails service. It takes
+                  precedence over EnabledServices when enabled.
+                type: boolean
             type: object
           status:
             description: TrustyAIStatus defines the observed state of TrustyAI module

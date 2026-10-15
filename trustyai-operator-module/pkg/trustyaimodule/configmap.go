@@ -52,8 +52,8 @@ func (r *TrustyAIModuleReconciler) reconcileConfigMap(ctx context.Context, modul
 
 func (r *TrustyAIModuleReconciler) buildDSCConfigMap(module *platformv1alpha1.TrustyAI) *corev1.ConfigMap {
 	data := map[string]string{
-		LMEvalPermitCodeExecutionKey: strconv.FormatBool(module.Spec.Eval.LMEval.PermitCodeExecution),
-		LMEvalPermitOnlineKey:        strconv.FormatBool(module.Spec.Eval.LMEval.PermitOnline),
+		LMEvalPermitCodeExecutionKey: strconv.FormatBool(module.Spec.Eval.LMEval.PermitCodeExecution == platformv1alpha1.PermitAllow),
+		LMEvalPermitOnlineKey:        strconv.FormatBool(module.Spec.Eval.LMEval.PermitOnline == platformv1alpha1.PermitAllow),
 	}
 
 	return &corev1.ConfigMap{
