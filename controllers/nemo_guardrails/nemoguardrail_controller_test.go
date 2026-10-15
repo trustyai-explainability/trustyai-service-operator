@@ -16,9 +16,11 @@ import (
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -149,6 +151,22 @@ var _ = Describe("NemoGuardrails Controller", func() {
 				err := k8sClient.Get(ctx, typeNamespacedName, resource)
 				return errors.IsNotFound(err)
 			}, time.Second*5, time.Millisecond*100).Should(BeTrue())
+
+			// Envtest runs no garbage collector, so the CR-owned Deployment
+			// and NetworkPolicy are never collected after CR deletion. Remove
+			// them explicitly so the next spec starts without a stale
+			// Deployment carrying the previous CR's owner reference.
+			By("Cleanup the orphaned Deployment and NetworkPolicy left by envtest's missing garbage collector")
+			staleDeployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: typeNamespacedName.Name, Namespace: typeNamespacedName.Namespace}}
+			if err := k8sClient.Delete(ctx, staleDeployment); err != nil && !errors.IsNotFound(err) {
+				Expect(err).To(Succeed())
+			}
+			stalePolicies := &networkingv1.NetworkPolicyList{}
+			if err := k8sClient.List(ctx, stalePolicies, client.InNamespace(typeNamespacedName.Namespace)); err == nil {
+				for i := range stalePolicies.Items {
+					_ = k8sClient.Delete(ctx, &stalePolicies.Items[i])
+				}
+			}
 
 			// ClusterRoleBinding should be deleted - oinly check CRB due to envtest issues
 			Eventually(func() bool {

@@ -20,6 +20,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -272,6 +273,29 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 	if err := controllerutil.SetControllerReference(nemoGuardrails, deployment, r.Scheme); err != nil {
 		utils.LogErrorControllerReference(ctx, err, "deployment", deployment.Name, deployment.Namespace)
 		return nil, err
+	}
+
+	// Stamp the reserved NetworkPolicy identity onto the Pod template so new
+	// Pods enter the reconciled policy selector from the start. Immutable
+	// Deployment selectors are never modified; adding template labels keeps
+	// the existing selector matching.
+	identity, err := nemoNetworkPolicyIdentity(nemoGuardrails)
+	if err != nil {
+		return nil, err
+	}
+	identityLabels, err := identity.Labels()
+	if err != nil {
+		return nil, err
+	}
+	if deployment.Spec.Template.Labels == nil {
+		deployment.Spec.Template.Labels = map[string]string{}
+	}
+	for key, value := range identityLabels {
+		deployment.Spec.Template.Labels[key] = value
+	}
+	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
+	if err != nil || !selector.Matches(labels.Set(deployment.Spec.Template.Labels)) {
+		return nil, fmt.Errorf("NemoGuardrails Deployment selector does not match NetworkPolicy identity labels")
 	}
 
 	// Set replicas from CR spec
