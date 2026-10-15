@@ -197,6 +197,12 @@ rules:
 - apiGroups:
   - kueue.x-k8s.io
   resources:
+  - localqueues
+  verbs:
+  - list
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
   - workloads
   verbs:
   - get

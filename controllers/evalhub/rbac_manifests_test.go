@@ -120,6 +120,9 @@ func TestEvalHubHardwareProfilesReaderLocalQueueVerbsAreMinimalAndSufficient(t *
 	manifestPaths := []string{
 		filepath.Join(moduleRoot, "config", "components", "evalhub", "rbac", "evalhub_hardware_profiles_reader_role.yaml"),
 		filepath.Join(moduleRoot, "trustyai-operator-module", "config", "manifests-template", "components", "evalhub", "rbac", "evalhub_hardware_profiles_reader_role.yaml"),
+		// The module must hold this permission itself to pass Kubernetes RBAC
+		// escalation prevention when it applies the hardware-profiles-reader role.
+		filepath.Join(moduleRoot, "trustyai-operator-module", "config", "rbac", "role.yaml"),
 	}
 
 	wantVerbs := []string{"list"}
