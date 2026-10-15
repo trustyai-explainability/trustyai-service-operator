@@ -275,8 +275,9 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: policyName, Namespace: testNamespace}, policy)).To(Succeed())
 		Expect(policy.OwnerReferences).To(HaveLen(1))
 		Expect(policy.OwnerReferences[0].UID).To(Equal(evalHub.UID))
-		Expect(policy.Spec.PolicyTypes).To(Equal([]networkingv1.PolicyType{networkingv1.PolicyTypeIngress}))
-		Expect(policy.Spec.Egress).To(BeEmpty())
+		Expect(policy.Spec.PolicyTypes).To(Equal([]networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}))
+		Expect(policy.Spec.Egress).To(HaveLen(1))
+		Expect(policy.Spec.Egress[0].Ports).To(BeEmpty())
 
 		By("Checking that Deployment is created")
 		deployment := waitForDeployment(evalHubName, testNamespace)
