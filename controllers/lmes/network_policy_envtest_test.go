@@ -3,6 +3,7 @@ package lmes_test
 import (
 	"context"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -15,6 +16,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// watchRepairTimeout budgets assertions that wait on watch-driven repair
+// (Pod relabeling, policy spec repair, policy recreation) rather than direct
+// client calls. Under CI load, with several envtest suites sharing one
+// runner, informer event delivery can lag the direct-client assertions in
+// this spec by more than the 10s suite default while the controller still
+// repairs correctly. The 10s PodCheckingInterval requeue is the repair
+// backstop, so the budget must clear it with margin. See #1011.
+const watchRepairTimeout = 30 * time.Second
 
 var _ = Describe("LMEval execution policy API convergence", func() {
 	It("repairs policy deletion/drift and Pod identity drift for a retained completed job", func() {
@@ -82,7 +92,7 @@ var _ = Describe("LMEval execution policy API convergence", func() {
 					return ""
 				}
 				return pod.Labels[label]
-				}, defaultTimeout, defaultPolling).Should(Equal(expected))
+			}, watchRepairTimeout, defaultPolling).Should(Equal(expected))
 		}
 		Expect(k8sClient.Get(ctx, policyKey, policy)).To(Succeed())
 		policy.Spec.Egress = nil
@@ -93,11 +103,11 @@ var _ = Describe("LMEval execution policy API convergence", func() {
 				return -1
 			}
 			return len(policy.Spec.Egress)
-			}, defaultTimeout, defaultPolling).Should(Equal(1))
+		}, watchRepairTimeout, defaultPolling).Should(Equal(1))
 		Expect(policy.Annotations["test-custom"]).To(Equal("preserve"))
 		uid := policy.UID
 		Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
-		Eventually(func() bool { return k8sClient.Get(ctx, policyKey, policy) == nil && policy.UID != uid }, defaultTimeout, defaultPolling).Should(BeTrue())
+		Eventually(func() bool { return k8sClient.Get(ctx, policyKey, policy) == nil && policy.UID != uid }, watchRepairTimeout, defaultPolling).Should(BeTrue())
 		Expect(k8sClient.Get(ctx, key, job)).To(Succeed())
 		Expect(job.Status.State).To(Equal(lmesv1alpha1.CompleteJobState))
 		Expect(job.Status.Results).To(Equal("retained-result"))
