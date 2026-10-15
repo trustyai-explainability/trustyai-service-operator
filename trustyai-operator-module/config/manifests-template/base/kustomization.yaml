@@ -135,6 +135,20 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.evalhub-provider-tooleval-image
+  - name: evalhub-provider-databench-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-databench-image
+  - name: evalhub-provider-mteb-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-mteb-image
   - name: lmes-pod-image
     objref:
       kind: ConfigMap

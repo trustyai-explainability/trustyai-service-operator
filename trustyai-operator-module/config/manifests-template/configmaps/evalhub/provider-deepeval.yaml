@@ -31,6 +31,10 @@ data:
           Tests if LLM output is faithful to the provided context. Measures whether
           claims in the output are supported by the retrieval context.
         category: rag-evaluation
+        domains: [grounded_document_understanding]
+        tasks: [rag, grounding_discipline]
+        modalities: [text]
+        evaluation_targets: [rag_system]
         metrics:
           - faithfulness_score
           - claims_count
@@ -51,6 +55,10 @@ data:
           Tests if LLM output is relevant to the input query. Evaluates whether the
           generated answer addresses the user's question.
         category: rag-evaluation
+        domains: [grounded_document_understanding]
+        tasks: [rag]
+        modalities: [text]
+        evaluation_targets: [rag_system]
         metrics:
           - relevancy_score
         tags:
@@ -69,6 +77,10 @@ data:
           Tests for hallucinated content in LLM output. Detects statements that are
           not grounded in the provided context.
         category: safety
+        domains: [grounded_document_understanding]
+        tasks: [grounding_discipline]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - hallucination_score
           - hallucination_detected
@@ -88,6 +100,10 @@ data:
           Tests factual correctness of LLM answers against expected output.
           Compares generated answers to ground-truth references.
         category: accuracy
+        domains: [instruction_and_output_reliability]
+        tasks: [answer_correctness]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - correctness_score
         tags:
@@ -106,6 +122,10 @@ data:
           Tests summarization quality of LLM output. Evaluates alignment with
           the source text and coverage of key information.
         category: nlp
+        domains: [grounded_document_understanding]
+        tasks: [summarization]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - summarization_score
         tags:

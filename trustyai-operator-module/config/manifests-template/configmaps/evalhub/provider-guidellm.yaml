@@ -31,6 +31,10 @@ data:
         description: |-
           Automatically sweeps from low to high concurrency to find the best throughput-latency tradeoff.
         category: performance
+        domains: [performance]
+        tasks: [scalability]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - requests_per_second
           - prompt_tokens_per_second
@@ -53,6 +57,10 @@ data:
         description: |-
           Finds the server's maximum requests-per-second by gradually increasing load until saturation.
         category: performance
+        domains: [performance]
+        tasks: [scalability]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - requests_per_second
           - prompt_tokens_per_second
@@ -73,6 +81,10 @@ data:
         name: Fixed concurrency stress test
         description: Measures latency and throughput under a fixed number of simultaneous requests.
         category: performance
+        domains: [performance]
+        tasks: [scalability]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - requests_per_second
           - prompt_tokens_per_second
@@ -92,6 +104,10 @@ data:
         name: Steady-state load test
         description: Measures performance under a sustained, constant request rate over time.
         category: performance
+        domains: [performance]
+        tasks: [scalability]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - requests_per_second
           - prompt_tokens_per_second
@@ -111,6 +127,10 @@ data:
         name: Realistic traffic simulation
         description: Simulates real-world traffic patterns using Poisson-distributed request arrivals.
         category: performance
+        domains: [performance]
+        tasks: [scalability]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - requests_per_second
           - prompt_tokens_per_second
@@ -132,6 +152,10 @@ data:
         name: Quick performance snapshot
         description: Fast sweep-based evaluation with limited samples for rapid performance assessment.
         category: performance
+        domains: [performance]
+        tasks: [scalability]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - requests_per_second
           - mean_ttft_ms
@@ -150,6 +174,10 @@ data:
         name: Full performance characterization
         description: End-to-end evaluation across all load profiles for complete performance understanding.
         category: performance
+        domains: [performance]
+        tasks: [scalability]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - requests_per_second
           - prompt_tokens_per_second

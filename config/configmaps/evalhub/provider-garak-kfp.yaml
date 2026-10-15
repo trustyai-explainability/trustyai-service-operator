@@ -54,6 +54,10 @@ data:
         name: Context-aware vulnerability scan (Pipeline)
         description: Risk assessment with a context-aware custom intent typology and probes of increasing complexity. Runs as an AI Pipeline and requires a Data Science Pipelines setup.
         category: security
+        domains: [trustworthiness]
+        tasks: [adversarial_prompt_injection_resistance]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - attack_success_rate
         tags:
@@ -81,6 +85,10 @@ data:
         name: OWASP LLM top 10 risk scan (Pipeline)
         description: Tests against the top 10 security risks specific to LLM applications (prompt injection, data leakage, etc.). Runs as an AI Pipeline and requires a Data Science Pipelines setup.
         category: security
+        domains: [trustworthiness]
+        tasks: [adversarial_prompt_injection_resistance]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - attack_success_rate
         tags:
@@ -108,6 +116,10 @@ data:
         name: Full AI vulnerability scan (Pipeline)
         description: Comprehensive scan across all security, ethics, and performance categories from the AVID taxonomy. Runs as an AI Pipeline and requires a Data Science Pipelines setup.
         category: security
+        domains: [trustworthiness]
+        tasks: [adversarial_prompt_injection_resistance]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - attack_success_rate
         tags:
@@ -135,6 +147,10 @@ data:
         name: AI security vulnerability scan (Pipeline)
         description: Probes for security-specific vulnerabilities (data poisoning, model theft, evasion attacks). Runs as an AI Pipeline and requires a Data Science Pipelines setup.
         category: security
+        domains: [trustworthiness]
+        tasks: [adversarial_prompt_injection_resistance]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - attack_success_rate
         tags:
@@ -162,6 +178,10 @@ data:
         name: AI ethics & bias scan (Pipeline)
         description: Probes for ethical concerns including bias, fairness, and harmful content generation. Runs as an AI Pipeline and requires a Data Science Pipelines setup.
         category: safety
+        domains: [trustworthiness]
+        tasks: [safety]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - attack_success_rate
         tags:
@@ -190,6 +210,10 @@ data:
         name: AI performance degradation scan (Pipeline)
         description: Tests for performance issues like hallucination under load, context window failures, and degradation. Runs as an AI Pipeline and requires a Data Science Pipelines setup.
         category: performance
+        domains: [trustworthiness]
+        tasks: [performance_degradation]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - attack_success_rate
         tags:
@@ -217,6 +241,10 @@ data:
         name: Toxic & harmful content scan (Pipeline)
         description: Scans for violence, profanity, toxicity, hate speech, and content integrity issues. Runs as an AI Pipeline and requires a Data Science Pipelines setup.
         category: safety
+        domains: [trustworthiness]
+        tasks: [safety]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - attack_success_rate
         tags:
@@ -245,6 +273,10 @@ data:
         name: Software weakness exploitation scan (Pipeline)
         description: Tests whether the model can be used to exploit Common Weakness Enumeration software vulnerabilities. Runs as an AI Pipeline and requires a Data Science Pipelines setup.
         category: security
+        domains: [trustworthiness]
+        tasks: [software_weakness_assessment]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - attack_success_rate
         tags:
@@ -272,6 +304,10 @@ data:
         name: Quick security smoke test (Pipeline)
         description: Single-probe rapid scan for quick validation. Runs as an AI Pipeline and requires a Data Science Pipelines setup.
         category: security
+        domains: [trustworthiness]
+        tasks: [adversarial_prompt_injection_resistance]
+        modalities: [text]
+        evaluation_targets: [model]
         metrics:
           - attack_success_rate
         tags:

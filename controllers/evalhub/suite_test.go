@@ -144,7 +144,7 @@ func createConfigMap(name, namespace string) *corev1.ConfigMap {
 // createDefaultProviderConfigMaps creates source provider ConfigMaps in the given namespace
 // to satisfy the CRD default providers list during integration tests.
 func createDefaultProviderConfigMaps(namespace string) []*corev1.ConfigMap {
-	defaultProviders := []string{"garak", "garak-kfp", "lm-evaluation-harness"}
+	defaultProviders := []string{"garak", "garak-kfp", "lm-evaluation-harness", "inspect", "lighteval", "ruler", "ifbench", "followbench"}
 	var cms []*corev1.ConfigMap
 	for _, id := range defaultProviders {
 		cm := &corev1.ConfigMap{
@@ -168,7 +168,7 @@ func createDefaultProviderConfigMaps(namespace string) []*corev1.ConfigMap {
 // createDefaultCollectionConfigMaps creates source collection ConfigMaps in the given namespace
 // to satisfy the CRD default collections list during integration tests.
 func createDefaultCollectionConfigMaps(namespace string) []*corev1.ConfigMap {
-	defaultCollections := []string{"leaderboard-v2", "safety-and-fairness-v1", "toxicity-and-ethical-principles", "knowledge-reasoning-v1", "document-understanding-v1", "instruction-output-v1", "tool-use-v1", "software-v1", "trustworthiness-v1", "multimodal-v1"}
+	defaultCollections := []string{"leaderboard-v2", "safety-and-fairness-v1", "toxicity-and-ethical-principles", "knowledge-reasoning-v1", "document-understanding-v1", "instruction-output-v1", "tool-use-v1", "software-v1", "trustworthiness-v1", "multimodal-v1", "fairness-bias-v1", "safety-ethical-principles-v1"}
 	var cms []*corev1.ConfigMap
 	for _, id := range defaultCollections {
 		cm := &corev1.ConfigMap{
