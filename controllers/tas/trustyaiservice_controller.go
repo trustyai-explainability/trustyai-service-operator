@@ -27,14 +27,18 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 var ErrPVCNotReady = goerrors.New("PVC is not ready")
@@ -76,6 +80,8 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=trustyaiservices/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=trustyaiservices/finalizers,verbs=update
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=list;watch;get;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps,resources=replicasets,verbs=get
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update
 //+kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=apps,resources=deployments/finalizers,verbs=update
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=list;watch;create
@@ -222,6 +228,14 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
+	// Reconcile the NetworkPolicy before any TAS Deployment creation or
+	// update. This also repairs reserved identity labels on currently owned
+	// Pods only after the policy object has converged; CNI enforcement
+	// propagation is asynchronous.
+	if err := r.reconcileNetworkPolicy(ctx, instance); err != nil {
+		return RequeueWithErrorMessage(ctx, err, "Could not reconcile TAS NetworkPolicy.")
+	}
+
 	// Check for migration annotation
 	if _, ok := instance.Annotations[migrationAnnotationKey]; ok {
 		log.Info("Found migration annotation. Migrating.")
@@ -314,6 +328,13 @@ func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&trustyaiopendatahubiov1.TrustyAIService{}).
 		Owns(&appsv1.Deployment{}).
+		Owns(&networkingv1.NetworkPolicy{}).
+		Watches(&v1.Pod{}, handler.EnqueueRequestsFromMapFunc(r.enqueueTASFromPod), builder.WithPredicates(predicate.Funcs{
+			CreateFunc:  func(e event.CreateEvent) bool { return hasTASPodIdentityHint(e.Object) },
+			DeleteFunc:  func(e event.DeleteEvent) bool { return hasTASPodIdentityHint(e.Object) },
+			UpdateFunc:  func(e event.UpdateEvent) bool { return tasPodLabelsChanged(e.ObjectOld, e.ObjectNew) },
+			GenericFunc: func(e event.GenericEvent) bool { return hasTASPodIdentityHint(e.Object) },
+		})).
 		Watches(&kservev1beta1.InferenceService{}, &handler.EnqueueRequestForObject{}).
 		Complete(r)
 }

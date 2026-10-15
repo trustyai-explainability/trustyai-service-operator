@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -99,6 +100,25 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error parsing the service's deployment template")
 		return nil, err
+	}
+
+	identity, err := tasNetworkPolicyIdentity(instance)
+	if err != nil {
+		return nil, err
+	}
+	identityLabels, err := identity.Labels()
+	if err != nil {
+		return nil, err
+	}
+	if deployment.Spec.Template.Labels == nil {
+		deployment.Spec.Template.Labels = map[string]string{}
+	}
+	for key, value := range identityLabels {
+		deployment.Spec.Template.Labels[key] = value
+	}
+	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
+	if err != nil || !selector.Matches(labels.Set(deployment.Spec.Template.Labels)) {
+		return nil, fmt.Errorf("TAS Deployment selector does not match NetworkPolicy identity labels")
 	}
 
 	return deployment, nil
@@ -244,8 +264,9 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 		return r.updateDeployment(ctx, instance, image, caBundle)
 	}
 
-	// Deployment is ready and using the PVC
-	return nil
+	// Reconcile legacy Deployments' Pod-template identity only after the
+	// NetworkPolicy has been created by the caller.
+	return r.ensureTASDeploymentIdentity(ctx, instance, deploy)
 }
 
 // checkDeploymentReady verifies that a TrustyAI service deployment is ready
