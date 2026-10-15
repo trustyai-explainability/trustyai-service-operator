@@ -1,0 +1,7 @@
+# Known false positive: the historical generic-api-key match on the TLS
+# mount helper (commit f7cb3c7e) is a Go variable holding a Kubernetes
+# Secret name, not a secret value. Pinned by commit/file/rule/start-line
+# so any other finding in this path stays detectable. Note the last
+# component is the finding start line (13). `--redact` masks secret text,
+# but the fingerprint still contains this line number.
+f7cb3c7ec00372121ab8c4d46a7424634f29d3b4:controllers/gorch/tls.go:generic-api-key:13

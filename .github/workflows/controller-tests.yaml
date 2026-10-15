@@ -20,4 +20,4 @@ jobs:
           go-version-file: "go.mod"
 
       - name: Test
-        run: make test ENVTEST_K8S_VERSION=${{ matrix.envtest-k8s-version }}
+        run: make test ENVTEST_K8S_VERSION=${{ matrix.envtest-k8s-version }} GO_TEST_FLAGS="-p 1"
