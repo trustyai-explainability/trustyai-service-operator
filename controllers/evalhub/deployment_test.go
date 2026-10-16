@@ -226,6 +226,38 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(hasTestEnv).To(BeTrue())
 		})
 
+		It("should not allow the CR to override EVALHUB_INSTANCE_NAME", func() {
+			By("Adding an EVALHUB_INSTANCE_NAME override to the CR env")
+			evalHub.Spec.Env = append(evalHub.Spec.Env, corev1.EnvVar{
+				Name:  "EVALHUB_INSTANCE_NAME",
+				Value: "attacker-supplied-name",
+			})
+
+			By("Reconciling deployment")
+			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Getting deployment")
+			deployment := waitForDeployment(evalHubName, testNamespace)
+
+			By("Finding evalhub container")
+			var evalHubContainer *corev1.Container
+			for _, container := range deployment.Spec.Template.Spec.Containers {
+				if container.Name == "evalhub" {
+					evalHubContainer = &container
+					break
+				}
+			}
+			Expect(evalHubContainer).NotTo(BeNil())
+
+			By("Checking the operator-set value wins over the override")
+			envVars := make(map[string]string)
+			for _, env := range evalHubContainer.Env {
+				envVars[env.Name] = env.Value
+			}
+			Expect(envVars["EVALHUB_INSTANCE_NAME"]).To(Equal(evalHubName))
+		})
+
 		It("should configure resource requirements", func() {
 			By("Reconciling deployment")
 			err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)

@@ -5,21 +5,36 @@ metadata:
   name: evalhub-manager-role
 rules:
 - apiGroups:
-  - kueue.x-k8s.io
+  - batch
   resources:
-  - workloads
+  - jobs
   verbs:
   - get
   - list
   - watch
   - patch
 - apiGroups:
-  - batch
+  - ""
   resources:
-  - jobs
+  - namespaces
   verbs:
   - get
-  - patch
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
 - apiGroups:
   - ""
   resources:
@@ -27,12 +42,15 @@ rules:
   verbs:
   - create
   - patch
+  - list
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
   - evalhubs
   verbs:
   - get
+  - list
+  - watch
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
@@ -267,15 +285,6 @@ rules:
   - get
   - list
 - apiGroups:
-  - batch
-  resources:
-  - jobs
-  verbs:
-  - get
-  - list
-  - watch
-  - patch
-- apiGroups:
   - ""
   resources:
   - namespaces
@@ -283,6 +292,21 @@ rules:
   - get
   - list
   - watch
+  - create
+  - update
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - resourcequotas
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
 - apiGroups:
   - ""
   resources:
@@ -291,12 +315,70 @@ rules:
   - get
   - list
   - watch
+  - create
+  - update
+  - patch
+  - delete
 - apiGroups:
   - ""
   resources:
-  - pods/log
+  - pods/status
   verbs:
   - get
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - sandboxnamespaces
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - sandboxnamespaces/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
+  - trustyai.opendatahub.io
+  resources:
+  - sandboxnamespaces/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - workloads
+  verbs:
+  - get
+  - list
+  - watch
+  - patch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - get
+  - patch
 - apiGroups:
   - ""
   resources:
@@ -304,12 +386,9 @@ rules:
   verbs:
   - create
   - patch
-  - list
 - apiGroups:
   - trustyai.opendatahub.io
   resources:
   - evalhubs
   verbs:
   - get
-  - list
-  - watch

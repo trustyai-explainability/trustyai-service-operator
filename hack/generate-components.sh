@@ -23,7 +23,7 @@ COMPONENT_NAMES="tas evalhub lmes job-mgr nemo-guardrails"
 get_crd_pattern() {
     case "$1" in
         tas) echo "trustyaiservices" ;;
-        evalhub) echo "evalhubs" ;;
+        evalhub) echo "evalhubs sandboxnamespaces" ;;
         lmes) echo "lmevaljobs" ;;
         job-mgr) echo "" ;;  # JOB_MGR shares CRD with LMES
         nemo-guardrails) echo "nemoguardrails" ;;
@@ -58,24 +58,31 @@ for component in ${COMPONENT_NAMES}; do
     component_dir="${COMPONENTS_DIR}/${component}"
     mkdir -p "${component_dir}/rbac"
 
-    # 1. Move CRD file (skip for job-mgr as it shares CRD with lmes)
-    # Auto-generated CRDs are moved from config/crd/bases/ to component directories
+    # 1. Move CRD file(s) (skip for job-mgr as it shares CRD with lmes)
+    # Auto-generated CRDs are moved from config/crd/bases/ to component directories.
+    # A component may own more than one CRD; crd_pattern is a whitespace-separated
+    # list of patterns, one per CRD.
     if [[ ! -z ${crd_pattern} ]]; then
-      echo "  - Moving CRD (pattern: ${crd_pattern})"
-      crd_file=$(find "${CRD_BASES_DIR}" -name "*${crd_pattern}.yaml" 2>/dev/null | head -1)
-      if [[ -n "${crd_file}" && -f "${crd_file}" ]]; then
-        mv -f "${crd_file}" "${component_dir}/crd/$(basename "${crd_file}")"
-        echo "    ✓ Moved: $(basename "${crd_file}")"
-      else
-        echo "    ✗ No CRDs for pattern '${crd_pattern}'"
-      fi
+      for pattern in ${crd_pattern}; do
+        echo "  - Moving CRD (pattern: ${pattern})"
+        crd_file=$(find "${CRD_BASES_DIR}" -name "*${pattern}.yaml" 2>/dev/null | head -1)
+        if [[ -n "${crd_file}" && -f "${crd_file}" ]]; then
+          mv -f "${crd_file}" "${component_dir}/crd/$(basename "${crd_file}")"
+          echo "    ✓ Moved: $(basename "${crd_file}")"
+        else
+          echo "    ✗ No CRDs for pattern '${pattern}'"
+        fi
+      done
     fi
 
     # 2. Extract manager RBAC rules
+    # The RBAC extractor only uses the CRD pattern as an awk fallback for
+    # marker-less controllers, so pass the first pattern token.
+    rbac_crd_pattern="${crd_pattern%% *}"
     echo "  - Extracting manager RBAC"
     "${SCRIPT_DIR}/extract-component-rbac.sh" \
         "${component}" \
-        "${crd_pattern}" \
+        "${rbac_crd_pattern}" \
         "${controller_dirs}" \
         > "${component_dir}/rbac/manager-rbac.yaml"
 

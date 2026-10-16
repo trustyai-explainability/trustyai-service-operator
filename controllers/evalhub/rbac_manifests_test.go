@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"testing"
 
@@ -21,7 +22,9 @@ func TestEvalHubNetworkPolicyRBACIsMinimalAndSynchronized(t *testing.T) {
 		filepath.Join(moduleRoot, "config", "components", "evalhub", "rbac", "manager-rbac.yaml"),
 		filepath.Join(moduleRoot, "trustyai-operator-module", "config", "manifests-template", "components", "evalhub", "rbac", "manager-rbac.yaml"),
 	}
-	wantVerbs := []string{"create", "get", "list", "update", "watch"}
+	// The manager serves both EvalHub and SandboxNamespace controllers. Sandbox
+	// policies also require patch/delete permissions for lifecycle management.
+	wantVerbs := []string{"create", "delete", "get", "list", "patch", "update", "watch"}
 	sort.Strings(wantVerbs)
 	for _, path := range manifestPaths {
 		raw, err := os.ReadFile(path)
@@ -44,6 +47,9 @@ func TestEvalHubNetworkPolicyRBACIsMinimalAndSynchronized(t *testing.T) {
 			}
 		}
 		sort.Strings(gotVerbs)
+		// RBAC grants the union of permissions across rules, including overlapping
+		// rules generated from the two controllers' markers.
+		gotVerbs = slices.Compact(gotVerbs)
 		if len(gotVerbs) != len(wantVerbs) {
 			t.Fatalf("%s networkpolicy verbs = %v, want %v", path, gotVerbs, wantVerbs)
 		}

@@ -85,3 +85,13 @@ package trustyaimodule
 // +kubebuilder:rbac:groups=authentication.k8s.io,resources=tokenreviews,verbs=create
 // +kubebuilder:rbac:groups=authorization.k8s.io,resources=subjectaccessreviews,verbs=create
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,resourceNames=trustyai-service-operator-evalhub-model-secret;trustyai-service-operator-evalhub-auth-reviewer-role;trustyai-service-operator-evalhub-jobs-writer;trustyai-service-operator-evalhub-job-config;trustyai-service-operator-evalhub-hardware-profiles-reader;trustyai-service-operator-evalhub-mlflow-access;trustyai-service-operator-evalhub-mlflow-jobs-access;trustyai-service-operator-evalhub-providers-access;trustyai-service-operator-evalhub-collections-access,verbs=bind
+// EvalHub sandbox namespace controller (controllers/evalhub/sandbox_namespace_reconciler.go):
+// the module must hold every permission the evalhub manager-role grants for
+// sandbox provisioning, or RBAC escalation-prevention rejects that ClusterRole.
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create;update;delete
+// +kubebuilder:rbac:groups="",resources=resourcequotas,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=pods/status,verbs=get
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=sandboxnamespaces,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=sandboxnamespaces/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=sandboxnamespaces/finalizers,verbs=update

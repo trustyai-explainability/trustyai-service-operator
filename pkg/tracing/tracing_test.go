@@ -70,10 +70,10 @@ func TestOtlpTraceProtocolSpecificWins(t *testing.T) {
 
 func TestResolveOTLPProtocol(t *testing.T) {
 	tests := []struct {
-		name    string
+		name     string
 		protocol string
-		want    otlpExporterKind
-		wantErr bool
+		want     otlpExporterKind
+		wantErr  bool
 	}{
 		{name: "empty defaults to grpc", protocol: "", want: otlpExporterGRPC},
 		{name: "grpc", protocol: "grpc", want: otlpExporterGRPC},
