@@ -47,6 +47,17 @@ Guards against accidental changes to the operator Deployment's `spec.selector.ma
 | `controller-manager` (base) | `control-plane: trustyai-service-operator` |
 | `trustyai-service-operator-controller-manager` (overlays) | `control-plane: trustyai-service-operator`, `app.kubernetes.io/part-of: trustyai` |
 
+### `operator_network_policy.rego` — operator manager-pod NetworkPolicy shape
+
+Validates the NetworkPolicy that protects the operator's own controller-manager pod (RHOAIENG-96335). When a rendered NetworkPolicy selects pods carrying `control-plane: trustyai-service-operator`, the policy enforces:
+
+1. **Ingress-only.** `policyTypes` must contain `Ingress` and must not contain `Egress` (operator egress is tracked separately under HPSTRAT-278).
+2. **Port-scoped rules only.** Every ingress rule must list ports, limited to the manager pod's listeners: 8443 (secure metrics), 8081 (health probes), 9443 (CRD conversion webhooks).
+3. **Metrics source restriction.** The 8443 rule must allow exactly the supported OpenShift monitoring namespaces (`openshift-monitoring`, `openshift-user-workload-monitoring`) via `namespaceSelector`-only peers.
+4. **Port-scoped probe and webhook rules.** The 8081 and 9443 rules must not carry `from` peers: kubelet-originated probes and the host-networked API server cannot be reliably expressed as NetworkPolicy peers, so no source restriction is claimed for them.
+
+**Tested overlays:** `base`, `odh`, `rhoai`, `lmes`, `odh-kueue`, `testing`, `mcp-guardrails`.
+
 ## Changing the Deployment selector
 
 If you legitimately need to change the operator Deployment's selector labels (this is rare and breaks upgrades — a migration hook in the downstream operator repos will be required):
