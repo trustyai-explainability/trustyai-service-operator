@@ -7,6 +7,11 @@ metadata:
   annotations:
     "guardrail-tags": |
       ["prompt-injection", "jailbreak"]
+    "guardrail-locations": |
+      ["input"]
+    "guardrail-actions": |
+      ["block"]
+    "guardrail-description": "A guardrail that protects against prompt injection and jailbreak attempts."
     "evalhub/results": |
       [
         {
@@ -14,17 +19,17 @@ metadata:
           "benchmark_id": "prompt_injection",
           "benchmark_source": "https://github.com/eval-hub/eval-hub-contrib/blob/a1f02d02a8f1f839a95c05561f13cb25299c8437/adapters/nemo-guardrails/provider.yaml#L21",
           "metrics": {
-            "accuracy": 0.8901,
-            "allowed_f1": 0.8846,
-            "allowed_precision": 0.8081,
-            "allowed_recall": 0.9772,
-            "blocked_f1": 0.895,
-            "blocked_precision": 0.9794,
-            "blocked_recall": 0.824,
-            "errors": 1,
-            "mean_latency_ms": 93.9,
-            "median_latency_ms": 54.1,
-            "p95_latency_ms": 232
+            "accuracy": 0.9153,
+            "allowed_f1": 0.9059,
+            "allowed_precision": 0.8556,
+            "allowed_recall": 0.9624,
+            "blocked_f1": 0.923,
+            "blocked_precision": 0.9696,
+            "blocked_recall": 0.8806,
+            "errors": 128,
+            "mean_latency_ms": 66.9,
+            "median_latency_ms": 63.6,
+            "p95_latency_ms": 120
           },
           "artifacts": {
             "evalhub.env_card": {
@@ -40,7 +45,7 @@ metadata:
                 "torch": "2.13.0",
                 "transformers": "5.14.1"
               },
-              "os_info": "macOS-26.6.2-arm64-arm-64bit",
+              "os_info": "macOS-26.7.1-arm64-arm-64bit",
               "per_task_results": {},
               "python_version": "3.12.7",
               "scorer_ids": []
@@ -66,11 +71,11 @@ data:
         hf_classifier:
           prompt-injection:
             engine: local
-            model: "RedHatAI/deberta-v3-base-prompt-injection-v2"
+            model: "/app/models/prompt-injection" # currently uses patronus-studio/wolf-defender-prompt-injection
             task: text-classification
             threshold: 0.5
             blocked_labels:
-              - "INJECTION"
+              - "injection"
   rails.co: |
     define flow hf classifier check windowed input
       $result = execute hf_classifier_check_input_windowed(classifier=$classifier)
