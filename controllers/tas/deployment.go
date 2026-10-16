@@ -16,7 +16,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -102,23 +101,20 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		return nil, err
 	}
 
+	// Ownership is established at this common construction boundary so the
+	// canonical identity helper can validate it while stamping the reserved
+	// NetworkPolicy identity onto the Pod template; both creation and update
+	// paths then share the same verified labelling code.
+	if err := ctrl.SetControllerReference(instance, deployment, r.Scheme); err != nil {
+		log.FromContext(ctx).Error(err, "Error setting TrustyAIService as owner of Deployment.")
+		return nil, err
+	}
 	identity, err := tasNetworkPolicyIdentity(instance)
 	if err != nil {
 		return nil, err
 	}
-	identityLabels, err := identity.Labels()
-	if err != nil {
-		return nil, err
-	}
-	if deployment.Spec.Template.Labels == nil {
-		deployment.Spec.Template.Labels = map[string]string{}
-	}
-	for key, value := range identityLabels {
-		deployment.Spec.Template.Labels[key] = value
-	}
-	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
-	if err != nil || !selector.Matches(labels.Set(deployment.Spec.Template.Labels)) {
-		return nil, fmt.Errorf("TAS Deployment selector does not match NetworkPolicy identity labels")
+	if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, instance, identity); err != nil {
+		return nil, fmt.Errorf("stamping NetworkPolicy identity on TAS Deployment: %w", err)
 	}
 
 	return deployment, nil
@@ -146,10 +142,6 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 		return err
 	}
 
-	if err := ctrl.SetControllerReference(cr, deployment, r.Scheme); err != nil {
-		log.FromContext(ctx).Error(err, "Error setting TrustyAIService as owner of Deployment.")
-		return err
-	}
 	log.FromContext(ctx).Info("Creating Deployment.")
 	err = r.Create(ctx, deployment)
 	if err != nil {
@@ -181,11 +173,6 @@ func (r *TrustyAIServiceReconciler) updateDeployment(ctx context.Context, cr *tr
 	deployment, err := r.createDeploymentObject(ctx, cr, imageName, caBundle)
 	if err != nil {
 		// Error creating the deployment resource object
-		return err
-	}
-
-	if err := ctrl.SetControllerReference(cr, deployment, r.Scheme); err != nil {
-		log.FromContext(ctx).Error(err, "Error setting TrustyAIService as owner of Deployment.")
 		return err
 	}
 

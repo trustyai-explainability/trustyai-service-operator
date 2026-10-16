@@ -827,9 +827,11 @@ var _ = Describe("TrustyAI operator", func() {
 
 			// A Deployment with the same name/namespace the operator would use,
 			// but with no OwnerReference back to our CR (e.g. created by a user
-			// or another controller before this CR existed).
+			// or another controller before this CR existed). The construction
+			// helper stamps ownership, so drop it to model the foreign object.
 			foreign, err := reconciler.createDeploymentObject(ctx, instance, testTrustAIServiceImage, caBundle)
 			Expect(err).ToNot(HaveOccurred())
+			foreign.OwnerReferences = nil
 			Expect(k8sClient.Create(ctx, foreign)).To(Succeed())
 
 			Expect(reconciler.updateDeployment(ctx, instance, testTrustAIServiceImage, caBundle)).To(HaveOccurred())
