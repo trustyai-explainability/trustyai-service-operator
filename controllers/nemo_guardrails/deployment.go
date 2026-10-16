@@ -274,6 +274,19 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 		return nil, err
 	}
 
+	// Stamp the reserved NetworkPolicy identity onto the Pod template so new
+	// Pods enter the reconciled policy selector from the start, using the
+	// canonical helper so creation and existing-Deployment paths share the
+	// same ownership validation. Immutable Deployment selectors are never
+	// modified; adding template labels keeps the existing selector matching.
+	identity, err := nemoNetworkPolicyIdentity(nemoGuardrails)
+	if err != nil {
+		return nil, err
+	}
+	if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, nemoGuardrails, identity); err != nil {
+		return nil, fmt.Errorf("stamping NetworkPolicy identity on NemoGuardrails Deployment: %w", err)
+	}
+
 	// Set replicas from CR spec
 	if nemoGuardrails.Spec.Replicas != nil {
 		deployment.Spec.Replicas = nemoGuardrails.Spec.Replicas
