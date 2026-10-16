@@ -12,16 +12,26 @@ import (
 )
 
 func TestEvalHubNetworkPolicyRBACIsMinimalAndSynchronized(t *testing.T) {
+	assertEvalHubNetworkPolicyVerbs(t, "manager-rbac.yaml", []string{"create", "get", "list", "update", "watch"})
+}
+
+func TestEvalHubJobsWriterNetworkPolicyRBACIsMinimalAndSynchronized(t *testing.T) {
+	// OwnerReferencesPermissionEnforcement requires delete on the policy when
+	// EvalHub changes its owner from the job-spec ConfigMap to the Job.
+	assertEvalHubNetworkPolicyVerbs(t, "evalhub_jobs_writer_role.yaml", []string{"create", "delete", "get", "update"})
+}
+
+func assertEvalHubNetworkPolicyVerbs(t *testing.T, manifestName string, wantVerbs []string) {
+	t.Helper()
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
 	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", ".."))
 	manifestPaths := []string{
-		filepath.Join(moduleRoot, "config", "components", "evalhub", "rbac", "manager-rbac.yaml"),
-		filepath.Join(moduleRoot, "trustyai-operator-module", "config", "manifests-template", "components", "evalhub", "rbac", "manager-rbac.yaml"),
+		filepath.Join(moduleRoot, "config", "components", "evalhub", "rbac", manifestName),
+		filepath.Join(moduleRoot, "trustyai-operator-module", "config", "manifests-template", "components", "evalhub", "rbac", manifestName),
 	}
-	wantVerbs := []string{"create", "get", "list", "update", "watch"}
 	sort.Strings(wantVerbs)
 	for _, path := range manifestPaths {
 		raw, err := os.ReadFile(path)

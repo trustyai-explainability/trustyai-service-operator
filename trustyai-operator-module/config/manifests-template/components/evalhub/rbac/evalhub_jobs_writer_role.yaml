@@ -14,4 +14,5 @@ rules:
     verbs: ["create", "delete", "get", "list", "patch"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
-    verbs: ["create", "get", "update"]
+    # Owner-reference updates require delete permission under admission enforcement.
+    verbs: ["create", "delete", "get", "update"]
