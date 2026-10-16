@@ -7,6 +7,14 @@ metadata:
   annotations:
     "guardrail-tags": |
       ["pii", "personal-information", "personally-identifiable-information"]
+    "guardrail-locations": |
+      ["input", "output"]
+    "guardrail-actions": |
+      ["mask"]
+    "guardrail-description": |
+      A guardrail that masks a variety of personally identifiable information (PII), for example:
+      "My credit card number is 0123 0123 0123 0123" becomes "My credit card number is <CREDIT CARD>"
+      PII definitions sourced from the ai4privacy/pii-masking-openpii-1m training dataset.
     "evalhub/results": |
       [
         {

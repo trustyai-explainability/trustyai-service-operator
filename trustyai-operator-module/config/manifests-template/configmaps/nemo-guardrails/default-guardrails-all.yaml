@@ -7,6 +7,11 @@ metadata:
   annotations:
     "guardrail-tags": |
       ["prompt-injection", "jailbreak", "pii", "personal-information", "personally-identifiable-information", "content-safety", "toxicity", "hate", "profanity"]
+    "guardrail-locations": |
+      ["input", "output"]
+    "guardrail-actions": |
+      ["block", "mask"]
+    "guardrail-description": "A jack-of-all-trades guardrail that covers prompt injection, jailbreak, content safety, and personal information masking."
     "evalhub/results": |
       [
         {
@@ -15,10 +20,10 @@ metadata:
           "benchmark_source": "https://github.com/eval-hub/eval-hub-contrib/blob/a1f02d02a8f1f839a95c05561f13cb25299c8437/adapters/nemo-guardrails/provider.yaml#L195",
           "metrics": {
             "errors": 0,
-            "masking_accuracy": 0.7135,
-            "mean_latency_ms": 118.2,
-            "median_latency_ms": 106.8,
-            "p95_latency_ms": 202.4
+            "masking_accuracy": 0.7355,
+            "mean_latency_ms": 105.2,
+            "median_latency_ms": 97.4,
+            "p95_latency_ms": 169.8
           },
           "artifacts": {
             "evalhub.env_card": {
@@ -34,7 +39,7 @@ metadata:
                 "torch": "2.13.0",
                 "transformers": "5.14.1"
               },
-              "os_info": "macOS-26.6.2-arm64-arm-64bit",
+              "os_info": "macOS-26.7.1-arm64-arm-64bit",
               "per_task_results": {},
               "python_version": "3.12.7",
               "scorer_ids": []
@@ -46,17 +51,17 @@ metadata:
           "benchmark_id": "toxicity_profanity_safety",
           "benchmark_source": "https://github.com/eval-hub/eval-hub-contrib/blob/a1f02d02a8f1f839a95c05561f13cb25299c8437/adapters/nemo-guardrails/provider.yaml#L76",
           "metrics": {
-            "accuracy": 0.6987,
-            "allowed_f1": 0.6672,
-            "allowed_precision": 0.7451,
-            "allowed_recall": 0.604,
-            "blocked_f1": 0.7247,
-            "blocked_precision": 0.667,
-            "blocked_recall": 0.7933,
+            "accuracy": 0.702,
+            "allowed_f1": 0.6585,
+            "allowed_precision": 0.771,
+            "allowed_recall": 0.5747,
+            "blocked_f1": 0.7357,
+            "blocked_precision": 0.661,
+            "blocked_recall": 0.8293,
             "errors": 0,
-            "mean_latency_ms": 127.5,
-            "median_latency_ms": 94.3,
-            "p95_latency_ms": 226.4
+            "mean_latency_ms": 105.9,
+            "median_latency_ms": 83.4,
+            "p95_latency_ms": 182.8
           },
           "artifacts": {
             "evalhub.env_card": {
@@ -72,29 +77,29 @@ metadata:
                 "torch": "2.13.0",
                 "transformers": "5.14.1"
               },
-              "os_info": "macOS-26.6.2-arm64-arm-64bit",
+              "os_info": "macOS-26.7.1-arm64-arm-64bit",
               "per_task_results": {},
               "python_version": "3.12.7",
               "scorer_ids": []
             }
           }
-        },
-        {
+      },
+      {
           "provider": "nemo-guardrails",
           "benchmark_id": "prompt_injection",
           "benchmark_source": "https://github.com/eval-hub/eval-hub-contrib/blob/a1f02d02a8f1f839a95c05561f13cb25299c8437/adapters/nemo-guardrails/provider.yaml#L21",
           "metrics": {
-            "accuracy": 0.8135,
-            "allowed_f1": 0.7697,
-            "allowed_precision": 0.8236,
-            "allowed_recall": 0.7223,
-            "blocked_f1": 0.8433,
-            "blocked_precision": 0.8073,
-            "blocked_recall": 0.8827,
+            "accuracy": 0.8378,
+            "allowed_f1": 0.7914,
+            "allowed_precision": 0.8884,
+            "allowed_recall": 0.7135,
+            "blocked_f1": 0.8672,
+            "blocked_precision": 0.8109,
+            "blocked_recall": 0.932,
             "errors": 1,
-            "mean_latency_ms": 125.9,
-            "median_latency_ms": 85.3,
-            "p95_latency_ms": 310.6
+            "mean_latency_ms": 79.7,
+            "median_latency_ms": 65.9,
+            "p95_latency_ms": 178.4
           },
           "artifacts": {
             "evalhub.env_card": {
@@ -110,7 +115,7 @@ metadata:
                 "torch": "2.13.0",
                 "transformers": "5.14.1"
               },
-              "os_info": "macOS-26.6.2-arm64-arm-64bit",
+              "os_info": "macOS-26.7.1-arm64-arm-64bit",
               "per_task_results": {},
               "python_version": "3.12.7",
               "scorer_ids": []
@@ -118,7 +123,6 @@ metadata:
           }
         }
       ]
-
 data:
   config.yaml: |
     passthrough: true
@@ -137,18 +141,18 @@ data:
         hf_classifier:
           guardian-hap:
             engine: local
-            model: "RedHatAI/granite-guardian-hap-125m"
+            model: "/app/models/hap" # current uses RedHatAI/granite-guardian-hap-125m
             task: text-classification
             threshold: 0.5
             blocked_labels:
               - "LABEL_1"
           prompt-injection:
             engine: local
-            model: "RedHatAI/deberta-v3-base-prompt-injection-v2"
+            model: "/app/models/prompt-injection" # currently uses patronus-studio/wolf-defender-prompt-injection
             task: text-classification
             threshold: 0.5
             blocked_labels:
-              - "INJECTION"
+              - "injection"
         injection_detection:
           injections:
             - code
