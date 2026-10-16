@@ -1,4 +1,5 @@
 resources:
+  - provider-atif.yaml
   - provider-databench.yaml
   - provider-deepeval.yaml
   - provider-followbench.yaml
