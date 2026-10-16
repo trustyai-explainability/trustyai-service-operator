@@ -317,6 +317,44 @@ func TestPackagedJudgeProviderConfigs(t *testing.T) {
 	}
 }
 
+func TestPackagedATIFProviderConfig(t *testing.T) {
+	manifestPath := filepath.Join("config", "configmaps", "evalhub", "provider-atif.yaml")
+	modulePath := filepath.Join("trustyai-operator-module", "config", "manifests-template", "configmaps", "evalhub", "provider-atif.yaml")
+	manifestBytes, err := os.ReadFile(filepath.Join(moduleRoot(t), manifestPath))
+	if err != nil {
+		t.Fatalf("read source ATIF ConfigMap manifest: %v", err)
+	}
+	moduleBytes, err := os.ReadFile(filepath.Join(moduleRoot(t), modulePath))
+	if err != nil {
+		t.Fatalf("read module ATIF ConfigMap manifest: %v", err)
+	}
+	if string(manifestBytes) != string(moduleBytes) {
+		t.Fatal("module ATIF ConfigMap is not synchronized with config source")
+	}
+
+	configMap := readPackagedConfigMap(t, manifestPath)
+	if configMap.Name != "evalhub-provider-atif" {
+		t.Fatalf("provider ConfigMap name = %q, want evalhub-provider-atif", configMap.Name)
+	}
+	if got := configMap.Labels[providerLabel]; got != "system" {
+		t.Errorf("provider type label = %q, want system", got)
+	}
+	if got := configMap.Labels[providerNameLabel]; got != "atif" {
+		t.Errorf("provider name label = %q, want atif", got)
+	}
+	if len(configMap.Data) != 1 {
+		t.Fatalf("provider ConfigMap data keys = %v, want one embedded YAML", configMap.Data)
+	}
+
+	provider := unmarshalProviderConfig(t, configMap, "atif.yaml")
+	if provider.ID != "atif" {
+		t.Errorf("provider id = %q, want atif", provider.ID)
+	}
+	if provider.Runtime.K8s.Image != "$(evalhub-provider-atif-image)" {
+		t.Errorf("provider image = %q, want preserved kustomize image placeholder", provider.Runtime.K8s.Image)
+	}
+}
+
 func findProviderParameter(provider packagedProviderConfig, name string) *struct {
 	Name        string      `json:"name"`
 	Type        interface{} `json:"type"`
