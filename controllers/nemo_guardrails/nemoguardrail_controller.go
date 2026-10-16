@@ -277,6 +277,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Version:       constants.Version,
 		UseAuthProxy:  utils.RequiresAuth(nemoGuardrails),
 		WorkloadName:  identity.Name,
+		SelectorName:  identity.Selector,
 		PortName:      identity.PortName,
 		AdminPortName: identity.AdminPortName,
 	}
@@ -310,7 +311,10 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 	}
-	if err := r.retireUnscopedNames(ctx, nemoGuardrails, targetNamespace); err != nil {
+	if err := r.retirePrefixedNames(ctx, nemoGuardrails, targetNamespace); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.releaseReadyWorkload(ctx, nemoGuardrails, targetNamespace); err != nil {
 		return ctrl.Result{}, err
 	}
 

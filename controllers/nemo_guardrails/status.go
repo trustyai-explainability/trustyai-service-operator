@@ -45,9 +45,15 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 	if showEndpointStatus {
 		endpoint = fmt.Sprintf("https://%s.%s.svc.cluster.local", identity.Name, targetNamespace)
 	}
-	// sets the endpoint status based on the showEndpointStatus flag
+	// Publish the new address once the Deployment is Ready and, when a Route is required, that Route is admitted.
+	// Until then a namespace move keeps the previous endpoint and workload namespace.
+	publishAddress := previousWorkloadNamespace(nemoGuardrails) == targetNamespace || (deploymentReady && routeReady)
 	setEndpoint := func(saved *nemoguardrailsv1alpha1.NemoGuardrails) {
+		if !publishAddress {
+			return
+		}
 		saved.Status.Endpoint = endpoint
+		saved.Status.WorkloadNamespace = targetNamespace
 	}
 
 	if deploymentReady && routeReady {
@@ -61,7 +67,6 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 			setEndpoint(saved)
 			utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionTrue, utils.ReconcileCompleted, utils.ReconcileCompletedMessage)
 			saved.Status.Phase = utils.PhaseReady
-			saved.Status.WorkloadNamespace = targetNamespace
 		})
 		if updateErr != nil {
 			log.FromContext(ctx).Error(updateErr, "Failed to update status")
@@ -87,11 +92,9 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 					message = "Deployment rollout is stuck: " + deploymentErr.Error()
 				}
 				utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionFalse, utils.ReconcileFailed, message)
-				saved.Status.WorkloadNamespace = targetNamespace
 				saved.Status.Phase = utils.PhaseError
 			} else {
 				utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionFalse, "WaitingForReady", "Waiting for required resources to become ready")
-				saved.Status.WorkloadNamespace = targetNamespace
 				saved.Status.Phase = utils.PhaseProgressing
 			}
 		})

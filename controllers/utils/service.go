@@ -16,6 +16,7 @@ type ServiceConfig struct {
 	Version       string
 	UseAuthProxy  bool
 	WorkloadName  string
+	SelectorName  string
 	PortName      string
 	AdminPortName string
 }
@@ -33,17 +34,23 @@ func ReconcileService(ctx context.Context, c client.Client, owner metav1.Object,
 	return err
 }
 
-// CompareAndUpdateServicePorts updates svc in-cluster if its Spec.Ports differ from expectedSvc.
+// CompareAndUpdateServicePorts updates svc in-cluster when its ports or selector differ from expectedSvc.
 func CompareAndUpdateServicePorts(ctx context.Context, c client.Client, svc *corev1.Service, expectedSvc *corev1.Service) error {
-	if !reflect.DeepEqual(svc.Spec.Ports, expectedSvc.Spec.Ports) {
-		LogInfoUpdating(ctx, serviceResourceKind, svc.Name, svc.Namespace)
-
+	portsChanged := !reflect.DeepEqual(svc.Spec.Ports, expectedSvc.Spec.Ports)
+	selectorChanged := !reflect.DeepEqual(svc.Spec.Selector, expectedSvc.Spec.Selector)
+	if !portsChanged && !selectorChanged {
+		return nil
+	}
+	LogInfoUpdating(ctx, serviceResourceKind, svc.Name, svc.Namespace)
+	if portsChanged {
 		svc.Spec.Ports = expectedSvc.Spec.Ports
-
-		if err := c.Update(ctx, svc); err != nil {
-			LogErrorUpdating(ctx, err, serviceResourceKind, svc.Name, svc.Namespace)
-			return err
-		}
+	}
+	if selectorChanged {
+		svc.Spec.Selector = expectedSvc.Spec.Selector
+	}
+	if err := c.Update(ctx, svc); err != nil {
+		LogErrorUpdating(ctx, err, serviceResourceKind, svc.Name, svc.Namespace)
+		return err
 	}
 	return nil
 }

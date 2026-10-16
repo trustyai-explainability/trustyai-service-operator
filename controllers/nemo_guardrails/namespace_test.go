@@ -61,6 +61,8 @@ func TestCreateDeploymentUsesCRNamespaceOnUnknownPlatform(t *testing.T) {
 	deployment, err := reconciler.createDeployment(context.Background(), cr, utils.CABundleInitContainerConfig{}, nil)
 	require.NoError(t, err)
 	require.Equal(t, "test-ns", deployment.Namespace)
+	require.Equal(t, "nemo-guardrails", deployment.Name)
+	require.Equal(t, "nemo-guardrails", deployment.Spec.Selector.MatchLabels["app"])
 	require.NotEmpty(t, deployment.OwnerReferences)
 	require.Equal(t, "cr-uid", deployment.Labels[utils.OwnerUIDLabel])
 
@@ -103,11 +105,13 @@ func TestCreateDeploymentCentralizesIntoPlatformInfraNamespace(t *testing.T) {
 	deployment, err := reconciler.createDeployment(context.Background(), cr, utils.CABundleInitContainerConfig{}, nil)
 	require.NoError(t, err)
 	require.Equal(t, "redhat-ai-gateway-infra", deployment.Namespace)
+	require.Equal(t, "nemo-guardrails", deployment.Name)
+	require.Equal(t, "test-ns-nemo-guardrails", deployment.Spec.Selector.MatchLabels["app"])
+	require.Equal(t, "test-ns-nemo-guardrails", deployment.Spec.Template.Labels["app"])
 	require.Empty(t, deployment.OwnerReferences)
 	require.Equal(t, "cr-uid", deployment.Labels[utils.OwnerUIDLabel])
 
 	copied := &corev1.ConfigMap{}
-	require.Equal(t, "test-ns-nemo-guardrails", deployment.Name)
 	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "test-ns-nemo-guardrails-nemo-config", Namespace: "redhat-ai-gateway-infra"}, copied))
 	require.Equal(t, "models: []", copied.Data["config.yaml"])
 
@@ -186,10 +190,10 @@ func TestReleasePreviousWorkloadKeepsOldNamespaceOnCollision(t *testing.T) {
 		Labels: map[string]string{utils.OwnerUIDLabel: string(cr.UID)},
 	}}
 	collision := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "control-plane-nemo-guardrails", Namespace: "models"},
+		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "models"},
 		Spec:       appsv1.DeploymentSpec{Replicas: int32Ptr(3)},
 	}
-	unownedAccount := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-nemo-guardrails-serviceaccount", Namespace: "models"}}
+	unownedAccount := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails-serviceaccount", Namespace: "models"}}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(current, collision, unownedAccount).Build()
 	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
 
@@ -240,6 +244,212 @@ func TestReleasePreviousWorkloadKeepsOldNamespaceOnConfigMapCollision(t *testing
 	require.Empty(t, got.Labels)
 }
 
+func TestReleasePreviousWorkloadKeepsOldNamespaceOnSecretCollision(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, routev1.AddToScheme(scheme))
+	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
+		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
+		Spec: nemoguardrailsv1alpha1.NemoGuardrailsSpec{
+			Env: []corev1.EnvVar{{
+				Name: "API_TOKEN",
+				ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "nemo-api-token"},
+				}},
+			}},
+		},
+		Status: nemoguardrailsv1alpha1.NemoGuardrailStatus{WorkloadNamespace: "old"},
+	}
+	current := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+		Name: "nemo-guardrails", Namespace: "old",
+		Labels: map[string]string{utils.OwnerUIDLabel: string(cr.UID)},
+	}}
+	collision := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-nemo-guardrails-nemo-api-token", Namespace: "models"}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(current, collision).Build()
+	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
+
+	require.Error(t, reconciler.releasePreviousWorkload(context.Background(), cr, "models"))
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(current), &appsv1.Deployment{}))
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(collision), &corev1.Secret{}))
+}
+
+func TestReleaseReadyWorkloadKeepsPreviousUntilReady(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, routev1.AddToScheme(scheme))
+	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
+		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
+		Status:     nemoguardrailsv1alpha1.NemoGuardrailStatus{WorkloadNamespace: "old"},
+	}
+	owned := map[string]string{utils.OwnerUIDLabel: string(cr.UID)}
+	previous := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "old", Labels: owned}}
+	pending := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "models", Labels: owned}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(previous, pending).Build()
+	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
+
+	require.NoError(t, reconciler.releaseReadyWorkload(context.Background(), cr, "models"))
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(previous), &appsv1.Deployment{}))
+}
+
+func TestReleaseReadyWorkloadRemovesPreviousWhenReady(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, routev1.AddToScheme(scheme))
+	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
+		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
+		Status:     nemoguardrailsv1alpha1.NemoGuardrailStatus{WorkloadNamespace: "old"},
+	}
+	owned := map[string]string{utils.OwnerUIDLabel: string(cr.UID)}
+	previous := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "old", Labels: owned}}
+	current := readyDeployment("nemo-guardrails", "models", owned)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(previous, current).Build()
+	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
+
+	require.NoError(t, reconciler.releaseReadyWorkload(context.Background(), cr, "models"))
+	require.True(t, apierrors.IsNotFound(c.Get(context.Background(), client.ObjectKeyFromObject(previous), &appsv1.Deployment{})))
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(current), &appsv1.Deployment{}))
+}
+
+func TestReleaseReadyWorkloadKeepsPreviousUntilRouteAdmitted(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, routev1.AddToScheme(scheme))
+	expose := true
+	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
+		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
+		Spec:       nemoguardrailsv1alpha1.NemoGuardrailsSpec{ExposeRoute: &expose},
+		Status:     nemoguardrailsv1alpha1.NemoGuardrailStatus{WorkloadNamespace: "old"},
+	}
+	owned := map[string]string{utils.OwnerUIDLabel: string(cr.UID)}
+	previous := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "old", Labels: owned}}
+	current := readyDeployment("nemo-guardrails", "models", owned)
+	pendingRoute := &routev1.Route{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "models"}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(previous, current, pendingRoute).Build()
+	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
+
+	require.NoError(t, reconciler.releaseReadyWorkload(context.Background(), cr, "models"))
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(previous), &appsv1.Deployment{}))
+}
+
+func TestReleaseReadyWorkloadRemovesPreviousWhenRouteAdmitted(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, routev1.AddToScheme(scheme))
+	expose := true
+	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
+		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
+		Spec:       nemoguardrailsv1alpha1.NemoGuardrailsSpec{ExposeRoute: &expose},
+		Status:     nemoguardrailsv1alpha1.NemoGuardrailStatus{WorkloadNamespace: "old"},
+	}
+	owned := map[string]string{utils.OwnerUIDLabel: string(cr.UID)}
+	previous := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "old", Labels: owned}}
+	current := readyDeployment("nemo-guardrails", "models", owned)
+	admitted := &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "models"},
+		Status: routev1.RouteStatus{Ingress: []routev1.RouteIngress{{
+			Conditions: []routev1.RouteIngressCondition{{
+				Type:   routev1.RouteAdmitted,
+				Status: corev1.ConditionTrue,
+			}},
+		}}},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(previous, current, admitted).Build()
+	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
+
+	require.NoError(t, reconciler.releaseReadyWorkload(context.Background(), cr, "models"))
+	require.True(t, apierrors.IsNotFound(c.Get(context.Background(), client.ObjectKeyFromObject(previous), &appsv1.Deployment{})))
+}
+
+func TestReleaseReadyWorkloadKeepsPreviousOnDeadline(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, routev1.AddToScheme(scheme))
+	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
+		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
+		Status:     nemoguardrailsv1alpha1.NemoGuardrailStatus{WorkloadNamespace: "old"},
+	}
+	owned := map[string]string{utils.OwnerUIDLabel: string(cr.UID)}
+	previous := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "old", Labels: owned}}
+	stuck := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "models", Labels: owned},
+		Status: appsv1.DeploymentStatus{Conditions: []appsv1.DeploymentCondition{{
+			Type:    appsv1.DeploymentProgressing,
+			Reason:  "ProgressDeadlineExceeded",
+			Message: "timed out",
+		}}},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(previous, stuck).Build()
+	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
+
+	require.NoError(t, reconciler.releaseReadyWorkload(context.Background(), cr, "models"))
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(previous), &appsv1.Deployment{}))
+}
+
+func TestWorkloadPortNamesFitServiceLimit(t *testing.T) {
+	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "nemo-guardrails", Namespace: "control-plane",
+			Annotations: map[string]string{"security.opendatahub.io/enable-auth": "true"},
+		},
+	}
+	identity := newWorkloadIdentity(cr, "redhat-ai-gateway-infra")
+	require.Equal(t, "nemo-guardrails", identity.Name)
+	require.Equal(t, "control-plane-nemo-guardrails", identity.Selector)
+	require.Equal(t, "nemo-guardrails", identity.PortName)
+	require.Equal(t, "admin", identity.AdminPortName)
+	require.LessOrEqual(t, len(identity.PortName), maxServicePortNameLen)
+	require.LessOrEqual(t, len(identity.AdminPortName), maxServicePortNameLen)
+
+	cr.Name = "test-nemoguardrails"
+	identity = newWorkloadIdentity(cr, "redhat-ai-gateway-infra")
+	require.Equal(t, "https", identity.PortName)
+	require.Equal(t, "admin", identity.AdminPortName)
+}
+
+func TestEnsureDefaultConfigMapUsesShortName(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	sourceName := nemoGuardrailsDefaultConfigPrefix + "-pii"
+	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
+		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
+	}
+	source := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: sourceName, Namespace: "control-plane"},
+		Data:       map[string]string{"config.yml": "rails"},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
+
+	copied, err := reconciler.ensureConfigMapInNamespace(context.Background(), cr, source, "redhat-ai-gateway-infra")
+	require.NoError(t, err)
+	require.Equal(t, "control-plane-nemo-guardrails-default-pii", copied.Name)
+	require.Equal(t, "redhat-ai-gateway-infra", copied.Namespace)
+}
+
+func TestDefaultConfigCopyNameKeepsDefaultSuffix(t *testing.T) {
+	source := nemoGuardrailsDefaultConfigPrefix + "-pii"
+	require.Equal(t, "control-plane-nemo-guardrails-default-pii", defaultConfigCopyName("control-plane", "nemo-guardrails", source, "redhat-ai-gateway-infra"))
+	require.Equal(t, "nemo-guardrails-"+source, defaultConfigCopyName("control-plane", "nemo-guardrails", source, "control-plane"))
+
+	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
+		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane"},
+		Spec: nemoguardrailsv1alpha1.NemoGuardrailsSpec{
+			NemoConfigs: []nemoguardrailsv1alpha1.NemoConfig{{
+				ConfigMaps: []string{source},
+			}},
+		},
+	}
+	legacy := legacyCopiedConfigMapNames(cr, "redhat-ai-gateway-infra")
+	require.Contains(t, legacy, dns1123Name("control-plane-nemo-guardrails-"+source))
+	require.NotContains(t, legacy, "control-plane-nemo-guardrails-default-pii")
+}
+
 func TestCopiedConfigMapNamesSkipInPlaceConfig(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
@@ -274,7 +484,7 @@ func TestRejectUnownedServiceAccount(t *testing.T) {
 			Annotations: map[string]string{"security.opendatahub.io/enable-auth": "true"},
 		},
 	}
-	account := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-nemo-guardrails-serviceaccount", Namespace: "models"}}
+	account := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails-serviceaccount", Namespace: "models"}}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(account).Build()
 	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
 
@@ -313,7 +523,7 @@ func TestRequireOwnedOrAbsentLeavesUnownedDeployment(t *testing.T) {
 
 func int32Ptr(v int32) *int32 { return &v }
 
-func TestRetireUnscopedNamesRemovesLegacyObjects(t *testing.T) {
+func TestRetirePrefixedNamesRemovesLegacyObjects(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
@@ -335,35 +545,35 @@ func TestRetireUnscopedNamesRemovesLegacyObjects(t *testing.T) {
 		Status: nemoguardrailsv1alpha1.NemoGuardrailStatus{WorkloadNamespace: "redhat-ai-gateway-infra"},
 	}
 	owned := map[string]string{utils.OwnerUIDLabel: string(cr.UID)}
-	legacyDeployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
-	legacyRoute := &routev1.Route{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
+	currentDeployment := readyDeployment("nemo-guardrails", "redhat-ai-gateway-infra", owned)
+	currentRoute := &routev1.Route{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
 	legacySecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "nemo-api-token", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
 	legacyConfig := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "nemo-config", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
 	legacyAdmin := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails-rbac-proxy-admin-config", Namespace: "control-plane", Labels: owned}}
-	prefixedDeployment := readyDeployment("control-plane-nemo-guardrails", "redhat-ai-gateway-infra", owned)
+	prefixedDeployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-nemo-guardrails", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
 	prefixedRoute := &routev1.Route{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-nemo-guardrails", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
-	prefixedSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-nemo-guardrails-nemo-api-token", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
-	unownedService := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "redhat-ai-gateway-infra"}}
+	copiedSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-nemo-guardrails-nemo-api-token", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
+	unownedService := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-nemo-guardrails", Namespace: "redhat-ai-gateway-infra"}}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		legacyDeployment, legacyRoute, legacySecret, legacyConfig, legacyAdmin,
-		prefixedDeployment, prefixedRoute, prefixedSecret, unownedService,
+		currentDeployment, currentRoute, legacySecret, legacyConfig, legacyAdmin,
+		prefixedDeployment, prefixedRoute, copiedSecret, unownedService,
 	).Build()
 	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
 
-	require.NoError(t, reconciler.retireUnscopedNames(context.Background(), cr, "redhat-ai-gateway-infra"))
+	require.NoError(t, reconciler.retirePrefixedNames(context.Background(), cr, "redhat-ai-gateway-infra"))
 
-	require.True(t, apierrors.IsNotFound(c.Get(context.Background(), client.ObjectKeyFromObject(legacyDeployment), &appsv1.Deployment{})))
-	require.True(t, apierrors.IsNotFound(c.Get(context.Background(), client.ObjectKeyFromObject(legacyRoute), &routev1.Route{})))
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(currentDeployment), &appsv1.Deployment{}))
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(currentRoute), &routev1.Route{}))
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(copiedSecret), &corev1.Secret{}))
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(unownedService), &corev1.Service{}))
+	require.True(t, apierrors.IsNotFound(c.Get(context.Background(), client.ObjectKeyFromObject(prefixedDeployment), &appsv1.Deployment{})))
+	require.True(t, apierrors.IsNotFound(c.Get(context.Background(), client.ObjectKeyFromObject(prefixedRoute), &routev1.Route{})))
 	require.True(t, apierrors.IsNotFound(c.Get(context.Background(), client.ObjectKeyFromObject(legacySecret), &corev1.Secret{})))
 	require.True(t, apierrors.IsNotFound(c.Get(context.Background(), client.ObjectKeyFromObject(legacyConfig), &corev1.ConfigMap{})))
 	require.True(t, apierrors.IsNotFound(c.Get(context.Background(), client.ObjectKeyFromObject(legacyAdmin), &corev1.ConfigMap{})))
-	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(prefixedDeployment), &appsv1.Deployment{}))
-	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(prefixedRoute), &routev1.Route{}))
-	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(prefixedSecret), &corev1.Secret{}))
-	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(unownedService), &corev1.Service{}))
 }
 
-func TestRetireUnscopedNamesKeepsLegacyUntilReady(t *testing.T) {
+func TestRetirePrefixedNamesKeepsPrefixedUntilReady(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
@@ -373,40 +583,40 @@ func TestRetireUnscopedNamesKeepsLegacyUntilReady(t *testing.T) {
 	}
 	owned := map[string]string{utils.OwnerUIDLabel: string(cr.UID)}
 
-	t.Run("prefixed deployment absent", func(t *testing.T) {
-		legacy := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
-		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(legacy).Build()
+	t.Run("current deployment absent", func(t *testing.T) {
+		prefixed := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-nemo-guardrails", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(prefixed).Build()
 		reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
 
-		require.NoError(t, reconciler.retireUnscopedNames(context.Background(), cr, "redhat-ai-gateway-infra"))
-		require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(legacy), &appsv1.Deployment{}))
+		require.NoError(t, reconciler.retirePrefixedNames(context.Background(), cr, "redhat-ai-gateway-infra"))
+		require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(prefixed), &appsv1.Deployment{}))
 	})
 
-	t.Run("prefixed deployment not ready", func(t *testing.T) {
-		legacy := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
-		pending := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-nemo-guardrails", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
-		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(legacy, pending).Build()
+	t.Run("current deployment not ready", func(t *testing.T) {
+		prefixed := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-nemo-guardrails", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
+		pending := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(prefixed, pending).Build()
 		reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
 
-		require.NoError(t, reconciler.retireUnscopedNames(context.Background(), cr, "redhat-ai-gateway-infra"))
-		require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(legacy), &appsv1.Deployment{}))
+		require.NoError(t, reconciler.retirePrefixedNames(context.Background(), cr, "redhat-ai-gateway-infra"))
+		require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(prefixed), &appsv1.Deployment{}))
 	})
 
 	t.Run("progress deadline", func(t *testing.T) {
-		legacy := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
+		prefixed := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-nemo-guardrails", Namespace: "redhat-ai-gateway-infra", Labels: owned}}
 		stuck := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Name: "control-plane-nemo-guardrails", Namespace: "redhat-ai-gateway-infra", Labels: owned},
+			ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "redhat-ai-gateway-infra", Labels: owned},
 			Status: appsv1.DeploymentStatus{Conditions: []appsv1.DeploymentCondition{{
 				Type:    appsv1.DeploymentProgressing,
 				Reason:  "ProgressDeadlineExceeded",
 				Message: "timed out",
 			}}},
 		}
-		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(legacy, stuck).Build()
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(prefixed, stuck).Build()
 		reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
 
-		require.NoError(t, reconciler.retireUnscopedNames(context.Background(), cr, "redhat-ai-gateway-infra"))
-		require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(legacy), &appsv1.Deployment{}))
+		require.NoError(t, reconciler.retirePrefixedNames(context.Background(), cr, "redhat-ai-gateway-infra"))
+		require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(prefixed), &appsv1.Deployment{}))
 	})
 }
 
