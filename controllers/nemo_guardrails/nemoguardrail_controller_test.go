@@ -2,6 +2,7 @@ package nemo_guardrails
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -17,9 +18,11 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -423,6 +426,52 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		Expect(k8sClient.Get(ctx, typeNamespacedName, deployment)).To(Succeed())
 		Expect(deployment.Spec.Template.Annotations["trustyai.opendatahub.io/nemo-config-hash"]).To(Equal(initialHash))
 		Expect(deployment.ResourceVersion).To(Equal(initialResourceVersion))
+	})
+
+	It("should preserve and propagate optional resources and claims", func() {
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
+		r := &NemoGuardrailsReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Namespace: operatorNamespace}
+		ca, cms, _ := r.LoadCAConfigs(ctx, log.FromContext(ctx), *nemo)
+		baseline, err := r.createDeployment(ctx, nemo, ca, cms)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(baseline.Spec.Template.Spec.ResourceClaims).To(BeEmpty())
+		Expect(baseline.Spec.Template.Spec.Containers[0].Resources).To(Equal(corev1.ResourceRequirements{}))
+
+		claims := []corev1.PodResourceClaim{
+			{Name: "gpu", ResourceClaimTemplateName: ptr.To("gpu-template")},
+			{Name: "existing", ResourceClaimName: ptr.To("existing-claim")},
+		}
+		resources := &corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+			Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+			Claims:   []corev1.ResourceClaim{{Name: "gpu"}, {Name: "existing"}},
+		}
+		nemo.Spec.Resources = resources
+		nemo.Spec.Template = &nemoguardrailsv1alpha1.NemoGuardrailsTemplate{
+			Pod: &nemoguardrailsv1alpha1.NemoGuardrailsPodTemplate{ResourceClaims: claims},
+		}
+		data, err := json.Marshal(nemo)
+		Expect(err).NotTo(HaveOccurred())
+		roundTrip := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(json.Unmarshal(data, roundTrip)).To(Succeed())
+		Expect(roundTrip.Spec).To(Equal(nemo.Spec))
+		Expect(k8sClient.Update(ctx, roundTrip)).To(Succeed())
+		Expect(k8sClient.Get(ctx, typeNamespacedName, roundTrip)).To(Succeed())
+		deployment, err := r.createDeployment(ctx, roundTrip, ca, cms)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(deployment.Spec.Template.Spec.ResourceClaims).To(Equal(claims))
+		Expect(deployment.Spec.Template.Spec.Containers[0].Resources).To(Equal(*resources))
+
+		// Only the pod claims and app resources change; other containers retain their defaults.
+		deployment.Spec.Template.Spec.ResourceClaims = nil
+		deployment.Spec.Template.Spec.Containers[0].Resources = corev1.ResourceRequirements{}
+		Expect(deployment).To(Equal(baseline))
+		roundTrip.Spec.Resources = nil
+		roundTrip.Spec.Template.Pod.ResourceClaims = nil
+		reset, err := r.createDeployment(ctx, roundTrip, ca, cms)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(reset).To(Equal(baseline))
 	})
 
 	It("should apply affinity to the deployment", func() {

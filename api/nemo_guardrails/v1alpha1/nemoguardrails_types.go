@@ -66,6 +66,10 @@ type NemoGuardrailsSpec struct {
 	// Define Env information for the main container
 	// +optional
 	Env []corev1.EnvVar `json:"env,omitempty"`
+	// Resources defines CPU/memory requests and limits and DRA claim references
+	// for the main NeMo Guardrails container.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 	// Template describes the pod template used by the deployment
 	// +optional
 	Template *NemoGuardrailsTemplate `json:"template,omitempty"`
@@ -89,6 +93,17 @@ type NemoGuardrailsTemplate struct {
 
 // NemoGuardrailsPodTemplate defines pod-level overrides
 type NemoGuardrailsPodTemplate struct {
+	// ResourceClaims declares the DRA claims available to this Pod. Each entry
+	// references a ResourceClaim or ResourceClaimTemplate in the instance's namespace.
+	// The main container opts in by referencing the entry's name in spec.resources.claims.
+	// Changes update the Deployment's Pod template and trigger a rollout.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:items:XValidation:rule="has(self.resourceClaimName) != has(self.resourceClaimTemplateName)",message="exactly one of resourceClaimName and resourceClaimTemplateName must be set"
+	// +kubebuilder:validation:items:XValidation:rule="!has(self.resourceClaimName) || size(self.resourceClaimName) > 0",message="resourceClaimName must not be empty"
+	// +kubebuilder:validation:items:XValidation:rule="!has(self.resourceClaimTemplateName) || size(self.resourceClaimTemplateName) > 0",message="resourceClaimTemplateName must not be empty"
+	ResourceClaims []corev1.PodResourceClaim `json:"resourceClaims,omitempty"`
 	// If specified, the pod's scheduling constraints
 	// +optional
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`

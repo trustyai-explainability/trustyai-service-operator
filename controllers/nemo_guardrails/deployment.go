@@ -298,9 +298,14 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, nemoGuardrails.Spec.Env...)
 	}
 
-	// apply pod scheduling constraints
+	if nemoGuardrails.Spec.Resources != nil {
+		deployment.Spec.Template.Spec.Containers[0].Resources = *nemoGuardrails.Spec.Resources.DeepCopy()
+	}
+
+	// apply pod overrides
 	if nemoGuardrails.Spec.Template != nil && nemoGuardrails.Spec.Template.Pod != nil {
 		pod := nemoGuardrails.Spec.Template.Pod
+		deployment.Spec.Template.Spec.ResourceClaims = pod.DeepCopy().ResourceClaims
 		if pod.Affinity != nil {
 			deployment.Spec.Template.Spec.Affinity = pod.Affinity
 		}
