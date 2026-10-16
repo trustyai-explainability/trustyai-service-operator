@@ -23,6 +23,8 @@ allowed_api_resources := {
 
 	# --- apps ---
 	["apps", "deployments"],
+	# Verify the ReplicaSet owner of existing TAS Pods before adding reserved labels.
+	["apps", "replicasets"],
 	["apps", "deployments/finalizers"],
 	["apps", "deployments/status"],
 
