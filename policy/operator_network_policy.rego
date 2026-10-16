@@ -30,7 +30,12 @@ port_key(port) := sprintf("%v", [port])
 rule_allows_port(rule, port) if {
 	some p in rule.ports
 	port_key(p.port) == port
+	is_tcp_port(p)
 }
+
+# NetworkPolicyPort.protocol defaults to TCP when omitted.
+is_tcp_port(p) if not p.protocol
+is_tcp_port(p) if p.protocol == "TCP"
 
 has_ingress_rule_for(port) if {
 	selects_operator_pods
@@ -71,6 +76,15 @@ deny contains msg if {
 	some p in rule.ports
 	not port_key(p.port) in operator_ingress_ports
 	msg := sprintf("OPERATOR NP VIOLATION: ingress port %v is not one of the operator manager pod's listeners (8443 metrics, 8081 probes, 9443 webhooks).", [p.port])
+}
+
+deny contains msg if {
+	selects_operator_pods
+	some rule in input.spec.ingress
+	some p in rule.ports
+	p.protocol
+	p.protocol != "TCP"
+	msg := sprintf("OPERATOR NP VIOLATION: the operator manager pod serves only TCP listeners (8443 metrics, 8081 probes, 9443 webhooks); found protocol %v on port %v.", [p.protocol, p.port])
 }
 
 # --- required rules --------------------------------------------------------

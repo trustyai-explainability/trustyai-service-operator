@@ -51,6 +51,15 @@ with_extra_ingress_rule(np, rule) := object.union(np, {
 	"spec": object.union(np.spec, {"ingress": array.concat(np.spec.ingress, [rule])}),
 })
 
+rule_at(rule, i, idx, new_rule) := new_rule if i == idx
+rule_at(rule, i, idx, new_rule) := rule if i != idx
+
+set_ingress_rule(np, idx, new_rule) := object.union(np, {
+	"spec": object.union(np.spec, {"ingress": [
+		rule_at(rule, i, idx, new_rule) | some i, rule in np.spec.ingress
+	]}),
+})
+
 # --- valid shapes pass -----------------------------------------------------
 
 test_valid_base_np_passes if {
@@ -141,6 +150,33 @@ test_portless_rule_denied if {
 test_unknown_port_denied if {
 	np := with_extra_ingress_rule(valid_np, {"ports": [{"protocol": "TCP", "port": 9999}]})
 	count(deny) > 0 with input as np
+}
+
+# --- protocol ----------------------------------------------------------------
+
+test_udp_metrics_rule_denied if {
+	np := set_ingress_rule(valid_np, 0, {"from": valid_peers, "ports": [{"protocol": "UDP", "port": 8443}]})
+	count(deny) > 0 with input as np
+}
+
+test_udp_probe_rule_denied if {
+	np := set_ingress_rule(valid_np, 1, {"ports": [{"protocol": "UDP", "port": 8081}]})
+	count(deny) > 0 with input as np
+}
+
+test_extra_udp_port_rule_denied if {
+	np := with_extra_ingress_rule(valid_np, {"from": valid_peers, "ports": [{"protocol": "UDP", "port": 8443}]})
+	count(deny) > 0 with input as np
+}
+
+# protocol omitted defaults to TCP per the Kubernetes API.
+test_protocol_omitted_passes if {
+	np := object.union(valid_np, {"spec": object.union(valid_np.spec, {"ingress": [
+		{"from": valid_peers, "ports": [{"port": 8443}]},
+		{"ports": [{"port": 8081}]},
+		{"ports": [{"port": 9443}]},
+	]})})
+	count(deny) == 0 with input as np
 }
 
 # --- inputs out of scope are ignored -----------------------------------------

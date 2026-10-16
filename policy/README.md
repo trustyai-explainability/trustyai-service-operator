@@ -52,7 +52,7 @@ Guards against accidental changes to the operator Deployment's `spec.selector.ma
 Validates the NetworkPolicy that protects the operator's own controller-manager pod (RHOAIENG-96335). When a rendered NetworkPolicy selects pods carrying `control-plane: trustyai-service-operator`, the policy enforces:
 
 1. **Ingress-only.** `policyTypes` must contain `Ingress` and must not contain `Egress` (operator egress is tracked separately under HPSTRAT-278).
-2. **Port-scoped rules only.** Every ingress rule must list ports, limited to the manager pod's listeners: 8443 (secure metrics), 8081 (health probes), 9443 (CRD conversion webhooks).
+2. **Port-scoped rules only.** Every ingress rule must list ports, limited to the manager pod's TCP listeners: 8443 (secure metrics), 8081 (health probes), 9443 (CRD conversion webhooks). Port entries must be TCP — omitting `protocol` is accepted (the Kubernetes API default), any other protocol is denied.
 3. **Metrics source restriction.** The 8443 rule must allow exactly the supported OpenShift monitoring namespaces (`openshift-monitoring`, `openshift-user-workload-monitoring`) via `namespaceSelector`-only peers.
 4. **Port-scoped probe and webhook rules.** The 8081 and 9443 rules must not carry `from` peers: kubelet-originated probes and the host-networked API server cannot be reliably expressed as NetworkPolicy peers, so no source restriction is claimed for them.
 
