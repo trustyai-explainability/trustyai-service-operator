@@ -12,13 +12,15 @@ import (
 
 // Image key constants matching ConfigMap keys
 const (
-	TrustyAIServiceImageKey = "trustyaiServiceImage"
-	EvalHubImageKey         = "evalHubImage"
-	KubeRBACProxyKey        = "kube-rbac-proxy"
-	LMESPodImageKey         = "lmes-pod-image"
-	LMESDriverImageKey      = "lmes-driver-image"
-	GarakProviderImageKey   = "garak-provider-image"
-	NemoGuardrailsImageKey  = "nemo-guardrails-image"
+	TrustyAIServiceImageKey   = "trustyaiServiceImage"
+	EvalHubImageKey           = "evalHubImage"
+	KubeRBACProxyKey          = "kube-rbac-proxy"
+	LMESPodImageKey           = "lmes-pod-image"
+	LMESDriverImageKey        = "lmes-driver-image"
+	GarakProviderImageKey     = "garak-provider-image"
+	NemoGuardrailsImageKey    = "nemo-guardrails-image"
+	LightevalProviderImageKey = "evalhub-provider-lighteval-image"
+	InspectProviderImageKey   = "evalhub-provider-inspect-image"
 )
 
 // Operand image env vars injected by the ODH platform operator at deploy time
@@ -30,17 +32,21 @@ const (
 	RelatedImageLMESDriver           = "RELATED_IMAGE_ODH_TA_LMES_DRIVER_IMAGE"
 	RelatedImageGarakLLSProviderDSP  = "RELATED_IMAGE_ODH_TRUSTYAI_GARAK_LLS_PROVIDER_DSP_IMAGE"
 	RelatedImageNemoGuardrailsServer = "RELATED_IMAGE_ODH_TRUSTYAI_NEMO_GUARDRAILS_SERVER_IMAGE"
+	RelatedImageEvalHubLighteval     = "RELATED_IMAGE_ODH_EVAL_HUB_LIGHTEVAL_IMAGE"
+	RelatedImageEvalHubInspectAI     = "RELATED_IMAGE_ODH_EVAL_HUB_INSPECTAI_IMAGE"
 )
 
 // imageMapping maps ConfigMap keys to their corresponding RELATED_IMAGE_* environment variable names
 var imageMapping = map[string]string{
-	TrustyAIServiceImageKey: RelatedImageTrustyAIService,
-	EvalHubImageKey:         RelatedImageEvalHub,
-	KubeRBACProxyKey:        RelatedImageKubeRBACProxy,
-	LMESPodImageKey:         RelatedImageLMESJob,
-	LMESDriverImageKey:      RelatedImageLMESDriver,
-	GarakProviderImageKey:   RelatedImageGarakLLSProviderDSP,
-	NemoGuardrailsImageKey:  RelatedImageNemoGuardrailsServer,
+	TrustyAIServiceImageKey:   RelatedImageTrustyAIService,
+	EvalHubImageKey:           RelatedImageEvalHub,
+	KubeRBACProxyKey:          RelatedImageKubeRBACProxy,
+	LMESPodImageKey:           RelatedImageLMESJob,
+	LMESDriverImageKey:        RelatedImageLMESDriver,
+	GarakProviderImageKey:     RelatedImageGarakLLSProviderDSP,
+	NemoGuardrailsImageKey:    RelatedImageNemoGuardrailsServer,
+	LightevalProviderImageKey: RelatedImageEvalHubLighteval,
+	InspectProviderImageKey:   RelatedImageEvalHubInspectAI,
 }
 
 // GetImageFromConfigMap is the legacy function signature that now uses the unified resolver.

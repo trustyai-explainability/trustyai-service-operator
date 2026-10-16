@@ -52,6 +52,10 @@ spec:
               value: $(garak-provider-image)
             - name: RELATED_IMAGE_ODH_TRUSTYAI_NEMO_GUARDRAILS_SERVER_IMAGE
               value: $(nemo-guardrails-image)
+            - name: RELATED_IMAGE_ODH_EVAL_HUB_LIGHTEVAL_IMAGE
+              value: $(evalhub-provider-lighteval-image)
+            - name: RELATED_IMAGE_ODH_EVAL_HUB_INSPECTAI_IMAGE
+              value: $(evalhub-provider-inspect-image)
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
