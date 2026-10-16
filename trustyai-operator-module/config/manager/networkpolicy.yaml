@@ -1,0 +1,61 @@
+# NetworkPolicy for the TrustyAI module operator's own controller-manager pod
+# (ODH-ADR-Operator-0016 module-bundle policy).
+#
+# opendatahub-operator deploys this module operator from this bundle (its
+# build/manifests-config.yaml maps trustyai-operator-module/config to the
+# module's kustomize source), so under the platform NetworkPolicy contract
+# this is a module-bundle policy: the platform renders it with the module
+# operator resources and removes it during module-resource cleanup. The module
+# operator itself must not reconcile this object (one lifecycle manager per
+# policy class; ODH-ADR-Operator-0016).
+#
+# The podSelector uses the module-owned app.kubernetes.io/name label, added to
+# the pod template by this change, because the kubebuilder default
+# control-plane: controller-manager label alone is shared by every module
+# operator deployed in the applications namespace and would select unrelated
+# workloads. The Deployment's spec.selector is intentionally left unchanged
+# (selector changes break in-place upgrades).
+#
+# Ingress is deny-by-default with one allowed path:
+# - TCP 8081 (health/readiness probes), port-scoped only because
+#   node-originated probes cannot be reliably constrained by NetworkPolicy
+#   peer selectors. No enforceable kubelet/node isolation is claimed.
+# The default controller-runtime metrics listener (:8080) is intentionally
+# not admitted: no supported deployment consumes it (the module operator has
+# no Service or ServiceMonitor). If that changes, this policy must gain an
+# explicit rule for that path.
+#
+# Egress is an explicit allow-all, documented per the contract's
+# explicit-egress requirement: the module operator needs Kubernetes API server
+# and DNS access whose endpoints cannot be expressed as least-privilege peers.
+# This does not broaden today's posture (a pod not selected by an Egress policy
+# already has unrestricted egress). Restricting operator egress is tracked
+# under HPSTRAT-278.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: controller-manager-allow-traffic
+  namespace: system
+  labels:
+    app.kubernetes.io/name: trustyai-operator-module
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  podSelector:
+    matchLabels:
+      control-plane: controller-manager
+      app.kubernetes.io/name: trustyai-operator-module
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Kubelet health/readiness probes (8081) originate from the node, off the
+    # pod network, so they cannot be reliably constrained by peer selectors;
+    # admit the port from any source. All other ingress is denied.
+    - ports:
+        - protocol: TCP
+          port: 8081
+  egress:
+    # Explicit allow-all, permitted by the platform contract when documented
+    # (see header). Keeps the module operator functional under a namespace
+    # deny-all baseline.
+    - {}
