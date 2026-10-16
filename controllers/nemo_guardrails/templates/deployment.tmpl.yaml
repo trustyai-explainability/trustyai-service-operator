@@ -114,25 +114,25 @@ metadata:
   name: {{.WorkloadName}}
   namespace: {{.Namespace}}
   labels:
-    app: {{.WorkloadName}}
-    component: {{.WorkloadName}}
-    deploy-name: {{.WorkloadName}}
-    app.kubernetes.io/instance: {{.WorkloadName}}
-    app.kubernetes.io/name: {{.WorkloadName}}
+    app: {{.SelectorName}}
+    component: {{.SelectorName}}
+    deploy-name: {{.SelectorName}}
+    app.kubernetes.io/instance: {{.SelectorName}}
+    app.kubernetes.io/name: {{.SelectorName}}
     app.kubernetes.io/part-of: trustyai
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: {{.WorkloadName}}
+      app: {{.SelectorName}}
   template:
     metadata:
       labels:
-        app: {{.WorkloadName}}
-        component: {{.WorkloadName}}
-        deploy-name: {{.WorkloadName}}
-        app.kubernetes.io/instance: {{.WorkloadName}}
-        app.kubernetes.io/name: {{.WorkloadName}}
+        app: {{.SelectorName}}
+        component: {{.SelectorName}}
+        deploy-name: {{.SelectorName}}
+        app.kubernetes.io/instance: {{.SelectorName}}
+        app.kubernetes.io/name: {{.SelectorName}}
         app.kubernetes.io/part-of: trustyai
     spec:
       containers:

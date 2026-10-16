@@ -45,33 +45,46 @@ func deriveInfraNamespace(controllerNs, crNamespace string) string {
 // workloadIdentity names the objects created for one NemoGuardrails in targetNamespace.
 type workloadIdentity struct {
 	Name           string
+	Selector       string
 	PortName       string
 	AdminPortName  string
 	ServiceAccount string
 }
 
+// maxServicePortNameLen is the Kubernetes Service port name limit.
+const maxServicePortNameLen = 15
+
 func newWorkloadIdentity(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) workloadIdentity {
-	name := workloadObjectName(nemoGuardrails.Namespace, nemoGuardrails.Name, targetNamespace)
-	identity := workloadIdentity{
+	name := nemoGuardrails.Name
+	// Same-namespace installs keep the existing selector. A shared infra namespace needs a
+	// selector that another project cannot match by reusing this custom resource name.
+	selector := name
+	if targetNamespace != "" && targetNamespace != nemoGuardrails.Namespace {
+		selector = dns1123Name(nemoGuardrails.Namespace + "-" + name)
+	}
+	portName := name
+	if len(portName) > maxServicePortNameLen {
+		portName = "http"
+		if utils.RequiresAuth(nemoGuardrails) {
+			portName = "https"
+		}
+	}
+	adminPortName := name + "-admin"
+	if len(adminPortName) > maxServicePortNameLen {
+		adminPortName = "admin"
+	}
+	return workloadIdentity{
 		Name:           name,
-		PortName:       nemoGuardrails.Name,
-		AdminPortName:  nemoGuardrails.Name + "-admin",
+		Selector:       selector,
+		PortName:       portName,
+		AdminPortName:  adminPortName,
 		ServiceAccount: name + "-serviceaccount",
 	}
-	if name != nemoGuardrails.Name {
-		identity.PortName = "http"
-		if utils.RequiresAuth(nemoGuardrails) {
-			identity.PortName = "https"
-		}
-		identity.AdminPortName = "admin"
-	}
-	return identity
 }
 
-// workloadObjectName keeps the custom resource name when the workload stays in its namespace.
-// A shared infra namespace prefixes the owning namespace so two projects can use the same name.
-func workloadObjectName(ownerNamespace, ownerName, targetNamespace string) string {
-	if targetNamespace == "" || targetNamespace == ownerNamespace {
+// prefixedWorkloadObjectName is the Deployment name from before workload objects kept the custom resource name.
+func prefixedWorkloadObjectName(ownerNamespace, ownerName string) string {
+	if ownerNamespace == "" || ownerName == "" {
 		return ownerName
 	}
 	return dns1123Name(ownerNamespace + "-" + ownerName)
@@ -87,11 +100,21 @@ func copiedObjectName(ownerNamespace, ownerName, sourceName, targetNamespace str
 
 // defaultConfigCopyName is the copy of an operator-namespace default ConfigMap.
 // Same-namespace copies keep the historical untruncated name.
+// Infra copies keep the default suffix, as in {namespace}-{cr-name}-default-pii.
 func defaultConfigCopyName(ownerNamespace, ownerName, sourceName, targetNamespace string) string {
 	if targetNamespace == "" || targetNamespace == ownerNamespace {
 		return ownerName + "-" + sourceName
 	}
-	return dns1123Name(ownerNamespace + "-" + ownerName + "-" + sourceName)
+	return dns1123Name(ownerNamespace + "-" + ownerName + "-" + defaultConfigShortName(sourceName))
+}
+
+// defaultConfigShortName turns trustyai-service-operator-nemo-guardrails-default-pii into default-pii.
+func defaultConfigShortName(sourceName string) string {
+	head := strings.TrimSuffix(nemoGuardrailsDefaultConfigPrefix, "default")
+	if rest, ok := strings.CutPrefix(sourceName, head); ok && (rest == "default" || strings.HasPrefix(rest, "default-")) {
+		return rest
+	}
+	return sourceName
 }
 
 func dns1123Name(name string) string {
@@ -169,7 +192,37 @@ func (r *NemoGuardrailsReconciler) rejectUnownedWorkload(ctx context.Context, ne
 			return err
 		}
 	}
+	for _, secretName := range copiedSecretNames(nemoGuardrails, namespace) {
+		if err := r.requireOwnedOrAbsent(ctx, nemoGuardrails, "Secret", &corev1.Secret{ObjectMeta: meta(secretName)}); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// copiedSecretNames lists Secret names that reconciliation will copy into namespace.
+func copiedSecretNames(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, namespace string) []string {
+	if nemoGuardrails.Namespace == namespace {
+		return nil
+	}
+	var names []string
+	seen := map[string]struct{}{}
+	for _, envVar := range nemoGuardrails.Spec.Env {
+		if envVar.ValueFrom == nil || envVar.ValueFrom.SecretKeyRef == nil {
+			continue
+		}
+		secretName := envVar.ValueFrom.SecretKeyRef.Name
+		if secretName == "" {
+			continue
+		}
+		copyName := copiedObjectName(nemoGuardrails.Namespace, nemoGuardrails.Name, secretName, namespace)
+		if _, ok := seen[copyName]; ok {
+			continue
+		}
+		seen[copyName] = struct{}{}
+		names = append(names, copyName)
+	}
+	return names
 }
 
 // copiedConfigMapNames lists ConfigMap names that reconciliation will copy into namespace.
@@ -181,12 +234,12 @@ func (r *NemoGuardrailsReconciler) copiedConfigMapNames(ctx context.Context, nem
 			if strings.HasPrefix(configCM, nemoGuardrailsDefaultConfigPrefix) {
 				source := &corev1.ConfigMap{}
 				err := r.Get(ctx, types.NamespacedName{Name: configCM, Namespace: r.Namespace}, source)
-				if err == nil {
-					names = append(names, defaultConfigCopyName(nemoGuardrails.Namespace, nemoGuardrails.Name, source.Name, namespace))
-					continue
-				}
-				if !errors.IsNotFound(err) {
+				if err != nil && !errors.IsNotFound(err) {
 					return nil, err
+				}
+				if err == nil || nemoGuardrails.Namespace != namespace {
+					names = append(names, defaultConfigCopyName(nemoGuardrails.Namespace, nemoGuardrails.Name, configCM, namespace))
+					continue
 				}
 			}
 			if nemoGuardrails.Namespace != namespace {
@@ -220,15 +273,50 @@ func previousWorkloadNamespace(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardr
 	return nemoGuardrails.Namespace
 }
 
-// releasePreviousWorkload deletes objects in the previous namespace only after the target namespace has no unowned name collisions.
+// releasePreviousWorkload rejects a target-namespace name collision before any object is created there.
+// The previous namespace is removed by releaseReadyWorkload once the new Deployment is Ready.
 func (r *NemoGuardrailsReconciler) releasePreviousWorkload(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) error {
-	if err := r.rejectUnownedWorkload(ctx, nemoGuardrails, targetNamespace); err != nil {
+	return r.rejectUnownedWorkload(ctx, nemoGuardrails, targetNamespace)
+}
+
+// releaseReadyWorkload deletes the previous namespace after the Deployment in targetNamespace is Ready.
+// An exposed Route must also be admitted. A missing or stuck rollout leaves the previous stack serving.
+func (r *NemoGuardrailsReconciler) releaseReadyWorkload(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) error {
+	previous := previousWorkloadNamespace(nemoGuardrails)
+	if previous == "" || previous == targetNamespace {
+		return nil
+	}
+	identity := newWorkloadIdentity(nemoGuardrails, targetNamespace)
+	ready, err := utils.CheckDeploymentReady(ctx, r.Client, identity.Name, targetNamespace)
+	if err != nil {
+		if stderrors.Is(err, utils.ErrDeploymentProgressDeadlineExceeded) {
+			return nil
+		}
 		return err
 	}
-	if previous := previousWorkloadNamespace(nemoGuardrails); previous != targetNamespace {
-		return r.deleteOwnedInNamespace(ctx, nemoGuardrails, previous)
+	if !ready {
+		return nil
 	}
-	return nil
+	if nemoGuardrails.Spec.ExposeRoute != nil && *nemoGuardrails.Spec.ExposeRoute {
+		admitted, err := utils.RouteAdmitted(ctx, r.Client, identity.Name, targetNamespace)
+		if err != nil {
+			return err
+		}
+		if !admitted {
+			return nil
+		}
+	}
+	current := &appsv1.Deployment{}
+	if err := r.Get(ctx, types.NamespacedName{Name: identity.Name, Namespace: targetNamespace}, current); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	if !ownedBy(current, nemoGuardrails) {
+		return nil
+	}
+	return r.deleteOwnedInNamespace(ctx, nemoGuardrails, previous)
 }
 
 func (r *NemoGuardrailsReconciler) deleteOwnedInNamespace(ctx context.Context, owner client.Object, namespace string) error {
@@ -296,10 +384,10 @@ func (r *NemoGuardrailsReconciler) deleteOwnedInNamespace(ctx context.Context, o
 		return err
 	}
 	// Objects created before the owner label existed are still selected by name.
-	scoped := workloadObjectName(owner.GetNamespace(), owner.GetName(), namespace)
+	// The prefixed name covers workload objects created before they kept the custom resource name.
 	names := []string{owner.GetName()}
-	if scoped != owner.GetName() {
-		names = append(names, scoped)
+	if prefixed := prefixedWorkloadObjectName(owner.GetNamespace(), owner.GetName()); prefixed != owner.GetName() {
+		names = append(names, prefixed)
 	}
 	var named []client.Object
 	for _, name := range names {
@@ -321,12 +409,16 @@ func (r *NemoGuardrailsReconciler) deleteOwnedInNamespace(ctx context.Context, o
 	return nil
 }
 
-// retireUnscopedNames removes objects created under the custom resource name before
-// shared-namespace objects were prefixed. It waits until the prefixed Deployment is
-// Ready, so a missing or stuck rollout leaves the previous stack serving.
-func (r *NemoGuardrailsReconciler) retireUnscopedNames(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) error {
+// retirePrefixedNames removes workload objects named {namespace}-{cr-name} after the
+// custom-resource-named Deployment is Ready. A missing or stuck rollout leaves that previous stack serving.
+// Copied ConfigMaps and Secrets keep the {namespace}-{cr-name}-{source} name.
+func (r *NemoGuardrailsReconciler) retirePrefixedNames(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) error {
+	if targetNamespace == "" || targetNamespace == nemoGuardrails.Namespace {
+		return nil
+	}
 	identity := newWorkloadIdentity(nemoGuardrails, targetNamespace)
-	if identity.Name == nemoGuardrails.Name {
+	prefixed := prefixedWorkloadObjectName(nemoGuardrails.Namespace, nemoGuardrails.Name)
+	if prefixed == identity.Name {
 		return nil
 	}
 	ready, err := utils.CheckDeploymentReady(ctx, r.Client, identity.Name, targetNamespace)
@@ -353,13 +445,13 @@ func (r *NemoGuardrailsReconciler) retireUnscopedNames(ctx context.Context, nemo
 
 	name := nemoGuardrails.Name
 	legacy := []client.Object{
-		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: targetNamespace}},
-		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: targetNamespace}},
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name + "-ca-bundle", Namespace: targetNamespace}},
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name + "-rbac-proxy-config", Namespace: targetNamespace}},
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name + "-rbac-proxy-admin-config", Namespace: targetNamespace}},
-		&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: name + "-serviceaccount", Namespace: targetNamespace}},
-		&routev1.Route{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: targetNamespace}},
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: prefixed, Namespace: targetNamespace}},
+		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: prefixed, Namespace: targetNamespace}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: prefixed + "-ca-bundle", Namespace: targetNamespace}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: prefixed + "-rbac-proxy-config", Namespace: targetNamespace}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: prefixed + "-rbac-proxy-admin-config", Namespace: targetNamespace}},
+		&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: prefixed + "-serviceaccount", Namespace: targetNamespace}},
+		&routev1.Route{ObjectMeta: metav1.ObjectMeta{Name: prefixed, Namespace: targetNamespace}},
 		// The admin proxy ConfigMap used to be created in the custom resource namespace.
 		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name + "-rbac-proxy-admin-config", Namespace: nemoGuardrails.Namespace}},
 	}
@@ -394,7 +486,9 @@ func legacyCopiedConfigMapNames(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuard
 	for _, nemoConfig := range nemoGuardrails.Spec.NemoConfigs {
 		for _, configCM := range nemoConfig.ConfigMaps {
 			if strings.HasPrefix(configCM, nemoGuardrailsDefaultConfigPrefix) {
-				add(nemoGuardrails.Name+"-"+configCM, defaultConfigCopyName(nemoGuardrails.Namespace, nemoGuardrails.Name, configCM, targetNamespace))
+				current := defaultConfigCopyName(nemoGuardrails.Namespace, nemoGuardrails.Name, configCM, targetNamespace)
+				add(nemoGuardrails.Name+"-"+configCM, current)
+				add(dns1123Name(nemoGuardrails.Namespace+"-"+nemoGuardrails.Name+"-"+configCM), current)
 			}
 			add(configCM, copiedObjectName(nemoGuardrails.Namespace, nemoGuardrails.Name, configCM, targetNamespace))
 		}
@@ -443,7 +537,7 @@ func (r *NemoGuardrailsReconciler) deleteNamedIfOwned(ctx context.Context, owner
 }
 
 // isWorkloadNamespaceReady returns true when namespace exists and carries the
-// opt-in label. A transient API error is surfaced so the caller can requeue,
+// opt-in label. An API error is surfaced so the caller can requeue,
 // but a missing namespace or missing label simply returns false.
 func (r *NemoGuardrailsReconciler) isWorkloadNamespaceReady(ctx context.Context, namespace string) (bool, error) {
 	ns := &corev1.Namespace{}
@@ -595,9 +689,13 @@ func (r *NemoGuardrailsReconciler) ensureConfigMapInNamespace(ctx context.Contex
 	if source.Namespace == namespace {
 		return source, nil
 	}
+	copyName := copiedObjectName(owner.GetNamespace(), owner.GetName(), source.Name, namespace)
+	if strings.HasPrefix(source.Name, nemoGuardrailsDefaultConfigPrefix) {
+		copyName = defaultConfigCopyName(owner.GetNamespace(), owner.GetName(), source.Name, namespace)
+	}
 	desired := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        copiedObjectName(owner.GetNamespace(), owner.GetName(), source.Name, namespace),
+			Name:        copyName,
 			Namespace:   namespace,
 			Labels:      copyStringMap(source.Labels),
 			Annotations: copyStringMap(source.Annotations),
@@ -669,8 +767,8 @@ func (r *NemoGuardrailsReconciler) deleteExposedRoute(ctx context.Context, nemoG
 		}
 		seen[namespace] = struct{}{}
 		names := []string{nemoGuardrails.Name}
-		if scoped := workloadObjectName(nemoGuardrails.Namespace, nemoGuardrails.Name, namespace); scoped != nemoGuardrails.Name {
-			names = append(names, scoped)
+		if prefixed := prefixedWorkloadObjectName(nemoGuardrails.Namespace, nemoGuardrails.Name); prefixed != nemoGuardrails.Name {
+			names = append(names, prefixed)
 		}
 		for _, name := range names {
 			if err := utils.DeleteRoute(ctx, r.Client, nemoGuardrails, name, namespace); err != nil {

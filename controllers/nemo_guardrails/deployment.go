@@ -38,6 +38,7 @@ type DeploymentConfig struct {
 	KubeRbacProxyAdminConfig *utils.KubeRBACProxyConfig
 	Namespace                string
 	WorkloadName             string
+	SelectorName             string
 	ServiceAccountName       string
 }
 
@@ -260,6 +261,7 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 		UseAuthProxy:       utils.RequiresAuth(nemoGuardrails),
 		Namespace:          targetNamespace,
 		WorkloadName:       identity.Name,
+		SelectorName:       identity.Selector,
 		ServiceAccountName: identity.ServiceAccount,
 	}
 	// === configure kube-rbac-proxy if needed ========
