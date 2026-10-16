@@ -24,6 +24,7 @@ data:
         # Keep the digest and examples/inspect-hle/README.md in sync when upgrading.
         # Operator-managed deployments must set the same image in their provider config.
         image: $(evalhub-provider-inspect-image)
+        image_pull_policy: always
         entrypoint:
           - python
           - main.py
