@@ -299,6 +299,39 @@ func TestReconcileEvalHubNetworkPolicyRepairsDriftAndDeletion(t *testing.T) {
 		t.Errorf("unrelated metadata was not preserved: labels=%#v annotations=%#v", actual.Labels, actual.Annotations)
 	}
 
+	// Egress drift: strip the AllowAll rule, drop the egress direction and
+	// corrupt the persisted intent annotations; reconciliation must restore
+	// the documented egress state alongside ingress repair.
+	actual.Spec.Egress = nil
+	actual.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	actual.Annotations["trustyai.opendatahub.io/network-policy-egress-mode"] = ""
+	delete(actual.Annotations, "trustyai.opendatahub.io/network-policy-egress-rationale")
+	delete(actual.Annotations, "trustyai.opendatahub.io/network-policy-egress-residual-risk")
+	if err := c.Update(ctx, actual); err != nil {
+		t.Fatalf("simulate egress drift: %v", err)
+	}
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
+		t.Fatalf("reconcile egress-drifted NetworkPolicy: %v", err)
+	}
+	actual = &networkingv1.NetworkPolicy{}
+	if err := c.Get(ctx, key, actual); err != nil {
+		t.Fatalf("get egress-repaired NetworkPolicy: %v", err)
+	}
+	if len(actual.Spec.Egress) != 1 || len(actual.Spec.Egress[0].To) != 0 || len(actual.Spec.Egress[0].Ports) != 0 {
+		t.Errorf("repaired egress rules = %#v, want one empty AllowAll rule", actual.Spec.Egress)
+	}
+	if len(actual.Spec.PolicyTypes) != 2 || actual.Spec.PolicyTypes[0] != networkingv1.PolicyTypeIngress ||
+		actual.Spec.PolicyTypes[1] != networkingv1.PolicyTypeEgress {
+		t.Errorf("repaired policyTypes = %v, want [Ingress Egress]", actual.Spec.PolicyTypes)
+	}
+	if mode := actual.Annotations["trustyai.opendatahub.io/network-policy-egress-mode"]; mode != string(utils.NetworkPolicyAllowAll) {
+		t.Errorf("repaired egress mode annotation = %q, want %q", mode, utils.NetworkPolicyAllowAll)
+	}
+	if actual.Annotations["trustyai.opendatahub.io/network-policy-egress-rationale"] == "" ||
+		actual.Annotations["trustyai.opendatahub.io/network-policy-egress-residual-risk"] == "" {
+		t.Errorf("repaired egress intent annotations = %#v, want restored rationale and residual risk", actual.Annotations)
+	}
+
 	if err := c.Delete(ctx, actual); err != nil {
 		t.Fatalf("delete NetworkPolicy: %v", err)
 	}
