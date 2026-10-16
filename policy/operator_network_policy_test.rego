@@ -34,6 +34,24 @@ valid_overlay_np := object.union(valid_np, {
 	}}}),
 })
 
+valid_egress_np := {
+	"kind": "NetworkPolicy",
+	"metadata": {"name": "controller-manager-allow-egress", "namespace": "system"},
+	"spec": {
+		"podSelector": {"matchLabels": {"control-plane": "trustyai-service-operator"}},
+		"policyTypes": ["Egress"],
+		"egress": [{}],
+	},
+}
+
+valid_overlay_egress_np := object.union(valid_egress_np, {
+	"metadata": {"name": "trustyai-service-operator-controller-manager-allow-egress"},
+	"spec": object.union(valid_egress_np.spec, {"podSelector": {"matchLabels": {
+		"control-plane": "trustyai-service-operator",
+		"app.kubernetes.io/part-of": "trustyai",
+	}}}),
+})
+
 without_ingress_rule(np, idx) := object.union(np, {
 	"spec": object.union(np.spec, {"ingress": [rule | some i, rule in np.spec.ingress; i != idx]}),
 })
@@ -79,6 +97,52 @@ test_egress_policy_type_denied if {
 
 test_missing_ingress_policy_type_denied if {
 	np := object.union(valid_np, {"spec": object.union(valid_np.spec, {"policyTypes": ["Egress"]})})
+	count(deny) > 0 with input as np
+}
+
+# --- egress policy -----------------------------------------------------------
+
+test_valid_egress_np_passes if {
+	count(deny) == 0 with input as valid_egress_np
+}
+
+test_valid_overlay_egress_np_passes if {
+	count(deny) == 0 with input as valid_overlay_egress_np
+}
+
+test_egress_np_restricted_rule_denied if {
+	np := object.union(valid_egress_np, {"spec": object.union(valid_egress_np.spec, {"egress": [
+		{"to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "openshift-monitoring"}}}]},
+	]})})
+	count(deny) > 0 with input as np
+}
+
+test_egress_np_deny_all_denied if {
+	np := object.union(valid_egress_np, {"spec": object.union(valid_egress_np.spec, {"egress": []})})
+	count(deny) > 0 with input as np
+}
+
+test_egress_np_missing_egress_field_denied if {
+	np := {
+		"kind": "NetworkPolicy",
+		"metadata": {"name": "controller-manager-allow-egress", "namespace": "system"},
+		"spec": {
+			"podSelector": {"matchLabels": {"control-plane": "trustyai-service-operator"}},
+			"policyTypes": ["Egress"],
+		},
+	}
+	count(deny) > 0 with input as np
+}
+
+test_egress_np_with_ingress_rules_denied if {
+	np := object.union(valid_egress_np, {"spec": object.union(valid_egress_np.spec, {"ingress": [
+		{"ports": [{"protocol": "TCP", "port": 8081}]},
+	]})})
+	count(deny) > 0 with input as np
+}
+
+test_egress_np_with_ingress_policy_type_denied if {
+	np := object.union(valid_egress_np, {"spec": object.union(valid_egress_np.spec, {"policyTypes": ["Egress", "Ingress"]})})
 	count(deny) > 0 with input as np
 }
 

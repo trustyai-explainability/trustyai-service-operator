@@ -20,9 +20,10 @@
 #   which is host-networked with a dynamic address and port and cannot be
 #   expressed as a NetworkPolicy peer.
 #
-# Egress is deliberately not restricted: the manager requires Kubernetes API
-# and DNS access whose endpoints cannot be expressed as least-privilege peers
-# (host-networked API server, cluster DNS service); see HPSTRAT-278.
+# Egress is not restricted here: the manager's egress posture is declared by
+# the dedicated controller-manager-allow-egress policy (explicit documented
+# allow-all per ODH-ADR-Operator-0016); restricting operator egress remains
+# under HPSTRAT-278.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
