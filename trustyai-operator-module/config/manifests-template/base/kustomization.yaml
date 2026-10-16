@@ -65,13 +65,6 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.garak-provider-image
-  - name: evalhub-provider-atif-image
-    objref:
-      kind: ConfigMap
-      name: config
-      apiVersion: v1
-    fieldref:
-      fieldpath: data.evalhub-provider-atif-image
   - name: evalhub-provider-guidellm-image
     objref:
       kind: ConfigMap
@@ -156,6 +149,13 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.evalhub-provider-mteb-image
+  - name: evalhub-provider-atif-image
+    objref:
+      kind: ConfigMap
+      name: config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.evalhub-provider-atif-image
   - name: lmes-pod-image
     objref:
       kind: ConfigMap

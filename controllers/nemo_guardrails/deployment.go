@@ -95,12 +95,13 @@ func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGua
 	hasher := sha256.New()
 
 	for idx, nemoConfig := range nemoGuardrails.Spec.NemoConfigs {
-		// Take the first config as default for now. If any config manually specifies default-ness, we'll override this
-		if idx == 0 {
-			defaultConfig = nemoConfig.Name
-		}
 		if nemoConfig.ConfigMaps == nil || len(nemoConfig.ConfigMaps) == 0 {
 			return fmt.Errorf("no configmaps provided inside NemoConfig=%s", nemoConfig.Name)
+		}
+		// Take the first config as default for now. If any config manually specifies default-ness, we'll override this
+		// Check first if the configMap is empty, if not set the first Nemo as default.
+		if idx == 0 {
+			defaultConfig = nemoConfig.Name
 		}
 
 		for _, configCM := range nemoConfig.ConfigMaps {
@@ -297,9 +298,14 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, nemoGuardrails.Spec.Env...)
 	}
 
-	// apply pod scheduling constraints
+	if nemoGuardrails.Spec.Resources != nil {
+		deployment.Spec.Template.Spec.Containers[0].Resources = *nemoGuardrails.Spec.Resources.DeepCopy()
+	}
+
+	// apply pod overrides
 	if nemoGuardrails.Spec.Template != nil && nemoGuardrails.Spec.Template.Pod != nil {
 		pod := nemoGuardrails.Spec.Template.Pod
+		deployment.Spec.Template.Spec.ResourceClaims = pod.DeepCopy().ResourceClaims
 		if pod.Affinity != nil {
 			deployment.Spec.Template.Spec.Affinity = pod.Affinity
 		}

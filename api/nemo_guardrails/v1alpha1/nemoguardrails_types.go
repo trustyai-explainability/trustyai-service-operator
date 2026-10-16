@@ -27,11 +27,19 @@ import (
 
 // NemoConfig holds information related to a single configuration of the NeMo Guardrails server
 type NemoConfig struct {
-	//Name sets the id of this particular config within the NeMo Guardrails server. This will create a directory called /app/config/$Name. Since it $Name will be used a directory, it must only contain alphanumeric characters, dashes, and underscores.
+	// Name sets the id of this particular config within the NeMo Guardrails server. This will create a
+	// directory called /app/config/$Name. Since it $Name will be used a directory, it must only
+	// contain alphanumeric characters, dashes, and underscores. Consumers such as AIGuardrail reference
+	// this value via checks[].configId, so it must always be set.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_-]+$`
-	Name string `json:"name,omitempty"`
+	Name string `json:"name"`
 	//ConfigMaps is a list of configmaps that comprise the configuration. All files from these configmaps will be mounted within /app/config/$Name
-	ConfigMaps []string `json:"configMaps,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	ConfigMaps []string `json:"configMaps"`
 	//The Default flag determines whether config is treated as the default config for the nemo-server. If no config is set to default, the first entry in NemoConfigs will be used as the default
 	Default bool `json:"default,omitempty"`
 }
@@ -41,7 +49,13 @@ type NemoGuardrailsSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// NemoConfig should be the names of the configmaps containing NeMO server configuration files. All files in NemoConfigs will be mounted to /app/config/$Name
+	// Names must be unique: they are the id consumers reference (AIGuardrail checks[].configId)
+	// and they determine the /app/config/$Name mount path, so a duplicate is both an ambiguous
+	// reference and a colliding mount.
+	// MaxItems bounds the uniqueness rule below, which is quadratic and is rejected by the apiserver's
+	// CEL cost estimator on an unbounded list.
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:XValidation:rule="self.all(c, self.exists_one(o, o.name == c.name))",message="nemoConfigs names must be unique"
 	NemoConfigs    []NemoConfig           `json:"nemoConfigs"`
 	CABundleConfig *common.CABundleConfig `json:"caBundleConfig,omitempty"`
 	// Number of replicas for the NeMo Guardrails deployment
@@ -52,6 +66,10 @@ type NemoGuardrailsSpec struct {
 	// Define Env information for the main container
 	// +optional
 	Env []corev1.EnvVar `json:"env,omitempty"`
+	// Resources defines CPU/memory requests and limits and DRA claim references
+	// for the main NeMo Guardrails container.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 	// Template describes the pod template used by the deployment
 	// +optional
 	Template *NemoGuardrailsTemplate `json:"template,omitempty"`
@@ -75,6 +93,17 @@ type NemoGuardrailsTemplate struct {
 
 // NemoGuardrailsPodTemplate defines pod-level overrides
 type NemoGuardrailsPodTemplate struct {
+	// ResourceClaims declares the DRA claims available to this Pod. Each entry
+	// references a ResourceClaim or ResourceClaimTemplate in the instance's namespace.
+	// The main container opts in by referencing the entry's name in spec.resources.claims.
+	// Changes update the Deployment's Pod template and trigger a rollout.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:items:XValidation:rule="has(self.resourceClaimName) != has(self.resourceClaimTemplateName)",message="exactly one of resourceClaimName and resourceClaimTemplateName must be set"
+	// +kubebuilder:validation:items:XValidation:rule="!has(self.resourceClaimName) || size(self.resourceClaimName) > 0",message="resourceClaimName must not be empty"
+	// +kubebuilder:validation:items:XValidation:rule="!has(self.resourceClaimTemplateName) || size(self.resourceClaimTemplateName) > 0",message="resourceClaimTemplateName must not be empty"
+	ResourceClaims []corev1.PodResourceClaim `json:"resourceClaims,omitempty"`
 	// If specified, the pod's scheduling constraints
 	// +optional
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`

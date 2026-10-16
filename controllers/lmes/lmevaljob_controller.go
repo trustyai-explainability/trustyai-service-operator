@@ -1349,6 +1349,9 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 	annotations := getAnnotations(job.Annotations, log)
 	resources := getResources(podSpec.GetContainer().GetResources())
 	affinity := podSpec.GetAffinity()
+	tolerations := podSpec.GetTolerations()
+	nodeSelector := podSpec.GetNodeSelector()
+	nodeName := podSpec.GetNodeName()
 	podSecurityContext := getPodSecurityContext(podSpec.GetSecurityContext())
 	mainSecurityContext := getMainSecurityContext(podSpec.GetContainer().GetSecurityContext())
 	containers := []corev1.Container{
@@ -1411,6 +1414,9 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 			Containers:      containers,
 			SecurityContext: podSecurityContext,
 			Affinity:        affinity,
+			Tolerations:     tolerations,
+			NodeSelector:    nodeSelector,
+			NodeName:        nodeName,
 			Volumes:         volumes,
 			ResourceClaims:  podSpec.GetResourceClaims(),
 			RestartPolicy:   corev1.RestartPolicyNever,

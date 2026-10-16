@@ -7,6 +7,11 @@ metadata:
   annotations:
     "guardrail-tags": |
       ["content-safety", "toxicity", "hate", "profanity"]
+    "guardrail-locations": |
+      ["input", "output"]
+    "guardrail-actions": |
+      ["block"]
+    "guardrail-description": "A guardrail that checks for violence, profanity, hate, and toxicity in prompts and model output"
     "evalhub/results": |
       [
         {
@@ -62,7 +67,7 @@ data:
         hf_classifier:
           guardian-hap:
             engine: local
-            model: "RedHatAI/granite-guardian-hap-125m"
+            model: "/app/models/hap" # current uses RedHatAI/granite-guardian-hap-125m
             task: text-classification
             threshold: 0.5
             blocked_labels:

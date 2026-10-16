@@ -437,6 +437,16 @@ type LMEvalPodSpec struct {
 	// If specified, the pod's scheduling constraints
 	// +optional
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+	// If specified, the pod's tolerations
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+	// If specified, the pod's node selector
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+	// If specified, the pod is bound directly to the named node.
+	// This bypasses the scheduler and takes precedence over nodeSelector and affinity.
+	// +optional
+	NodeName string `json:"nodeName,omitempty"`
 	// SecurityContext holds pod-level security attributes and common container settings.
 	// Optional: Defaults to empty.  See type description for default values of each field.
 	// +optional
@@ -470,6 +480,27 @@ func (p *LMEvalPodSpec) GetSideCards() []corev1.Container {
 		return nil
 	}
 	return p.SideCars
+}
+
+func (p *LMEvalPodSpec) GetTolerations() []corev1.Toleration {
+	if p == nil {
+		return nil
+	}
+	return p.Tolerations
+}
+
+func (p *LMEvalPodSpec) GetNodeSelector() map[string]string {
+	if p == nil {
+		return nil
+	}
+	return p.NodeSelector
+}
+
+func (p *LMEvalPodSpec) GetNodeName() string {
+	if p == nil {
+		return ""
+	}
+	return p.NodeName
 }
 
 type OfflineS3Spec struct {
