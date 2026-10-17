@@ -658,6 +658,10 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(envVar).NotTo(BeNil(), "Env var SERVICE_STORAGE_FORMAT not found")
 			Expect(envVar.Value).To(Equal(STORAGE_DATABASE))
 
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "DATABASE_ATTEMPT_MIGRATION")
+			Expect(envVar).NotTo(BeNil(), "Env var DATABASE_ATTEMPT_MIGRATION not found")
+			Expect(envVar.Value).To(Equal("true"))
+
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "STORAGE_DATA_FOLDER")
 			Expect(envVar).ToNot(BeNil())
 			Expect(envVar.Value).To(Equal("/data"))
