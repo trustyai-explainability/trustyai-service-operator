@@ -1,0 +1,44 @@
+# Explicit egress posture for the TrustyAI operator manager pod
+# (controller-manager; RHOAIENG-96335).
+#
+# The platform NetworkPolicy contract (ODH-ADR-Operator-0016, "Explicit egress
+# behavior") requires every module-operator and operand workload to be selected
+# by at least one policy that declares Egress in policyTypes with an explicit
+# egress field; an ingress-only policy does not satisfy that requirement. This
+# policy is the direction-split companion of controller-manager-allow-ports and
+# satisfies that requirement for the manager pod with a single documented
+# allow-all rule.
+#
+# Why allow-all: the manager's required egress is Kubernetes API server traffic
+# and cluster DNS, whose endpoints (host-networked API server, dynamically
+# addressed services) cannot be expressed as least-privilege NetworkPolicy
+# peers. ODH-ADR-Operator-0016 permits an explicit allow-all rule when
+# documented.
+#
+# This does not broaden today's posture - a pod not selected by any Egress
+# policy already has unrestricted egress - it declares the posture so that a
+# namespace deny-all baseline cannot silently break the operator. Restricting
+# operator egress remains tracked under HPSTRAT-278 (February 2027).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: controller-manager-allow-egress
+  namespace: system
+  labels:
+    control-plane: trustyai-service-operator
+    app.kubernetes.io/name: networkpolicy
+    app.kubernetes.io/instance: controller-manager-allow-egress
+    app.kubernetes.io/component: manager
+    app.kubernetes.io/created-by: trustyai-service-operator
+    app.kubernetes.io/part-of: trustyai-service-operator
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  podSelector:
+    matchLabels:
+      control-plane: trustyai-service-operator
+  policyTypes:
+    - Egress
+  egress:
+    # Explicit allow-all, documented in the header (ODH-ADR-Operator-0016
+    # permits an empty egress rule when documented).
+    - {}

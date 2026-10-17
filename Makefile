@@ -169,7 +169,7 @@ policy-check: kustomize conftest ## Check rendered manifests against all policie
 	for target in config/base config/overlays/odh config/overlays/rhoai config/overlays/lmes config/overlays/odh-kueue config/overlays/testing config/overlays/mcp-guardrails; do \
 	  echo "=== Testing $$target ==="; \
 	  rendered=$$($(KUSTOMIZE) build "$$target"); \
-	  for ns in rbac selector; do \
+	  for ns in rbac selector networkpolicy; do \
 	    echo "$$rendered" | $(CONFTEST) test --policy policy/ --namespace "$$ns" - || failed=1; \
 	  done; \
 	done; \

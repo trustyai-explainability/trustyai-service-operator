@@ -1,0 +1,68 @@
+# NetworkPolicy for the TrustyAI operator manager pod (controller-manager).
+#
+# Scope (RHOAIENG-96335): the module/component controller Deployment deployed
+# through the ODH/RHOAI kustomize overlays and the trustyai-operator-module
+# bundle. This is not the HPSTRAT-278 OLM-bundle operator program, which also
+# covers operator egress and lands with OLM NetworkPolicy support in February
+# 2027; this policy is ingress-only.
+#
+# Ingress:
+# - TCP 8443 (secure metrics). The manager serves metrics on 8443 with
+#   TokenReview/SubjectAccessReview filtering; scrapers reach it through the
+#   controller-manager-metrics-service ServiceMonitor. Allowed only from the
+#   supported OpenShift monitoring namespaces.
+# - TCP 8081 (health/readiness probes). Port-scoped only: kubelet-originated
+#   probes arrive from the node and are not reliably constrainable with
+#   NetworkPolicy peer selectors, so no source restriction is claimed and no
+#   enforceable kubelet/node isolation is asserted.
+# - TCP 9443 (CRD conversion webhooks for TrustyAIService and EvalHub).
+#   Port-scoped only: the only expected caller is the Kubernetes API server,
+#   which is host-networked with a dynamic address and port and cannot be
+#   expressed as a NetworkPolicy peer.
+#
+# Egress is not restricted here: the manager's egress posture is declared by
+# the dedicated controller-manager-allow-egress policy (explicit documented
+# allow-all per ODH-ADR-Operator-0016); restricting operator egress remains
+# under HPSTRAT-278.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: controller-manager-allow-ports
+  namespace: system
+  labels:
+    control-plane: trustyai-service-operator
+    app.kubernetes.io/name: networkpolicy
+    app.kubernetes.io/instance: controller-manager-allow-ports
+    app.kubernetes.io/component: manager
+    app.kubernetes.io/created-by: trustyai-service-operator
+    app.kubernetes.io/part-of: trustyai-service-operator
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  podSelector:
+    matchLabels:
+      control-plane: trustyai-service-operator
+  policyTypes:
+    - Ingress
+  ingress:
+    # Metrics (TCP 8443): supported OpenShift monitoring namespaces only.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-monitoring
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-user-workload-monitoring
+      ports:
+        - protocol: TCP
+          port: 8443
+    # Health/readiness probes (TCP 8081): kubelet/node-originated; peer
+    # selectors cannot reliably constrain them, so this rule is port-scoped
+    # only.
+    - ports:
+        - protocol: TCP
+          port: 8081
+    # CRD conversion webhooks (TCP 9443): called by the Kubernetes API server
+    # (host-networked, dynamic address/port); port-scoped only.
+    - ports:
+        - protocol: TCP
+          port: 9443
