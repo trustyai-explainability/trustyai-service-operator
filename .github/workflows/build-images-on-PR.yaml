@@ -1,0 +1,135 @@
+name: Build Images on PR
+on:
+  pull_request:
+    paths-ignore:
+      - "LICENSE"
+      - "**/.gitignore"
+      - "**.md"
+      - "**.adoc"
+      - "*.txt"
+    types: [labeled, opened, synchronize, reopened]
+jobs:
+  build-and-push-ci:
+    if: |
+      github.repository == 'trustyai-explainability/trustyai-service-operator' &&
+      contains(github.event.pull_request.labels.*.name, 'needs-build') &&
+      (
+        contains(github.event.pull_request.labels.*.name, 'ok-to-test') ||
+        contains(github.event.pull_request.labels.*.name, 'lgtm') ||
+        contains(github.event.pull_request.labels.*.name, 'approved')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}  # keep to make sure it's the intended sha commit, not the merge sha
+          persist-credentials: false
+      - name: Set defaults for the Env variables
+        run: |
+          echo "OPERATOR_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          echo "OPERATOR_IMAGE_NAME=quay.io/trustyai/trustyai-service-operator-ci" >> $GITHUB_ENV
+          echo "LMES_DRIVER_TAG=latest" >> $GITHUB_ENV
+          echo "LMES_JOB_TAG=latest" >> $GITHUB_ENV
+          echo "LMES_DRIVER_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_DRIVER_REPO }}" >> $GITHUB_ENV
+          echo "LMES_JOB_IMAGE_NAME=${{ vars.QUAY_RELEASE_LMES_JOB_REPO }}" >> $GITHUB_ENV
+          echo "ORCH_TAG=latest" >> $GITHUB_ENV
+          echo "ORCH_IMAGE_NAME=${{ vars.QUAY_RELEASE_GUARDRAILS_REPO }}" >> $GITHUB_ENV
+
+      - name: Set CI environment - LMES
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        run: |
+          echo "LMES_DRIVER_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          echo "LMES_JOB_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          echo "LMES_DRIVER_IMAGE_NAME=quay.io/trustyai/ta-lmes-driver-ci" >> $GITHUB_ENV
+          echo "LMES_JOB_IMAGE_NAME=quay.io/trustyai/ta-lmes-job-ci" >> $GITHUB_ENV
+
+      - name: Set CI environment - Orchestrator
+        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build')
+        run: |
+          echo "ORCH_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          echo "ORCH_IMAGE_NAME=quay.io/trustyai/ta-guardrails-orchestrator-ci" >> $GITHUB_ENV
+
+      # Print variables for debugging
+      - name: Log reference variables
+        env:
+          HEAD_REF: ${{ github.head_ref }}  # this is user-controlled, so for safety pass it through Env
+        run: |
+          echo "GITHUB.REF: ${{ github.ref }}"
+          echo "GITHUB.HEAD_REF: $HEAD_REF"
+          echo "SHA: ${{ github.event.pull_request.head.sha }}"
+          echo "MAIN IMAGE AT: ${{ env.OPERATOR_IMAGE_NAME }}:${{ env.OPERATOR_TAG }}"
+          echo "LMES DRIVER IMAGE AT: ${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }}"
+          echo "LMES JOB IMAGE AT: ${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }}"
+          echo "GUARDRAILS ORCH IMAGE AT: ${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }}"
+
+      # Run docker commands
+      - name: Put expiry date on CI-tagged image
+        run: echo 'LABEL quay.expires-after=7d' >> Dockerfile
+      - name: Log in to Quay
+        run: docker login -u ${{ secrets.QUAY_ROBOT_USERNAME }} -p ${{ secrets.QUAY_ROBOT_SECRET }} quay.io
+      - name: Build main image
+        run: docker build -t ${{ env.OPERATOR_IMAGE_NAME }}:${{ env.OPERATOR_TAG }} .
+      - name: Push main image to Quay
+        run: docker push ${{ env.OPERATOR_IMAGE_NAME }}:${{ env.OPERATOR_TAG }}
+
+      # LMES Driver Builds
+      - name: Put expiry date on LMES driver CI-tagged image
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        run: echo 'LABEL quay.expires-after=7d' >> Dockerfile.driver
+      - name: Build LMES driver image
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        run: docker build -f Dockerfile.driver -t ${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }} .
+      - name: Push LMES driver image to Quay
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        run: docker push ${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }}
+
+      # LMES Job Builds
+      - name: Put expiry date on LMES job CI-tagged image
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        run: echo 'LABEL quay.expires-after=7d' >> Dockerfile.lmes-job
+      - name: Build LMES job image
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        run: docker build -f Dockerfile.lmes-job -t ${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }} .
+      - name: Push LMES job image to Quay
+        if: contains(github.event.pull_request.labels.*.name, 'needs-lmes-build')
+        run: docker push ${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }}
+
+      # Orchestrator Builds
+      - name: Put expiry date on Orchestrator CI-tagged image
+        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build')
+        run: echo 'LABEL quay.expires-after=7d' >> Dockerfile.orchestrator
+      - name: Build Guardrails orchestrator image
+        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build')
+        run: docker build -f Dockerfile.orchestrator -t ${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }} .
+      - name: Push Guardrails orchestrator image to Quay
+        if: contains(github.event.pull_request.labels.*.name, 'needs-orchestrator-build')
+        run: docker push ${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }}
+
+      # Leave comment
+      - uses: peter-evans/find-comment@v3
+        name: Find Comment
+        id: fc
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: "github-actions[bot]"
+          body-includes: PR image build and manifest generation completed successfully
+      - uses: peter-evans/create-or-update-comment@v4
+        name: Generate/update success message comment
+        with:
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          edit-mode: replace
+          body: |
+            PR image build and manifest generation completed successfully!
+
+            📦 [PR image](https://${{ env.OPERATOR_IMAGE_NAME }}:${{ env.OPERATOR_TAG }}): `${{ env.OPERATOR_IMAGE_NAME }}:${{ env.OPERATOR_TAG }}`
+
+            📦 [LMES driver image](https://${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }}): `${{ env.LMES_DRIVER_IMAGE_NAME }}:${{ env.LMES_DRIVER_TAG }}`
+
+            📦 [LMES job image](https://${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }}): `${{ env.LMES_JOB_IMAGE_NAME }}:${{ env.LMES_JOB_TAG }}`
+
+            📦 [Guardrails orchestrator image](https://${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }}): `${{ env.ORCH_IMAGE_NAME }}:${{ env.ORCH_TAG }}`
