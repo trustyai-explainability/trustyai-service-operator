@@ -132,6 +132,13 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, updateErr
 		}
 	}
+
+	// ====== Surface the capability manifest URL as a CR annotation ===================================================
+	if err := r.ensureManifestAnnotation(ctx, nemoGuardrails); err != nil {
+		utils.LogErrorUpdating(ctx, err, "manifest annotation", nemoGuardrails.Name, nemoGuardrails.Namespace)
+		return ctrl.Result{}, err
+	}
+
 	// ====== Ensure that old CRs without ExposeRoute are set to ExposeRoute = true ====================================
 	if nemoGuardrails.Spec.ExposeRoute == nil {
 		exposeRouteTrue := true
