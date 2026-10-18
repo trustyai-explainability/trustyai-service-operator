@@ -37,7 +37,7 @@ jobs:
             config/overlays/mcp-guardrails; do
             echo "=== Testing $target ==="
             rendered=$(kustomize build "$target")
-            for ns in rbac selector; do
+            for ns in rbac selector networkpolicy; do
               if ! echo "$rendered" | conftest test --policy policy/ --namespace "$ns" -; then
                 failed=1
               fi

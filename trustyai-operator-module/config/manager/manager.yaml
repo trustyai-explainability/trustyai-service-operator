@@ -5,6 +5,7 @@ metadata:
   namespace: system
   labels:
     control-plane: controller-manager
+    app.kubernetes.io/name: trustyai-operator-module
 spec:
   selector:
     matchLabels:
@@ -14,6 +15,7 @@ spec:
     metadata:
       labels:
         control-plane: controller-manager
+        app.kubernetes.io/name: trustyai-operator-module
     spec:
       securityContext:
         runAsNonRoot: true

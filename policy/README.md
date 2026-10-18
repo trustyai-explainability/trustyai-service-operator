@@ -47,6 +47,20 @@ Guards against accidental changes to the operator Deployment's `spec.selector.ma
 | `controller-manager` (base) | `control-plane: trustyai-service-operator` |
 | `trustyai-service-operator-controller-manager` (overlays) | `control-plane: trustyai-service-operator`, `app.kubernetes.io/part-of: trustyai` |
 
+### `operator_network_policy.rego` — operator manager-pod NetworkPolicy shape
+
+Validates the NetworkPolicy that protects the operator's own controller-manager pod (RHOAIENG-96335). When a rendered NetworkPolicy selects pods carrying `control-plane: trustyai-service-operator`, the policy enforces:
+
+1. **Ingress-only ingress policy.** `policyTypes` must contain `Ingress` and must not contain `Egress` (direction split).
+2. **Port-scoped rules only.** Every ingress rule must list ports, limited to the manager pod's TCP listeners: 8443 (secure metrics), 8081 (health probes), 9443 (CRD conversion webhooks). Port entries must be TCP — omitting `protocol` is accepted (the Kubernetes API default), any other protocol is denied.
+3. **Metrics source restriction.** The 8443 rule must allow exactly the supported OpenShift monitoring namespaces (`openshift-monitoring`, `openshift-user-workload-monitoring`) via `namespaceSelector`-only peers.
+4. **Port-scoped probe and webhook rules.** The 8081 and 9443 rules must not carry `from` peers: kubelet-originated probes and the host-networked API server cannot be reliably expressed as NetworkPolicy peers, so no source restriction is claimed for them.
+5. **Dedicated allow-all egress policy.** A second policy (`controller-manager-allow-egress`) must declare only `Egress` in `policyTypes` with exactly one rule, the empty allow-all (`egress: - {}`), and no ingress rules. This satisfies ODH-ADR-Operator-0016's explicit-egress requirement (every workload selected by a policy with `Egress` in `policyTypes` and an explicit `egress` field; allow-all is permitted when documented). Restricting operator egress remains under HPSTRAT-278.
+
+The egress policy's *presence* is guaranteed by `config/manager/kustomization.yaml` (it renders with the manager Deployment into every overlay and the module bundle); conftest evaluates rendered documents individually, so the rules above pin each policy's shape rather than cross-document presence.
+
+**Tested overlays:** `base`, `odh`, `rhoai`, `lmes`, `odh-kueue`, `testing`, `mcp-guardrails`.
+
 ## Changing the Deployment selector
 
 If you legitimately need to change the operator Deployment's selector labels (this is rare and breaks upgrades — a migration hook in the downstream operator repos will be required):
