@@ -35,7 +35,7 @@ test_base_deployment_extra_label_denied if {
 	}
 }
 
-# --- overlay deployment (two selector labels) ---
+# --- overlay deployment (three selector labels, including 3.5 legacy ODH label) ---
 
 test_overlay_deployment_correct_selector_passes if {
 	count(deny) == 0 with input as {
@@ -44,6 +44,7 @@ test_overlay_deployment_correct_selector_passes if {
 		"spec": {"selector": {"matchLabels": {
 			"control-plane": "trustyai-service-operator",
 			"app.kubernetes.io/part-of": "trustyai",
+			"app.opendatahub.io/trustyai": "true",
 		}}},
 	}
 }
@@ -55,6 +56,7 @@ test_overlay_deployment_stale_control_plane_denied if {
 		"spec": {"selector": {"matchLabels": {
 			"control-plane": "controller-manager",
 			"app.kubernetes.io/part-of": "trustyai",
+			"app.opendatahub.io/trustyai": "true",
 		}}},
 	}
 }
@@ -65,6 +67,18 @@ test_overlay_deployment_missing_part_of_denied if {
 		"metadata": {"name": "trustyai-service-operator-controller-manager"},
 		"spec": {"selector": {"matchLabels": {
 			"control-plane": "trustyai-service-operator",
+			"app.opendatahub.io/trustyai": "true",
+		}}},
+	}
+}
+
+test_overlay_deployment_missing_odh_component_denied if {
+	count(deny) > 0 with input as {
+		"kind": "Deployment",
+		"metadata": {"name": "trustyai-service-operator-controller-manager"},
+		"spec": {"selector": {"matchLabels": {
+			"control-plane": "trustyai-service-operator",
+			"app.kubernetes.io/part-of": "trustyai",
 		}}},
 	}
 }
@@ -76,6 +90,7 @@ test_overlay_deployment_extra_label_denied if {
 		"spec": {"selector": {"matchLabels": {
 			"control-plane": "trustyai-service-operator",
 			"app.kubernetes.io/part-of": "trustyai",
+			"app.opendatahub.io/trustyai": "true",
 			"extra": "label",
 		}}},
 	}

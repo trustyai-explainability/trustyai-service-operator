@@ -45,7 +45,7 @@ Guards against accidental changes to the operator Deployment's `spec.selector.ma
 | Deployment name | Expected `matchLabels` |
 |----------------|----------------------|
 | `controller-manager` (base) | `control-plane: trustyai-service-operator` |
-| `trustyai-service-operator-controller-manager` (overlays) | `control-plane: trustyai-service-operator`, `app.kubernetes.io/part-of: trustyai` |
+| `trustyai-service-operator-controller-manager` (overlays) | `control-plane: trustyai-service-operator`, `app.kubernetes.io/part-of: trustyai`, `app.opendatahub.io/trustyai: "true"` |
 
 ### `operator_network_policy.rego` — operator manager-pod NetworkPolicy shape
 
