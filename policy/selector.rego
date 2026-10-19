@@ -18,9 +18,12 @@ expected_selectors := {
 	"controller-manager": {"control-plane": "trustyai-service-operator"},
 
 	# all overlays (namePrefix: trustyai-service-operator-, includeSelectors: true)
+	# app.opendatahub.io/trustyai must stay: 3.5 in-tree Deployments used that
+	# label in the immutable selector (RHAI-10820).
 	"trustyai-service-operator-controller-manager": {
 		"control-plane": "trustyai-service-operator",
 		"app.kubernetes.io/part-of": "trustyai",
+		"app.opendatahub.io/trustyai": "true",
 	},
 }
 
