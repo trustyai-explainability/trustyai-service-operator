@@ -15,9 +15,16 @@ const (
 	trustyAINamespaceLabelAnnotation = "trustyai.opendatahub.io/namespace-label-managed"
 )
 
+func (r *TrustyAIServiceReconciler) namespaceReader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
+	}
+	return r.Client
+}
+
 func (r *TrustyAIServiceReconciler) ensureTrustyAINamespaceLabel(ctx context.Context, namespaceName string) error {
 	namespace := &corev1.Namespace{}
-	if err := r.Get(ctx, types.NamespacedName{Name: namespaceName}, namespace); err != nil {
+	if err := r.namespaceReader().Get(ctx, types.NamespacedName{Name: namespaceName}, namespace); err != nil {
 		return err
 	}
 
@@ -51,7 +58,7 @@ func (r *TrustyAIServiceReconciler) removeTrustyAINamespaceLabel(
 	}
 
 	namespace := &corev1.Namespace{}
-	if err := r.Get(ctx, types.NamespacedName{Name: instance.Namespace}, namespace); err != nil {
+	if err := r.namespaceReader().Get(ctx, types.NamespacedName{Name: instance.Namespace}, namespace); err != nil {
 		if errors.IsNotFound(err) {
 			return nil
 		}
