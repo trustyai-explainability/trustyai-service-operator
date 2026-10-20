@@ -45,8 +45,23 @@ for component_dir in "${COMPONENTS_DIR}"/*; do
         continue
     fi
 
-    # Check CRD exists (skip for job-mgr which shares CRD with lmes)
-    if [[ "${component_name}" != "job-mgr" ]] && ! compgen -G "${component_dir}/crd/*.yaml" > /dev/null; then
+    # The webhook component contains a Service and a Deployment patch. It is
+    # intentionally composed with the base manager rather than built alone.
+    if [[ "${component_name}" == "webhook" ]]; then
+        echo "  ✓ Composition-only component; validated through overlays"
+        VALIDATED_COMPONENTS+=("${component_name}")
+        echo ""
+        continue
+    fi
+
+    # Check CRD exists (job-mgr shares the LMES CRD and webhook has no CRD)
+    component_has_crd=true
+    case "${component_name}" in
+        job-mgr|webhook)
+            component_has_crd=false
+            ;;
+    esac
+    if [[ "${component_has_crd}" == "true" ]] && ! compgen -G "${component_dir}/crd/*.yaml" > /dev/null; then
         echo "  ✗ Missing CRD YAML inside of ${component_name}/crd directory"
         FAILED_COMPONENTS+=("${component_name}")
         continue
@@ -59,19 +74,19 @@ for component_dir in "${COMPONENTS_DIR}"/*; do
         # Check that output contains expected resources
         output=$("${KUSTOMIZE}" build "${component_dir}")
 
-        # Verify CRD is present (skip for job-mgr)
-        if [[ "${component_name}" != "job-mgr" ]]; then
-            if echo "${output}" | grep -q "^kind: CustomResourceDefinition"; then
+        # Verify CRD is present when this component owns one.
+        if [[ "${component_has_crd}" == "true" ]]; then
+            if grep -q "^kind: CustomResourceDefinition" <<< "${output}"; then
                 echo "  ✓ CRD present in output"
             else
                 echo "  ✗ Warning: CRD not found in output"
             fi
         else
-            echo "  ✓ No CRD (shares with LMES component)"
+            echo "  ✓ No CRD (component does not own one)"
         fi
 
         # Verify ClusterRole is present
-        if echo "${output}" | grep -q "^kind: ClusterRole"; then
+        if grep -q "^kind: ClusterRole" <<< "${output}"; then
             echo "  ✓ ClusterRole present in output"
         else
             echo "  ✗ Warning: ClusterRole not found in output"

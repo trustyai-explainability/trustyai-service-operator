@@ -257,3 +257,11 @@ rules:
   - list
   - watch
   - get
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - update
+  - patch
