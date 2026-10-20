@@ -2,15 +2,19 @@ package tas
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -157,6 +161,52 @@ func TestRemoveTrustyAINamespaceLabelPreservesExistingNonOperatorValue(t *testin
 	assert.Equal(t, "false", updated.Labels[trustyAINamespaceLabel])
 }
 
+func TestReconcileRetainsFinalizerWhenNamespaceLabelCleanupFails(t *testing.T) {
+	ctx := context.Background()
+	scheme := clientgoscheme(t)
+	require.NoError(t, apiextensionsv1.AddToScheme(scheme))
+
+	cleanupErr := errors.New("namespace patch failed")
+	namespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testTrustyAINamespace,
+			Labels: map[string]string{
+				trustyAINamespaceLabel: "true",
+			},
+			Annotations: map[string]string{
+				trustyAINamespaceLabelAnnotation: "true",
+			},
+		},
+	}
+	deletingService := &trustyaiopendatahubiov1.TrustyAIService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "deleting-service",
+			Namespace:         testTrustyAINamespace,
+			DeletionTimestamp: &metav1.Time{Time: time.Unix(1, 0)},
+			Finalizers:        []string{finalizerName},
+		},
+	}
+	baseClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(namespace).Build()
+	reconcilerClient := &namespacePatchErrorClient{
+		Client:          baseClient,
+		err:             cleanupErr,
+		deletingService: deletingService,
+	}
+	reconciler := &TrustyAIServiceReconciler{Client: reconcilerClient, Scheme: scheme}
+
+	result, err := reconciler.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      deletingService.Name,
+			Namespace: deletingService.Namespace,
+		},
+	})
+
+	assert.ErrorIs(t, err, cleanupErr)
+	assert.True(t, result.Requeue)
+	assert.Zero(t, reconcilerClient.updateCalls)
+	assert.Contains(t, deletingService.Finalizers, finalizerName)
+}
+
 func clientgoscheme(t *testing.T) *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
@@ -177,4 +227,48 @@ func (r *trackingReader) Get(
 ) error {
 	r.getCalls++
 	return r.Reader.Get(ctx, key, obj, opts...)
+}
+
+type namespacePatchErrorClient struct {
+	client.Client
+	err             error
+	deletingService *trustyaiopendatahubiov1.TrustyAIService
+	updateCalls     int
+}
+
+func (c *namespacePatchErrorClient) Get(
+	ctx context.Context,
+	key client.ObjectKey,
+	obj client.Object,
+	opts ...client.GetOption,
+) error {
+	if service, ok := obj.(*trustyaiopendatahubiov1.TrustyAIService); ok &&
+		key == client.ObjectKeyFromObject(c.deletingService) {
+		c.deletingService.DeepCopyInto(service)
+		return nil
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
+
+func (c *namespacePatchErrorClient) Update(
+	ctx context.Context,
+	obj client.Object,
+	opts ...client.UpdateOption,
+) error {
+	if _, ok := obj.(*trustyaiopendatahubiov1.TrustyAIService); ok {
+		c.updateCalls++
+	}
+	return c.Client.Update(ctx, obj, opts...)
+}
+
+func (c *namespacePatchErrorClient) Patch(
+	ctx context.Context,
+	obj client.Object,
+	patch client.Patch,
+	opts ...client.PatchOption,
+) error {
+	if _, ok := obj.(*corev1.Namespace); ok {
+		return c.err
+	}
+	return c.Client.Patch(ctx, obj, patch, opts...)
 }

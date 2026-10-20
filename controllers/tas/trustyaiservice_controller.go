@@ -144,7 +144,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				return RequeueWithErrorMessage(ctx, err, "Failed to clean up external dependencies.")
 			}
 			if err := r.removeTrustyAINamespaceLabel(ctx, instance); err != nil {
-				log.Error(err, "Failed to remove the TrustyAI namespace label")
+				return RequeueWithErrorMessage(ctx, err, "Failed to remove the TrustyAI namespace label.")
 			}
 			// Remove the finalizer from the list and update it.
 			instance.Finalizers = utils.RemoveString(instance.Finalizers, finalizerName)
