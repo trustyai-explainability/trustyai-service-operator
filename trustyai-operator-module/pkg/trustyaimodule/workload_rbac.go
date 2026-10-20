@@ -53,7 +53,7 @@ package trustyaimodule
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs/finalizers,verbs=update
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=status-events,verbs=create
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=namespaces,verbs=list;watch
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evaluations;collections;providers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=status-events,verbs=get;list;watch;create;update;patch;delete
