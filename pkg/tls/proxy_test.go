@@ -53,6 +53,19 @@ func TestResolveProxyTLSArgumentsUsesFIPSDefaultCurves(t *testing.T) {
 	}
 }
 
+func TestResolveProxyTLSArgumentsDefaultsEmptyMinimum(t *testing.T) {
+	profile := &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType, Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
+		Ciphers: []string{"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"},
+	}}}
+	got, err := ResolveProxyTLSArguments(profile, TLSAdherenceStrictAllComponents, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.MinVersion != string(configv1.VersionTLS12) {
+		t.Fatalf("MinVersion = %q, want %q", got.MinVersion, configv1.VersionTLS12)
+	}
+}
+
 func TestResolveProxyTLSArgumentsRejectsStrictProfiles(t *testing.T) {
 	_, err := ResolveProxyTLSArguments(&configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType}, TLSAdherenceStrictAllComponents, nil, false)
 	if err == nil {
@@ -62,6 +75,22 @@ func TestResolveProxyTLSArgumentsRejectsStrictProfiles(t *testing.T) {
 	_, err = ResolveProxyTLSArguments(nil, TLSAdherenceStrictAllComponents, []string{"X25519"}, true)
 	if err == nil {
 		t.Fatal("expected no usable FIPS curves to fail")
+	}
+}
+
+func TestResolveProxyTLSArgumentsRejectsEmptyStrictCipherList(t *testing.T) {
+	profile := &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType, Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
+		MinTLSVersion: configv1.VersionTLS12,
+	}}}
+	for _, adherence := range []string{TLSAdherenceStrictAllComponents, "FutureValue"} {
+		if _, err := ResolveProxyTLSArguments(profile, adherence, nil, false); err == nil {
+			t.Errorf("ResolveProxyTLSArguments(%q) accepted an empty cipher list", adherence)
+		}
+	}
+	for _, adherence := range []string{TLSAdherenceNoOpinion, TLSAdherenceLegacyAdheringComponentsOnly} {
+		if _, err := ResolveProxyTLSArguments(profile, adherence, nil, false); err != nil {
+			t.Errorf("ResolveProxyTLSArguments(%q) error = %v, want lenient defaults", adherence, err)
+		}
 	}
 }
 
@@ -89,16 +118,17 @@ func TestResolveProxyTLSArgumentsUsesApplicableIANACiphers(t *testing.T) {
 		Ciphers: []string{
 			"TLS_AES_128_GCM_SHA256",
 			"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
 		},
 	}}}
 	got, err := ResolveProxyTLSArguments(profile, TLSAdherenceStrictAllComponents, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got.CipherSuites, []string{"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"}) {
+	if !reflect.DeepEqual(got.CipherSuites, []string{"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"}) {
 		t.Fatalf("CipherSuites = %v", got.CipherSuites)
 	}
-	if !strings.Contains(strings.Join(got.Args, " "), "--tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256") {
+	if !strings.Contains(strings.Join(got.Args, " "), "--tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256") {
 		t.Fatalf("expected plural cipher flag in args: %v", got.Args)
 	}
 }
