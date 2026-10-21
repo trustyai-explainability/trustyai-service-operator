@@ -56,12 +56,13 @@ const maxServicePortNameLen = 15
 
 func newWorkloadIdentity(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) workloadIdentity {
 	name := nemoGuardrails.Name
-	// Same-namespace installs keep the existing selector. A shared infra namespace needs a
-	// selector that another project cannot match by reusing this custom resource name.
-	selector := name
+	// A shared infra namespace uses {namespace}-{cr-name} so two projects can reuse this custom resource name.
 	if targetNamespace != "" && targetNamespace != nemoGuardrails.Namespace {
-		selector = dns1123Name(nemoGuardrails.Namespace + "-" + name)
+		name = prefixedWorkloadObjectName(nemoGuardrails.Namespace, nemoGuardrails.Name)
 	}
+	// Same-namespace installs keep the custom resource name as the selector.
+	// In a shared namespace the object name already includes the owning namespace.
+	selector := name
 	portName := name
 	if len(portName) > maxServicePortNameLen {
 		portName = "http"
@@ -82,7 +83,8 @@ func newWorkloadIdentity(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, 
 	}
 }
 
-// prefixedWorkloadObjectName is the Deployment name from before workload objects kept the custom resource name.
+// prefixedWorkloadObjectName is the Deployment, Service, and Route name when the workload
+// is placed in a namespace other than the custom resource's namespace.
 func prefixedWorkloadObjectName(ownerNamespace, ownerName string) string {
 	if ownerNamespace == "" || ownerName == "" {
 		return ownerName
@@ -130,15 +132,6 @@ func dns1123Name(name string) string {
 // workloadNamespace is the namespace where this reconciler's Deployment, Service, and Route live.
 func (r *NemoGuardrailsReconciler) workloadNamespace(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails) string {
 	return deriveInfraNamespace(r.Namespace, nemoGuardrails.Namespace)
-}
-
-// deployedNamespace is where resources were last created. Deletion uses it so a
-// change in the controller's own namespace still removes objects from the previous namespace.
-func (r *NemoGuardrailsReconciler) deployedNamespace(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails) string {
-	if nemoGuardrails.Status.WorkloadNamespace != "" {
-		return nemoGuardrails.Status.WorkloadNamespace
-	}
-	return r.workloadNamespace(nemoGuardrails)
 }
 
 // rejectUnownedWorkload reports a name collision in namespace before any object there is created or any previous workload is deleted.
@@ -384,7 +377,7 @@ func (r *NemoGuardrailsReconciler) deleteOwnedInNamespace(ctx context.Context, o
 		return err
 	}
 	// Objects created before the owner label existed are still selected by name.
-	// The prefixed name covers workload objects created before they kept the custom resource name.
+	// Cross-namespace workloads use {namespace}-{cr-name}; earlier installs used only the custom resource name.
 	names := []string{owner.GetName()}
 	if prefixed := prefixedWorkloadObjectName(owner.GetNamespace(), owner.GetName()); prefixed != owner.GetName() {
 		names = append(names, prefixed)
@@ -409,16 +402,16 @@ func (r *NemoGuardrailsReconciler) deleteOwnedInNamespace(ctx context.Context, o
 	return nil
 }
 
-// retirePrefixedNames removes workload objects named {namespace}-{cr-name} after the
-// custom-resource-named Deployment is Ready. A missing or stuck rollout leaves that previous stack serving.
+// retireUnscopedNames removes workload objects that used only the custom resource name
+// after the namespace-prefixed Deployment is Ready. A missing or stuck rollout leaves that previous stack serving.
 // Copied ConfigMaps and Secrets keep the {namespace}-{cr-name}-{source} name.
-func (r *NemoGuardrailsReconciler) retirePrefixedNames(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) error {
+func (r *NemoGuardrailsReconciler) retireUnscopedNames(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) error {
 	if targetNamespace == "" || targetNamespace == nemoGuardrails.Namespace {
 		return nil
 	}
 	identity := newWorkloadIdentity(nemoGuardrails, targetNamespace)
-	prefixed := prefixedWorkloadObjectName(nemoGuardrails.Namespace, nemoGuardrails.Name)
-	if prefixed == identity.Name {
+	unscoped := nemoGuardrails.Name
+	if unscoped == "" || unscoped == identity.Name {
 		return nil
 	}
 	ready, err := utils.CheckDeploymentReady(ctx, r.Client, identity.Name, targetNamespace)
@@ -443,17 +436,16 @@ func (r *NemoGuardrailsReconciler) retirePrefixedNames(ctx context.Context, nemo
 		return nil
 	}
 
-	name := nemoGuardrails.Name
 	legacy := []client.Object{
-		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: prefixed, Namespace: targetNamespace}},
-		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: prefixed, Namespace: targetNamespace}},
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: prefixed + "-ca-bundle", Namespace: targetNamespace}},
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: prefixed + "-rbac-proxy-config", Namespace: targetNamespace}},
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: prefixed + "-rbac-proxy-admin-config", Namespace: targetNamespace}},
-		&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: prefixed + "-serviceaccount", Namespace: targetNamespace}},
-		&routev1.Route{ObjectMeta: metav1.ObjectMeta{Name: prefixed, Namespace: targetNamespace}},
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: unscoped, Namespace: targetNamespace}},
+		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: unscoped, Namespace: targetNamespace}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: unscoped + "-ca-bundle", Namespace: targetNamespace}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: unscoped + "-rbac-proxy-config", Namespace: targetNamespace}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: unscoped + "-rbac-proxy-admin-config", Namespace: targetNamespace}},
+		&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: unscoped + "-serviceaccount", Namespace: targetNamespace}},
+		&routev1.Route{ObjectMeta: metav1.ObjectMeta{Name: unscoped, Namespace: targetNamespace}},
 		// The admin proxy ConfigMap used to be created in the custom resource namespace.
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name + "-rbac-proxy-admin-config", Namespace: nemoGuardrails.Namespace}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: unscoped + "-rbac-proxy-admin-config", Namespace: nemoGuardrails.Namespace}},
 	}
 	for _, configName := range legacyCopiedConfigMapNames(nemoGuardrails, targetNamespace) {
 		legacy = append(legacy, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: configName, Namespace: targetNamespace}})
