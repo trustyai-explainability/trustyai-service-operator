@@ -62,6 +62,8 @@ spec:
               value: {{ .Instance.Spec.Storage.Folder }}
             - name: SERVICE_DATA_FORMAT
               value: {{ .Instance.Spec.Data.Format }}
+            - name: DATABASE_ATTEMPT_MIGRATION
+              value: true
             {{ end }}
             {{ if eq .Instance.Spec.Storage.Format "DATABASE" }}
             - name: QUARKUS_HIBERNATE_ORM_ACTIVE
