@@ -95,12 +95,24 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err := utils.CleanupClusterRoleBinding(ctx, r.Client, nemoGuardrails); err != nil {
 			return err
 		}
-		deployed := r.deployedNamespace(nemoGuardrails)
-		if err := r.deleteOwnedInNamespace(ctx, nemoGuardrails, deployed); err != nil {
-			return err
-		}
-		if nemoGuardrails.Status.WorkloadNamespace == "" && nemoGuardrails.Namespace != deployed {
-			return r.deleteOwnedInNamespace(ctx, nemoGuardrails, nemoGuardrails.Namespace)
+		// status.workloadNamespace stays on the previous namespace until the new Deployment is Ready.
+		// A delete during that move must also remove objects already created in the shared infra namespace.
+		seen := map[string]struct{}{}
+		for _, namespace := range []string{
+			nemoGuardrails.Status.WorkloadNamespace,
+			r.workloadNamespace(nemoGuardrails),
+			nemoGuardrails.Namespace,
+		} {
+			if namespace == "" {
+				continue
+			}
+			if _, ok := seen[namespace]; ok {
+				continue
+			}
+			seen[namespace] = struct{}{}
+			if err := r.deleteOwnedInNamespace(ctx, nemoGuardrails, namespace); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -311,7 +323,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 	}
-	if err := r.retirePrefixedNames(ctx, nemoGuardrails, targetNamespace); err != nil {
+	if err := r.retireUnscopedNames(ctx, nemoGuardrails, targetNamespace); err != nil {
 		return ctrl.Result{}, err
 	}
 	if err := r.releaseReadyWorkload(ctx, nemoGuardrails, targetNamespace); err != nil {
