@@ -20,9 +20,6 @@ data:
     description: UK AISI Inspect AI framework — Petri/Bloom alignment auditing and inspect-evals benchmarks
     runtime:
       k8s:
-        # Tested HLE contract: inspect-ai 0.3.276, inspect-evals 0.23.0, task 7-E.
-        # Keep the digest and examples/inspect-hle/README.md in sync when upgrading.
-        # Operator-managed deployments must set the same image in their provider config.
         image: $(evalhub-provider-inspect-image)
         image_pull_policy: always
         entrypoint:
