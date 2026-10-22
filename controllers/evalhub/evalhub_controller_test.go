@@ -244,6 +244,41 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		namespace = nil
 	})
 
+	It("should include Open-Telco in default collections and mount its ConfigMap", func() {
+		By("Checking that CRD defaulting selects Open-Telco when collections are omitted")
+		Expect(evalHub.Spec.Collections).To(ContainElement("open-telco-v1"))
+
+		By("Reconciling status, finalizer, and resources")
+		for range 3 {
+			_, err := performReconcile(reconciler, evalHubName, testNamespace)
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		By("Checking that the Open-Telco collection ConfigMap is copied and owned by the EvalHub")
+		collectionCMName := evalHubName + "-collection-open-telco-v1"
+		collectionCM := waitForConfigMap(collectionCMName, testNamespace)
+		Expect(collectionCM.Data).To(HaveKeyWithValue("open-telco-v1.yaml", "id: open-telco-v1\nname: open-telco-v1\n"))
+		Expect(collectionCM.OwnerReferences).To(HaveLen(1))
+		Expect(collectionCM.OwnerReferences[0].UID).To(Equal(evalHub.UID))
+
+		By("Checking that the collection is projected into the EvalHub deployment")
+		deployment := waitForDeployment(evalHubName, testNamespace)
+		Expect(deployment.Spec.Template.Spec.Volumes).To(ContainElement(And(
+			HaveField("Name", collectionsVolumeName),
+			HaveField("Projected.Sources", ContainElement(corev1.VolumeProjection{
+				ConfigMap: &corev1.ConfigMapProjection{
+					LocalObjectReference: corev1.LocalObjectReference{Name: collectionCMName},
+				},
+			})),
+		)))
+		Expect(deployment.Spec.Template.Spec.Containers).To(ContainElement(And(
+			HaveField("Name", "evalhub"),
+			HaveField("VolumeMounts", ContainElement(corev1.VolumeMount{
+				Name: collectionsVolumeName, MountPath: collectionsMountPath, ReadOnly: true,
+			})),
+		)))
+	})
+
 	It("should create all required resources through complete reconciliation", func() {
 		By("Performing initial reconciliation to set status")
 		result, err := performReconcile(reconciler, evalHubName, testNamespace)
