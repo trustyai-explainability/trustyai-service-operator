@@ -91,9 +91,16 @@ var _ = Describe("TrustyAI database tuning ConfigMap", func() {
 		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
 		service := serviceContainer(deployment)
 		Expect(service).NotTo(BeNil())
-		Expect(service.EnvFrom).To(ContainElement(corev1.EnvFromSource{
-			ConfigMapRef: &corev1.ConfigMapEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "db-tuning"}},
-		}))
+		Expect(service.EnvFrom).To(BeEmpty())
+		for key := range supportedDatabaseTuningKeys {
+			tuningEnv := findDatabaseEnv(service.Env, key)
+			Expect(tuningEnv).NotTo(BeNil(), key)
+			Expect(tuningEnv.ValueFrom.ConfigMapKeyRef.Name).To(Equal("db-tuning"), key)
+			Expect(tuningEnv.ValueFrom.ConfigMapKeyRef.Key).To(Equal(key), key)
+			Expect(tuningEnv.ValueFrom.ConfigMapKeyRef.Optional).NotTo(BeNil(), key)
+			Expect(*tuningEnv.ValueFrom.ConfigMapKeyRef.Optional).To(BeTrue(), key)
+		}
+		Expect(findDatabaseEnv(service.Env, "UNSUPPORTED_CUSTOM_SETTING")).To(BeNil())
 		password := findDatabaseEnv(service.Env, "QUARKUS_DATASOURCE_PASSWORD")
 		Expect(password).NotTo(BeNil())
 		Expect(password.ValueFrom.SecretKeyRef.Name).To(Equal(defaultDatabaseConfigurationName))

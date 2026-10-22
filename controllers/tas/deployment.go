@@ -99,6 +99,13 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		log.FromContext(ctx).Error(err, "Error parsing the service's deployment template")
 		return nil, err
 	}
+	if instance.Spec.Storage.IsStorageDatabase() && instance.Spec.Storage.IsDatabaseTuningSet() {
+		container := serviceContainer(deployment)
+		if container == nil {
+			return nil, fmt.Errorf("service container not found in deployment %q", deployment.Name)
+		}
+		container.Env = append(container.Env, databaseTuningConfigMapEnvVars(instance.Spec.Storage.DatabaseTuning)...)
+	}
 
 	return deployment, nil
 }

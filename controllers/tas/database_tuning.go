@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -62,13 +63,37 @@ func validateDatabaseTuningConfigMap(configMap *corev1.ConfigMap) error {
 	return nil
 }
 
+func databaseTuningConfigMapEnvVars(configMapName string) []corev1.EnvVar {
+	keys := make([]string, 0, len(supportedDatabaseTuningKeys))
+	for key := range supportedDatabaseTuningKeys {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	optional := true
+	envVars := make([]corev1.EnvVar, 0, len(keys))
+	for _, key := range keys {
+		envVars = append(envVars, corev1.EnvVar{
+			Name: key,
+			ValueFrom: &corev1.EnvVarSource{
+				ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: configMapName},
+					Key:                  key,
+					Optional:             &optional,
+				},
+			},
+		})
+	}
+	return envVars
+}
+
 func deploymentHasDatabaseTuning(deployment *appsv1.Deployment) bool {
 	container := serviceContainer(deployment)
 	if container == nil {
 		return false
 	}
-	for _, source := range container.EnvFrom {
-		if source.ConfigMapRef != nil {
+	for _, env := range container.Env {
+		if _, supported := supportedDatabaseTuningKeys[env.Name]; supported && env.ValueFrom != nil && env.ValueFrom.ConfigMapKeyRef != nil {
 			return true
 		}
 	}
@@ -81,7 +106,17 @@ func databaseTuningDeploymentChanged(current, desired *appsv1.Deployment) bool {
 	if currentContainer == nil || desiredContainer == nil {
 		return currentContainer != desiredContainer
 	}
-	return !reflect.DeepEqual(currentContainer.EnvFrom, desiredContainer.EnvFrom)
+	return !reflect.DeepEqual(databaseTuningEnvVars(currentContainer.Env), databaseTuningEnvVars(desiredContainer.Env))
+}
+
+func databaseTuningEnvVars(envVars []corev1.EnvVar) []corev1.EnvVar {
+	tuningEnvVars := make([]corev1.EnvVar, 0, len(supportedDatabaseTuningKeys))
+	for _, env := range envVars {
+		if _, supported := supportedDatabaseTuningKeys[env.Name]; supported && env.ValueFrom != nil && env.ValueFrom.ConfigMapKeyRef != nil {
+			tuningEnvVars = append(tuningEnvVars, env)
+		}
+	}
+	return tuningEnvVars
 }
 
 func serviceContainer(deployment *appsv1.Deployment) *corev1.Container {
