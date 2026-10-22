@@ -24,6 +24,10 @@ type StorageSpec struct {
 	Folder                 string `json:"folder,omitempty"`
 	Size                   string `json:"size,omitempty"`
 	DatabaseConfigurations string `json:"databaseConfigurations,omitempty"`
+	// DatabaseTuning references a ConfigMap containing nonsecret database tuning environment variables.
+	// It is only supported when Format is DATABASE.
+	// +optional
+	DatabaseTuning string `json:"databaseTuning,omitempty"`
 }
 
 type DataSpec struct {
@@ -42,10 +46,6 @@ type TrustyAIServiceSpec struct {
 	// +optional
 	Replicas *int32      `json:"replicas"`
 	Storage  StorageSpec `json:"storage"`
-	// DatabaseTuning references a ConfigMap containing nonsecret database tuning environment variables.
-	// It is only supported when Storage.Format is DATABASE.
-	// +optional
-	DatabaseTuning string    `json:"databaseTuning,omitempty"`
 	Data     DataSpec    `json:"data,omitempty"`
 	Metrics  MetricsSpec `json:"metrics"`
 }
@@ -127,8 +127,8 @@ func (s *StorageSpec) IsDatabaseConfigurationsSet() bool {
 	return s.DatabaseConfigurations != ""
 }
 
-// IsDatabaseTuningSet returns true if the database tuning ConfigMap is set.
-func (s *TrustyAIServiceSpec) IsDatabaseTuningSet() bool {
+// IsDatabaseTuningSet returns true if the DatabaseTuning field is set.
+func (s *StorageSpec) IsDatabaseTuningSet() bool {
 	return s.DatabaseTuning != ""
 }
 

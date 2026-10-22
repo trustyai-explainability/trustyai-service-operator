@@ -18,6 +18,10 @@ implementation introduced in [trustyai-service PR #334](https://github.com/trust
 | `DATABASE_APPLICATION_NAME` | PostgreSQL session application name. |
 | `DATABASE_STATEMENT_TIMEOUT_MS` | PostgreSQL statement timeout in milliseconds. |
 | `DATABASE_SYNCHRONOUS_COMMIT` | PostgreSQL synchronous commit setting, such as `on` or `off`. |
+| `DATABASE_SQLITE_JOURNAL_MODE` | SQLite journal mode (`DELETE`, `TRUNCATE`, `PERSIST`, `MEMORY`, `WAL`, or `OFF`). |
+| `DATABASE_SQLITE_SYNCHRONOUS` | SQLite synchronous setting (`OFF`, `NORMAL`, `FULL`, or `EXTRA`). |
+| `DATABASE_SQLITE_BUSY_TIMEOUT_MS` | SQLite lock wait timeout in milliseconds. |
+| `DATABASE_SQLITE_CACHE_SIZE_KB` | SQLite page cache size in KiB. |
 
 Create a ConfigMap with the tuning values. Values are strings, so quote numeric
 and boolean-looking values:

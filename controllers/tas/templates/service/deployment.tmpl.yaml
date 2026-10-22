@@ -125,10 +125,10 @@ spec:
             - name: STORAGE_MIGRATION_CONFIG_FROM_FILENAME
               value: {{ .Instance.Spec.Data.Filename }}
             {{ end }}
-          {{ if and (eq .Instance.Spec.Storage.Format "DATABASE") .Instance.Spec.DatabaseTuning }}
+          {{ if and (eq .Instance.Spec.Storage.Format "DATABASE") .Instance.Spec.Storage.DatabaseTuning }}
           envFrom:
             - configMapRef:
-                name: {{ .Instance.Spec.DatabaseTuning }}
+                name: {{ .Instance.Spec.Storage.DatabaseTuning }}
           {{ end }}
           readinessProbe:
             httpGet:

@@ -332,7 +332,7 @@ func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				requests := make([]ctrl.Request, 0, len(instances.Items))
 				for i := range instances.Items {
 					instance := &instances.Items[i]
-					if instance.Spec.DatabaseTuning == obj.GetName() {
+					if instance.Spec.Storage.DatabaseTuning == obj.GetName() {
 						requests = append(requests, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(instance)})
 					}
 				}

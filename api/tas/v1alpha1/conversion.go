@@ -20,7 +20,7 @@ func (src *TrustyAIService) ConvertTo(dstRaw conversion.Hub) error {
 	dst.Spec.Storage.Folder = src.Spec.Storage.Folder
 	dst.Spec.Storage.Size = src.Spec.Storage.Size
 	dst.Spec.Storage.DatabaseConfigurations = src.Spec.Storage.DatabaseConfigurations
-	dst.Spec.DatabaseTuning = src.Spec.DatabaseTuning
+	dst.Spec.Storage.DatabaseTuning = src.Spec.Storage.DatabaseTuning
 	dst.Spec.Data.Filename = src.Spec.Data.Filename
 	dst.Spec.Data.Format = src.Spec.Data.Format
 	dst.Spec.Metrics.Schedule = src.Spec.Metrics.Schedule
@@ -76,7 +76,7 @@ func (dst *TrustyAIService) ConvertFrom(srcRaw conversion.Hub) error {
 	dst.Spec.Storage.Folder = src.Spec.Storage.Folder
 	dst.Spec.Storage.Size = src.Spec.Storage.Size
 	dst.Spec.Storage.DatabaseConfigurations = src.Spec.Storage.DatabaseConfigurations
-	dst.Spec.DatabaseTuning = src.Spec.DatabaseTuning
+	dst.Spec.Storage.DatabaseTuning = src.Spec.Storage.DatabaseTuning
 	dst.Spec.Data.Filename = src.Spec.Data.Filename
 	dst.Spec.Data.Format = src.Spec.Data.Format
 	dst.Spec.Metrics.Schedule = src.Spec.Metrics.Schedule

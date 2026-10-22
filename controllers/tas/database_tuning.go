@@ -40,26 +40,26 @@ var databaseConnectionEnvironmentVariables = map[string]struct{}{
 }
 
 func (r *TrustyAIServiceReconciler) getDatabaseTuningConfigMap(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) (*corev1.ConfigMap, error) {
-	if !instance.Spec.IsDatabaseTuningSet() {
+	if !instance.Spec.Storage.IsDatabaseTuningSet() {
 		return nil, nil
 	}
 	if !instance.Spec.Storage.IsStorageDatabase() {
-		return nil, fmt.Errorf("databaseTuning is supported only when storage.format is DATABASE (got %q)", instance.Spec.Storage.Format)
+		return nil, fmt.Errorf("storage.databaseTuning is supported only when storage.format is DATABASE (got %q)", instance.Spec.Storage.Format)
 	}
 
-	name := instance.Spec.DatabaseTuning
+	name := instance.Spec.Storage.DatabaseTuning
 	configMap := &corev1.ConfigMap{}
 	if err := r.crdReader().Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: name}, configMap); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("databaseTuning references ConfigMap %q in namespace %q, but it does not exist", name, instance.Namespace)
+			return nil, fmt.Errorf("storage.databaseTuning references ConfigMap %q in namespace %q, but it does not exist", name, instance.Namespace)
 		}
-		return nil, fmt.Errorf("reading ConfigMap %q referenced by databaseTuning: %w", name, err)
+		return nil, fmt.Errorf("reading ConfigMap %q referenced by storage.databaseTuning: %w", name, err)
 	}
 	if len(configMap.BinaryData) > 0 {
-		return nil, fmt.Errorf("ConfigMap %q referenced by databaseTuning must use text data entries; binaryData cannot be imported as environment variables", name)
+		return nil, fmt.Errorf("ConfigMap %q referenced by storage.databaseTuning must use text data entries; binaryData cannot be imported as environment variables", name)
 	}
 	if len(configMap.Data) == 0 {
-		return nil, fmt.Errorf("ConfigMap %q referenced by databaseTuning has no data entries to import as environment variables", name)
+		return nil, fmt.Errorf("ConfigMap %q referenced by storage.databaseTuning has no data entries to import as environment variables", name)
 	}
 	for key := range configMap.Data {
 		if problems := validation.IsEnvVarName(key); len(problems) > 0 {
@@ -133,8 +133,8 @@ func (r *TrustyAIServiceReconciler) validateAndSetDatabaseTuningStatus(ctx conte
 		return validationErr
 	}
 
-	if instance.Spec.IsDatabaseTuningSet() {
-		return r.setDatabaseTuningCondition(ctx, instance, metav1.ConditionTrue, "ConfigMapAvailable", fmt.Sprintf("ConfigMap %q is available and can be imported as environment variables", instance.Spec.DatabaseTuning), false)
+	if instance.Spec.Storage.IsDatabaseTuningSet() {
+		return r.setDatabaseTuningCondition(ctx, instance, metav1.ConditionTrue, "ConfigMapAvailable", fmt.Sprintf("ConfigMap %q is available and can be imported as environment variables", instance.Spec.Storage.DatabaseTuning), false)
 	}
 	// Clear a previous failure if the optional reference was removed.
 	return r.setDatabaseTuningCondition(ctx, instance, metav1.ConditionTrue, "NotConfigured", "No database tuning ConfigMap is configured", false)
@@ -150,7 +150,7 @@ func (r *TrustyAIServiceReconciler) setDatabaseTuningCondition(ctx context.Conte
 			break
 		}
 	}
-	if !conditionExists && !instance.Spec.IsDatabaseTuningSet() && !markUnavailable {
+	if !conditionExists && !instance.Spec.Storage.IsDatabaseTuningSet() && !markUnavailable {
 		return nil
 	}
 	if conditionMatches {

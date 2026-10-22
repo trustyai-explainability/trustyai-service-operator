@@ -80,7 +80,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		BatchSize:                batchSize,
 		ProxyTLSArgs:             pkgtls.CurrentProxyTLSArguments().Args,
 	}
-	if instance.Spec.IsDatabaseTuningSet() {
+	if instance.Spec.Storage.IsDatabaseTuningSet() {
 		configMap, err := r.getDatabaseTuningConfigMap(ctx, instance)
 		if err != nil {
 			return nil, err
@@ -253,7 +253,7 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 	}
 
 	// Deployment is ready and using the PVC
-	if instance.Spec.IsDatabaseTuningSet() || deploymentHasDatabaseTuning(deploy) {
+	if instance.Spec.Storage.IsDatabaseTuningSet() || deploymentHasDatabaseTuning(deploy) {
 		desired, err := r.createDeploymentObject(ctx, instance, image, caBundle)
 		if err != nil {
 			return err
