@@ -48,8 +48,8 @@ func TestBuildEvalHubNetworkPolicy(t *testing.T) {
 	if len(desired.Policy.Spec.Egress) != 0 {
 		t.Fatalf("egress rules = %#v, want none", desired.Policy.Spec.Egress)
 	}
-	if len(desired.Policy.Spec.Ingress) != 4 {
-		t.Fatalf("got %d ingress rules with MCP disabled, want router, dashboard, evaluation-job, and metrics rules", len(desired.Policy.Spec.Ingress))
+	if len(desired.Policy.Spec.Ingress) != 5 {
+		t.Fatalf("got %d ingress rules with MCP disabled, want router, dashboard, operator, evaluation-job, and metrics rules", len(desired.Policy.Spec.Ingress))
 	}
 
 	router := desired.Policy.Spec.Ingress[0]
@@ -70,7 +70,16 @@ func TestBuildEvalHubNetworkPolicy(t *testing.T) {
 	}
 	assertEvalHubNetworkPolicyPort(t, dashboard, servicePort)
 
-	jobRule := desired.Policy.Spec.Ingress[2]
+	operatorRule := desired.Policy.Spec.Ingress[2]
+	if len(operatorRule.From) != 1 || operatorRule.From[0].NamespaceSelector == nil || operatorRule.From[0].PodSelector == nil ||
+		!equalNetworkPolicyLabels(operatorRule.From[0].NamespaceSelector.MatchLabels, map[string]string{
+			evalHubDashboardNamespaceNameLabel: "redhat-ods-applications",
+		}) || !equalNetworkPolicyLabels(operatorRule.From[0].PodSelector.MatchLabels, evalHubOperatorPodLabels()) {
+		t.Errorf("operator manager peer = %#v, want the trustyai-service-operator manager Pods in the applications namespace", operatorRule.From)
+	}
+	assertEvalHubNetworkPolicyPort(t, operatorRule, servicePort)
+
+	jobRule := desired.Policy.Spec.Ingress[3]
 	wantJobLabels := evalHubEvaluationJobPodLabels(instance)
 	if len(jobRule.From) != 2 {
 		t.Fatalf("evaluation-job peers = %#v, want same-namespace and tenant peers", jobRule.From)
@@ -89,7 +98,7 @@ func TestBuildEvalHubNetworkPolicy(t *testing.T) {
 	}
 	assertEvalHubNetworkPolicyPort(t, jobRule, servicePort)
 
-	metrics := desired.Policy.Spec.Ingress[3]
+	metrics := desired.Policy.Spec.Ingress[4]
 	if len(metrics.From) != 1 || metrics.From[0].NamespaceSelector == nil || metrics.From[0].PodSelector == nil ||
 		!equalNetworkPolicyLabels(metrics.From[0].NamespaceSelector.MatchLabels, map[string]string{
 			evalHubNetworkPolicyNamespaceGroupLabel: evalHubNetworkPolicyMonitoringGroup,
@@ -118,8 +127,8 @@ func TestBuildEvalHubNetworkPolicyAllowsMCPOnlyWhenEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildEvalHubNetworkPolicy() error = %v", err)
 	}
-	if len(desired.Policy.Spec.Ingress) != 5 {
-		t.Fatalf("got %d ingress rules with MCP enabled, want 5", len(desired.Policy.Spec.Ingress))
+	if len(desired.Policy.Spec.Ingress) != 6 {
+		t.Fatalf("got %d ingress rules with MCP enabled, want 6", len(desired.Policy.Spec.Ingress))
 	}
 	mcpIdentity, err := evalHubMCPNetworkPolicyIdentity(instance)
 	if err != nil {
@@ -132,7 +141,7 @@ func TestBuildEvalHubNetworkPolicyAllowsMCPOnlyWhenEnabled(t *testing.T) {
 	for key, value := range mcpLabels(instance) {
 		wantMCPLabels[key] = value
 	}
-	mcpRule := desired.Policy.Spec.Ingress[4]
+	mcpRule := desired.Policy.Spec.Ingress[5]
 	if len(mcpRule.From) != 1 || mcpRule.From[0].NamespaceSelector != nil || mcpRule.From[0].PodSelector == nil ||
 		!equalNetworkPolicyLabels(mcpRule.From[0].PodSelector.MatchLabels, wantMCPLabels) {
 		t.Errorf("MCP peer = %#v, want same-instance MCP Pod identity %#v", mcpRule.From, wantMCPLabels)
@@ -180,11 +189,15 @@ func TestBuildEvalHubNetworkPolicyAuthorizesDashboardUIPeer(t *testing.T) {
 	var dashboardRule *networkingv1.NetworkPolicyIngressRule
 	for i := range desired.Policy.Spec.Ingress {
 		for j := range desired.Policy.Spec.Ingress[i].From {
-			if desired.Policy.Spec.Ingress[i].From[j].NamespaceSelector != nil &&
-				desired.Policy.Spec.Ingress[i].From[j].NamespaceSelector.MatchLabels[evalHubDashboardNamespaceNameLabel] == "redhat-ods-applications" {
-				dashboardPeer = &desired.Policy.Spec.Ingress[i].From[j]
-				dashboardRule = &desired.Policy.Spec.Ingress[i]
+			peer := &desired.Policy.Spec.Ingress[i].From[j]
+			if peer.NamespaceSelector == nil ||
+				peer.NamespaceSelector.MatchLabels[evalHubDashboardNamespaceNameLabel] != "redhat-ods-applications" ||
+				peer.PodSelector == nil ||
+				!equalNetworkPolicyLabels(peer.PodSelector.MatchLabels, evalHubDashboardUIPodLabels()) {
+				continue
 			}
+			dashboardPeer = peer
+			dashboardRule = &desired.Policy.Spec.Ingress[i]
 		}
 	}
 	if dashboardPeer == nil {
@@ -216,6 +229,75 @@ func TestBuildEvalHubNetworkPolicyAuthorizesDashboardUIPeer(t *testing.T) {
 	}
 	if !namespaceSelector.Matches(labels.Set{"kubernetes.io/metadata.name": "redhat-ods-applications"}) {
 		t.Errorf("namespace selector %q does not select the applications namespace", namespaceSelector)
+	}
+}
+
+// TestBuildEvalHubNetworkPolicyAuthorizesOperatorFailureEventPeer guards the
+// failure-event path: the operator's own manager Pod runs the
+// evalhub-evaluation-job-failure and Kueue Workload failure reconcilers, which
+// POST benchmark failure events to the EvalHub API on TCP 8443. That Pod lives
+// in the applications namespace (opendatahub on ODH,
+// redhat-ods-applications on RHOAI) and carries the manager Deployment's
+// immutable control-plane label; without this peer the generated policy
+// silently drops the POSTs and a Job that fails before its containers start
+// stays pending instead of moving to failed (RHOAIENG-100960).
+func TestBuildEvalHubNetworkPolicyAuthorizesOperatorFailureEventPeer(t *testing.T) {
+	instance := testEvalHubNetworkPolicyOwner()
+
+	// Labels carried by the deployed controller-manager Pod after kustomize:
+	// control-plane from config/manager/manager.yaml, plus the labels the
+	// rhoai and odh overlays add with includeSelectors: true.
+	deployedOperatorPodLabels := labels.Set{
+		"control-plane":               "trustyai-service-operator",
+		"app.kubernetes.io/part-of":   "trustyai",
+		"app.opendatahub.io/trustyai": "true",
+		"pod-template-hash":           "6ff8fd476f",
+	}
+
+	for _, applicationsNamespace := range []string{"opendatahub", "redhat-ods-applications"} {
+		desired, err := buildEvalHubNetworkPolicy(instance, applicationsNamespace)
+		if err != nil {
+			t.Fatalf("buildEvalHubNetworkPolicy(%q) error = %v", applicationsNamespace, err)
+		}
+
+		var operatorPeer *networkingv1.NetworkPolicyPeer
+		var operatorRule *networkingv1.NetworkPolicyIngressRule
+		for i := range desired.Policy.Spec.Ingress {
+			for j := range desired.Policy.Spec.Ingress[i].From {
+				peer := &desired.Policy.Spec.Ingress[i].From[j]
+				if peer.PodSelector == nil || peer.PodSelector.MatchLabels[evalHubOperatorPodControlPlaneLabel] != evalHubOperatorPodControlPlaneValue {
+					continue
+				}
+				operatorPeer = peer
+				operatorRule = &desired.Policy.Spec.Ingress[i]
+				break
+			}
+		}
+		if operatorPeer == nil {
+			t.Fatalf("applications namespace %q: no ingress rule authorizes the operator manager Pod", applicationsNamespace)
+		}
+		if operatorPeer.NamespaceSelector == nil {
+			t.Fatalf("operator peer = %#v, want a namespace and pod selector peer", operatorPeer)
+		}
+		assertEvalHubNetworkPolicyPort(t, *operatorRule, servicePort)
+
+		podSelector, err := metav1.LabelSelectorAsSelector(operatorPeer.PodSelector)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !podSelector.Matches(deployedOperatorPodLabels) {
+			t.Errorf("pod selector %q does not match deployed operator manager Pod labels %#v", podSelector, deployedOperatorPodLabels)
+		}
+		namespaceSelector, err := metav1.LabelSelectorAsSelector(operatorPeer.NamespaceSelector)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !namespaceSelector.Matches(labels.Set{"kubernetes.io/metadata.name": applicationsNamespace}) {
+			t.Errorf("namespace selector %q does not select the operator namespace %q", namespaceSelector, applicationsNamespace)
+		}
+		if namespaceSelector.Matches(labels.Set{"kubernetes.io/metadata.name": "default"}) {
+			t.Errorf("namespace selector %q unexpectedly matches an unrelated namespace", namespaceSelector)
+		}
 	}
 }
 
@@ -277,20 +359,32 @@ func TestReconcileEvalHubNetworkPolicyRepairsDriftAndDeletion(t *testing.T) {
 	if err := c.Get(ctx, key, actual); err != nil {
 		t.Fatalf("get repaired NetworkPolicy: %v", err)
 	}
-	if len(actual.Spec.Ingress) != 4 {
-		t.Errorf("repaired ingress rule count = %d, want 4", len(actual.Spec.Ingress))
+	if len(actual.Spec.Ingress) != 5 {
+		t.Errorf("repaired ingress rule count = %d, want 5", len(actual.Spec.Ingress))
 	}
 	var repairedDashboardPeer *networkingv1.NetworkPolicyPeer
+	var repairedOperatorPeer *networkingv1.NetworkPolicyPeer
 	for _, rule := range actual.Spec.Ingress {
 		for i := range rule.From {
-			if rule.From[i].NamespaceSelector != nil &&
-				rule.From[i].NamespaceSelector.MatchLabels[evalHubDashboardNamespaceNameLabel] == "redhat-ods-applications" {
-				repairedDashboardPeer = &rule.From[i]
+			peer := &rule.From[i]
+			if peer.NamespaceSelector == nil ||
+				peer.NamespaceSelector.MatchLabels[evalHubDashboardNamespaceNameLabel] != "redhat-ods-applications" ||
+				peer.PodSelector == nil {
+				continue
+			}
+			if equalNetworkPolicyLabels(peer.PodSelector.MatchLabels, evalHubDashboardUIPodLabels()) {
+				repairedDashboardPeer = peer
+			}
+			if equalNetworkPolicyLabels(peer.PodSelector.MatchLabels, evalHubOperatorPodLabels()) {
+				repairedOperatorPeer = peer
 			}
 		}
 	}
-	if repairedDashboardPeer == nil || repairedDashboardPeer.PodSelector == nil {
+	if repairedDashboardPeer == nil {
 		t.Errorf("repaired policy lost the Dashboard eval-hub-ui ingress peer: %#v", actual.Spec.Ingress)
+	}
+	if repairedOperatorPeer == nil {
+		t.Errorf("repaired policy lost the operator manager ingress peer: %#v", actual.Spec.Ingress)
 	}
 	if actual.Labels["test.example/unmanaged"] != "preserve" || actual.Annotations["test.example/unmanaged"] != "preserve" {
 		t.Errorf("unrelated metadata was not preserved: labels=%#v annotations=%#v", actual.Labels, actual.Annotations)

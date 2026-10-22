@@ -32,6 +32,14 @@ const (
 	evalHubDashboardDeploymentValue = "eval-hub-ui"
 	evalHubDashboardPartOfLabel     = "app.kubernetes.io/part-of"
 	evalHubDashboardPartOfValue     = "odh-dashboard"
+	// Stable pod identity of the trustyai-service-operator manager Pod, which
+	// runs the EvalHub failure reconcilers. The label is the Deployment's
+	// immutable spec.selector label (config/manager/manager.yaml, mirrored in
+	// trustyai-operator-module/config/manifests-template/manager/manager.yaml).
+	// Every kustomize overlay keeps it: the rhoai/odh overlays only add
+	// app.kubernetes.io/part-of: trustyai and app.opendatahub.io/trustyai.
+	evalHubOperatorPodControlPlaneLabel = "control-plane"
+	evalHubOperatorPodControlPlaneValue = "trustyai-service-operator"
 )
 
 func evalHubWorkloadNetworkPolicyIdentity(instance *evalhubv1.EvalHub, role string) (utils.NetworkPolicyIdentity, error) {
@@ -87,19 +95,35 @@ func evalHubDashboardUIPodLabels() map[string]string {
 	}
 }
 
+// evalHubOperatorPodLabels returns the stable pod identity of the operator's
+// own controller-manager Pod. That Pod runs the EvalHub failure reconcilers
+// (evalhub-evaluation-job-failure and the Kueue Workload failure reconciler),
+// which POST benchmark failure events to the EvalHub API because the
+// evaluation Job containers never reach EvalHub for an unschedulable Pod or a
+// failed init container. Without this ingress peer the operator-generated
+// policy silently drops those events and the job stays pending
+// (RHOAIENG-100960).
+func evalHubOperatorPodLabels() map[string]string {
+	return map[string]string{
+		evalHubOperatorPodControlPlaneLabel: evalHubOperatorPodControlPlaneValue,
+	}
+}
+
 // buildEvalHubNetworkPolicy builds the ingress-only policy for one EvalHub API
-// workload. The API Route, the Dashboard's eval-hub-ui proxy and evaluation-job
-// callbacks reach kube-rbac-proxy on servicePort; Prometheus scrapes the
-// unauthenticated metrics listener directly. applicationsNamespace is the ODH
-// applications namespace (opendatahub on ODH, redhat-ods-applications on RHOAI)
-// where the Dashboard deploys the eval-hub-ui module.
+// workload. The API Route, the Dashboard's eval-hub-ui proxy, the operator's
+// own failure reconcilers and evaluation-job callbacks reach kube-rbac-proxy on
+// servicePort; Prometheus scrapes the unauthenticated metrics listener
+// directly. applicationsNamespace is the applications namespace the operator
+// runs in (opendatahub on ODH, redhat-ods-applications on RHOAI), where the
+// Dashboard deploys the eval-hub-ui module and where the operator manager Pod
+// is the EvalHub failure-event client.
 func buildEvalHubNetworkPolicy(instance *evalhubv1.EvalHub, applicationsNamespace string) (utils.WorkloadNetworkPolicy, error) {
 	identity, err := evalHubNetworkPolicyIdentity(instance)
 	if err != nil {
 		return utils.WorkloadNetworkPolicy{}, err
 	}
 	if applicationsNamespace == "" {
-		return utils.WorkloadNetworkPolicy{}, fmt.Errorf("applications namespace is required to authorize the Dashboard eval-hub-ui ingress peer")
+		return utils.WorkloadNetworkPolicy{}, fmt.Errorf("applications namespace is required to authorize the Dashboard eval-hub-ui and operator manager Pod ingress peers")
 	}
 	identityLabels, err := identity.Labels()
 	if err != nil {
@@ -113,7 +137,7 @@ func buildEvalHubNetworkPolicy(instance *evalhubv1.EvalHub, applicationsNamespac
 	routerNamespaceSelector := metav1.LabelSelector{MatchLabels: map[string]string{
 		evalHubNetworkPolicyNamespaceGroupLabel: evalHubNetworkPolicyIngressGroup,
 	}}
-	dashboardNamespaceSelector := metav1.LabelSelector{MatchLabels: map[string]string{
+	applicationsNamespaceSelector := metav1.LabelSelector{MatchLabels: map[string]string{
 		evalHubDashboardNamespaceNameLabel: applicationsNamespace,
 	}}
 	jobLabels := evalHubEvaluationJobPodLabels(instance)
@@ -133,8 +157,22 @@ func buildEvalHubNetworkPolicy(instance *evalhubv1.EvalHub, applicationsNamespac
 		},
 		{
 			From: []networkingv1.NetworkPolicyPeer{{
-				NamespaceSelector: dashboardNamespaceSelector.DeepCopy(),
+				NamespaceSelector: applicationsNamespaceSelector.DeepCopy(),
 				PodSelector:       &metav1.LabelSelector{MatchLabels: evalHubDashboardUIPodLabels()},
+			}},
+			Ports: []networkingv1.NetworkPolicyPort{
+				evalHubNetworkPolicyTCPPort(servicePort),
+			},
+		},
+		{
+			// The operator manager Pod reports failures that the evaluation Job
+			// containers cannot (unschedulable Pod, failed init container). It
+			// runs in the applications namespace, which is the operator's own
+			// namespace in supported deployments and differs per distribution,
+			// so the peer is selected by name at reconcile time.
+			From: []networkingv1.NetworkPolicyPeer{{
+				NamespaceSelector: applicationsNamespaceSelector.DeepCopy(),
+				PodSelector:       &metav1.LabelSelector{MatchLabels: evalHubOperatorPodLabels()},
 			}},
 			Ports: []networkingv1.NetworkPolicyPort{
 				evalHubNetworkPolicyTCPPort(servicePort),
