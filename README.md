@@ -69,6 +69,8 @@ access requires permission to list `evaluations` in the
 ## Usage
 For usage information, please see the [OpenDataHub documentation of TrustyAI](https://opendatahub.io/docs/monitoring-data-science-models/#configuring-trustyai_monitor).
 
+For database-backed deployments, see the [TrustyAI Service database tuning guide](docs/database-tuning.md) for ConfigMap-based tuning options.
+
 ## Contributing
 
 Please see the [CONTRIBUTING.md](./CONTRIBUTING.md) file for more details on how to contribute to this project.

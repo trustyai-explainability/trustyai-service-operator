@@ -37,6 +37,9 @@ spec:
         prometheus.io/path: /q/metrics
         prometheus.io/scheme: http
         prometheus.io/scrape: 'true'
+        {{ if .DatabaseTuningHash }}
+        trustyai.opendatahub.io/database-tuning-hash: "{{ .DatabaseTuningHash }}"
+        {{ end }}
     spec:
       serviceAccountName: {{ .Instance.Name }}-proxy
       containers:
@@ -122,6 +125,11 @@ spec:
             - name: STORAGE_MIGRATION_CONFIG_FROM_FILENAME
               value: {{ .Instance.Spec.Data.Filename }}
             {{ end }}
+          {{ if and (eq .Instance.Spec.Storage.Format "DATABASE") .Instance.Spec.DatabaseTuning }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Instance.Spec.DatabaseTuning }}
+          {{ end }}
           readinessProbe:
             httpGet:
               path: /q/health/ready

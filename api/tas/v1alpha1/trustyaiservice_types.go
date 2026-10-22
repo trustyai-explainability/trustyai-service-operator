@@ -57,6 +57,10 @@ type TrustyAIServiceSpec struct {
 	// +optional
 	Replicas *int32      `json:"replicas"`
 	Storage  StorageSpec `json:"storage"`
+	// DatabaseTuning references a ConfigMap containing nonsecret database tuning environment variables.
+	// It is only supported when Storage.Format is DATABASE.
+	// +optional
+	DatabaseTuning string    `json:"databaseTuning,omitempty"`
 	Data     DataSpec    `json:"data,omitempty"`
 	Metrics  MetricsSpec `json:"metrics"`
 }
@@ -95,6 +99,11 @@ func init() {
 // IsDatabaseConfigurationsSet returns true if the DatabaseConfigurations field is set.
 func (s *StorageSpec) IsDatabaseConfigurationsSet() bool {
 	return s.DatabaseConfigurations != ""
+}
+
+// IsDatabaseTuningSet returns true if the database tuning ConfigMap is set.
+func (s *TrustyAIServiceSpec) IsDatabaseTuningSet() bool {
+	return s.DatabaseTuning != ""
 }
 
 // IsStoragePVC returns true if the storage is set to PVC.

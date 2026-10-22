@@ -47,6 +47,7 @@ type DeploymentConfig struct {
 	BatchSize                int
 	UseDBTLSCerts            bool
 	ProxyTLSArgs             []string
+	DatabaseTuningHash       string
 }
 
 // createDeploymentObject returns a Deployment for the TrustyAI Service instance
@@ -78,6 +79,13 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		Version:                  constants.Version,
 		BatchSize:                batchSize,
 		ProxyTLSArgs:             pkgtls.CurrentProxyTLSArguments().Args,
+	}
+	if instance.Spec.IsDatabaseTuningSet() {
+		configMap, err := r.getDatabaseTuningConfigMap(ctx, instance)
+		if err != nil {
+			return nil, err
+		}
+		deploymentConfig.DatabaseTuningHash = databaseTuningConfigMapHash(configMap)
 	}
 
 	if instance.Spec.Storage.IsStorageDatabase() {
@@ -245,6 +253,15 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 	}
 
 	// Deployment is ready and using the PVC
+	if instance.Spec.IsDatabaseTuningSet() || deploymentHasDatabaseTuning(deploy) {
+		desired, err := r.createDeploymentObject(ctx, instance, image, caBundle)
+		if err != nil {
+			return err
+		}
+		if databaseTuningDeploymentChanged(deploy, desired) {
+			return r.updateDeployment(ctx, instance, image, caBundle)
+		}
+	}
 	return nil
 }
 

@@ -31,10 +31,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 var ErrPVCNotReady = goerrors.New("PVC is not ready")
@@ -144,6 +146,10 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			return Requeue()
 		}
 		return DoNotRequeue()
+	}
+
+	if err := r.validateAndSetDatabaseTuningStatus(ctx, instance); err != nil {
+		return RequeueWithErrorMessage(ctx, err, "Invalid storage.databaseTuning configuration.")
 	}
 
 	err = r.createServiceAccount(ctx, instance)
@@ -315,5 +321,25 @@ func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&trustyaiopendatahubiov1.TrustyAIService{}).
 		Owns(&appsv1.Deployment{}).
 		Watches(&kservev1beta1.InferenceService{}, &handler.EnqueueRequestForObject{}).
+		Watches(
+			&v1.ConfigMap{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
+				var instances trustyaiopendatahubiov1.TrustyAIServiceList
+				if err := r.List(ctx, &instances, client.InNamespace(obj.GetNamespace())); err != nil {
+					log.FromContext(ctx).Error(err, "Failed to list TrustyAIService resources for database tuning ConfigMap", "configMap", obj.GetName())
+					return nil
+				}
+				requests := make([]ctrl.Request, 0, len(instances.Items))
+				for i := range instances.Items {
+					instance := &instances.Items[i]
+					if instance.Spec.DatabaseTuning == obj.GetName() {
+						requests = append(requests, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(instance)})
+					}
+				}
+				return requests
+			}),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+			builder.OnlyMetadata,
+		).
 		Complete(r)
 }
