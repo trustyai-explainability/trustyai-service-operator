@@ -13,6 +13,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+var supportedDatabaseTuningKeys = map[string]struct{}{
+	"DATABASE_POOL_SIZE":              {},
+	"DATABASE_MAX_OVERFLOW":           {},
+	"DATABASE_POOL_TIMEOUT":           {},
+	"DATABASE_POOL_RECYCLE":           {},
+	"DATABASE_MAX_CONNECTIONS_BUDGET": {},
+	"DATABASE_APPLICATION_NAME":       {},
+	"DATABASE_STATEMENT_TIMEOUT_MS":   {},
+	"DATABASE_SYNCHRONOUS_COMMIT":     {},
+	"DATABASE_SQLITE_JOURNAL_MODE":    {},
+	"DATABASE_SQLITE_SYNCHRONOUS":     {},
+	"DATABASE_SQLITE_BUSY_TIMEOUT_MS": {},
+	"DATABASE_SQLITE_CACHE_SIZE_KB":   {},
+}
+
 func (r *TrustyAIServiceReconciler) getDatabaseTuningConfigMap(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) (*corev1.ConfigMap, error) {
 	if !instance.Spec.Storage.IsDatabaseTuningSet() {
 		return nil, nil
@@ -29,7 +44,22 @@ func (r *TrustyAIServiceReconciler) getDatabaseTuningConfigMap(ctx context.Conte
 		}
 		return nil, fmt.Errorf("reading ConfigMap %q referenced by storage.databaseTuning: %w", name, err)
 	}
+	if err := validateDatabaseTuningConfigMap(configMap); err != nil {
+		return nil, err
+	}
 	return configMap, nil
+}
+
+func validateDatabaseTuningConfigMap(configMap *corev1.ConfigMap) error {
+	if len(configMap.BinaryData) > 0 {
+		return fmt.Errorf("ConfigMap %q uses binaryData, which is not supported for database tuning; use data with supported tuning keys", configMap.Name)
+	}
+	for key := range configMap.Data {
+		if _, supported := supportedDatabaseTuningKeys[key]; !supported {
+			return fmt.Errorf("ConfigMap %q contains unsupported database tuning key %q", configMap.Name, key)
+		}
+	}
+	return nil
 }
 
 func deploymentHasDatabaseTuning(deployment *appsv1.Deployment) bool {
@@ -66,7 +96,7 @@ func serviceContainer(deployment *appsv1.Deployment) *corev1.Container {
 func (r *TrustyAIServiceReconciler) validateAndSetDatabaseTuningStatus(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) error {
 	_, validationErr := r.getDatabaseTuningConfigMap(ctx, instance)
 	if validationErr != nil {
-		statusErr := r.setDatabaseTuningCondition(ctx, instance, metav1.ConditionFalse, "InvalidReference", validationErr.Error(), true)
+		statusErr := r.setDatabaseTuningCondition(ctx, instance, metav1.ConditionFalse, "InvalidConfiguration", validationErr.Error(), true)
 		if statusErr != nil {
 			return fmt.Errorf("database tuning configuration is invalid: %v; updating status failed: %w", validationErr, statusErr)
 		}

@@ -63,6 +63,8 @@ spec:
     format: DATABASE
     databaseConfigurations: trustyai-db-credentials
     databaseTuning: trustyai-db-tuning
+  metrics:
+    schedule: "5s"
 ```
 
 The referenced Secret must continue to provide `databaseKind`,

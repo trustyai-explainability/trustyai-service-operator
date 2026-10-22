@@ -131,8 +131,31 @@ var _ = Describe("TrustyAI database tuning ConfigMap", func() {
 		condition := databaseTuningCondition(saved)
 		Expect(condition).NotTo(BeNil())
 		Expect(condition.Status).To(Equal(metav1.ConditionFalse))
-		Expect(condition.Reason).To(Equal("InvalidReference"))
+		Expect(condition.Reason).To(Equal("InvalidConfiguration"))
 		Expect(condition.Message).To(ContainSubstring("missing-db-tuning"))
+		Expect(saved.Status.Ready).To(Equal(corev1.ConditionFalse))
+	})
+
+	It("reports unsupported ConfigMap keys in status", func() {
+		instance := createDefaultDBCustomResource("database-tuning-unsupported-key")
+		instance.Spec.Storage.DatabaseTuning = "db-tuning"
+		Expect(k8sClient.Create(ctx, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "db-tuning", Namespace: instance.Namespace},
+			Data:       map[string]string{"DATABASE_PASSWORD": "should-remain-secret-backed"},
+		})).To(Succeed())
+		Expect(k8sClient.Create(ctx, instance)).To(Succeed())
+
+		err := reconciler.validateAndSetDatabaseTuningStatus(ctx, instance)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("DATABASE_PASSWORD"))
+
+		saved := &trustyaiopendatahubiov1.TrustyAIService{}
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(instance), saved)).To(Succeed())
+		condition := databaseTuningCondition(saved)
+		Expect(condition).NotTo(BeNil())
+		Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+		Expect(condition.Reason).To(Equal("InvalidConfiguration"))
+		Expect(condition.Message).To(ContainSubstring("DATABASE_PASSWORD"))
 		Expect(saved.Status.Ready).To(Equal(corev1.ConditionFalse))
 	})
 
@@ -143,6 +166,43 @@ var _ = Describe("TrustyAI database tuning ConfigMap", func() {
 		_, err := reconciler.getDatabaseTuningConfigMap(ctx, instance)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("only when storage.format is DATABASE"))
+	})
+
+	It("accepts documented tuning keys and rejects unrelated environment variables", func() {
+		for key := range supportedDatabaseTuningKeys {
+			configMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "db-tuning"},
+				Data:       map[string]string{key: "value"},
+			}
+			Expect(validateDatabaseTuningConfigMap(configMap)).To(Succeed(), key)
+		}
+
+		for _, key := range []string{
+			"DATABASE_ALLOW_INSECURE_TLS",
+			"DATABASE_TLS_CA_CERT",
+			"DATABASE_ATTEMPT_MIGRATION",
+			"STORAGE_DATABASE_PATH",
+			"UNSUPPORTED_CUSTOM_SETTING",
+		} {
+			configMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "db-tuning"},
+				Data:       map[string]string{key: "value"},
+			}
+			err := validateDatabaseTuningConfigMap(configMap)
+			Expect(err).To(HaveOccurred(), key)
+			Expect(err.Error()).To(ContainSubstring(key))
+		}
+	})
+
+	It("rejects binary ConfigMap data for database tuning", func() {
+		configMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "db-tuning"},
+			BinaryData: map[string][]byte{"DATABASE_POOL_SIZE": []byte("5")},
+		}
+
+		err := validateDatabaseTuningConfigMap(configMap)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("binaryData"))
 	})
 })
 
