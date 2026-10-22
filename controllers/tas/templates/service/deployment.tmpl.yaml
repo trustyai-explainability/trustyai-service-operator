@@ -37,9 +37,6 @@ spec:
         prometheus.io/path: /q/metrics
         prometheus.io/scheme: http
         prometheus.io/scrape: 'true'
-        {{ if .DatabaseTuningHash }}
-        trustyai.opendatahub.io/database-tuning-hash: "{{ .DatabaseTuningHash }}"
-        {{ end }}
     spec:
       serviceAccountName: {{ .Instance.Name }}-proxy
       containers:

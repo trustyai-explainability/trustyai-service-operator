@@ -2,8 +2,13 @@
 
 For `storage.format: DATABASE`, use `storage.databaseTuning` to import nonsecret
 database tuning values from a ConfigMap. The ConfigMap must be in the same
-namespace as the `TrustyAIService`. The operator hashes its data into the pod
-template, so changing a value rolls out pods with the updated environment.
+namespace as the `TrustyAIService`. ConfigMap values are read when a pod starts;
+after updating the ConfigMap, manually restart the TrustyAI Service Deployment
+to load the new values. Restarting the operator is not necessary. For example:
+
+```sh
+oc rollout restart deployment/trustyai-service -n my-namespace
+```
 
 The tuning variables below are supported by the TrustyAI Service storage
 implementation introduced in [trustyai-service PR #334](https://github.com/trustyai-explainability/trustyai-service/pull/334):
@@ -62,6 +67,6 @@ spec:
 
 The referenced Secret must continue to provide `databaseKind`,
 `databaseUsername`, `databasePassword`, `databaseService`, `databasePort`, and
-`databaseName`. Do not put credentials, connection details, or TLS material in
-the tuning ConfigMap. The operator rejects ConfigMap keys that would override
-the existing Secret-backed database connection environment variables.
+`databaseName`. Keep credentials, database connection details, and TLS material
+in their existing Secret-backed configuration; use the tuning ConfigMap only
+for nonsecret tuning values.

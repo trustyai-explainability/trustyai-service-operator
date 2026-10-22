@@ -39,10 +39,6 @@ type StorageSpec struct {
 	Folder                 string `json:"folder,omitempty"`
 	Size                   string `json:"size,omitempty"`
 	DatabaseConfigurations string `json:"databaseConfigurations,omitempty"`
-	// DatabaseTuning references a ConfigMap containing nonsecret database tuning environment variables.
-	// It is only supported when Format is DATABASE.
-	// +optional
-	DatabaseTuning string `json:"databaseTuning,omitempty"`
 }
 
 type DataSpec struct {
@@ -99,11 +95,6 @@ func init() {
 // IsDatabaseConfigurationsSet returns true if the DatabaseConfigurations field is set.
 func (s *StorageSpec) IsDatabaseConfigurationsSet() bool {
 	return s.DatabaseConfigurations != ""
-}
-
-// IsDatabaseTuningSet returns true if the DatabaseTuning field is set.
-func (s *StorageSpec) IsDatabaseTuningSet() bool {
-	return s.DatabaseTuning != ""
 }
 
 // IsStoragePVC returns true if the storage is set to PVC.

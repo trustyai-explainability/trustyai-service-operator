@@ -2,9 +2,6 @@ package tas
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"reflect"
 
@@ -13,31 +10,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-const databaseTuningHashAnnotation = "trustyai.opendatahub.io/database-tuning-hash"
-
-var databaseConnectionEnvironmentVariables = map[string]struct{}{
-	"DATABASE_SERVICE":                     {},
-	"DATABASE_PORT":                        {},
-	"DATABASE_NAME":                        {},
-	"DATABASE_HOST":                        {},
-	"DATABASE_USER":                        {},
-	"DATABASE_USERNAME":                    {},
-	"DATABASE_PASSWORD":                    {},
-	"DATABASE_DATABASE":                    {},
-	"DATABASE_KIND":                        {},
-	"DATABASE_URL":                         {},
-	"QUARKUS_DATASOURCE_DB_KIND":           {},
-	"QUARKUS_DATASOURCE_JDBC_URL":          {},
-	"QUARKUS_DATASOURCE_JDBC_MAX_SIZE":     {},
-	"QUARKUS_DATASOURCE_USERNAME":          {},
-	"QUARKUS_DATASOURCE_PASSWORD":          {},
-	"QUARKUS_DATASOURCE_GENERATION":        {},
-	"QUARKUS_DATASOURCE_JDBC_INITIAL_SIZE": {},
-}
 
 func (r *TrustyAIServiceReconciler) getDatabaseTuningConfigMap(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) (*corev1.ConfigMap, error) {
 	if !instance.Spec.Storage.IsDatabaseTuningSet() {
@@ -55,46 +29,15 @@ func (r *TrustyAIServiceReconciler) getDatabaseTuningConfigMap(ctx context.Conte
 		}
 		return nil, fmt.Errorf("reading ConfigMap %q referenced by storage.databaseTuning: %w", name, err)
 	}
-	if len(configMap.BinaryData) > 0 {
-		return nil, fmt.Errorf("ConfigMap %q referenced by storage.databaseTuning must use text data entries; binaryData cannot be imported as environment variables", name)
-	}
-	if len(configMap.Data) == 0 {
-		return nil, fmt.Errorf("ConfigMap %q referenced by storage.databaseTuning has no data entries to import as environment variables", name)
-	}
-	for key := range configMap.Data {
-		if problems := validation.IsEnvVarName(key); len(problems) > 0 {
-			return nil, fmt.Errorf("ConfigMap %q key %q cannot be imported as an environment variable: %s", name, key, problems[0])
-		}
-		if _, forbidden := databaseConnectionEnvironmentVariables[key]; forbidden {
-			return nil, fmt.Errorf("ConfigMap %q key %q configures database connection or credentials; keep connection settings and secrets in storage.databaseConfigurations", name, key)
-		}
-	}
 	return configMap, nil
 }
 
-func databaseTuningConfigMapHash(configMap *corev1.ConfigMap) string {
-	if configMap == nil {
-		return ""
-	}
-	data, err := json.Marshal(configMap.Data)
-	if err != nil {
-		// A map[string]string is always JSON serializable. Keep the helper total in
-		// case its input type changes, while avoiding a rollout from an empty hash.
-		return ""
-	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
-
 func deploymentHasDatabaseTuning(deployment *appsv1.Deployment) bool {
-	if deployment.Spec.Template.Annotations[databaseTuningHashAnnotation] != "" {
-		return true
-	}
-	serviceContainer := serviceContainer(deployment)
-	if serviceContainer == nil {
+	container := serviceContainer(deployment)
+	if container == nil {
 		return false
 	}
-	for _, source := range serviceContainer.EnvFrom {
+	for _, source := range container.EnvFrom {
 		if source.ConfigMapRef != nil {
 			return true
 		}
@@ -103,9 +46,6 @@ func deploymentHasDatabaseTuning(deployment *appsv1.Deployment) bool {
 }
 
 func databaseTuningDeploymentChanged(current, desired *appsv1.Deployment) bool {
-	if current.Spec.Template.Annotations[databaseTuningHashAnnotation] != desired.Spec.Template.Annotations[databaseTuningHashAnnotation] {
-		return true
-	}
 	currentContainer := serviceContainer(current)
 	desiredContainer := serviceContainer(desired)
 	if currentContainer == nil || desiredContainer == nil {
@@ -134,7 +74,7 @@ func (r *TrustyAIServiceReconciler) validateAndSetDatabaseTuningStatus(ctx conte
 	}
 
 	if instance.Spec.Storage.IsDatabaseTuningSet() {
-		return r.setDatabaseTuningCondition(ctx, instance, metav1.ConditionTrue, "ConfigMapAvailable", fmt.Sprintf("ConfigMap %q is available and can be imported as environment variables", instance.Spec.Storage.DatabaseTuning), false)
+		return r.setDatabaseTuningCondition(ctx, instance, metav1.ConditionTrue, "ConfigMapAvailable", fmt.Sprintf("ConfigMap %q is available for database tuning", instance.Spec.Storage.DatabaseTuning), false)
 	}
 	// Clear a previous failure if the optional reference was removed.
 	return r.setDatabaseTuningCondition(ctx, instance, metav1.ConditionTrue, "NotConfigured", "No database tuning ConfigMap is configured", false)

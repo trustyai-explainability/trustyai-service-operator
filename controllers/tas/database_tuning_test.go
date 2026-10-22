@@ -2,7 +2,6 @@ package tas
 
 import (
 	"context"
-	"strings"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -10,6 +9,7 @@ import (
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -56,9 +56,26 @@ var _ = Describe("TrustyAI database tuning ConfigMap", func() {
 		created := &trustyaiopendatahubiov1.TrustyAIService{}
 		Expect(apiClient.Get(ctx, client.ObjectKeyFromObject(instance), created)).To(Succeed())
 		Expect(created.Spec.Storage.DatabaseTuning).To(Equal("db-tuning"))
+
+		crd := &apiextensionsv1.CustomResourceDefinition{}
+		Expect(apiClient.Get(ctx, client.ObjectKey{Name: "trustyaiservices.trustyai.opendatahub.io"}, crd)).To(Succeed())
+		v1HasDatabaseTuning := false
+		v1alpha1HasDatabaseTuning := false
+		for _, version := range crd.Spec.Versions {
+			storageSchema := version.Schema.OpenAPIV3Schema.Properties["spec"].Properties["storage"]
+			_, hasDatabaseTuning := storageSchema.Properties["databaseTuning"]
+			switch version.Name {
+			case "v1":
+				v1HasDatabaseTuning = hasDatabaseTuning
+			case "v1alpha1":
+				v1alpha1HasDatabaseTuning = hasDatabaseTuning
+			}
+		}
+		Expect(v1HasDatabaseTuning).To(BeTrue())
+		Expect(v1alpha1HasDatabaseTuning).To(BeFalse())
 	})
 
-	It("imports the ConfigMap and rolls out updated values while preserving Secret-backed credentials", func() {
+	It("imports the ConfigMap and leaves updated values for a manual rollout", func() {
 		instance := createDefaultDBCustomResource("database-tuning-rollout")
 		instance.Spec.Storage.DatabaseTuning = "db-tuning"
 		Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
@@ -81,17 +98,22 @@ var _ = Describe("TrustyAI database tuning ConfigMap", func() {
 		Expect(password).NotTo(BeNil())
 		Expect(password.ValueFrom.SecretKeyRef.Name).To(Equal(defaultDatabaseConfigurationName))
 		Expect(password.ValueFrom.SecretKeyRef.Key).To(Equal("databasePassword"))
-		oldHash := deployment.Spec.Template.Annotations[databaseTuningHashAnnotation]
-		Expect(oldHash).NotTo(BeEmpty())
+		originalTemplate := deployment.Spec.Template.DeepCopy()
 
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(configMap), configMap)).To(Succeed())
 		configMap.Data["DATABASE_POOL_SIZE"] = "9"
 		Expect(k8sClient.Update(ctx, configMap)).To(Succeed())
 		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
 		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
-		newHash := deployment.Spec.Template.Annotations[databaseTuningHashAnnotation]
-		Expect(newHash).NotTo(BeEmpty())
-		Expect(newHash).NotTo(Equal(oldHash))
+		Expect(deployment.Spec.Template).To(Equal(*originalTemplate))
+
+		// A manual rollout annotation is left intact by subsequent reconciliation.
+		const restartedAt = "2026-10-22T12:00:00Z"
+		deployment.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"] = restartedAt
+		Expect(k8sClient.Update(ctx, deployment)).To(Succeed())
+		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		Expect(deployment.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"]).To(Equal(restartedAt))
 	})
 
 	It("reports a missing ConfigMap in status and returns a useful error", func() {
@@ -114,24 +136,13 @@ var _ = Describe("TrustyAI database tuning ConfigMap", func() {
 		Expect(saved.Status.Ready).To(Equal(corev1.ConditionFalse))
 	})
 
-	It("rejects ConfigMaps that would override database credentials or contain unusable keys", func() {
+	It("only allows database tuning ConfigMaps for DATABASE storage", func() {
 		instance := createDefaultDBCustomResource("database-tuning-invalid")
-		instance.Spec.Storage.DatabaseTuning = "bad-db-tuning"
-		configMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Name: instance.Spec.Storage.DatabaseTuning, Namespace: instance.Namespace},
-			Data:       map[string]string{"QUARKUS_DATASOURCE_PASSWORD": "plain-text", "DATABASE_POOL_SIZE": "5"},
-		}
-		Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
-
+		instance.Spec.Storage.DatabaseTuning = "db-tuning"
+		instance.Spec.Storage.Format = "PVC"
 		_, err := reconciler.getDatabaseTuningConfigMap(ctx, instance)
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("keep connection settings and secrets in storage.databaseConfigurations"))
-
-		configMap.Data = map[string]string{"DATABASE=POOL": "5"}
-		Expect(k8sClient.Update(ctx, configMap)).To(Succeed())
-		_, err = reconciler.getDatabaseTuningConfigMap(ctx, instance)
-		Expect(err).To(HaveOccurred())
-		Expect(strings.ToLower(err.Error())).To(ContainSubstring("cannot be imported as an environment variable"))
+		Expect(err.Error()).To(ContainSubstring("only when storage.format is DATABASE"))
 	})
 })
 
