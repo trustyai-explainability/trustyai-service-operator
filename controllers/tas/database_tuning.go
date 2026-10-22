@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
+	"strings"
 
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -55,12 +57,54 @@ func validateDatabaseTuningConfigMap(configMap *corev1.ConfigMap) error {
 	if len(configMap.BinaryData) > 0 {
 		return fmt.Errorf("ConfigMap %q uses binaryData, which is not supported for database tuning; use data with supported tuning keys", configMap.Name)
 	}
+	keys := make([]string, 0, len(configMap.Data))
 	for key := range configMap.Data {
 		if _, supported := supportedDatabaseTuningKeys[key]; !supported {
 			return fmt.Errorf("ConfigMap %q contains unsupported database tuning key %q", configMap.Name, key)
 		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if err := validateDatabaseTuningValue(key, configMap.Data[key]); err != nil {
+			return fmt.Errorf("ConfigMap %q has an invalid value for %q: %w", configMap.Name, key, err)
+		}
 	}
 	return nil
+}
+
+// validateDatabaseTuningValue checks the basic shape of a tuning value. It does not
+// check ranges or cross-key constraints; the TrustyAI Service validates those at startup.
+func validateDatabaseTuningValue(key, value string) error {
+	switch key {
+	case "DATABASE_POOL_SIZE", "DATABASE_MAX_OVERFLOW", "DATABASE_POOL_TIMEOUT", "DATABASE_POOL_RECYCLE",
+		"DATABASE_MAX_CONNECTIONS_BUDGET", "DATABASE_STATEMENT_TIMEOUT_MS",
+		"DATABASE_SQLITE_BUSY_TIMEOUT_MS", "DATABASE_SQLITE_CACHE_SIZE_KB":
+		number, err := strconv.Atoi(value)
+		if err != nil || number < 0 {
+			return fmt.Errorf("expected a non-negative integer, got %q", value)
+		}
+	case "DATABASE_APPLICATION_NAME":
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("expected a non-empty application name")
+		}
+	case "DATABASE_SYNCHRONOUS_COMMIT":
+		return validateDatabaseTuningEnum(value, "on", "off", "local", "remote_write", "remote_apply")
+	case "DATABASE_SQLITE_JOURNAL_MODE":
+		return validateDatabaseTuningEnum(value, "DELETE", "TRUNCATE", "PERSIST", "MEMORY", "WAL", "OFF")
+	case "DATABASE_SQLITE_SYNCHRONOUS":
+		return validateDatabaseTuningEnum(value, "OFF", "NORMAL", "FULL", "EXTRA")
+	}
+	return nil
+}
+
+func validateDatabaseTuningEnum(value string, allowed ...string) error {
+	for _, option := range allowed {
+		if strings.EqualFold(value, option) {
+			return nil
+		}
+	}
+	return fmt.Errorf("expected one of %s, got %q", strings.Join(allowed, ", "), value)
 }
 
 func databaseTuningConfigMapEnvVars(configMapName string) []corev1.EnvVar {
@@ -148,9 +192,11 @@ func (r *TrustyAIServiceReconciler) validateAndSetDatabaseTuningStatus(ctx conte
 func (r *TrustyAIServiceReconciler) setDatabaseTuningCondition(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, status metav1.ConditionStatus, reason, message string, markUnavailable bool) error {
 	conditionExists := false
 	conditionMatches := false
+	wasUnavailable := false
 	for _, condition := range instance.Status.Conditions {
 		if condition.Type == ConditionTypeDatabaseTuningAvailable {
 			conditionExists = true
+			wasUnavailable = condition.Status == metav1.ConditionFalse
 			conditionMatches = condition.Status == status && condition.Reason == reason && condition.Message == message && condition.ObservedGeneration == instance.Generation
 			break
 		}
@@ -170,6 +216,13 @@ func (r *TrustyAIServiceReconciler) setDatabaseTuningCondition(ctx context.Conte
 			saved.SetStatus(ConditionTypeReady, "DatabaseTuningInvalid", "Database tuning ConfigMap is missing or invalid", corev1.ConditionFalse)
 			saved.SetStatus(ConditionTypeProvisioningSucceeded, "ProvisioningFailed", "Service provisioning cannot continue because database tuning configuration is invalid", corev1.ConditionFalse)
 			saved.SetStatus(ConditionTypeDegraded, "InvalidDatabaseTuning", "Database tuning ConfigMap is missing or invalid", corev1.ConditionTrue)
+		} else if wasUnavailable {
+			// Clear the failure set above; Ready is set back to true by the regular status update once reconcile completes.
+			saved.Status.Phase = PhaseNotReady
+			saved.Status.Ready = corev1.ConditionFalse
+			saved.SetStatus(ConditionTypeReady, "ProvisioningInProgress", "Service provisioning in progress", corev1.ConditionFalse)
+			saved.SetStatus(ConditionTypeProvisioningSucceeded, "ProvisioningInProgress", "Service provisioning in progress", corev1.ConditionFalse)
+			saved.SetStatus(ConditionTypeDegraded, "FullyFunctional", "All components are fully functional", corev1.ConditionFalse)
 		}
 	})
 	return err

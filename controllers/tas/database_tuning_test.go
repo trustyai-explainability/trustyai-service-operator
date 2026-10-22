@@ -166,6 +166,61 @@ var _ = Describe("TrustyAI database tuning ConfigMap", func() {
 		Expect(saved.Status.Ready).To(Equal(corev1.ConditionFalse))
 	})
 
+	It("clears Degraded and ProvisioningSucceeded failures after the ConfigMap is fixed", func() {
+		instance := createDefaultDBCustomResource("database-tuning-recovery")
+		instance.Spec.Storage.DatabaseTuning = "recovering-db-tuning"
+		Expect(k8sClient.Create(ctx, instance)).To(Succeed())
+
+		Expect(reconciler.validateAndSetDatabaseTuningStatus(ctx, instance)).To(HaveOccurred())
+		saved := &trustyaiopendatahubiov1.TrustyAIService{}
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(instance), saved)).To(Succeed())
+		Expect(saved.Status.Ready).To(Equal(corev1.ConditionFalse))
+		Expect(conditionStatus(saved, ConditionTypeDegraded)).To(Equal(metav1.ConditionTrue))
+		Expect(conditionStatus(saved, ConditionTypeProvisioningSucceeded)).To(Equal(metav1.ConditionFalse))
+
+		Expect(k8sClient.Create(ctx, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "recovering-db-tuning", Namespace: instance.Namespace},
+			Data:       map[string]string{"DATABASE_POOL_SIZE": "5"},
+		})).To(Succeed())
+
+		// Reconcile re-reads the instance, so the recovery check must see the persisted failure conditions.
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(instance), instance)).To(Succeed())
+		Expect(reconciler.validateAndSetDatabaseTuningStatus(ctx, instance)).To(Succeed())
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(instance), saved)).To(Succeed())
+		condition := databaseTuningCondition(saved)
+		Expect(condition).NotTo(BeNil())
+		Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+		Expect(conditionStatus(saved, ConditionTypeDegraded)).To(Equal(metav1.ConditionFalse))
+		Expect(conditionStatus(saved, ConditionTypeProvisioningSucceeded)).To(Equal(metav1.ConditionFalse))
+		Expect(saved.Status.Ready).To(Equal(corev1.ConditionFalse))
+	})
+
+	DescribeTable("validates database tuning values",
+		func(key, value string, valid bool) {
+			err := validateDatabaseTuningConfigMap(&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "db-tuning"},
+				Data:       map[string]string{key: value},
+			})
+			if valid {
+				Expect(err).NotTo(HaveOccurred())
+			} else {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(key))
+			}
+		},
+		Entry("accepts a positive integer", "DATABASE_POOL_SIZE", "5", true),
+		Entry("accepts zero for overflow", "DATABASE_MAX_OVERFLOW", "0", true),
+		Entry("rejects a non-numeric pool size", "DATABASE_POOL_SIZE", "five", false),
+		Entry("rejects a negative timeout", "DATABASE_POOL_TIMEOUT", "-1", false),
+		Entry("rejects a fractional statement timeout", "DATABASE_STATEMENT_TIMEOUT_MS", "1.5", false),
+		Entry("rejects an empty application name", "DATABASE_APPLICATION_NAME", "  ", false),
+		Entry("accepts a PostgreSQL synchronous commit mode", "DATABASE_SYNCHRONOUS_COMMIT", "remote_apply", true),
+		Entry("rejects an unknown synchronous commit mode", "DATABASE_SYNCHRONOUS_COMMIT", "sometimes", false),
+		Entry("accepts an SQLite journal mode case-insensitively", "DATABASE_SQLITE_JOURNAL_MODE", "wal", true),
+		Entry("rejects an unknown SQLite journal mode", "DATABASE_SQLITE_JOURNAL_MODE", "FAST", false),
+		Entry("rejects an unknown SQLite synchronous mode", "DATABASE_SQLITE_SYNCHRONOUS", "MAYBE", false),
+	)
+
 	It("only allows database tuning ConfigMaps for DATABASE storage", func() {
 		instance := createDefaultDBCustomResource("database-tuning-invalid")
 		instance.Spec.Storage.DatabaseTuning = "db-tuning"
@@ -176,10 +231,20 @@ var _ = Describe("TrustyAI database tuning ConfigMap", func() {
 	})
 
 	It("accepts documented tuning keys and rejects unrelated environment variables", func() {
+		sampleValues := map[string]string{
+			"DATABASE_APPLICATION_NAME":    "trustyai-service",
+			"DATABASE_SYNCHRONOUS_COMMIT":  "on",
+			"DATABASE_SQLITE_JOURNAL_MODE": "WAL",
+			"DATABASE_SQLITE_SYNCHRONOUS":  "NORMAL",
+		}
 		for key := range supportedDatabaseTuningKeys {
+			value, ok := sampleValues[key]
+			if !ok {
+				value = "1"
+			}
 			configMap := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{Name: "db-tuning"},
-				Data:       map[string]string{key: "value"},
+				Data:       map[string]string{key: value},
 			}
 			Expect(validateDatabaseTuningConfigMap(configMap)).To(Succeed(), key)
 		}
@@ -229,4 +294,13 @@ func databaseTuningCondition(instance *trustyaiopendatahubiov1.TrustyAIService) 
 		}
 	}
 	return nil
+}
+
+func conditionStatus(instance *trustyaiopendatahubiov1.TrustyAIService, conditionType string) metav1.ConditionStatus {
+	for _, condition := range instance.Status.Conditions {
+		if condition.Type == conditionType {
+			return condition.Status
+		}
+	}
+	return ""
 }

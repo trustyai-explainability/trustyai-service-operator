@@ -28,6 +28,12 @@ implementation introduced in [trustyai-service PR #334](https://github.com/trust
 | `DATABASE_SQLITE_BUSY_TIMEOUT_MS` | SQLite lock wait timeout in milliseconds. |
 | `DATABASE_SQLITE_CACHE_SIZE_KB` | SQLite page cache size in KiB. |
 
+The operator checks each value before the Deployment is updated. Numeric
+variables must be non-negative integers, `DATABASE_APPLICATION_NAME` must not be
+empty, and the mode variables must be one of the listed values. An invalid value
+sets the `DatabaseTuningAvailable` condition to `False` with reason
+`InvalidConfiguration`.
+
 Create a ConfigMap with the tuning values. Values are strings, so quote numeric
 and boolean-looking values:
 
