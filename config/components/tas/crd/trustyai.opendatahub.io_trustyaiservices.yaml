@@ -64,6 +64,11 @@ spec:
                 properties:
                   databaseConfigurations:
                     type: string
+                  databaseTuning:
+                    description: |-
+                      DatabaseTuning references a ConfigMap containing nonsecret database tuning environment variables.
+                      It is only supported when Format is DATABASE.
+                    type: string
                   folder:
                     type: string
                   format:

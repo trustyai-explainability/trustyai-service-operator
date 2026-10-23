@@ -42,9 +42,10 @@ const (
 // Status types
 const (
 	// Standard condition types (platform contract)
-	ConditionTypeReady                 = "Ready"
-	ConditionTypeDegraded              = "Degraded"
-	ConditionTypeProvisioningSucceeded = "ProvisioningSucceeded"
+	ConditionTypeReady                   = "Ready"
+	ConditionTypeDegraded                = "Degraded"
+	ConditionTypeProvisioningSucceeded   = "ProvisioningSucceeded"
+	ConditionTypeDatabaseTuningAvailable = "DatabaseTuningAvailable"
 
 	// TrustyAI-specific condition types
 	StatusTypeInferenceServicesPresent = "InferenceServicesPresent"

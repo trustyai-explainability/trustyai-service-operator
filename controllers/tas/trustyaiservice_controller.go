@@ -146,6 +146,10 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return DoNotRequeue()
 	}
 
+	if err := r.validateAndSetDatabaseTuningStatus(ctx, instance); err != nil {
+		return RequeueWithErrorMessage(ctx, err, "Invalid storage.databaseTuning configuration.")
+	}
+
 	err = r.createServiceAccount(ctx, instance)
 	if err != nil {
 		return RequeueWithError(err)

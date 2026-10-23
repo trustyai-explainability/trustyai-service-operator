@@ -79,7 +79,6 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		BatchSize:                batchSize,
 		ProxyTLSArgs:             pkgtls.CurrentProxyTLSArguments().Args,
 	}
-
 	if instance.Spec.Storage.IsStorageDatabase() {
 		_, err := utils.GetSecret(ctx, r.Client, instance.Name+"-db-ca", instance.Namespace)
 		if err != nil {
@@ -99,6 +98,13 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Error parsing the service's deployment template")
 		return nil, err
+	}
+	if instance.Spec.Storage.IsStorageDatabase() && instance.Spec.Storage.IsDatabaseTuningSet() {
+		container := serviceContainer(deployment)
+		if container == nil {
+			return nil, fmt.Errorf("service container not found in deployment %q", deployment.Name)
+		}
+		container.Env = append(container.Env, databaseTuningConfigMapEnvVars(instance.Spec.Storage.DatabaseTuning)...)
 	}
 
 	return deployment, nil
@@ -244,7 +250,17 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 		return r.updateDeployment(ctx, instance, image, caBundle)
 	}
 
-	// Deployment is ready and using the PVC
+	// Keep the ConfigMap reference in sync when the CR changes. ConfigMap data
+	// updates are intentionally left for a manual Deployment restart.
+	if instance.Spec.Storage.IsDatabaseTuningSet() || deploymentHasDatabaseTuning(deploy) {
+		desired, err := r.createDeploymentObject(ctx, instance, image, caBundle)
+		if err != nil {
+			return err
+		}
+		if databaseTuningDeploymentChanged(deploy, desired) {
+			return r.updateDeployment(ctx, instance, image, caBundle)
+		}
+	}
 	return nil
 }
 
