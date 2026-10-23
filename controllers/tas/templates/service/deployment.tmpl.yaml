@@ -56,6 +56,8 @@ spec:
               value: false
             {{ end }}
             {{ if .Instance.IsMigration }}
+            - name: DATABASE_ATTEMPT_MIGRATION
+              value: "true"
             - name: STORAGE_DATA_FILENAME
               value: {{ .Instance.Spec.Data.Filename }}
             - name: STORAGE_DATA_FOLDER
