@@ -253,6 +253,17 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 		return r.updateDeployment(ctx, instance, image, caBundle)
 	}
 
+	// Remove migration-only settings when the CR leaves migration mode.
+	if !instance.IsMigration() {
+		if container := serviceContainer(deploy); container != nil {
+			for _, env := range container.Env {
+				if env.Name == "DATABASE_ATTEMPT_MIGRATION" {
+					return r.updateDeployment(ctx, instance, image, caBundle)
+				}
+			}
+		}
+	}
+
 	// Keep the ConfigMap reference in sync when the CR changes. ConfigMap data
 	// updates are intentionally left for a manual Deployment restart.
 	if instance.Spec.Storage.IsDatabaseTuningSet() || deploymentHasDatabaseTuning(deploy) {

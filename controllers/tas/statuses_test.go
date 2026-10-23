@@ -84,6 +84,36 @@ var _ = Describe("Status and condition tests", func() {
 		ctx = context.Background()
 	})
 
+	DescribeTable("removes migration settings when migration mode ends", func(clearFolder bool) {
+		instance := createDefaultMigrationCustomResource("migration-completed")
+		Expect(createNamespace(ctx, k8sClient, instance.Namespace)).To(Succeed())
+		Expect(k8sClient.Create(ctx, createDatabaseConfiguration(instance.Namespace, defaultDatabaseConfigurationName, "mariadb", "trustyai"))).To(Succeed())
+		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
+		key := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+		deployment := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		Expect(findDatabaseEnv(serviceContainer(deployment).Env, "DATABASE_ATTEMPT_MIGRATION")).NotTo(BeNil())
+		originalVersion := deployment.ResourceVersion
+		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		Expect(deployment.ResourceVersion).To(Equal(originalVersion))
+
+		if clearFolder {
+			instance.Spec.Storage.Folder = ""
+		} else {
+			instance.Spec.Data.Filename = ""
+		}
+		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		Expect(findDatabaseEnv(serviceContainer(deployment).Env, "DATABASE_ATTEMPT_MIGRATION")).To(BeNil())
+		Expect(serviceContainer(deployment).StartupProbe).To(BeNil())
+		Expect(deployment.Spec.ProgressDeadlineSeconds).To(BeNil())
+		ordinaryVersion := deployment.ResourceVersion
+		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		Expect(deployment.ResourceVersion).To(Equal(ordinaryVersion))
+	}, Entry("folder cleared", true), Entry("filename cleared", false))
+
 	It("rejects unsupported migration targets before replacing the deployment", func() {
 		for _, kind := range []string{"postgresql", "sqlite"} {
 			instance := createDefaultMigrationCustomResource("migration-" + kind)
