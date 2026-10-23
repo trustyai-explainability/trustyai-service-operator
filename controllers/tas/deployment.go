@@ -51,6 +51,9 @@ type DeploymentConfig struct {
 
 // createDeploymentObject returns a Deployment for the TrustyAI Service instance
 func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, serviceImage string, caBunble CustomCertificatesBundle) (*appsv1.Deployment, error) {
+	if err := r.validateMigrationTarget(ctx, instance); err != nil {
+		return nil, err
+	}
 
 	var batchSize int
 	// If no batch size is provided, assume the default one
@@ -248,6 +251,17 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 	if migration {
 		log.FromContext(ctx).Info("Found migration annotation. Migrating.")
 		return r.updateDeployment(ctx, instance, image, caBundle)
+	}
+
+	// Remove migration-only settings when the CR leaves migration mode.
+	if !instance.IsMigration() {
+		if container := serviceContainer(deploy); container != nil {
+			for _, env := range container.Env {
+				if env.Name == "DATABASE_ATTEMPT_MIGRATION" {
+					return r.updateDeployment(ctx, instance, image, caBundle)
+				}
+			}
+		}
 	}
 
 	// Keep the ConfigMap reference in sync when the CR changes. ConfigMap data

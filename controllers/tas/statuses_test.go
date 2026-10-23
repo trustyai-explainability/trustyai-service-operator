@@ -8,12 +8,14 @@ import (
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -80,6 +82,64 @@ var _ = Describe("Status and condition tests", func() {
 			Namespace:     operatorNamespace,
 		}
 		ctx = context.Background()
+	})
+
+	DescribeTable("removes migration settings when migration mode ends", func(clearFolder bool) {
+		instance := createDefaultMigrationCustomResource("migration-completed")
+		Expect(createNamespace(ctx, k8sClient, instance.Namespace)).To(Succeed())
+		Expect(k8sClient.Create(ctx, createDatabaseConfiguration(instance.Namespace, defaultDatabaseConfigurationName, "mariadb", "trustyai"))).To(Succeed())
+		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
+		key := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+		deployment := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		Expect(findDatabaseEnv(serviceContainer(deployment).Env, "DATABASE_ATTEMPT_MIGRATION")).NotTo(BeNil())
+		originalVersion := deployment.ResourceVersion
+		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		Expect(deployment.ResourceVersion).To(Equal(originalVersion))
+
+		if clearFolder {
+			instance.Spec.Storage.Folder = ""
+		} else {
+			instance.Spec.Data.Filename = ""
+		}
+		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		Expect(findDatabaseEnv(serviceContainer(deployment).Env, "DATABASE_ATTEMPT_MIGRATION")).To(BeNil())
+		Expect(serviceContainer(deployment).StartupProbe).To(BeNil())
+		Expect(deployment.Spec.ProgressDeadlineSeconds).To(BeNil())
+		ordinaryVersion := deployment.ResourceVersion
+		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		Expect(deployment.ResourceVersion).To(Equal(ordinaryVersion))
+	}, Entry("folder cleared", true), Entry("filename cleared", false))
+
+	It("rejects unsupported migration targets before replacing the deployment", func() {
+		for _, kind := range []string{"postgresql", "sqlite"} {
+			instance := createDefaultMigrationCustomResource("migration-" + kind)
+			Expect(createNamespace(ctx, k8sClient, instance.Namespace)).To(Succeed())
+			instance.Finalizers = []string{finalizerName}
+			instance.Annotations = map[string]string{migrationAnnotationKey: "true"}
+			instance.Status.Ready = corev1.ConditionTrue
+			Expect(k8sClient.Create(ctx, instance)).To(Succeed())
+			Expect(k8sClient.Create(ctx, createDatabaseConfiguration(instance.Namespace, defaultDatabaseConfigurationName, kind, "trustyai"))).To(Succeed())
+			existing := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: instance.Name, Namespace: instance.Namespace}}
+			Expect(k8sClient.Create(ctx, existing)).To(Succeed())
+
+			key := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+			Expect(err).To(MatchError(ContainSubstring("automatic migration requires MariaDB")))
+			Expect(reconciler.updateDeployment(ctx, instance, testTrustAIServiceImage, CustomCertificatesBundle{})).To(MatchError(ContainSubstring("automatic migration requires MariaDB")))
+			Expect(k8sClient.Get(ctx, key, instance)).To(Succeed())
+			Expect(instance.Status.Ready).To(Equal(corev1.ConditionFalse))
+			Expect(instance.Annotations).To(HaveKey(migrationAnnotationKey))
+			condition, _, err := checkCondition(instance.Status.Conditions, ConditionTypeReady, corev1.ConditionFalse, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(condition.Reason).To(Equal("InvalidMigrationConfiguration"))
+			after := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, key, after)).To(Succeed())
+			Expect(after).To(Equal(existing))
+		}
 	})
 
 	Context("When no component exists", func() {
@@ -244,6 +304,7 @@ var _ = Describe("Status and condition tests", func() {
 			WaitFor(func() error {
 				return createNamespace(ctx, k8sClient, namespace)
 			}, "failed to create namespace")
+			Expect(k8sClient.Create(ctx, createDatabaseConfiguration(namespace, defaultDatabaseConfigurationName, "mariadb", "trustyai"))).To(Succeed())
 			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
 			WaitFor(func() error {

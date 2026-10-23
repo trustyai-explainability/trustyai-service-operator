@@ -173,6 +173,10 @@ func setupAndTestDeploymentNoCustomCABundle(instance *trustyaiopendatahubiov1.Tr
 	Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
 	Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
 
+	if instance.IsMigration() {
+		Expect(k8sClient.Create(ctx, createDatabaseConfiguration(namespace, defaultDatabaseConfigurationName, "mariadb", "trustyai"))).To(Succeed())
+	}
+
 	caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
 	Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
@@ -209,6 +213,10 @@ func setupAndTestDeploymentCustomCABundle(instance *trustyaiopendatahubiov1.Trus
 	Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
 	Expect(k8sClient.Create(ctx, caBundleConfigMap)).To(Succeed())
 
+	if instance.IsMigration() {
+		Expect(k8sClient.Create(ctx, createDatabaseConfiguration(namespace, defaultDatabaseConfigurationName, "mariadb", "trustyai"))).To(Succeed())
+	}
+
 	caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
 	Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
@@ -243,6 +251,10 @@ func setupAndTestDeploymentServiceAccount(instance *trustyaiopendatahubiov1.Trus
 	Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
 	Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
 
+	if instance.IsMigration() {
+		Expect(k8sClient.Create(ctx, createDatabaseConfiguration(namespace, defaultDatabaseConfigurationName, "mariadb", "trustyai"))).To(Succeed())
+	}
+
 	caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
 	if mode == "PVC" {
@@ -267,6 +279,10 @@ func setupAndTestDeploymentInferenceService(instance *trustyaiopendatahubiov1.Tr
 	cmErr := k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))
 	if cmErr != nil {
 		Expect(apierrors.IsAlreadyExists(cmErr)).To(BeTrue(), "unexpected error creating operator ConfigMap: %v", cmErr)
+	}
+
+	if instance.IsMigration() {
+		Expect(k8sClient.Create(ctx, createDatabaseConfiguration(namespace, defaultDatabaseConfigurationName, "mariadb", "trustyai"))).To(Succeed())
 	}
 
 	caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
@@ -496,11 +512,12 @@ var _ = Describe("TrustyAI operator", func() {
 
 		})
 
-		It("should set environment variables correctly in DB mode", func() {
+		DescribeTable("should set environment variables correctly in DB mode", func(kind string) {
 
 			namespace := "trusty-ns-a-4-db"
 			instance = createDefaultDBCustomResource(namespace)
 			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			Expect(k8sClient.Create(ctx, createDatabaseConfiguration(namespace, defaultDatabaseConfigurationName, kind, "trustyai"))).To(Succeed())
 			Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
 			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
@@ -530,6 +547,8 @@ var _ = Describe("TrustyAI operator", func() {
 			}
 
 			Expect(trustyaiServiceContainer).NotTo(BeNil(), "trustyai-service container not found")
+			Expect(trustyaiServiceContainer.StartupProbe).To(BeNil())
+			Expect(deployment.Spec.ProgressDeadlineSeconds).To(BeNil())
 
 			// Checking the environment variables of the trustyai-service container
 			var envVar *corev1.EnvVar
@@ -542,6 +561,9 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(envVar.Value).To(Equal(STORAGE_DATABASE))
 
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "STORAGE_DATA_FOLDER")
+			Expect(envVar).To(BeNil())
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "DATABASE_ATTEMPT_MIGRATION")
 			Expect(envVar).To(BeNil())
 
 			//envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_DATA_FORMAT")
@@ -605,7 +627,11 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(envVar).NotTo(BeNil(), "Env var QUARKUS_DATASOURCE_JDBC_URL not found")
 			Expect(envVar.Value).To(Equal("jdbc:${QUARKUS_DATASOURCE_DB_KIND}://${DATABASE_SERVICE}:${DATABASE_PORT}/${DATABASE_NAME}"))
 
-		})
+		},
+			Entry("MariaDB", "mariadb"),
+			Entry("PostgreSQL", "postgresql"),
+			Entry("SQLite", "sqlite"),
+		)
 
 		It("should set environment variables correctly in migration mode", func() {
 
@@ -613,6 +639,7 @@ var _ = Describe("TrustyAI operator", func() {
 			instance = createDefaultMigrationCustomResource(namespace)
 			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
 			Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
+			Expect(k8sClient.Create(ctx, createDatabaseConfiguration(namespace, defaultDatabaseConfigurationName, "mariadb", "trustyai"))).To(Succeed())
 			//printKubeObject(instance)
 			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
 
@@ -642,6 +669,11 @@ var _ = Describe("TrustyAI operator", func() {
 			}
 
 			Expect(trustyaiServiceContainer).NotTo(BeNil(), "trustyai-service container not found")
+			Expect(trustyaiServiceContainer.StartupProbe).NotTo(BeNil())
+			Expect(trustyaiServiceContainer.StartupProbe.HTTPGet).To(Equal(trustyaiServiceContainer.LivenessProbe.HTTPGet))
+			Expect(trustyaiServiceContainer.StartupProbe.FailureThreshold * trustyaiServiceContainer.StartupProbe.PeriodSeconds).To(Equal(int32(1800)))
+			Expect(deployment.Spec.ProgressDeadlineSeconds).NotTo(BeNil())
+			Expect(*deployment.Spec.ProgressDeadlineSeconds).To(BeNumerically(">", 1800))
 
 			// Checking the environment variables of the trustyai-service container
 			var envVar *corev1.EnvVar
@@ -665,6 +697,10 @@ var _ = Describe("TrustyAI operator", func() {
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_DATA_FORMAT")
 			Expect(envVar).ToNot(BeNil())
 			Expect(envVar.Value).To(Equal("CSV"))
+
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, "DATABASE_ATTEMPT_MIGRATION")
+			Expect(envVar).ToNot(BeNil(), "Env var DATABASE_ATTEMPT_MIGRATION not found")
+			Expect(envVar.Value).To(Equal("true"))
 
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_METRICS_SCHEDULE")
 			Expect(envVar).NotTo(BeNil(), "Env var SERVICE_METRICS_SCHEDULE not found")
