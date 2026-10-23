@@ -51,6 +51,9 @@ type DeploymentConfig struct {
 
 // createDeploymentObject returns a Deployment for the TrustyAI Service instance
 func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, serviceImage string, caBunble CustomCertificatesBundle) (*appsv1.Deployment, error) {
+	if err := r.validateMigrationTarget(ctx, instance); err != nil {
+		return nil, err
+	}
 
 	var batchSize int
 	// If no batch size is provided, assume the default one

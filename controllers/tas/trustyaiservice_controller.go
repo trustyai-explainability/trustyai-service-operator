@@ -149,6 +149,16 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err := r.validateAndSetDatabaseTuningStatus(ctx, instance); err != nil {
 		return RequeueWithErrorMessage(ctx, err, "Invalid storage.databaseTuning configuration.")
 	}
+	if err := r.validateMigrationTarget(ctx, instance); err != nil {
+		_, statusErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1.TrustyAIService) {
+			UpdateTrustyAIServiceNotAvailable(saved)
+			saved.SetStatus(ConditionTypeReady, "InvalidMigrationConfiguration", err.Error(), v1.ConditionFalse)
+		})
+		if statusErr != nil {
+			return RequeueWithErrorMessage(ctx, statusErr, "Failed to update migration validation status.")
+		}
+		return RequeueWithErrorMessage(ctx, err, "Invalid migration configuration.")
+	}
 
 	err = r.createServiceAccount(ctx, instance)
 	if err != nil {

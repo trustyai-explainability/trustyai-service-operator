@@ -3,11 +3,28 @@ package tas
 import (
 	"context"
 	"fmt"
-	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	"strings"
 
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	corev1 "k8s.io/api/core/v1"
 )
+
+// validateMigrationTarget restricts automatic migration to MariaDB.
+func (r *TrustyAIServiceReconciler) validateMigrationTarget(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) error {
+	if !instance.IsMigration() {
+		return nil
+	}
+	secret, err := r.findDatabaseSecret(ctx, instance)
+	if err != nil {
+		return err
+	}
+	kind := strings.ToLower(strings.TrimSpace(string(secret.Data["databaseKind"])))
+	if kind != "mariadb" && kind != "maria" {
+		return fmt.Errorf("automatic migration requires MariaDB (databaseKind mariadb or maria); got %q", kind)
+	}
+	return nil
+}
 
 // findDatabaseSecret finds the DB configuration secret named (specified or default) in the same namespace as the CR
 func (r *TrustyAIServiceReconciler) findDatabaseSecret(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) (*corev1.Secret, error) {
