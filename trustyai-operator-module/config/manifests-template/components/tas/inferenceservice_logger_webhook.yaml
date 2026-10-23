@@ -1,0 +1,37 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: inference-service-logger-injector.trustyai.opendatahub.io
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+webhooks:
+  - name: inference-service-logger-injector.trustyai.opendatahub.io
+    admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: webhook-service
+        namespace: system
+        path: /mutate-serving-kserve-io-v1beta1-inferenceservice
+        port: 443
+    failurePolicy: Ignore
+    matchPolicy: Equivalent
+    reinvocationPolicy: IfNeeded
+    sideEffects: None
+    timeoutSeconds: 2
+    namespaceSelector:
+      matchExpressions:
+        - key: trustyai.opendatahub.io/enabled
+          operator: In
+          values:
+            - "true"
+    rules:
+      - operations:
+          - CREATE
+        apiGroups:
+          - serving.kserve.io
+        apiVersions:
+          - v1beta1
+        resources:
+          - inferenceservices
+        scope: Namespaced

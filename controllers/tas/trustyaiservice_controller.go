@@ -97,6 +97,7 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules,verbs=create;list;watch;get;update;patch;delete
 //+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=create;list;watch;get;update;patch;delete
 //+kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=list;watch;get
+//+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -118,6 +119,12 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return RequeueWithError(err)
 	}
 
+	if instance.ObjectMeta.DeletionTimestamp.IsZero() {
+		if err := r.ensureTrustyAINamespaceLabel(ctx, req.Namespace); err != nil {
+			log.Error(err, "Failed to label the TrustyAI namespace; continuing without create-time logger injection")
+		}
+	}
+
 	// Add the finalizer if it does not exist
 	if !utils.ContainsString(instance.Finalizers, finalizerName) {
 		log.Info("Adding finalizer ", "finalizer", finalizerName)
@@ -135,6 +142,9 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			if err := r.deleteExternalDependency(req.Name, instance, req.Namespace, ctx); err != nil {
 				log.Error(err, "Failed to delete external dependencies, but proceeding with finalizer removal.")
 				return RequeueWithErrorMessage(ctx, err, "Failed to clean up external dependencies.")
+			}
+			if err := r.removeTrustyAINamespaceLabel(ctx, instance); err != nil {
+				return RequeueWithErrorMessage(ctx, err, "Failed to remove the TrustyAI namespace label.")
 			}
 			// Remove the finalizer from the list and update it.
 			instance.Finalizers = utils.RemoveString(instance.Finalizers, finalizerName)
