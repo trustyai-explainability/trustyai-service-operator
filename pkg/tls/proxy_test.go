@@ -19,11 +19,11 @@ func TestResolveProxyTLSArguments(t *testing.T) {
 		cipherFlag bool
 		curves     []uint16
 	}{
-		{"no opinion uses intermediate", &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}, "", nil, false, "VersionTLS12", true, []uint16{23, 24, 25, 29}},
-		{"legacy uses intermediate", &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}, TLSAdherenceLegacyAdheringComponentsOnly, nil, false, "VersionTLS12", true, []uint16{23, 24, 25, 29}},
-		{"strict uses modern", &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}, TLSAdherenceStrictAllComponents, nil, false, "VersionTLS13", false, []uint16{23, 24, 25, 29}},
-		{"unknown adherence is strict", &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}, "FutureValue", nil, false, "VersionTLS13", false, []uint16{23, 24, 25, 29}},
-		{"fips removes x25519", nil, TLSAdherenceStrictAllComponents, []string{"X25519", "secp256r1", "not-a-curve"}, true, "VersionTLS12", true, []uint16{23}},
+		{"no opinion uses intermediate", &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}, "", nil, false, "VersionTLS12", true, []uint16{4588, 23, 24, 25, 29}},
+		{"legacy uses intermediate", &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}, TLSAdherenceLegacyAdheringComponentsOnly, nil, false, "VersionTLS12", true, []uint16{4588, 23, 24, 25, 29}},
+		{"strict uses modern", &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}, TLSAdherenceStrictAllComponents, nil, false, "VersionTLS13", false, []uint16{4588, 23, 24, 25, 29}},
+		{"unknown adherence is strict", &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}, "FutureValue", nil, false, "VersionTLS13", false, []uint16{4588, 23, 24, 25, 29}},
+		{"fips removes x25519 and mlkem", nil, TLSAdherenceStrictAllComponents, []string{"X25519MLKEM768", "X25519", "secp256r1", "not-a-curve"}, true, "VersionTLS12", true, []uint16{23}},
 	}
 
 	for _, tt := range tests {
