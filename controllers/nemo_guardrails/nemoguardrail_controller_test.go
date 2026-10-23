@@ -597,6 +597,64 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		}, time.Second*10, time.Millisecond*100).Should(HaveKeyWithValue("node-type", "guardrails"))
 	})
 
+	It("should set the manifest discoverability annotation on the CR", func() {
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Checking if the CR has the manifest URL annotation")
+		expectedURL := "https://" + resourceName + "." + namespace + ".svc" + manifestAdminPort + manifestPath
+		Eventually(func() string {
+			nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+			err := k8sClient.Get(ctx, typeNamespacedName, nemo)
+			if err != nil {
+				return ""
+			}
+			return nemo.Annotations[manifestAnnotationKey]
+		}, time.Second*10, time.Millisecond*100).Should(Equal(expectedURL))
+	})
+
+	It("should keep the manifest annotation stable across reconciles", func() {
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+		}
+
+		By("Performing initial reconciliation")
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var initialURL string
+		Eventually(func() string {
+			nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+			err := k8sClient.Get(ctx, typeNamespacedName, nemo)
+			if err != nil {
+				return ""
+			}
+			initialURL = nemo.Annotations[manifestAnnotationKey]
+			return initialURL
+		}, time.Second*10, time.Millisecond*100).ShouldNot(BeEmpty())
+
+		By("Reconciling again without any changes")
+		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
+		Expect(nemo.Annotations[manifestAnnotationKey]).To(Equal(initialURL))
+	})
+
 	It("should create a ServiceAccount and ClusterRoleBinding and delete them when the instance is deleted", func() {
 		controllerReconciler := &NemoGuardrailsReconciler{
 			Client:    k8sClient,
@@ -813,6 +871,34 @@ var _ = Describe("NemoGuardrails Controller", func() {
 			err := k8sClient.Get(ctx, routeKey, route)
 			return errors.IsNotFound(err)
 		}, time.Second*10, time.Millisecond*250).Should(BeTrue())
+	})
+
+	It("should use the admin proxy port for an authenticated manifest url", func() {
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      resourceName,
+				Namespace: namespace,
+				Annotations: map[string]string{
+					constants.AuthAnnotationKey: "true",
+				},
+			},
+		}
+		Expect(buildManifestURL(nemo)).To(Equal(
+			"https://" + resourceName + "." + namespace + ".svc" +
+				manifestAdminPort + manifestPath,
+		))
+	})
+
+	It("should use the direct Service URL for an unauthenticated manifest URL", func() {
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      resourceName,
+				Namespace: namespace,
+			},
+		}
+		Expect(buildManifestURL(nemo)).To(Equal(
+			"http://" + resourceName + "." + namespace + ".svc" + manifestPath,
+		))
 	})
 })
 
