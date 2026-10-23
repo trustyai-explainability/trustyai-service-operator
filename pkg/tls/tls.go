@@ -50,7 +50,8 @@ var proxyArgsState = struct {
 }{
 	args: ProxyTLSArguments{MinVersion: string(configv1.VersionTLS12), Args: []string{
 		"--tls-min-version=" + string(configv1.VersionTLS12),
-		"--tls-curve-preferences=23,24,25,29",
+		// 4588 = X25519MLKEM768 (hybrid ML-KEM); classical curves follow
+		"--tls-curve-preferences=4588,23,24,25,29",
 	}},
 }
 
