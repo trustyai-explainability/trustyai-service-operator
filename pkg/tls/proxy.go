@@ -54,6 +54,7 @@ func ResolveProxyTLSArguments(profile *configv1.TLSSecurityProfile, adherence st
 	if err != nil {
 		return ProxyTLSArguments{}, fmt.Errorf("resolving strict TLS profile: %w", err)
 	}
+	spec = normalizeTLSProfileSpec(spec)
 
 	minVersion := string(spec.MinTLSVersion)
 	min, err := tlsVersion(minVersion)
@@ -75,6 +76,9 @@ func ResolveProxyTLSArguments(profile *configv1.TLSSecurityProfile, adherence st
 	// Go and kube-rbac-proxy cannot restrict TLS 1.3 cipher suites. Do not
 	// accidentally pass the TLS 1.2 list when the profile requires TLS 1.3.
 	if min != tls.VersionTLS13 {
+		if strict && len(spec.Ciphers) == 0 {
+			return ProxyTLSArguments{}, fmt.Errorf("TLS profile has no cipher suites for TLS <= 1.2")
+		}
 		result.CipherSuites = supportedCipherNames(spec.Ciphers, min)
 		if len(spec.Ciphers) > 0 && len(result.CipherSuites) == 0 {
 			return ProxyTLSArguments{}, fmt.Errorf("TLS profile has no supported cipher suites for TLS %s", minVersion)
@@ -112,12 +116,14 @@ func supportedCipherNames(names []string, minVersion uint16) []string {
 		if len(ianaNames) != 1 {
 			ianaNames = []string{name}
 		}
-		for _, suite := range tls.CipherSuites() {
-			if suite.Name != ianaNames[0] || !supportsVersionAtOrAbove(suite.SupportedVersions, minVersion) {
-				continue
+		for _, suites := range [][]*tls.CipherSuite{tls.CipherSuites(), tls.InsecureCipherSuites()} {
+			for _, suite := range suites {
+				if strings.Contains(suite.Name, "RC4") || suite.Name != ianaNames[0] || !supportsVersionAtOrAbove(suite.SupportedVersions, minVersion) {
+					continue
+				}
+				result = append(result, suite.Name)
+				break
 			}
-			result = append(result, suite.Name)
-			break
 		}
 	}
 	return result

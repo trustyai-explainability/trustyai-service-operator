@@ -18,10 +18,13 @@ package tls
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -69,6 +72,32 @@ func TestReconcile_ProfileUnchanged(t *testing.T) {
 	}
 	if called {
 		t.Error("onProfileChange must not be called when profile is unchanged")
+	}
+}
+
+func TestReconcile_DeniedReadRestartsToFailClosed(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+	}{
+		{name: "forbidden", err: apierrors.NewForbidden(schema.GroupResource{Resource: "apiservers"}, "cluster", errors.New("denied"))},
+		{name: "unauthorized", err: apierrors.NewUnauthorized("denied")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			w := NewProfileWatcher(nil, nil, func() { called = true })
+			w.readProfileState = func(context.Context) (profileState, error) {
+				return profileState{}, tt.err
+			}
+
+			result := mustReconcile(t, w)
+			if result.RequeueAfter != 0 {
+				t.Errorf("RequeueAfter = %v, want no retry after denied read", result.RequeueAfter)
+			}
+			if !called {
+				t.Error("restart callback was not called after denied read")
+			}
+		})
 	}
 }
 
