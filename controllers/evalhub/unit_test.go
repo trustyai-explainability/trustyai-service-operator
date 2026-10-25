@@ -2574,6 +2574,34 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 		assert.Equal(t, "ServiceAccount", eventsRB.Subjects[0].Kind)
 		assert.Equal(t, evalHubName+"-service", eventsRB.Subjects[0].Name)
 		assert.Equal(t, instanceNamespace, eventsRB.Subjects[0].Namespace)
+
+		// Verify the tenant namespace grants its own ServiceAccounts access to the
+		// providers/collections API EvalHub gates with a namespace-scoped
+		// SubjectAccessReview.
+		for _, apiAccess := range []struct {
+			suffix      string
+			clusterRole string
+		}{
+			{"providers-access-rb", providersAccessClusterRoleName},
+			{"collections-access-rb", collectionsAccessClusterRoleName},
+		} {
+			rbName := normalizeDNS1123LabelValue(evalHubName + "-" + tenantNamespace + "-" + apiAccess.suffix)
+			rb := &rbacv1.RoleBinding{}
+			err = fakeClient.Get(ctx, types.NamespacedName{
+				Name:      rbName,
+				Namespace: tenantNamespace,
+			}, rb)
+			require.NoError(t, err, "%s RoleBinding should exist in tenant namespace", apiAccess.clusterRole)
+			assert.Equal(t, "ClusterRole", rb.RoleRef.Kind)
+			assert.Equal(t, apiAccess.clusterRole, rb.RoleRef.Name)
+			require.Len(t, rb.Subjects, 1)
+			assert.Equal(t, "Group", rb.Subjects[0].Kind)
+			assert.Equal(t, "system:serviceaccounts:"+tenantNamespace, rb.Subjects[0].Name)
+			// The binding must be discoverable by the stale-tenant cleanup selector,
+			// otherwise switching the namespace out of the tenant set leaks it.
+			assert.Equal(t, jobResourceInstanceID(evalHub), rb.Labels["eval-hub.trustyai.opendatahub.io"])
+			assert.Equal(t, "job", rb.Labels["app.kubernetes.io/component"])
+		}
 	})
 
 	t.Run("should skip terminating tenant namespace", func(t *testing.T) {

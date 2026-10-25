@@ -105,6 +105,30 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 			return err
 		}
 
+		// Create providers/collections access RoleBindings for the tenant namespace's
+		// own identities. EvalHub authorizes those API endpoints with a namespace-scoped
+		// SubjectAccessReview whose namespace comes from the X-Tenant header, so a
+		// workbench (or the eval-hub-sdk CLI running in one) can only reach them if the
+		// grant lives here - binding the ClusterRole in the control-plane namespace is
+		// not enough.
+		for _, apiAccess := range []struct {
+			suffix      string
+			clusterRole string
+		}{
+			{"providers-access-rb", providersAccessClusterRoleName},
+			{"collections-access-rb", collectionsAccessClusterRoleName},
+		} {
+			apiAccessRBName := normalizeDNS1123LabelValue(instance.Name + "-" + ns + "-" + apiAccess.suffix)
+			if err := r.createTenantGroupRoleBinding(ctx, instance, apiAccessRBName, ns, rbacv1.RoleRef{
+				Kind:     "ClusterRole",
+				Name:     apiAccess.clusterRole,
+				APIGroup: rbacv1.GroupName,
+			}); err != nil {
+				log.Error(err, "Failed to create tenant API access RoleBinding", "namespace", ns, "clusterRole", apiAccess.clusterRole)
+				return err
+			}
+		}
+
 		// Create events RoleBinding for the API SA in the tenant namespace so the
 		// EvalHub server can emit Kubernetes Events on evaluation lifecycle transitions.
 		eventsRBName := normalizeDNS1123LabelValue(instance.Name + "-" + ns + "-events-rb")
