@@ -105,28 +105,29 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 			return err
 		}
 
-		// Create providers/collections access RoleBindings for the tenant namespace's
-		// own identities. EvalHub authorizes those API endpoints with a namespace-scoped
-		// SubjectAccessReview whose namespace comes from the X-Tenant header, so a
-		// workbench (or the eval-hub-sdk CLI running in one) can only reach them if the
-		// grant lives here - binding the ClusterRole in the control-plane namespace is
-		// not enough.
-		for _, apiAccess := range []struct {
-			suffix      string
-			clusterRole string
-		}{
-			{"providers-access-rb", providersAccessClusterRoleName},
-			{"collections-access-rb", collectionsAccessClusterRoleName},
-		} {
-			apiAccessRBName := normalizeDNS1123LabelValue(instance.Name + "-" + ns + "-" + apiAccess.suffix)
-			if err := r.createTenantGroupRoleBinding(ctx, instance, apiAccessRBName, ns, rbacv1.RoleRef{
-				Kind:     "ClusterRole",
-				Name:     apiAccess.clusterRole,
-				APIGroup: rbacv1.GroupName,
-			}); err != nil {
-				log.Error(err, "Failed to create tenant API access RoleBinding", "namespace", ns, "clusterRole", apiAccess.clusterRole)
-				return err
-			}
+		// Create the per-tenant user Role and bind it to the namespace's own
+		// ServiceAccounts. EvalHub authorizes its REST API with namespace-scoped
+		// SubjectAccessReviews whose namespace comes from the X-Tenant header, so a
+		// workload running here (a workbench, or the eval-hub-sdk CLI inside one) can
+		// only reach the API if the grant lives in this namespace. A binding in the
+		// control-plane namespace cannot satisfy it.
+		//
+		// The Role is the same set of rules single-tenancy uses for evalhub-user, so
+		// tenant identities get the evaluation lifecycle, read-only providers and
+		// collections, and MLflow experiment access - not the operator's own RBAC.
+		tenantUserRoleName, err := r.ensureTenantUserRole(ctx, instance, ns)
+		if err != nil {
+			log.Error(err, "Failed to create tenant user Role in tenant namespace", "namespace", ns)
+			return err
+		}
+		tenantUserRBName := normalizeDNS1123LabelValue(instance.Name + "-" + ns + "-tenant-user-rb")
+		if err := r.createTenantGroupRoleBinding(ctx, instance, tenantUserRBName, ns, rbacv1.RoleRef{
+			Kind:     "Role",
+			Name:     tenantUserRoleName,
+			APIGroup: rbacv1.GroupName,
+		}); err != nil {
+			log.Error(err, "Failed to create tenant user RoleBinding in tenant namespace", "namespace", ns)
+			return err
 		}
 
 		// Create events RoleBinding for the API SA in the tenant namespace so the
