@@ -71,10 +71,22 @@ var proxyArgsState = struct {
 	sync.RWMutex
 	args ProxyTLSArguments
 }{
-	args: ProxyTLSArguments{MinVersion: string(configv1.VersionTLS12), Args: []string{
-		"--tls-min-version=" + string(configv1.VersionTLS12),
-		"--tls-curve-preferences=23,24,25,29",
-	}},
+	// Seeded from ResolveProxyTLSArguments so curve IDs stay aligned with
+	// defaultCurveGroups. init() re-resolves with the host FIPS setting.
+	//
+	// 4588 (X25519MLKEM768) requires a kube-rbac-proxy that accepts
+	// --tls-curve-preferences and CurveID 4588; unknown IDs fail startup
+	// (CrashLoopBackOff). Override the kube-rbac-proxy ConfigMap image
+	// only with a build that supports both.
+	args: mustDefaultProxyTLSArguments(false),
+}
+
+func mustDefaultProxyTLSArguments(fips bool) ProxyTLSArguments {
+	args, err := ResolveProxyTLSArguments(nil, TLSAdherenceNoOpinion, nil, fips)
+	if err != nil {
+		panic(fmt.Sprintf("default proxy TLS arguments: %v", err))
+	}
+	return args
 }
 
 // SetProxyTLSArguments publishes the arguments used by workload builders.
