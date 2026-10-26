@@ -2,6 +2,7 @@ package tls
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -23,7 +24,7 @@ func TestResolveProxyTLSArguments(t *testing.T) {
 		{"legacy uses intermediate", &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}, TLSAdherenceLegacyAdheringComponentsOnly, nil, false, "VersionTLS12", true, []uint16{4588, 23, 24, 25, 29}},
 		{"strict uses modern", &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}, TLSAdherenceStrictAllComponents, nil, false, "VersionTLS13", false, []uint16{4588, 23, 24, 25, 29}},
 		{"unknown adherence is strict", &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}, "FutureValue", nil, false, "VersionTLS13", false, []uint16{4588, 23, 24, 25, 29}},
-		{"fips removes x25519 and mlkem", nil, TLSAdherenceStrictAllComponents, []string{"X25519MLKEM768", "X25519", "secp256r1", "not-a-curve"}, true, "VersionTLS12", true, []uint16{23}},
+		{"fips removes plain x25519 keeps mlkem", nil, TLSAdherenceStrictAllComponents, []string{"X25519MLKEM768", "X25519", "secp256r1", "not-a-curve"}, true, "VersionTLS12", true, []uint16{4588, 23}},
 	}
 
 	for _, tt := range tests {
@@ -32,8 +33,11 @@ func TestResolveProxyTLSArguments(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.MinVersion != tt.min || !reflect.DeepEqual(got.CurvePreferences, tt.curves) {
-				t.Fatalf("got version %q curves %v", got.MinVersion, got.CurvePreferences)
+			if got.MinVersion != tt.min {
+				t.Fatalf("MinVersion = %q, want %q", got.MinVersion, tt.min)
+			}
+			if !curveSetEqual(got.CurvePreferences, tt.curves) {
+				t.Fatalf("CurvePreferences = %v, want set %v", got.CurvePreferences, tt.curves)
 			}
 			hasCipher := strings.Contains(strings.Join(got.Args, " "), "--tls-cipher-suites=")
 			if hasCipher != tt.cipherFlag {
@@ -48,8 +52,10 @@ func TestResolveProxyTLSArgumentsUsesFIPSDefaultCurves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got.CurvePreferences, []uint16{23, 24, 25}) {
-		t.Fatalf("FIPS CurvePreferences = %v, want [23 24 25]", got.CurvePreferences)
+	// FIPS drops plain X25519 (29) only; hybrid ML-KEM remains (Go 1.26 FIPS).
+	want := []uint16{4588, 23, 24, 25}
+	if !curveSetEqual(got.CurvePreferences, want) {
+		t.Fatalf("FIPS CurvePreferences = %v, want set %v", got.CurvePreferences, want)
 	}
 }
 
@@ -124,4 +130,45 @@ func TestResolveProxyTLSArgumentsOmitsTLS13CipherFlag(t *testing.T) {
 	if strings.Contains(strings.Join(got.Args, " "), "cipher") {
 		t.Fatalf("TLS 1.3 must not receive a cipher restriction: %v", got.Args)
 	}
+}
+
+func TestCurveIDs(t *testing.T) {
+	tests := []struct {
+		name string
+		id   uint16
+	}{
+		{"secp256r1", 23},
+		{"secp384r1", 24},
+		{"secp521r1", 25},
+		{"X25519", 29},
+		{"SecP256r1MLKEM768", 4587},
+		{"X25519MLKEM768", 4588},
+		{"SecP384r1MLKEM1024", 4589},
+	}
+	for _, tt := range tests {
+		if got := curveIDs[tt.name]; got != tt.id {
+			t.Errorf("curveIDs[%q] = %d, want %d", tt.name, got, tt.id)
+		}
+	}
+}
+
+func TestDefaultProxyTLSArgumentsIncludeMLKEM(t *testing.T) {
+	got := mustDefaultProxyTLSArguments(false)
+	if !curveSetEqual(got.CurvePreferences, []uint16{4588, 23, 24, 25, 29}) {
+		t.Fatalf("default CurvePreferences = %v", got.CurvePreferences)
+	}
+	joined := strings.Join(got.Args, " ")
+	if !strings.Contains(joined, "--tls-curve-preferences=") || !strings.Contains(joined, "4588") {
+		t.Fatalf("default Args missing 4588 allow-list entry: %v", got.Args)
+	}
+}
+
+func curveSetEqual(got, want []uint16) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	g, w := slices.Clone(got), slices.Clone(want)
+	slices.Sort(g)
+	slices.Sort(w)
+	return slices.Equal(g, w)
 }

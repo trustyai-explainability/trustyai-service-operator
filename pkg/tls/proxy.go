@@ -123,8 +123,9 @@ func supportedCipherNames(names []string, minVersion uint16) []string {
 	return result
 }
 
-// IANA TLS NamedGroup code points. Hybrid ML-KEM groups are required for
-// PQC readiness (tls-scanner --pqc-check expects X25519MLKEM768 / ML-KEM).
+// IANA TLS NamedGroup code points. X25519MLKEM768 (4588) is in the default
+// allow-list for PQC readiness. SecP256r1MLKEM768 / SecP384r1MLKEM1024 are
+// mapped for when a TLS profile supplies Groups; callers currently pass nil.
 var curveIDs = map[string]uint16{
 	"secp256r1":          23,
 	"secp384r1":          24,
@@ -133,6 +134,17 @@ var curveIDs = map[string]uint16{
 	"SecP256r1MLKEM768":  4587,
 	"X25519MLKEM768":     4588,
 	"SecP384r1MLKEM1024": 4589,
+}
+
+// defaultCurveGroups is the allow-list when OpenShift TLS profiles do not
+// supply groups. Go/kube-rbac-proxy treat CurvePreferences as a filter; list
+// order does not control TLS 1.3 negotiation priority.
+var defaultCurveGroups = []string{
+	"X25519MLKEM768",
+	"secp256r1",
+	"secp384r1",
+	"secp521r1",
+	"X25519",
 }
 
 func supportsVersionAtOrAbove(versions []uint16, wanted uint16) bool {
@@ -147,24 +159,16 @@ func supportsVersionAtOrAbove(versions []uint16, wanted uint16) bool {
 
 func resolveCurves(groups []string, fips, strict bool) ([]uint16, error) {
 	if len(groups) == 0 {
-		// Prefer X25519MLKEM768 (Go crypto/tls hybrid) first so PQC-capable
-		// clients negotiate ML-KEM; keep classical groups for compatibility.
-		// SecP256r1MLKEM768 / SecP384r1MLKEM1024 remain in curveIDs for when
-		// a TLS profile supplies them. FIPS builds drop X25519 and hybrids.
-		groups = []string{
-			"X25519MLKEM768",
-			"secp256r1",
-			"secp384r1",
-			"secp521r1",
-			"X25519",
-		}
+		groups = defaultCurveGroups
 	}
 	result := make([]uint16, 0, len(groups))
 	seen := map[uint16]bool{}
 	for _, group := range groups {
 		id, ok := curveIDs[group]
-		// FIPS: exclude X25519 (29) and hybrid ML-KEM groups (4587–4589).
-		if !ok || (fips && (id == 29 || id == 4587 || id == 4588 || id == 4589)) {
+		// FIPS: drop plain X25519 only. Go 1.26 FIPS 140-3 keeps hybrid
+		// ML-KEM groups (defaults_fips140.go); the proxy re-filters at
+		// handshake time against the same policy.
+		if !ok || (fips && id == 29) {
 			continue
 		}
 		if !seen[id] {
