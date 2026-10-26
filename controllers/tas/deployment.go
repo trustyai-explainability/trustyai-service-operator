@@ -47,14 +47,11 @@ type DeploymentConfig struct {
 	BatchSize                int
 	UseDBTLSCerts            bool
 	ProxyTLSArgs             []string
+	MigrationEnvVarName      string
 }
 
 // createDeploymentObject returns a Deployment for the TrustyAI Service instance
 func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, serviceImage string, caBunble CustomCertificatesBundle) (*appsv1.Deployment, error) {
-	if err := r.validateMigrationTarget(ctx, instance); err != nil {
-		return nil, err
-	}
-
 	var batchSize int
 	// If no batch size is provided, assume the default one
 	if instance.Spec.Metrics.BatchSize == nil {
@@ -81,6 +78,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		Version:                  constants.Version,
 		BatchSize:                batchSize,
 		ProxyTLSArgs:             pkgtls.CurrentProxyTLSArguments().Args,
+		MigrationEnvVarName:      migrationEnvVarName,
 	}
 	if instance.Spec.Storage.IsStorageDatabase() {
 		_, err := utils.GetSecret(ctx, r.Client, instance.Name+"-db-ca", instance.Namespace)
@@ -253,29 +251,58 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 		return r.updateDeployment(ctx, instance, image, caBundle)
 	}
 
-	// Remove migration-only settings when the CR leaves migration mode.
-	if !instance.IsMigration() {
-		if container := serviceContainer(deploy); container != nil {
-			for _, env := range container.Env {
-				if env.Name == "DATABASE_ATTEMPT_MIGRATION" {
-					return r.updateDeployment(ctx, instance, image, caBundle)
-				}
-			}
-		}
-	}
-
-	// Keep the ConfigMap reference in sync when the CR changes. ConfigMap data
-	// updates are intentionally left for a manual Deployment restart.
-	if instance.Spec.Storage.IsDatabaseTuningSet() || deploymentHasDatabaseTuning(deploy) {
+	// Keep migration settings and the ConfigMap tuning reference in sync with the
+	// CR, in both directions. ConfigMap data updates are intentionally left for a
+	// manual Deployment restart.
+	if instance.IsMigration() || deploymentHasMigration(deploy) || instance.Spec.Storage.IsDatabaseTuningSet() || deploymentHasDatabaseTuning(deploy) {
 		desired, err := r.createDeploymentObject(ctx, instance, image, caBundle)
 		if err != nil {
 			return err
 		}
-		if databaseTuningDeploymentChanged(deploy, desired) {
+		if deploymentMigrationChanged(deploy, desired) || databaseTuningDeploymentChanged(deploy, desired) {
 			return r.updateDeployment(ctx, instance, image, caBundle)
 		}
 	}
 	return nil
+}
+
+// deploymentHasMigration reports whether the Deployment carries migration-only settings.
+func deploymentHasMigration(deployment *appsv1.Deployment) bool {
+	container := serviceContainer(deployment)
+	return container != nil && (container.StartupProbe != nil || containerHasMigrationEnv(container))
+}
+
+func containerHasMigrationEnv(container *corev1.Container) bool {
+	for _, env := range container.Env {
+		if env.Name == migrationEnvVarName {
+			return true
+		}
+	}
+	return false
+}
+
+// deploymentMigrationChanged compares the migration-only settings of two Deployments.
+// ProgressDeadlineSeconds is only compared when the desired Deployment sets it,
+// because the API server defaults it on the live object.
+func deploymentMigrationChanged(current, desired *appsv1.Deployment) bool {
+	currentContainer := serviceContainer(current)
+	desiredContainer := serviceContainer(desired)
+	if currentContainer == nil || desiredContainer == nil {
+		return currentContainer != desiredContainer
+	}
+	if containerHasMigrationEnv(currentContainer) != containerHasMigrationEnv(desiredContainer) {
+		return true
+	}
+	if (currentContainer.StartupProbe == nil) != (desiredContainer.StartupProbe == nil) {
+		return true
+	}
+	if desiredContainer.StartupProbe != nil && currentContainer.StartupProbe.FailureThreshold != desiredContainer.StartupProbe.FailureThreshold {
+		return true
+	}
+	if desired.Spec.ProgressDeadlineSeconds != nil {
+		return current.Spec.ProgressDeadlineSeconds == nil || *current.Spec.ProgressDeadlineSeconds != *desired.Spec.ProgressDeadlineSeconds
+	}
+	return false
 }
 
 // checkDeploymentReady verifies that a TrustyAI service deployment is ready

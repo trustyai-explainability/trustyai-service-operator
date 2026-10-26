@@ -65,7 +65,7 @@ spec:
               value: {{ .Instance.Spec.Storage.Folder }}
             - name: SERVICE_DATA_FORMAT
               value: {{ .Instance.Spec.Data.Format }}
-            - name: DATABASE_ATTEMPT_MIGRATION
+            - name: {{ .MigrationEnvVarName }}
               value: "true"
             {{ end }}
             {{ if eq .Instance.Spec.Storage.Format "DATABASE" }}

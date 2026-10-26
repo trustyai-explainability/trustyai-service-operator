@@ -252,7 +252,7 @@ var _ = Describe("TrustyAI database tuning ConfigMap", func() {
 		for _, key := range []string{
 			"DATABASE_ALLOW_INSECURE_TLS",
 			"DATABASE_TLS_CA_CERT",
-			"DATABASE_ATTEMPT_MIGRATION",
+			migrationEnvVarName,
 			"STORAGE_DATABASE_PATH",
 			"UNSUPPORTED_CUSTOM_SETTING",
 		} {

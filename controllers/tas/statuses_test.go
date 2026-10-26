@@ -92,7 +92,7 @@ var _ = Describe("Status and condition tests", func() {
 		key := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
 		deployment := &appsv1.Deployment{}
 		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
-		Expect(findDatabaseEnv(serviceContainer(deployment).Env, "DATABASE_ATTEMPT_MIGRATION")).NotTo(BeNil())
+		Expect(findDatabaseEnv(serviceContainer(deployment).Env, migrationEnvVarName)).NotTo(BeNil())
 		originalVersion := deployment.ResourceVersion
 		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
 		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
@@ -105,7 +105,7 @@ var _ = Describe("Status and condition tests", func() {
 		}
 		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
 		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
-		Expect(findDatabaseEnv(serviceContainer(deployment).Env, "DATABASE_ATTEMPT_MIGRATION")).To(BeNil())
+		Expect(findDatabaseEnv(serviceContainer(deployment).Env, migrationEnvVarName)).To(BeNil())
 		Expect(serviceContainer(deployment).StartupProbe).To(BeNil())
 		Expect(deployment.Spec.ProgressDeadlineSeconds).To(BeNil())
 		ordinaryVersion := deployment.ResourceVersion
@@ -115,7 +115,7 @@ var _ = Describe("Status and condition tests", func() {
 	}, Entry("folder cleared", true), Entry("filename cleared", false))
 
 	It("rejects unsupported migration targets before replacing the deployment", func() {
-		for _, kind := range []string{"postgresql", "sqlite"} {
+		for _, kind := range []string{"postgresql"} {
 			instance := createDefaultMigrationCustomResource("migration-" + kind)
 			Expect(createNamespace(ctx, k8sClient, instance.Namespace)).To(Succeed())
 			instance.Finalizers = []string{finalizerName}
@@ -129,16 +129,57 @@ var _ = Describe("Status and condition tests", func() {
 			key := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: key})
 			Expect(err).To(MatchError(ContainSubstring("automatic migration requires MariaDB")))
-			Expect(reconciler.updateDeployment(ctx, instance, testTrustAIServiceImage, CustomCertificatesBundle{})).To(MatchError(ContainSubstring("automatic migration requires MariaDB")))
 			Expect(k8sClient.Get(ctx, key, instance)).To(Succeed())
 			Expect(instance.Status.Ready).To(Equal(corev1.ConditionFalse))
 			Expect(instance.Annotations).To(HaveKey(migrationAnnotationKey))
 			condition, _, err := checkCondition(instance.Status.Conditions, ConditionTypeReady, corev1.ConditionFalse, false)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(condition.Reason).To(Equal("InvalidMigrationConfiguration"))
+			Expect(condition.Reason).To(Equal(StatusInvalidMigrationConfiguration))
 			after := &appsv1.Deployment{}
 			Expect(k8sClient.Get(ctx, key, after)).To(Succeed())
 			Expect(after).To(Equal(existing))
+		}
+	})
+
+	It("enters migration mode without the annotation when the CR sets the migration fields", func() {
+		instance := createDefaultDBCustomResource("migration-entered")
+		Expect(createNamespace(ctx, k8sClient, instance.Namespace)).To(Succeed())
+		Expect(k8sClient.Create(ctx, createDatabaseConfiguration(instance.Namespace, defaultDatabaseConfigurationName, "mariadb", "trustyai"))).To(Succeed())
+		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
+		key := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+		deployment := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		Expect(findDatabaseEnv(serviceContainer(deployment).Env, migrationEnvVarName)).To(BeNil())
+
+		instance.Spec.Storage.Folder = "/inputs"
+		instance.Spec.Data.Filename = "data.csv"
+		Expect(instance.IsMigration()).To(BeTrue())
+		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		Expect(findDatabaseEnv(serviceContainer(deployment).Env, migrationEnvVarName)).NotTo(BeNil())
+		Expect(serviceContainer(deployment).StartupProbe).NotTo(BeNil())
+		Expect(deployment.Spec.ProgressDeadlineSeconds).To(HaveValue(BeNumerically(">", 1800)))
+		migratingVersion := deployment.ResourceVersion
+
+		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		Expect(deployment.ResourceVersion).To(Equal(migratingVersion))
+	})
+
+	It("leaves a missing database secret on DBCredentialsNotFound in migration mode", func() {
+		instance := createDefaultMigrationCustomResource("migration-no-secret")
+		Expect(createNamespace(ctx, k8sClient, instance.Namespace)).To(Succeed())
+		instance.Finalizers = []string{finalizerName}
+		Expect(k8sClient.Create(ctx, instance)).To(Succeed())
+
+		key := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+		Expect(err).To(HaveOccurred())
+		Expect(k8sClient.Get(ctx, key, instance)).To(Succeed())
+		_, _, err = checkCondition(instance.Status.Conditions, StatusTypeDBAvailable, corev1.ConditionFalse, false)
+		Expect(err).NotTo(HaveOccurred())
+		for _, condition := range instance.Status.Conditions {
+			Expect(condition.Reason).NotTo(Equal(StatusInvalidMigrationConfiguration))
 		}
 	})
 

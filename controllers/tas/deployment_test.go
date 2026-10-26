@@ -563,7 +563,7 @@ var _ = Describe("TrustyAI operator", func() {
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "STORAGE_DATA_FOLDER")
 			Expect(envVar).To(BeNil())
 
-			envVar = foundEnvVar(trustyaiServiceContainer.Env, "DATABASE_ATTEMPT_MIGRATION")
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, migrationEnvVarName)
 			Expect(envVar).To(BeNil())
 
 			//envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_DATA_FORMAT")
@@ -698,8 +698,8 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(envVar).ToNot(BeNil())
 			Expect(envVar.Value).To(Equal("CSV"))
 
-			envVar = foundEnvVar(trustyaiServiceContainer.Env, "DATABASE_ATTEMPT_MIGRATION")
-			Expect(envVar).ToNot(BeNil(), "Env var DATABASE_ATTEMPT_MIGRATION not found")
+			envVar = foundEnvVar(trustyaiServiceContainer.Env, migrationEnvVarName)
+			Expect(envVar).ToNot(BeNil(), "Env var "+migrationEnvVarName+" not found")
 			Expect(envVar.Value).To(Equal("true"))
 
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_METRICS_SCHEDULE")

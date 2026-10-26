@@ -10,14 +10,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-// validateMigrationTarget restricts automatic migration to MariaDB.
-func (r *TrustyAIServiceReconciler) validateMigrationTarget(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) error {
+// validateMigrationTarget restricts automatic migration to MariaDB. The secret
+// must already have passed validateDatabaseSecret.
+func validateMigrationTarget(instance *trustyaiopendatahubiov1.TrustyAIService, secret *corev1.Secret) error {
 	if !instance.IsMigration() {
 		return nil
-	}
-	secret, err := r.findDatabaseSecret(ctx, instance)
-	if err != nil {
-		return err
 	}
 	kind := strings.ToLower(strings.TrimSpace(string(secret.Data["databaseKind"])))
 	if kind != "mariadb" && kind != "maria" {
