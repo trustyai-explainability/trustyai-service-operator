@@ -12,6 +12,9 @@ metadata:
     app.kubernetes.io/part-of: trustyai
     app.kubernetes.io/version: {{ .Version }}
 spec:
+  {{ if .Instance.IsMigration }}
+  progressDeadlineSeconds: 2100
+  {{ end }}
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -62,6 +65,8 @@ spec:
               value: {{ .Instance.Spec.Storage.Folder }}
             - name: SERVICE_DATA_FORMAT
               value: {{ .Instance.Spec.Data.Format }}
+            - name: {{ .MigrationEnvVarName }}
+              value: "true"
             {{ end }}
             {{ if eq .Instance.Spec.Storage.Format "DATABASE" }}
             - name: QUARKUS_HIBERNATE_ORM_ACTIVE
@@ -122,6 +127,16 @@ spec:
             - name: STORAGE_MIGRATION_CONFIG_FROM_FILENAME
               value: {{ .Instance.Spec.Data.Filename }}
             {{ end }}
+          {{ if .Instance.IsMigration }}
+          # Allow up to 30 minutes for migration before liveness takes over.
+          startupProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 180
+          {{ end }}
           readinessProbe:
             httpGet:
               path: /q/health/ready

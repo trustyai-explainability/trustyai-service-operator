@@ -224,6 +224,18 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			}
 			return RequeueWithErrorMessage(ctx, err, "Database configuration contains errors.")
 		}
+		if err := validateMigrationTarget(instance, secret); err != nil {
+			_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1.TrustyAIService) {
+				UpdateTrustyAIServiceNotAvailable(saved)
+				saved.SetStatus(ConditionTypeReady, StatusInvalidMigrationConfiguration, err.Error(), v1.ConditionFalse)
+				saved.Status.Phase = PhaseNotReady
+				saved.Status.Ready = v1.ConditionFalse
+			})
+			if updateErr != nil {
+				return RequeueWithErrorMessage(ctx, err, "Failed to update status")
+			}
+			return RequeueWithErrorMessage(ctx, err, "Invalid migration configuration.")
+		}
 	}
 
 	// Check for migration annotation

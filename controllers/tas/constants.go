@@ -68,6 +68,7 @@ const (
 	StatusDBCredentialsNotFound           = "DBCredentialsNotFound"
 	StatusDBCredentialsError              = "DBCredentialsError"
 	StatusDBConnectionError               = "DBConnectionError"
+	StatusInvalidMigrationConfiguration   = "InvalidMigrationConfiguration"
 	StatusDBAvailable                     = "DBAvailable"
 )
 
@@ -96,4 +97,8 @@ const (
 	PhaseNotReady = "Not Ready"
 )
 
-const migrationAnnotationKey = "trustyai.opendatahub.io/db-migration"
+const (
+	migrationAnnotationKey = "trustyai.opendatahub.io/db-migration"
+	// migrationEnvVarName enables the service's automatic PVC to database migration.
+	migrationEnvVarName = "DATABASE_ATTEMPT_MIGRATION"
+)
