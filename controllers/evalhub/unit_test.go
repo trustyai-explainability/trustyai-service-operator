@@ -3321,6 +3321,8 @@ func TestEvalHubReconciler_cleanupDiscoveryConfigMaps(t *testing.T) {
 	})
 }
 
+// TestGenerateAuthConfigData_MethodsPresent verifies generated endpoint policies include explicit HTTP methods
+// and correct RBAC mappings.
 func TestGenerateAuthConfigData_MethodsPresent(t *testing.T) {
 	var parsed struct {
 		Authorization struct {
