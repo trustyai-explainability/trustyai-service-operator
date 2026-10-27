@@ -62,14 +62,36 @@ func (r *EvalHubReconciler) ensureRole(ctx context.Context, instance *evalhubv1.
 	return r.Update(ctx, existing)
 }
 
-// ensureTenantUserRole creates or updates the evalhub-user Role in a tenant
+// tenantUserRoleNameForInstance returns the name of the Role that grants a tenant
+// namespace's own ServiceAccounts access to this EvalHub instance.
+//
+// The instance name alone is not unique: multi-tenancy is driven by namespace
+// labels, so two EvalHub CRs with the same name in different namespaces
+// reconcile the same tenant namespace. A Role named "<name>-user" would then be
+// shared by both - the second reconciler finds the first one's Role, leaves its
+// labels pointing at the other instance, and cleanupStaleTenantResources can
+// later delete a Role the other instance still needs. Scope the name with the
+// instance namespace, as the per-tenant job resources already are.
+func tenantUserRoleNameForInstance(instance *evalhubv1.EvalHub) string {
+	return normalizeDNS1123LabelValue(jobResourceInstanceID(instance) + "-user")
+}
+
+// tenantUserRoleBindingName returns the RoleBinding name for a tenant namespace.
+// The tenant namespace alone does not identify the grant either: same-named
+// instances must not share a binding, since its labels decide which instance
+// cleans it up.
+func tenantUserRoleBindingName(instance *evalhubv1.EvalHub, namespace string) string {
+	return normalizeDNS1123LabelValue(jobResourceInstanceID(instance) + "-" + namespace + "-tenant-user-rb")
+}
+
+// ensureTenantUserRole creates or updates the tenant user Role in a tenant
 // namespace and returns its name. Unlike ensureRole it targets an arbitrary
 // namespace and labels the Role - rather than setting an owner reference, which
 // cannot cross namespaces - so cleanupStaleTenantResources collects it when the
 // namespace stops being a tenant.
 func (r *EvalHubReconciler) ensureTenantUserRole(ctx context.Context, instance *evalhubv1.EvalHub, namespace string) (string, error) {
 	log := log.FromContext(ctx)
-	name := normalizeDNS1123LabelValue(instance.Name + "-user")
+	name := tenantUserRoleNameForInstance(instance)
 
 	desired := &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
