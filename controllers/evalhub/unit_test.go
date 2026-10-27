@@ -3372,6 +3372,26 @@ func TestGenerateAuthConfigData_MethodsPresent(t *testing.T) {
 		assert.Equal(t, "list", resource.ResourceAttributes.Verb)
 	}
 	assert.Equal(t, 1, infoEndpoints, "info endpoint must be declared exactly once")
+
+	cloneEndpoints := 0
+	for _, endpoint := range parsed.Authorization.Endpoints {
+		if endpoint.Path != "/api/v1/evaluations/collections/*/clones" {
+			continue
+		}
+
+		cloneEndpoints++
+		require.Len(t, endpoint.Mappings, 1, "clone endpoint must have one POST mapping")
+		mapping := endpoint.Mappings[0]
+		assert.Equal(t, []string{"post"}, mapping.Methods)
+		require.Len(t, mapping.Resources, 1, "clone endpoint must have one tenant-scoped RBAC check")
+		resource := mapping.Resources[0]
+		assert.Equal(t, "X-Tenant", resource.Rewrites.ByHTTPHeader.Name)
+		assert.Equal(t, "{{.FromHeader}}", resource.ResourceAttributes.Namespace)
+		assert.Equal(t, "trustyai.opendatahub.io", resource.ResourceAttributes.APIGroup)
+		assert.Equal(t, "collections", resource.ResourceAttributes.Resource)
+		assert.Equal(t, "create", resource.ResourceAttributes.Verb)
+	}
+	assert.Equal(t, 1, cloneEndpoints, "collection clone endpoint must be declared exactly once")
 }
 
 func TestGenerateMCPAuthConfigData_MethodsPresent(t *testing.T) {

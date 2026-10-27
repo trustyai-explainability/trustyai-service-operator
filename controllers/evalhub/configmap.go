@@ -400,6 +400,18 @@ func generateAuthConfigData() string {
                 apiGroup: mlflow.kubeflow.org
                 resource: experiments
                 verb: get
+    - path: /api/v1/evaluations/collections/*/clones
+      mappings:
+        - methods: [post]
+          resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: collections
+                verb: create
     - path: /api/v1/evaluations/collections/*
       mappings:
         - methods: [get, delete, put, patch]
