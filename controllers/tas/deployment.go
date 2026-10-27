@@ -281,7 +281,39 @@ func containerHasMigrationEnv(container *corev1.Container) bool {
 	return false
 }
 
-// deploymentMigrationChanged compares the migration-only settings of two Deployments.
+// migrationEnvNames are the env vars the template sets from the migration fields.
+var migrationEnvNames = map[string]struct{}{
+	migrationEnvVarName:                      {},
+	"STORAGE_DATA_FILENAME":                  {},
+	"STORAGE_DATA_FOLDER":                    {},
+	"SERVICE_DATA_FORMAT":                    {},
+	"STORAGE_MIGRATION_CONFIG_FROM_FOLDER":   {},
+	"STORAGE_MIGRATION_CONFIG_FROM_FILENAME": {},
+}
+
+func migrationEnvVars(envVars []corev1.EnvVar) []corev1.EnvVar {
+	var migrationEnv []corev1.EnvVar
+	for _, env := range envVars {
+		if _, ok := migrationEnvNames[env.Name]; ok {
+			migrationEnv = append(migrationEnv, env)
+		}
+	}
+	return migrationEnv
+}
+
+// storageVolumeMounts returns the container's mounts of the PVC storage volume.
+func storageVolumeMounts(container *corev1.Container) []corev1.VolumeMount {
+	var mounts []corev1.VolumeMount
+	for _, mount := range container.VolumeMounts {
+		if mount.Name == volumeMountName {
+			mounts = append(mounts, mount)
+		}
+	}
+	return mounts
+}
+
+// deploymentMigrationChanged compares the migration settings (env, storage mount,
+// startup probe and progress deadline) of two Deployments.
 // ProgressDeadlineSeconds is only compared when the desired Deployment sets it,
 // because the API server defaults it on the live object.
 func deploymentMigrationChanged(current, desired *appsv1.Deployment) bool {
@@ -290,7 +322,10 @@ func deploymentMigrationChanged(current, desired *appsv1.Deployment) bool {
 	if currentContainer == nil || desiredContainer == nil {
 		return currentContainer != desiredContainer
 	}
-	if containerHasMigrationEnv(currentContainer) != containerHasMigrationEnv(desiredContainer) {
+	if !reflect.DeepEqual(migrationEnvVars(currentContainer.Env), migrationEnvVars(desiredContainer.Env)) {
+		return true
+	}
+	if !reflect.DeepEqual(storageVolumeMounts(currentContainer), storageVolumeMounts(desiredContainer)) {
 		return true
 	}
 	if (currentContainer.StartupProbe == nil) != (desiredContainer.StartupProbe == nil) {

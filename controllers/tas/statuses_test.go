@@ -115,7 +115,7 @@ var _ = Describe("Status and condition tests", func() {
 	}, Entry("folder cleared", true), Entry("filename cleared", false))
 
 	It("rejects unsupported migration targets before replacing the deployment", func() {
-		for _, kind := range []string{"postgresql"} {
+		for _, kind := range []string{"postgresql", "maria"} {
 			instance := createDefaultMigrationCustomResource("migration-" + kind)
 			Expect(createNamespace(ctx, k8sClient, instance.Namespace)).To(Succeed())
 			instance.Finalizers = []string{finalizerName}
@@ -164,6 +164,25 @@ var _ = Describe("Status and condition tests", func() {
 		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
 		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
 		Expect(deployment.ResourceVersion).To(Equal(migratingVersion))
+	})
+
+	It("updates a migrating deployment when the folder or filename changes", func() {
+		instance := createDefaultMigrationCustomResource("migration-edited")
+		Expect(createNamespace(ctx, k8sClient, instance.Namespace)).To(Succeed())
+		Expect(k8sClient.Create(ctx, createDatabaseConfiguration(instance.Namespace, defaultDatabaseConfigurationName, "mariadb", "trustyai"))).To(Succeed())
+		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
+		key := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+		deployment := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+
+		instance.Spec.Data.Filename = "other.csv"
+		instance.Spec.Storage.Folder = "/other"
+		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		container := serviceContainer(deployment)
+		Expect(findDatabaseEnv(container.Env, "STORAGE_MIGRATION_CONFIG_FROM_FILENAME").Value).To(Equal("other.csv"))
+		Expect(findDatabaseEnv(container.Env, "STORAGE_MIGRATION_CONFIG_FROM_FOLDER").Value).To(Equal("/other"))
+		Expect(container.VolumeMounts).To(ContainElement(HaveField("MountPath", "/other")))
 	})
 
 	It("leaves a missing database secret on DBCredentialsNotFound in migration mode", func() {

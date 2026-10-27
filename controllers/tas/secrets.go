@@ -17,8 +17,8 @@ func validateMigrationTarget(instance *trustyaiopendatahubiov1.TrustyAIService, 
 		return nil
 	}
 	kind := strings.ToLower(strings.TrimSpace(string(secret.Data["databaseKind"])))
-	if kind != "mariadb" && kind != "maria" {
-		return fmt.Errorf("automatic migration requires MariaDB (databaseKind mariadb or maria); got %q", kind)
+	if kind != "mariadb" {
+		return fmt.Errorf("automatic migration requires MariaDB (databaseKind mariadb); got %q", kind)
 	}
 	return nil
 }
