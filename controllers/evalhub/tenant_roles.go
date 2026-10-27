@@ -5,6 +5,7 @@ import (
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -59,6 +60,47 @@ func (r *EvalHubReconciler) ensureRole(ctx context.Context, instance *evalhubv1.
 	}
 	existing.Rules = rules
 	return r.Update(ctx, existing)
+}
+
+// ensureTenantUserRole creates or updates the evalhub-user Role in a tenant
+// namespace and returns its name. Unlike ensureRole it targets an arbitrary
+// namespace and labels the Role - rather than setting an owner reference, which
+// cannot cross namespaces - so cleanupStaleTenantResources collects it when the
+// namespace stops being a tenant.
+func (r *EvalHubReconciler) ensureTenantUserRole(ctx context.Context, instance *evalhubv1.EvalHub, namespace string) (string, error) {
+	log := log.FromContext(ctx)
+	name := normalizeDNS1123LabelValue(instance.Name + "-user")
+
+	desired := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    jobResourceLabels(instance, name),
+		},
+		Rules: tenantUserRules(instance),
+	}
+
+	existing := &rbacv1.Role{}
+	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, existing)
+	if errors.IsNotFound(err) {
+		log.Info("Creating tenant user Role in tenant namespace", "namespace", namespace, "name", name)
+		if err := r.Create(ctx, desired); err != nil {
+			return "", err
+		}
+		return name, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if equality.Semantic.DeepEqual(existing.Rules, desired.Rules) {
+		return name, nil
+	}
+	existing.Rules = desired.Rules
+	log.Info("Updating tenant user Role in tenant namespace", "namespace", namespace, "name", name)
+	if err := r.Update(ctx, existing); err != nil {
+		return "", err
+	}
+	return name, nil
 }
 
 // ensureTenantAdminBinding creates or updates a RoleBinding that binds the evalhub-tenant-admin
@@ -175,6 +217,12 @@ func tenantUserRules(instance *evalhubv1.EvalHub) []rbacv1.PolicyRule {
 			APIGroups: []string{"trustyai.opendatahub.io"},
 			Resources: []string{"collections", "providers"},
 			Verbs:     []string{"get", "list", "watch"},
+		},
+		{
+			// Job sidecars post lifecycle status back through this virtual resource.
+			APIGroups: []string{"trustyai.opendatahub.io"},
+			Resources: []string{"status-events"},
+			Verbs:     []string{"create"},
 		},
 		{
 			APIGroups:     []string{"trustyai.opendatahub.io"},

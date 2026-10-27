@@ -105,6 +105,31 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 			return err
 		}
 
+		// Create the per-tenant user Role and bind it to the namespace's own
+		// ServiceAccounts. EvalHub authorizes its REST API with namespace-scoped
+		// SubjectAccessReviews whose namespace comes from the X-Tenant header, so a
+		// workload running here (a workbench, or the eval-hub-sdk CLI inside one) can
+		// only reach the API if the grant lives in this namespace. A binding in the
+		// control-plane namespace cannot satisfy it.
+		//
+		// The Role is the same set of rules single-tenancy uses for evalhub-user, so
+		// tenant identities get the evaluation lifecycle, read-only providers and
+		// collections, and MLflow experiment access - not the operator's own RBAC.
+		tenantUserRoleName, err := r.ensureTenantUserRole(ctx, instance, ns)
+		if err != nil {
+			log.Error(err, "Failed to create tenant user Role in tenant namespace", "namespace", ns)
+			return err
+		}
+		tenantUserRBName := normalizeDNS1123LabelValue(instance.Name + "-" + ns + "-tenant-user-rb")
+		if err := r.createTenantGroupRoleBinding(ctx, instance, tenantUserRBName, ns, rbacv1.RoleRef{
+			Kind:     "Role",
+			Name:     tenantUserRoleName,
+			APIGroup: rbacv1.GroupName,
+		}); err != nil {
+			log.Error(err, "Failed to create tenant user RoleBinding in tenant namespace", "namespace", ns)
+			return err
+		}
+
 		// Create events RoleBinding for the API SA in the tenant namespace so the
 		// EvalHub server can emit Kubernetes Events on evaluation lifecycle transitions.
 		eventsRBName := normalizeDNS1123LabelValue(instance.Name + "-" + ns + "-events-rb")

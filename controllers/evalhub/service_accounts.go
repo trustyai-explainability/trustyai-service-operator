@@ -748,6 +748,67 @@ func (r *EvalHubReconciler) createJobRoleBinding(ctx context.Context, instance *
 	return nil
 }
 
+// createTenantGroupRoleBinding creates a namespace-scoped RoleBinding in a tenant
+// namespace that binds roleRef to the group every ServiceAccount in that namespace
+// belongs to ("system:serviceaccounts:<namespace>").
+//
+// This is the reverse direction of createJobRoleBinding: it lets identities that
+// already live in the tenant namespace (workbench pods, job pods, the eval-hub-sdk
+// CLI run from inside them) call EvalHub's own REST API. EvalHub authorizes the
+// providers and collections endpoints with a namespace-scoped SubjectAccessReview
+// whose namespace comes from the X-Tenant header, so the grant has to live in the
+// tenant namespace itself - a binding in the control-plane namespace cannot satisfy
+// it.
+//
+// Like createJobRoleBinding it labels the object rather than setting an owner
+// reference (the EvalHub CR lives in another namespace, and cross-namespace owner
+// references are not permitted), so cleanupStaleTenantResources can remove it when
+// the namespace loses the tenant label.
+func (r *EvalHubReconciler) createTenantGroupRoleBinding(ctx context.Context, instance *evalhubv1.EvalHub, roleBindingName, targetNamespace string, roleRef rbacv1.RoleRef) error {
+	log := log.FromContext(ctx)
+
+	roleBinding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      roleBindingName,
+			Namespace: targetNamespace,
+			Labels:    jobResourceLabels(instance, roleBindingName),
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				APIGroup: rbacv1.GroupName,
+				Kind:     "Group",
+				Name:     "system:serviceaccounts:" + targetNamespace,
+			},
+		},
+		RoleRef: roleRef,
+	}
+
+	found := &rbacv1.RoleBinding{}
+	err := r.Get(ctx, types.NamespacedName{Name: roleBinding.Name, Namespace: roleBinding.Namespace}, found)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Creating tenant group RoleBinding", "Namespace", roleBinding.Namespace, "Name", roleBinding.Name)
+		return r.Create(ctx, roleBinding)
+	} else if err != nil {
+		return err
+	}
+
+	subjectsEqual := equalRoleBindingSubjects(found.Subjects, roleBinding.Subjects)
+	roleRefEqual := equalRoleBindingRoleRef(found.RoleRef, roleBinding.RoleRef)
+	if subjectsEqual && roleRefEqual {
+		return nil
+	}
+	if !roleRefEqual {
+		log.Info("RoleRef differs, deleting and recreating tenant group RoleBinding", "Name", roleBinding.Name)
+		if err := r.Delete(ctx, found); err != nil {
+			return err
+		}
+		return r.Create(ctx, roleBinding)
+	}
+	found.Subjects = roleBinding.Subjects
+	log.Info("Updating tenant group RoleBinding subjects", "Name", roleBinding.Name)
+	return r.Update(ctx, found)
+}
+
 // createGenericRoleBinding creates a namespace-scoped RoleBinding with the given
 // name, subject SA, and role reference. Handles create-or-update logic including
 // immutable RoleRef recreation.

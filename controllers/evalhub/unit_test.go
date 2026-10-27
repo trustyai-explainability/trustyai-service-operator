@@ -2574,6 +2574,35 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 		assert.Equal(t, "ServiceAccount", eventsRB.Subjects[0].Kind)
 		assert.Equal(t, evalHubName+"-service", eventsRB.Subjects[0].Name)
 		assert.Equal(t, instanceNamespace, eventsRB.Subjects[0].Namespace)
+
+		// Verify the tenant namespace grants its own ServiceAccounts the EvalHub API
+		// access they need: evaluation lifecycle, read-only providers/collections and
+		// MLflow experiments, through a namespace-local Role.
+		userRoleName := normalizeDNS1123LabelValue(evalHubName + "-user")
+		userRole := &rbacv1.Role{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      userRoleName,
+			Namespace: tenantNamespace,
+		}, userRole)
+		require.NoError(t, err, "tenant user Role should exist in tenant namespace")
+		assert.Equal(t, tenantUserRules(evalHub), userRole.Rules)
+		assert.Equal(t, jobResourceInstanceID(evalHub), userRole.Labels["eval-hub.trustyai.opendatahub.io"])
+		assert.Equal(t, "job", userRole.Labels["app.kubernetes.io/component"])
+
+		userRBName := normalizeDNS1123LabelValue(evalHubName + "-" + tenantNamespace + "-tenant-user-rb")
+		userRB := &rbacv1.RoleBinding{}
+		err = fakeClient.Get(ctx, types.NamespacedName{
+			Name:      userRBName,
+			Namespace: tenantNamespace,
+		}, userRB)
+		require.NoError(t, err, "tenant user RoleBinding should exist in tenant namespace")
+		assert.Equal(t, "Role", userRB.RoleRef.Kind)
+		assert.Equal(t, userRoleName, userRB.RoleRef.Name)
+		require.Len(t, userRB.Subjects, 1)
+		assert.Equal(t, "Group", userRB.Subjects[0].Kind)
+		assert.Equal(t, "system:serviceaccounts:"+tenantNamespace, userRB.Subjects[0].Name)
+		assert.Equal(t, jobResourceInstanceID(evalHub), userRB.Labels["eval-hub.trustyai.opendatahub.io"])
+		assert.Equal(t, "job", userRB.Labels["app.kubernetes.io/component"])
 	})
 
 	t.Run("should skip terminating tenant namespace", func(t *testing.T) {
