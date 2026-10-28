@@ -726,3 +726,100 @@ var _ = Describe("LMEvalJob re-run after spec change", func() {
 			"re-run merged bundle should still contain public CAs")
 	})
 })
+
+var _ = Describe("LMEvalJob scheduling idempotency", func() {
+	ctx := context.Background()
+	trueB := true
+
+	It("re-schedules a job whose pod already exists instead of failing it", func() {
+		jobName := "test-double-schedule"
+		job := &lmesv1alpha1.LMEvalJob{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      jobName,
+				Namespace: testNamespace,
+			},
+			TypeMeta: metav1.TypeMeta{
+				Kind:       lmesv1alpha1.KindName,
+				APIVersion: lmesv1alpha1.Version,
+			},
+			Spec: lmesv1alpha1.LMEvalJobSpec{
+				AllowOnline:        &trueB,
+				AllowCodeExecution: &trueB,
+				Model:              "hf",
+				ModelArgs: []lmesv1alpha1.Arg{
+					{Name: "pretrained", Value: "google/flan-t5-base"},
+				},
+				TaskList: lmesv1alpha1.TaskList{
+					TaskNames: []string{"task1"},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, job)).Should(Succeed())
+
+		WaitFor(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{
+				Name: jobName, Namespace: testNamespace,
+			}, &corev1.Pod{})
+		}, "pod was not created")
+
+		WaitFor(func() error {
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name: jobName, Namespace: testNamespace,
+			}, job); err != nil {
+				return err
+			}
+			if job.Status.State != lmesv1alpha1.ScheduledJobState {
+				return fmt.Errorf("expected Scheduled, got %s", job.Status.State)
+			}
+			return nil
+		}, "job did not reach Scheduled state")
+
+		pod := &corev1.Pod{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: jobName, Namespace: testNamespace,
+		}, pod)).Should(Succeed())
+		podUID := pod.UID
+
+		// Reproduce the RHOAIENG-94190 race deterministically: a reconcile that
+		// observes the job after the last-scheduled-generation annotation was
+		// written but before the status transition to Scheduled landed re-enters
+		// the new-job path while the execution pod already exists.
+		WaitFor(func() error {
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name: jobName, Namespace: testNamespace,
+			}, job); err != nil {
+				return err
+			}
+			job.Status.State = lmesv1alpha1.NewJobState
+			job.Status.LastScheduleTime = nil
+			job.Status.CompleteTime = nil
+			job.Status.PodName = ""
+			return k8sClient.Status().Update(ctx, job)
+		}, "failed to rewind the job status to the new-job state")
+
+		// Scheduling must converge back to Scheduled. Failing the job (the old
+		// behaviour: "pods ... already exists") leaves it Complete/Failed and
+		// drops the status poll.
+		WaitFor(func() error {
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name: jobName, Namespace: testNamespace,
+			}, job); err != nil {
+				return err
+			}
+			if job.Status.State == lmesv1alpha1.CompleteJobState {
+				return fmt.Errorf("job was completed instead of re-scheduled: reason=%s message=%s",
+					job.Status.Reason, job.Status.Message)
+			}
+			if job.Status.State != lmesv1alpha1.ScheduledJobState {
+				return fmt.Errorf("expected Scheduled, got %s", job.Status.State)
+			}
+			return nil
+		}, "job did not recover to Scheduled after a duplicate scheduling attempt")
+
+		// The existing pod must be reused, not replaced.
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: jobName, Namespace: testNamespace,
+		}, pod)).Should(Succeed())
+		Expect(pod.UID).To(Equal(podUID))
+	})
+})
