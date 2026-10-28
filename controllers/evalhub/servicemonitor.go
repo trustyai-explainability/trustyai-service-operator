@@ -8,6 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -50,7 +51,7 @@ func (r *EvalHubReconciler) buildServiceMonitor(instance *evalhubv1.EvalHub) *mo
 					HonorLabels: true,
 					Interval:    scrapeInterval,
 					Path:        metricsPath,
-					Scheme:      "http",
+					Scheme:      ptr.To(monitoringv1.Scheme("http")),
 					Port:        "metrics",
 				},
 			},

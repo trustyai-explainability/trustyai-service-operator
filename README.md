@@ -21,7 +21,8 @@ inference data to enable model explainability, fairness monitoring, and drift tr
 
 ## Installation
 
-This operator is available as an [image on Quay.io](https://quay.io/repository/trustyai/trustyai-service-operator?tab=history). 
+This operator is available as an [image on Quay.io](https://quay.io/repository/trustyai/trustyai-service-operator?tab=history).
+
 To deploy it on your cluster:
 
 ```shell
@@ -109,6 +110,18 @@ Each exclusion applies to a specific version. Add any other incompatible version
 reported by the update so Go can select a compatible release. Do not raise the Go
 version beyond what the latest Red Hat `go-toolset` image provides to accommodate
 a dependency update.
+
+Some dependencies must stay on compatible versions even when newer releases
+support the project's Go version. The `replace` directives in `go.mod` keep the
+Kubernetes libraries, controller-runtime, and job integrations compatible with
+KServe and the operator. They also retain the legacy CEL module path and the
+inference-extension API imported by KServe. Review these constraints together
+when upgrading that dependency family; `go get -u` alone does not ensure API
+compatibility. After updating, compile all packages and their tests:
+
+```shell
+GOTOOLCHAIN=go$(awk '/^go / {print $2}' go.mod) go test -mod=readonly -run '^$' ./...
+```
 
 ## Contributing
 

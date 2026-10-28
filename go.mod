@@ -15,7 +15,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.37.1
 	k8s.io/apimachinery v0.37.1
-	k8s.io/client-go v0.37.1
+	k8s.io/client-go v1.5.2
 	sigs.k8s.io/controller-runtime v0.25.2
 	sigs.k8s.io/kueue v0.19.10
 )
@@ -36,7 +36,6 @@ require (
 )
 
 require (
-	cel.dev/cel-go v0.33.1 // indirect
 	cel.dev/expr v0.25.3 // indirect
 	cloud.google.com/go/auth v0.24.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.3.0 // indirect
@@ -55,8 +54,6 @@ require (
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
-	github.com/coreos/go-semver v0.3.1 // indirect
-	github.com/coreos/go-systemd/v22 v22.7.0 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.40.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/expr-lang/expr v1.17.8 // indirect
@@ -80,14 +77,13 @@ require (
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/goccy/go-json v0.11.2 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
-	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/google/btree v1.1.3 // indirect
 	github.com/google/cel-go v0.32.0 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/gnostic-models v0.7.1 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
-	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.1 // indirect
-	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.4 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kedacore/keda/v2 v2.21.0 // indirect
@@ -99,6 +95,7 @@ require (
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/leodido/go-urn v1.5.0 // indirect
 	github.com/moby/spdystream v0.5.1 // indirect
+	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/pierrec/lz4/v4 v4.1.33 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
@@ -116,9 +113,6 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
-	go.etcd.io/etcd/api/v3 v3.7.3 // indirect
-	go.etcd.io/etcd/client/pkg/v3 v3.7.3 // indirect
-	go.etcd.io/etcd/client/v3 v3.7.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.47.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.72.0 // indirect
@@ -135,8 +129,6 @@ require (
 	gopkg.in/go-playground/validator.v9 v9.31.0 // indirect
 	k8s.io/apiserver v0.37.1 // indirect
 	k8s.io/component-helpers v0.37.1 // indirect
-	k8s.io/dynamic-resource-allocation v0.37.1 // indirect
-	k8s.io/streaming v0.37.1 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.37.0 // indirect
 	sigs.k8s.io/gateway-api v1.6.3 // indirect
 	sigs.k8s.io/gateway-api-inference-extension v1.6.2 // indirect
@@ -211,7 +203,8 @@ require (
 	sigs.k8s.io/yaml v1.6.0
 )
 
-replace github.com/google/cel-go v0.32.0 => cel.dev/cel-go v0.32.0
+// Keep legacy CEL imports on the release before the module path migration.
+replace github.com/google/cel-go => github.com/google/cel-go v0.31.0
 
 // KServe v0.20.0 imports apix/v1alpha2, which was removed in v1.6.0.
 replace sigs.k8s.io/gateway-api-inference-extension => sigs.k8s.io/gateway-api-inference-extension v1.5.0
@@ -226,3 +219,25 @@ exclude (
 	sigs.k8s.io/kueue v0.20.2
 	sigs.k8s.io/kueue v0.20.3
 )
+
+// Keep the Kubernetes ecosystem compatible with KServe and the job integration.
+replace (
+	github.com/kubeflow/trainer/v2 => github.com/kubeflow/trainer/v2 v2.1.0
+	k8s.io/api => k8s.io/api v0.34.5
+	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.34.5
+	k8s.io/apimachinery => k8s.io/apimachinery v0.34.5
+	k8s.io/apiserver => k8s.io/apiserver v0.34.5
+	k8s.io/client-go => k8s.io/client-go v0.34.5
+	k8s.io/component-base => k8s.io/component-base v0.34.5
+	k8s.io/component-helpers => k8s.io/component-helpers v0.34.5
+	knative.dev/networking => knative.dev/networking v0.0.0-20260120131110-a7cdca238a0d
+	knative.dev/pkg => knative.dev/pkg v0.0.0-20260120122510-4a022ed9999a
+	knative.dev/serving => knative.dev/serving v0.48.1
+	sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.22.5
+	sigs.k8s.io/jobset => sigs.k8s.io/jobset v0.11.0-devel
+	sigs.k8s.io/kueue => sigs.k8s.io/kueue v0.16.0-devel
+)
+
+replace github.com/kubeflow/mpi-operator => github.com/kubeflow/mpi-operator v0.7.0
+
+replace github.com/kedacore/keda/v2 => github.com/kedacore/keda/v2 v2.18.3

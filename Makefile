@@ -148,7 +148,7 @@ GO_VERSION = $(shell awk '/^go /{print $$2}' go.mod)
 update-deps: ## Update all dependencies to latest versions
 	@echo "Updating dependencies to latest versions..."
 	GOTOOLCHAIN=go${GO_VERSION} go get -t -u ./...
-	@go mod tidy
+	@GOTOOLCHAIN=go${GO_VERSION} go mod tidy
 	@echo "Dependencies updated"
 
 ##@ Policy

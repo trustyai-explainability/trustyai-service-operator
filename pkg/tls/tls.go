@@ -201,7 +201,10 @@ func tlsOptsForProfile(profile *configv1.TLSSecurityProfile, adherence string) (
 		return nil, fmt.Errorf("unsupported minimum TLS version %q: %w", profileSpec.MinTLSVersion, err)
 	}
 
-	tlsConfig, unsupported := openshifttls.NewTLSConfigFromProfile(profileSpec)
+	tlsConfig, unsupported, err := openshifttls.NewTLSConfigFromProfile(profileSpec)
+	if err != nil {
+		return nil, fmt.Errorf("creating OpenShift TLS configuration: %w", err)
+	}
 	if len(unsupported) > 0 {
 		log.Info("TLS profile contains settings unsupported by Go", "unsupported", unsupported)
 	}
