@@ -515,7 +515,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			By("Checking evalhub config volume")
 			Expect(evalHubConfigVolume).NotTo(BeNil())
 			Expect(evalHubConfigVolume.VolumeSource.ConfigMap).NotTo(BeNil())
-			Expect(evalHubConfigVolume.VolumeSource.ConfigMap.Name).To(Equal(evalHubName + "-config"))
+			Expect(evalHubConfigVolume.VolumeSource.ConfigMap.Name).To(Equal(evalHubConfigMapName(evalHub)))
 
 			By("Checking TLS volume")
 			Expect(tlsVolume).NotTo(BeNil())
