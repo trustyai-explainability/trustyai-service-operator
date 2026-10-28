@@ -109,8 +109,17 @@ var (
 // by cache staleness, so a poll that is not explicitly requeued is a poll that
 // may never happen again. controller-runtime deduplicates identical work-queue
 // keys, so returning a timer on every poll cannot hot-loop.
+//
+// A non-positive interval is treated as unset: RequeueAfter <= 0 means "do not
+// requeue" to controller-runtime, which would strand any job in Scheduled or
+// Running, so a misconfigured lmes-pod-checking-interval must not be able to
+// switch polling off.
 func pollResult() reconcile.Result {
-	return reconcile.Result{RequeueAfter: Options.PodCheckingInterval}
+	interval := Options.PodCheckingInterval
+	if interval <= 0 {
+		interval = DefaultPodCheckingInterval
+	}
+	return reconcile.Result{RequeueAfter: interval}
 }
 
 // LMEvalJobReconciler reconciles a LMEvalJob object
