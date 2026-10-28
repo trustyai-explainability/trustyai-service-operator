@@ -25,6 +25,19 @@ jobs:
         with:
           go-version-file: "go.mod"
 
+      # The CVE-2026-77524 entry in .trivyignore.yaml expires at
+      # 2027-04-30T00:00:00Z, but an OpenVEX statement carries no expiry of its
+      # own. Export TRIVY_VEX only before that instant so the exemption cannot
+      # outlive its expiry: from 2027-04-30 both stop applying and the
+      # CRITICAL/HIGH scan (exit-code 1) fails until the finding is reassessed.
+      - name: Load OpenVEX statement while the exemption is valid
+        run: |
+          if [[ "$(date -u +%Y%m%d)" -lt 20270430 ]]; then
+            echo "TRIVY_VEX=security/vex/openvex.json" >> "$GITHUB_ENV"
+          else
+            echo "CVE-2026-77524 exemption expired; not loading security/vex/openvex.json"
+          fi
+
       - name: Run Trivy vulnerability scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -35,6 +48,7 @@ jobs:
           severity: "CRITICAL,HIGH,MEDIUM,LOW"
           exit-code: "0"
           cache: "true"
+          trivyignores: ".trivyignore.yaml"
 
       - name: Check for critical and high vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -45,6 +59,7 @@ jobs:
           severity: "CRITICAL,HIGH"
           exit-code: "1"
           cache: "true"
+          trivyignores: ".trivyignore.yaml"
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
