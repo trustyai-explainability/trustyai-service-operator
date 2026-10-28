@@ -866,6 +866,8 @@ var _ = Describe("TrustyAI operator", func() {
 			// or another controller before this CR existed).
 			foreign, err := reconciler.createDeploymentObject(ctx, instance, testTrustAIServiceImage, caBundle)
 			Expect(err).ToNot(HaveOccurred())
+			// The construction helper establishes ownership; remove it for this fixture.
+			foreign.OwnerReferences = nil
 			Expect(k8sClient.Create(ctx, foreign)).To(Succeed())
 
 			Expect(reconciler.updateDeployment(ctx, instance, testTrustAIServiceImage, caBundle)).To(HaveOccurred())

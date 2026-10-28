@@ -1,0 +1,19 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "odh-dashboard"
+  },
+  "spec": {
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "odh-dashboard",
+          "app.kubernetes.io/part-of": "odh-dashboard",
+          "app.opendatahub.io/odh-dashboard": "true",
+          "deployment": "odh-dashboard"
+        }
+      }
+    }
+  }
+}

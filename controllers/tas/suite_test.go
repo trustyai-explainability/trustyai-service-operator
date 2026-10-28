@@ -536,6 +536,9 @@ var _ = BeforeSuite(func() {
 
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
+		// Match production's uncached Pod reads so the metadata-only watch
+		// cannot accidentally rely on a second full-Pod informer.
+		Client: client.Options{Cache: &client.CacheOptions{DisableFor: []client.Object{&corev1.Pod{}}}},
 		// disable the metric server as we don't need it for our tests.
 		Metrics: metricsserver.Options{
 			BindAddress: "0",

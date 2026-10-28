@@ -108,6 +108,17 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		container.Env = append(container.Env, databaseTuningConfigMapEnvVars(instance.Spec.Storage.DatabaseTuning)...)
 	}
 
+	// Stamp the reserved policy identity on the template, never the immutable selector.
+	if err := ctrl.SetControllerReference(instance, deployment, r.Scheme); err != nil {
+		return nil, err
+	}
+	identity, err := tasNetworkPolicyIdentity(instance)
+	if err != nil {
+		return nil, err
+	}
+	if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, instance, identity); err != nil {
+		return nil, fmt.Errorf("stamping NetworkPolicy identity on TAS Deployment: %w", err)
+	}
 	return deployment, nil
 }
 
@@ -133,10 +144,6 @@ func (r *TrustyAIServiceReconciler) createDeployment(ctx context.Context, cr *tr
 		return err
 	}
 
-	if err := ctrl.SetControllerReference(cr, deployment, r.Scheme); err != nil {
-		log.FromContext(ctx).Error(err, "Error setting TrustyAIService as owner of Deployment.")
-		return err
-	}
 	log.FromContext(ctx).Info("Creating Deployment.")
 	err = r.Create(ctx, deployment)
 	if err != nil {
@@ -168,11 +175,6 @@ func (r *TrustyAIServiceReconciler) updateDeployment(ctx context.Context, cr *tr
 	deployment, err := r.createDeploymentObject(ctx, cr, imageName, caBundle)
 	if err != nil {
 		// Error creating the deployment resource object
-		return err
-	}
-
-	if err := ctrl.SetControllerReference(cr, deployment, r.Scheme); err != nil {
-		log.FromContext(ctx).Error(err, "Error setting TrustyAIService as owner of Deployment.")
 		return err
 	}
 
@@ -263,7 +265,8 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 			return r.updateDeployment(ctx, instance, image, caBundle)
 		}
 	}
-	return nil
+	// The caller reconciles the policy before legacy workloads enter its selector.
+	return r.ensureTASDeploymentIdentity(ctx, instance, deploy)
 }
 
 // deploymentHasMigration reports whether the Deployment carries migration-only settings.
