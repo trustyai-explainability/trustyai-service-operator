@@ -26,6 +26,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -34,6 +35,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -46,6 +48,10 @@ type NemoGuardrailsReconciler struct {
 	Scheme    *runtime.Scheme
 	Namespace string
 	Recorder  record.EventRecorder
+	// APIReader is an uncached client used for one-off reads (for example
+	// verifying the ReplicaSet owner of a Pod before adding reserved labels).
+	// Falls back to Client when unset (unit tests using a fake client).
+	APIReader client.Reader
 }
 
 const (
@@ -61,6 +67,8 @@ const (
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=replicasets,verbs=get
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
@@ -183,6 +191,16 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
+	// ====== Reconcile NetworkPolicy ==================================================================================
+	// Reconcile the NetworkPolicy before any NemoGuardrails Deployment
+	// creation or update. This also repairs reserved identity labels on
+	// currently owned Pods only after the policy object has converged; CNI
+	// enforcement propagation is asynchronous.
+	if err := r.reconcileNetworkPolicy(ctx, nemoGuardrails); err != nil {
+		utils.LogErrorDefining(ctx, err, "NemoGuardrails NetworkPolicy", nemoGuardrails.Name, nemoGuardrails.Namespace)
+		return ctrl.Result{}, err
+	}
+
 	// ====== Create deployment ========================================================================================
 	existingDeployment := &appsv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Name: nemoGuardrails.Name, Namespace: nemoGuardrails.Namespace}, existingDeployment)
@@ -269,6 +287,13 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *NemoGuardrailsReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&nemoguardrailsv1alpha1.NemoGuardrails{}).
+		Owns(&networkingv1.NetworkPolicy{}).
+		Watches(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNemoFromPod), builder.WithPredicates(predicate.Funcs{
+			CreateFunc:  func(e event.CreateEvent) bool { return hasNemoPodIdentityHint(e.Object) },
+			DeleteFunc:  func(e event.DeleteEvent) bool { return hasNemoPodIdentityHint(e.Object) },
+			UpdateFunc:  func(e event.UpdateEvent) bool { return nemoPodLabelsChanged(e.ObjectOld, e.ObjectNew) },
+			GenericFunc: func(e event.GenericEvent) bool { return hasNemoPodIdentityHint(e.Object) },
+		})).
 		// Watch for changes to ConfigMaps referenced by NemoGuardrails CRs.
 		// OnlyMetadata caches only object metadata (~1KB each) instead of full
 		// objects, preventing OOM when many ConfigMaps exist cluster-wide.
@@ -313,5 +338,6 @@ func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.
 		Scheme:    mgr.GetScheme(),
 		Namespace: ns,
 		Recorder:  recorder,
+		APIReader: mgr.GetAPIReader(),
 	}).SetupWithManager(mgr)
 }

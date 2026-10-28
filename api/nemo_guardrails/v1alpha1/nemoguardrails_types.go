@@ -82,6 +82,27 @@ type NemoGuardrailsSpec struct {
 	// When omitted, only a MaaS AIGuardrail in the same namespace as this CR may attach to it.
 	// +optional
 	AllowedConsumers *AllowedConsumers `json:"allowedConsumers,omitempty"`
+	// NetworkPolicy configures additional callers. Policies are always enabled.
+	// +optional
+	NetworkPolicy *NemoNetworkPolicy `json:"networkPolicy,omitempty"`
+}
+
+// NemoNetworkPolicy extends the built-in router and managed gateway ingress rules.
+type NemoNetworkPolicy struct {
+	// AdditionalIngress permits callers on the public service listener only.
+	// Namespace and Pod selectors are ANDed; both must be nonempty.
+	// This does not authorize consumer attachments or bypass authentication.
+	// +optional
+	// +kubebuilder:validation:MaxItems=32
+	AdditionalIngress []NemoIngressPeer `json:"additionalIngress,omitempty"`
+}
+
+// NemoIngressPeer identifies callers across namespaces, never relative to the CR.
+// +kubebuilder:validation:XValidation:rule="(has(self.namespaceSelector.matchLabels) && size(self.namespaceSelector.matchLabels) > 0) || (has(self.namespaceSelector.matchExpressions) && size(self.namespaceSelector.matchExpressions) > 0)",message="namespaceSelector must be nonempty"
+// +kubebuilder:validation:XValidation:rule="(has(self.podSelector.matchLabels) && size(self.podSelector.matchLabels) > 0) || (has(self.podSelector.matchExpressions) && size(self.podSelector.matchExpressions) > 0)",message="podSelector must be nonempty"
+type NemoIngressPeer struct {
+	NamespaceSelector metav1.LabelSelector `json:"namespaceSelector"`
+	PodSelector       metav1.LabelSelector `json:"podSelector"`
 }
 
 // NemoGuardrailsTemplate defines the template for the NemoGuardrails deployment
