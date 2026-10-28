@@ -142,6 +142,15 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(GO_TEST_FLAGS) ./... -coverprofile cover.out -v
 
+GO_VERSION = $(shell awk '/^go /{print $$2}' go.mod)
+
+.PHONY: update-deps
+update-deps: ## Update all dependencies to latest versions
+	@echo "Updating dependencies to latest versions..."
+	GOTOOLCHAIN=go${GO_VERSION} go get -t -u ./...
+	@go mod tidy
+	@echo "Dependencies updated"
+
 ##@ Policy
 
 CONFTEST ?= $(LOCALBIN)/conftest

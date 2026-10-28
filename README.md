@@ -1,21 +1,24 @@
 # TrustyAI Kubernetes Operator
+
 [![Controller Tests](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/controller-tests.yaml/badge.svg)](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/controller-tests.yaml)
 [![YAML lint](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/lint-yaml.yaml/badge.svg)](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/lint-yaml.yaml)
 [![Gosec Security Scan](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/gosec.yaml/badge.svg)](https://github.com/trustyai-explainability/trustyai-service-operator/actions/workflows/gosec.yaml)
 
-
 ## Overview
 
 The TrustyAI Kubernetes Operator aims at simplifying the deployment and management of various TrustyAI Kubernetes components, such as:
+
 - [TrustyAI Service](https://github.com/trustyai-explainability/trustyai-explainability): A service that deploys alongside KServe models and collects
 inference data to enable model explainability, fairness monitoring, and drift tracking.
 - [LM-Eval](https://github.com/EleutherAI/lm-evaluation-harness/tree/main): A job-based architecture for deploying and managing LLM evaluations, based on EleutherAI's lm-evaluation-harness library.
 - [EvalHub](https://github.com/eval-hub): A service for orchestrating AI/ML model evaluations, providing a unified API for running benchmarks across multiple evaluation providers and frameworks, with support for multi-tenant and single-tenant deployments.
 
 ## Prerequisites
+
 - Kubernetes cluster v1.19+ or OpenShift cluster v4.6+
 - `kubectl` v1.19+ or `oc` client v4.6+
 - `kustomize` v5+
+
 ## Installation
 
 This operator is available as an [image on Quay.io](https://quay.io/repository/trustyai/trustyai-service-operator?tab=history). 
@@ -26,6 +29,7 @@ OPERATOR_NAMESPACE=opendatahub
 make manifest-gen NAMESPACE=$OPERATOR_NAMESPACE KUSTOMIZE=kustomize
 oc apply -f release/trustyai_bundle.yaml -n $OPERATOR_NAMESPACE
 ```
+
 You can also build your own image, and use that as your TrustyAI operator:
 
 ```shell
@@ -67,9 +71,44 @@ access requires permission to list `evaluations` in the
 `trustyai.opendatahub.io` API group in the namespace supplied by `X-Tenant`.
 
 ## Usage
+
 For usage information, please see the [OpenDataHub documentation of TrustyAI](https://opendatahub.io/docs/monitoring-data-science-models/#configuring-trustyai_monitor).
 
 For database-backed deployments, see the [TrustyAI Service database tuning guide](docs/database-tuning.md) for ConfigMap-based tuning options.
+
+### Updating the Golang dependencies
+
+Run the `update-deps` target to update dependencies, including test dependencies,
+and tidy the module files:
+
+```shell
+make update-deps
+```
+
+The target uses the Go version declared in `go.mod` for dependency updates. The
+project's Go version must not exceed the version available in the latest Red Hat
+`go-toolset` image. Check that image's Go version before increasing the `go`
+directive in `go.mod`.
+
+If a dependency update requires a newer Go version, you may see an error such as:
+
+```text
+go: sigs.k8s.io/kueue@v0.20.0 requires go >= 1.27.0 (running go 1.26.10; GOTOOLCHAIN=go1.26.10)
+```
+
+Exclude incompatible library versions in the `exclude` block in `go.mod`, then
+rerun `make update-deps`. For example:
+
+```go
+exclude (
+    sigs.k8s.io/kueue v0.20.0
+)
+```
+
+Each exclusion applies to a specific version. Add any other incompatible versions
+reported by the update so Go can select a compatible release. Do not raise the Go
+version beyond what the latest Red Hat `go-toolset` image provides to accommodate
+a dependency update.
 
 ## Contributing
 
