@@ -12,7 +12,12 @@
       },
       "products": [
         {
-          "@id": "pkg:golang/github.com/kedacore/keda/v2@v2.18.3"
+          "@id": "pkg:golang/github.com/trustyai-explainability/trustyai-service-operator",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/kedacore/keda/v2@v2.18.3"
+            }
+          ]
         }
       ],
       "status": "not_affected",
