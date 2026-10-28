@@ -25,4 +25,8 @@ vulnerabilities:
       dependency refresh: the fix is keda/v2 v2.21.0, which moves the whole
       k8s/controller-runtime stack (k8s.io/* v0.34 -> v0.36,
       controller-runtime v0.22 -> v0.24) and needs a coordinated upgrade.
+    # Keep .github/workflows/security-scan.yaml in sync: it stops loading
+    # security/vex/openvex.json at this instant so both exemptions lapse together
+    # and the CRITICAL/HIGH scan fails for reassessment instead of suppressing
+    # the finding indefinitely.
     expired_at: 2027-04-30
