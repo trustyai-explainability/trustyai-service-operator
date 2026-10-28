@@ -82,10 +82,8 @@ func nemoRouteExposureEnabled(instance *nemoguardrailsv1alpha1.NemoGuardrails) b
 //
 // The router peer is installed only while Route exposure is enabled
 // (spec.exposeRoute, defaulting to true, mirroring the controller's Route
-// reconciliation). With exposure disabled the policy keeps the Ingress
-// direction with no allow rules, so the listener is isolated from every
-// peer — the Service remains for in-cluster callers, but no traffic is
-// authorized until separately agreed peer rules exist.
+// reconciliation). Gateway and explicitly configured caller peers remain
+// authorized on the public listener even when Route exposure is disabled.
 func buildNemoGuardrailsNetworkPolicy(instance *nemoguardrailsv1alpha1.NemoGuardrails) (utils.WorkloadNetworkPolicy, error) {
 	identity, err := nemoNetworkPolicyIdentity(instance)
 	if err != nil {
