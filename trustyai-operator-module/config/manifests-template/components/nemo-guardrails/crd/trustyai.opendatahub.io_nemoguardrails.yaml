@@ -362,6 +362,133 @@ spec:
                 x-kubernetes-validations:
                 - message: nemoConfigs names must be unique
                   rule: self.all(c, self.exists_one(o, o.name == c.name))
+              networkPolicy:
+                description: NetworkPolicy configures additional callers. Policies
+                  are always enabled.
+                properties:
+                  additionalIngress:
+                    description: |-
+                      AdditionalIngress permits callers on the public service listener only.
+                      Namespace and Pod selectors are ANDed; both must be nonempty.
+                      This does not authorize consumer attachments or bypass authentication.
+                    items:
+                      description: NemoIngressPeer identifies callers across namespaces,
+                        never relative to the CR.
+                      properties:
+                        namespaceSelector:
+                          description: |-
+                            A label selector is a label query over a set of resources. The result of matchLabels and
+                            matchExpressions are ANDed. An empty label selector matches all objects. A null
+                            label selector matches no objects.
+                          properties:
+                            matchExpressions:
+                              description: matchExpressions is a list of label selector
+                                requirements. The requirements are ANDed.
+                              items:
+                                description: |-
+                                  A label selector requirement is a selector that contains values, a key, and an operator that
+                                  relates the key and values.
+                                properties:
+                                  key:
+                                    description: key is the label key that the selector
+                                      applies to.
+                                    type: string
+                                  operator:
+                                    description: |-
+                                      operator represents a key's relationship to a set of values.
+                                      Valid operators are In, NotIn, Exists and DoesNotExist.
+                                    type: string
+                                  values:
+                                    description: |-
+                                      values is an array of string values. If the operator is In or NotIn,
+                                      the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                      the values array must be empty. This array is replaced during a strategic
+                                      merge patch.
+                                    items:
+                                      type: string
+                                    type: array
+                                    x-kubernetes-list-type: atomic
+                                required:
+                                - key
+                                - operator
+                                type: object
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            matchLabels:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                operator is "In", and the values array contains only "value". The requirements are ANDed.
+                              type: object
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        podSelector:
+                          description: |-
+                            A label selector is a label query over a set of resources. The result of matchLabels and
+                            matchExpressions are ANDed. An empty label selector matches all objects. A null
+                            label selector matches no objects.
+                          properties:
+                            matchExpressions:
+                              description: matchExpressions is a list of label selector
+                                requirements. The requirements are ANDed.
+                              items:
+                                description: |-
+                                  A label selector requirement is a selector that contains values, a key, and an operator that
+                                  relates the key and values.
+                                properties:
+                                  key:
+                                    description: key is the label key that the selector
+                                      applies to.
+                                    type: string
+                                  operator:
+                                    description: |-
+                                      operator represents a key's relationship to a set of values.
+                                      Valid operators are In, NotIn, Exists and DoesNotExist.
+                                    type: string
+                                  values:
+                                    description: |-
+                                      values is an array of string values. If the operator is In or NotIn,
+                                      the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                      the values array must be empty. This array is replaced during a strategic
+                                      merge patch.
+                                    items:
+                                      type: string
+                                    type: array
+                                    x-kubernetes-list-type: atomic
+                                required:
+                                - key
+                                - operator
+                                type: object
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            matchLabels:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                operator is "In", and the values array contains only "value". The requirements are ANDed.
+                              type: object
+                          type: object
+                          x-kubernetes-map-type: atomic
+                      required:
+                      - namespaceSelector
+                      - podSelector
+                      type: object
+                      x-kubernetes-validations:
+                      - message: namespaceSelector must be nonempty
+                        rule: (has(self.namespaceSelector.matchLabels) && size(self.namespaceSelector.matchLabels)
+                          > 0) || (has(self.namespaceSelector.matchExpressions) &&
+                          size(self.namespaceSelector.matchExpressions) > 0)
+                      - message: podSelector must be nonempty
+                        rule: (has(self.podSelector.matchLabels) && size(self.podSelector.matchLabels)
+                          > 0) || (has(self.podSelector.matchExpressions) && size(self.podSelector.matchExpressions)
+                          > 0)
+                    maxItems: 32
+                    type: array
+                type: object
               replicas:
                 default: 1
                 description: Number of replicas for the NeMo Guardrails deployment
