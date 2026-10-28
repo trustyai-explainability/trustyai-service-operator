@@ -99,6 +99,15 @@ var (
 	}
 
 	errNoCAData = errors.New("no CA bundle data found")
+
+	// errPodTerminating means the job's previous pod is still being deleted.
+	// Scheduling on top of it would hand checkScheduledPod a pod that is about
+	// to disappear, so the caller waits instead.
+	errPodTerminating = errors.New("existing execution pod is still terminating")
+
+	// errPodLookupFailed means the pod lookup itself failed. That is a transient
+	// read problem, not a reason to fail the job.
+	errPodLookupFailed = errors.New("failed to read the job pod")
 )
 
 // pollResult schedules the next pod-status poll.
@@ -572,7 +581,19 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 	}
 	created, err := r.ensureExecutionPod(ctx, job, pod, log)
 	if err != nil {
-		// Pod creation failed for a reason other than "it already exists".
+		switch {
+		case errors.Is(err, errPodTerminating):
+			// The previous pod is still being deleted. Nothing is wrong with the
+			// job: keep it schedulable and look again on the next poll.
+			log.Info("previous pod is still terminating, deferring LMEvalJob scheduling", "name", job.Name)
+			return pollResult(), nil
+		case errors.Is(err, errPodLookupFailed):
+			// A transient read failure says nothing about the job itself, so it
+			// must not be recorded as a scheduling failure.
+			log.Error(err, "unable to read the pod for the LMEvalJob, will retry", "name", job.Name)
+			return ctrl.Result{}, err
+		}
+		// Failed to create the pod. Mark the status as complete with failed
 		job.Status.State = lmesv1alpha1.CompleteJobState
 		job.Status.Reason = lmesv1alpha1.FailedReason
 		job.Status.Message = err.Error()
@@ -676,14 +697,28 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 // that displaces the pending status poll, which is how a job ends up stuck in
 // Scheduled with its pod still running.
 func (r *LMEvalJobReconciler) ensureExecutionPod(ctx context.Context, job *lmesv1alpha1.LMEvalJob, pod *corev1.Pod, log logr.Logger) (bool, error) {
-	existing, err := r.getPod(ctx, job)
+	// The lookup is done directly rather than through getPod() so that a read
+	// failure (retryable) stays distinct from a same-named pod owned by someone
+	// else (a collision that must fail the job).
+	existing, err := r.existingExecutionPod(ctx, job)
 	switch {
+	case err != nil && !apierrors.IsNotFound(err):
+		return false, fmt.Errorf("%w: %w", errPodLookupFailed, err)
 	case err == nil:
+		if !controlledByLMEvalJob(existing, job) {
+			return false, fmt.Errorf("pod %s already exists but is not controlled by this LMEvalJob", pod.Name)
+		}
+		if existing.DeletionTimestamp != nil {
+			// A re-run or resume can race the previous pod's deletion. Handing
+			// its name back to scheduling would only make checkScheduledPod
+			// report a missing pod once deletion completes.
+			log.Info("existing pod is terminating, waiting before scheduling the LMEvalJob",
+				"podName", existing.Name)
+			return false, errPodTerminating
+		}
 		log.Info("pod already exists for the LMEvalJob, resuming scheduling instead of creating it",
 			"podName", existing.Name, "phase", existing.Status.Phase)
 		return false, nil
-	case !apierrors.IsNotFound(err):
-		return false, fmt.Errorf("failed to check for an existing pod: %w", err)
 	}
 
 	if err := r.Create(ctx, pod, &client.CreateOptions{}); err != nil {
@@ -699,6 +734,16 @@ func (r *LMEvalJobReconciler) ensureExecutionPod(ctx context.Context, job *lmesv
 		return false, nil
 	}
 	return true, nil
+}
+
+// existingExecutionPod returns the job's current pod, or a NotFound error when
+// there is none. Ownership is checked by the caller.
+func (r *LMEvalJobReconciler) existingExecutionPod(ctx context.Context, job *lmesv1alpha1.LMEvalJob) (*corev1.Pod, error) {
+	var pod = corev1.Pod{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: job.Namespace, Name: job.GetPodName()}, &pod); err != nil {
+		return nil, err
+	}
+	return &pod, nil
 }
 
 func (r *LMEvalJobReconciler) getPod(ctx context.Context, job *lmesv1alpha1.LMEvalJob) (*corev1.Pod, error) {
@@ -837,6 +882,10 @@ func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger,
 		return ctrl.Result{}, err
 	}
 	if _, createErr := r.ensureExecutionPod(ctx, job, pod, log); createErr != nil {
+		if errors.Is(createErr, errPodTerminating) {
+			log.Info("previous pod is still terminating, deferring resume", "name", job.Name)
+			return pollResult(), nil
+		}
 		log.Error(createErr, "failed to create pod to resume job")
 		return pollResult(), createErr
 	}
