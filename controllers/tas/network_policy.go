@@ -379,8 +379,8 @@ func controllerReferenceMatches(object metav1.Object, owner metav1.Object, group
 }
 
 func (r *TrustyAIServiceReconciler) enqueueTASFromPod(ctx context.Context, object client.Object) []reconcile.Request {
-	pod, ok := object.(*corev1.Pod)
-	if !ok || pod.Namespace == "" {
+	pod := object
+	if pod == nil || pod.GetNamespace() == "" {
 		return nil
 	}
 	reader := r.APIReader
@@ -392,20 +392,20 @@ func (r *TrustyAIServiceReconciler) enqueueTASFromPod(ctx context.Context, objec
 		groupVersion, err := schema.ParseGroupVersion(replicaSetRef.APIVersion)
 		if err == nil && groupVersion.Group == "apps" {
 			replicaSet := &appsv1.ReplicaSet{}
-			if err := reader.Get(ctx, client.ObjectKey{Namespace: pod.Namespace, Name: replicaSetRef.Name}, replicaSet); err == nil && replicaSet.UID == replicaSetRef.UID {
+			if err := reader.Get(ctx, client.ObjectKey{Namespace: pod.GetNamespace(), Name: replicaSetRef.Name}, replicaSet); err == nil && replicaSet.UID == replicaSetRef.UID {
 				deploymentRef := metav1.GetControllerOf(replicaSet)
 				if deploymentRef != nil && deploymentRef.Kind == "Deployment" {
 					deploymentGroupVersion, parseErr := schema.ParseGroupVersion(deploymentRef.APIVersion)
 					if parseErr == nil && deploymentGroupVersion.Group == "apps" {
 						deployment := &appsv1.Deployment{}
-						if err := reader.Get(ctx, client.ObjectKey{Namespace: pod.Namespace, Name: deploymentRef.Name}, deployment); err == nil &&
+						if err := reader.Get(ctx, client.ObjectKey{Namespace: pod.GetNamespace(), Name: deploymentRef.Name}, deployment); err == nil &&
 							deployment.UID == deploymentRef.UID &&
 							controllerReferenceMatches(replicaSet, deployment, "apps", "Deployment") {
 							ownerRef := metav1.GetControllerOf(deployment)
 							if ownerRef != nil && ownerRef.Kind == "TrustyAIService" {
 								ownerGroupVersion, ownerErr := schema.ParseGroupVersion(ownerRef.APIVersion)
 								if ownerErr == nil && ownerGroupVersion.Group == trustyaiopendatahubiov1.GroupVersion.Group {
-									return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: pod.Namespace, Name: ownerRef.Name}}}
+									return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: pod.GetNamespace(), Name: ownerRef.Name}}}
 								}
 							}
 						}
@@ -417,14 +417,14 @@ func (r *TrustyAIServiceReconciler) enqueueTASFromPod(ctx context.Context, objec
 
 	// Labels are only a best-effort enqueue hint. Reconcile re-reads the CR and
 	// verifies Deployment ownership before changing any workload object.
-	name := pod.Labels["app.kubernetes.io/instance"]
+	name := pod.GetLabels()["app.kubernetes.io/instance"]
 	if name == "" {
-		name = pod.Labels["app"]
+		name = pod.GetLabels()["app"]
 	}
 	if name == "" {
 		return nil
 	}
-	return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: pod.Namespace, Name: name}}}
+	return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: pod.GetNamespace(), Name: name}}}
 }
 
 func hasTASPodIdentityHint(object client.Object) bool {

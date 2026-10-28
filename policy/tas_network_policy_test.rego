@@ -2,6 +2,8 @@ package rbac
 
 import rego.v1
 
+tas_test_manager_role_names := {"tas-manager-role", "trustyai-service-operator-tas-manager-role"}
+
 base_tas_manager_role := {
 	"kind": "ClusterRole",
 	"metadata": {"name": "tas-manager-role"},
@@ -12,14 +14,20 @@ base_tas_manager_role := {
 }
 
 test_tas_manager_networkpolicy_and_replicaset_permissions_pass if {
-	count(deny) == 0 with input as base_tas_manager_role
+	every name in tas_test_manager_role_names {
+		named_role := object.union(base_tas_manager_role, {"metadata": {"name": name}})
+		count(deny) == 0 with input as named_role
+	}
 }
 
 test_tas_manager_requires_networkpolicy_permissions if {
 	role := object.union(base_tas_manager_role, {
 		"rules": [{"apiGroups": ["apps"], "resources": ["replicasets"], "verbs": ["get"]}],
 	})
-	count(deny) > 0 with input as role
+	every name in tas_test_manager_role_names {
+		named_role := object.union(role, {"metadata": {"name": name}})
+		count(deny) > 0 with input as named_role
+	}
 }
 
 test_tas_manager_rejects_networkpolicy_delete if {
@@ -29,7 +37,10 @@ test_tas_manager_rejects_networkpolicy_delete if {
 			{"apiGroups": ["apps"], "resources": ["replicasets"], "verbs": ["get"]},
 		],
 	})
-	count(deny) > 0 with input as role
+	every name in tas_test_manager_role_names {
+		named_role := object.union(role, {"metadata": {"name": name}})
+		count(deny) > 0 with input as named_role
+	}
 }
 
 test_tas_manager_rejects_extra_networkpolicy_resources if {
@@ -39,7 +50,10 @@ test_tas_manager_rejects_extra_networkpolicy_resources if {
 			{"apiGroups": ["apps"], "resources": ["replicasets"], "verbs": ["get"]},
 		],
 	})
-	count(deny) > 0 with input as role
+	every name in tas_test_manager_role_names {
+		named_role := object.union(role, {"metadata": {"name": name}})
+		count(deny) > 0 with input as named_role
+	}
 }
 
 test_tas_manager_rejects_unneeded_replicaset_list_watch if {
@@ -49,5 +63,8 @@ test_tas_manager_rejects_unneeded_replicaset_list_watch if {
 			{"apiGroups": ["apps"], "resources": ["replicasets"], "verbs": ["get", "list", "watch"]},
 		],
 	})
-	count(deny) > 0 with input as role
+	every name in tas_test_manager_role_names {
+		named_role := object.union(role, {"metadata": {"name": name}})
+		count(deny) > 0 with input as named_role
+	}
 }

@@ -105,7 +105,7 @@ test_secrets_write_exempt_tas_manager if {
 	count(deny) == 0 with input as {
 		"kind": "ClusterRole",
 		"metadata": {"name": "trustyai-service-operator-tas-manager-role"},
-		"rules": [{"apiGroups": [""], "resources": ["secrets"], "verbs": ["create", "delete"]}],
+		"rules": array.concat(base_tas_manager_role.rules, [{"apiGroups": [""], "resources": ["secrets"], "verbs": ["create", "delete"]}]),
 	}
 }
 
@@ -147,7 +147,7 @@ test_crb_write_exempt_tas_manager if {
 	count(deny) == 0 with input as {
 		"kind": "ClusterRole",
 		"metadata": {"name": "trustyai-service-operator-tas-manager-role"},
-		"rules": [{"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["clusterrolebindings"], "verbs": ["update"]}],
+		"rules": array.concat(base_tas_manager_role.rules, [{"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["clusterrolebindings"], "verbs": ["update"]}]),
 	}
 }
 
@@ -283,11 +283,11 @@ test_module_services_watch_other_role_not_checked if {
 	count(deny) == 0 with input as {
 		"kind": "ClusterRole",
 		"metadata": {"name": "trustyai-service-operator-tas-manager-role"},
-		"rules": [{
+		"rules": array.concat(base_tas_manager_role.rules, [{
 			"apiGroups": [""],
 			"resources": ["services"],
 			"verbs": ["get", "list", "patch"],
-		}],
+		}]),
 	}
 }
 

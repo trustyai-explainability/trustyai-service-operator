@@ -343,7 +343,11 @@ func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&trustyaiopendatahubiov1.TrustyAIService{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&networkingv1.NetworkPolicy{}).
-		Watches(&v1.Pod{}, handler.EnqueueRequestsFromMapFunc(r.enqueueTASFromPod), builder.WithPredicates(predicate.Funcs{
+		// Share the metadata-only Pod informer used by LMES. A typed watch
+		// caches full Pods despite Client.Cache.DisableFor, defeating the
+		// manager's high-volume-resource OOM mitigation. Ownership reads in
+		// the mapper use APIReader; predicates need only metadata.
+		Watches(&v1.Pod{}, handler.EnqueueRequestsFromMapFunc(r.enqueueTASFromPod), builder.OnlyMetadata, builder.WithPredicates(predicate.Funcs{
 			CreateFunc:  func(e event.CreateEvent) bool { return hasTASPodIdentityHint(e.Object) },
 			DeleteFunc:  func(e event.DeleteEvent) bool { return hasTASPodIdentityHint(e.Object) },
 			UpdateFunc:  func(e event.UpdateEvent) bool { return tasPodLabelsChanged(e.ObjectOld, e.ObjectNew) },

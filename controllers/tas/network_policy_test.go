@@ -433,6 +433,25 @@ func TestReconcileTASNetworkPolicySkipsSelectorMatchingPodWithoutReplicaSet(t *t
 	}
 }
 
+func TestTASPodMappingAcceptsMetadataOnlyEvents(t *testing.T) {
+	ctx := context.Background()
+	scheme, owner := tasNetworkPolicyFixture(t)
+	deployment, replicaSet, pod := tasNetworkPolicyWorkloadFixture(owner)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner, deployment, replicaSet).Build()
+	r := &TrustyAIServiceReconciler{Client: c, APIReader: c, Scheme: scheme, Namespace: operatorNamespace}
+	metadata := &metav1.PartialObjectMetadata{ObjectMeta: *pod.ObjectMeta.DeepCopy()}
+	metadata.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Pod"))
+	requests := r.enqueueTASFromPod(ctx, metadata)
+	if len(requests) != 1 || requests[0].Name != owner.Name || requests[0].Namespace != owner.Namespace {
+		t.Fatalf("metadata Pod event mapped to %v, want owning TAS", requests)
+	}
+	changed := metadata.DeepCopy()
+	changed.Labels[utils.NetworkPolicyOwnerUIDLabel] = "drifted"
+	if !tasPodLabelsChanged(metadata, changed) {
+		t.Fatal("metadata-only Pod label drift was not recognized")
+	}
+}
+
 func TestTASPodLabelPredicateIgnoresStatusOnlyChanges(t *testing.T) {
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
 		"app":                        "trustyai-test",

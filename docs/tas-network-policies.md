@@ -56,8 +56,9 @@ and UIDs. Unowned or stale selector-matching Pods are skipped; genuine API
 failures are returned for retry. Deployment template labels are reconciled
 without changing immutable Deployment selectors.
 
-Owned-policy watches repair rule drift and deletion. Pod label watches map back
-to the owning TAS and repair identity drift. Kubernetes garbage collection owns
+Owned-policy watches repair rule drift and deletion. Metadata-only Pod label
+watches map back to the owning TAS and repair identity drift without introducing
+a full-Pod informer cache; ownership lookups use the uncached API reader. Kubernetes garbage collection owns
 policy cleanup when the CR is deleted. Policy-before-label ordering establishes
 API ordering only; CNI propagation is asynchronous and requires live testing.
 
@@ -87,7 +88,7 @@ when the caller contract changes.
 
 Unit tests also cover policy shape, serverless logging, persisted identity,
 owned-Pod migration, foreign workloads, drift, ordering and Deployment paths.
-An envtest manager test covers policy creation, workload selection, policy drift
-repair and recreation. RBAC tests check both generated TAS manifests and module
+An envtest manager test covers policy creation, workload selection, Pod label
+drift repair through metadata-only events, policy drift repair and recreation. RBAC tests check both generated TAS manifests and module
 permission delegation. These tests do not prove CNI packet enforcement or live
 ODH/RHOAI connectivity; those remain cluster qualification work.

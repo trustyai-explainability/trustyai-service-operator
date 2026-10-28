@@ -2,7 +2,7 @@ package rbac
 
 import rego.v1
 
-tas_manager_role_names := {"tas-manager-role"}
+tas_manager_role_names := {"tas-manager-role", "trustyai-service-operator-tas-manager-role"}
 
 tas_networkpolicy_verbs := {"get", "list", "watch", "create", "update"}
 
