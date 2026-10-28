@@ -1,0 +1,23 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://openvex.dev/docs/public/vex-6f1c2a90-keda-cve-2026-77524",
+  "author": "TrustyAI team <trustyai-explainability@googlegroups.com>",
+  "timestamp": "2026-10-28T01:11:57Z",
+  "version": 1,
+  "tooling": "hand-written",
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2026-77524"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/github.com/kedacore/keda/v2@v2.18.3"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "github.com/kedacore/keda/v2 is only present in this module graph as a transitive requirement of github.com/kserve/kserve v0.19.0. No package of this repository imports the KEDA operator, scaler or auth-resolver code that CVE-2026-77524 affects: the only KEDA packages compiled into the TrustyAI service operator are apis/keda/v1alpha1 (CRD Go type definitions used by kserve's LLMInferenceService API) and pkg/metricscollector/webhook (Prometheus counters). The vulnerability requires a running KEDA operator with cluster-wide ServiceAccount privileges resolving a tenant-supplied TriggerAuthentication against a tenant-controlled HashiCorp Vault address and sending its own token to it. No manifest in this repository references the keda.sh API group, so no KEDA operator, KEDA RBAC or KEDA CRD is shipped or deployed here; the CRDs and RBAC this project does ship cover its own APIs only. The vulnerable path is therefore never reachable in anything built from this repository. This is a scoped exemption for an unreachable dependency, not a claim that KEDA 2.18.3 is safe for users who run KEDA themselves; it expires with the scheduled dependency refresh."
+    }
+  ]
+}

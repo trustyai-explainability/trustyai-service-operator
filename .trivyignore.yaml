@@ -1,0 +1,28 @@
+# Trivy ignore file. It is passed to Trivy explicitly by the security-scan
+# workflow (`trivyignores` input, i.e. TRIVY_IGNOREFILE), so do not rely on
+# Trivy auto-discovery here.
+#
+# Every entry here needs a statement explaining why the finding is accepted,
+# and an expiry date so it is revisited rather than forgotten.
+vulnerabilities:
+  - id: CVE-2026-77524
+    purls:
+      - pkg:golang/github.com/kedacore/keda/v2@v2.18.3
+    paths:
+      - go.mod
+    statement: >-
+      keda/v2 is an indirect requirement of github.com/kserve/kserve v0.19.0.
+      Nothing in this repo imports the KEDA operator, scaler or auth-resolver
+      code the advisory affects; only apis/keda/v1alpha1 and
+      pkg/metricscollector/webhook are compiled in via kserve's
+      LLMInferenceService types. The vulnerable path needs a running KEDA
+      operator with cluster-wide RBAC resolving a tenant TriggerAuthentication
+      against a tenant-controlled Vault address. No manifest in this repository
+      references the keda.sh API group, so no KEDA operator, KEDA RBAC or KEDA
+      CRD is shipped or deployed - the CRDs and RBAC this repo does ship are for
+      its own APIs and grant nothing on keda.sh resources. See
+      security/vex/openvex.json (OpenVEX, not_affected). Revisit on the next
+      dependency refresh: the fix is keda/v2 v2.21.0, which moves the whole
+      k8s/controller-runtime stack (k8s.io/* v0.34 -> v0.36,
+      controller-runtime v0.22 -> v0.24) and needs a coordinated upgrade.
+    expired_at: 2027-04-30
