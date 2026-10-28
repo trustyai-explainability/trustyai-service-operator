@@ -111,6 +111,12 @@ rules:
   - patch
   - update
 - apiGroups:
+  - apps
+  resources:
+  - replicasets
+  verbs:
+  - get
+- apiGroups:
   - authentication.k8s.io
   resources:
   - tokenreviews

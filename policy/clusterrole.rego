@@ -23,6 +23,8 @@ allowed_api_resources := {
 
 	# --- apps ---
 	["apps", "deployments"],
+	# Verify existing TAS Pod ownership before adding reserved identity labels.
+	["apps", "replicasets"],
 	["apps", "deployments/finalizers"],
 	["apps", "deployments/status"],
 

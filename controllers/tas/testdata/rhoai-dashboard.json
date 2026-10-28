@@ -1,0 +1,19 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "rhods-dashboard"
+  },
+  "spec": {
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "rhods-dashboard",
+          "app.kubernetes.io/part-of": "rhods-dashboard",
+          "app.opendatahub.io/rhods-dashboard": "true",
+          "deployment": "rhods-dashboard"
+        }
+      }
+    }
+  }
+}
