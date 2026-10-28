@@ -49,12 +49,19 @@ action and tool endpoints come from user configuration. This is not exfiltration
 protection and can broaden existing customer restrictions: NetworkPolicy grants
 are additive.
 
-## Outstanding integration gate
+## Scope and cross-namespace callers
 
-PR #973 is unmerged and changes workload namespace, naming, ownership and
-migration. This branch targets current main's same-namespace deployment model.
-It must NOT be advertised as compatible with #973 until reconciliation, Pod
-watches, owner verification, policy authority and migration cleanup are adapted
-to that PR's actual workload identity and covered by integration tests. A
-cross-namespace ownerReference to the namespaced NeMo CR is invalid; changing
-only the NetworkPolicy namespace is not a valid integration.
+This change is independent of PR #973 and contains none of its placement,
+ownership or migration implementation. Policy placement follows the workload
+placement implemented by current main: the NeMo CR's namespace.
+
+Cross-namespace *callers* are supported through the built-in managed gateway
+peer and additionalIngress namespace-and-Pod selectors. Callers need not run in
+the CR or workload namespace, and allowedConsumers is not used to infer their
+location. This addresses the router-only ingress restriction raised on #1029.
+
+Cross-namespace *workload placement* is a separate controller change. If #973
+merges, policy placement, ownership, watches and cleanup must follow that new
+workload identity. This PR does not claim compatibility with that unmerged
+placement implementation. A namespaced CR cannot own a policy in another
+namespace via an ownerReference.
