@@ -2578,7 +2578,7 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 		// Verify the tenant namespace grants its own ServiceAccounts the EvalHub API
 		// access they need: evaluation lifecycle, read-only providers/collections and
 		// MLflow experiments, through a namespace-local Role.
-		userRoleName := normalizeDNS1123LabelValue(evalHubName + "-user")
+		userRoleName := tenantUserRoleNameForInstance(evalHub)
 		userRole := &rbacv1.Role{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      userRoleName,
@@ -2589,7 +2589,7 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 		assert.Equal(t, jobResourceInstanceID(evalHub), userRole.Labels["eval-hub.trustyai.opendatahub.io"])
 		assert.Equal(t, "job", userRole.Labels["app.kubernetes.io/component"])
 
-		userRBName := normalizeDNS1123LabelValue(evalHubName + "-" + tenantNamespace + "-tenant-user-rb")
+		userRBName := tenantUserRoleBindingName(evalHub, tenantNamespace)
 		userRB := &rbacv1.RoleBinding{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      userRBName,
@@ -2639,6 +2639,72 @@ func TestEvalHubReconciler_reconcileTenantNamespaces(t *testing.T) {
 			Namespace: tenantNamespace,
 		}, cm)
 		assert.True(t, errors.IsNotFound(err))
+	})
+
+	// Regression: multi-tenancy is driven by namespace labels, so two EvalHub CRs
+	// with the same name in different namespaces reconcile the same tenant
+	// namespace. Naming the tenant user Role after the CR alone made the second
+	// instance adopt the first one's Role, leave its labels pointing at the other
+	// instance, and let that instance's cleanup delete a grant still in use.
+	t.Run("should scope the tenant user grant per instance when two instances share a name", func(t *testing.T) {
+		sharedTenant := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   tenantNamespace,
+				Labels: map[string]string{tenantLabel: ""},
+			},
+		}
+		otherNamespace := "opendatahub-secondary"
+		otherEvalHub := &evalhubv1.EvalHub{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      evalHubName,
+				Namespace: otherNamespace,
+				UID:       "test-uid-shared-name",
+			},
+		}
+		caBundle := func(ns string) *corev1.ConfigMap {
+			return &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      evalHubName + mlflowCABundleCMSuffix,
+					Namespace: ns,
+				},
+				Data: map[string]string{mlflowCABundleFile: "MERGED-CA-PEM"},
+			}
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(evalHub, otherEvalHub, sharedTenant, caBundle(instanceNamespace), caBundle(otherNamespace)).
+			Build()
+		reconciler := &EvalHubReconciler{
+			Client:        fakeClient,
+			Scheme:        scheme,
+			EventRecorder: record.NewFakeRecorder(10),
+		}
+
+		require.NoError(t, reconciler.reconcileTenantNamespaces(ctx, evalHub))
+		require.NoError(t, reconciler.reconcileTenantNamespaces(ctx, otherEvalHub))
+
+		for _, instance := range []*evalhubv1.EvalHub{evalHub, otherEvalHub} {
+			roleName := tenantUserRoleNameForInstance(instance)
+			role := &rbacv1.Role{}
+			require.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: roleName, Namespace: tenantNamespace}, role),
+				"instance in %s should own tenant Role %s", instance.Namespace, roleName)
+			assert.Equal(t, tenantUserRules(instance), role.Rules)
+			// The labels decide which instance cleans the Role up, so they must
+			// name the instance that created it.
+			assert.Equal(t, jobResourceInstanceID(instance), role.Labels["eval-hub.trustyai.opendatahub.io"])
+
+			rbName := tenantUserRoleBindingName(instance, tenantNamespace)
+			rb := &rbacv1.RoleBinding{}
+			require.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: rbName, Namespace: tenantNamespace}, rb))
+			assert.Equal(t, roleName, rb.RoleRef.Name)
+			assert.Equal(t, jobResourceInstanceID(instance), rb.Labels["eval-hub.trustyai.opendatahub.io"])
+		}
+
+		require.NotEqual(t, tenantUserRoleNameForInstance(evalHub), tenantUserRoleNameForInstance(otherEvalHub),
+			"same-named instances must not share a tenant user Role")
+		require.NotEqual(t, tenantUserRoleBindingName(evalHub, tenantNamespace), tenantUserRoleBindingName(otherEvalHub, tenantNamespace),
+			"same-named instances must not share a tenant user RoleBinding")
 	})
 
 	t.Run("should skip instance namespace", func(t *testing.T) {

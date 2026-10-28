@@ -115,15 +115,15 @@ func (r *EvalHubReconciler) reconcileTenantNamespaces(ctx context.Context, insta
 		// The Role is the same set of rules single-tenancy uses for evalhub-user, so
 		// tenant identities get the evaluation lifecycle, read-only providers and
 		// collections, and MLflow experiment access - not the operator's own RBAC.
-		tenantUserRoleName, err := r.ensureTenantUserRole(ctx, instance, ns)
+		tenantUserRole, err := r.ensureTenantUserRole(ctx, instance, ns)
 		if err != nil {
 			log.Error(err, "Failed to create tenant user Role in tenant namespace", "namespace", ns)
 			return err
 		}
-		tenantUserRBName := normalizeDNS1123LabelValue(instance.Name + "-" + ns + "-tenant-user-rb")
+		tenantUserRBName := tenantUserRoleBindingName(instance, ns)
 		if err := r.createTenantGroupRoleBinding(ctx, instance, tenantUserRBName, ns, rbacv1.RoleRef{
 			Kind:     "Role",
-			Name:     tenantUserRoleName,
+			Name:     tenantUserRole,
 			APIGroup: rbacv1.GroupName,
 		}); err != nil {
 			log.Error(err, "Failed to create tenant user RoleBinding in tenant namespace", "namespace", ns)
