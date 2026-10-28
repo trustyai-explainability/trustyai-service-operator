@@ -137,7 +137,7 @@ func TestEvalHubReconciler_reconcileConfigMap(t *testing.T) {
 		require.NoError(t, err)
 
 		// Check basic configmap properties
-		assert.Equal(t, evalHubName+"-config", configMap.Name)
+		assert.Equal(t, evalHubConfigMapName(evalHub), configMap.Name)
 		assert.Equal(t, testNamespace, configMap.Namespace)
 
 		// Check data keys exist
