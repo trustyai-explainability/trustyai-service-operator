@@ -218,13 +218,11 @@ func (r *TrustyAIServiceReconciler) reconcileNetworkPolicy(ctx context.Context, 
 	// reaches the TAS Pod on port 8080 (Service port 80 -> targetPort 8080),
 	// so the policy must authorize that path for the qualified KServe peer
 	// exactly when the operator's kServeServerless configuration enables it.
-	// A read failure defaults to disabled, matching the InferenceService
-	// patching path, which also skips HTTP logger URLs when the configuration
-	// cannot be read.
+	// Do not guess the setting on read errors: retain the existing policy and
+	// retry. A missing ConfigMap still returns false without an error.
 	kServeServerlessEnabled, err := r.getKServeServerlessConfig(ctx)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Could not read KServeServerless configuration for the NetworkPolicy. Defaulting to disabled")
-		kServeServerlessEnabled = false
+		return fmt.Errorf("read KServeServerless configuration for TAS NetworkPolicy: %w", err)
 	}
 	desired, err := buildTASNetworkPolicy(instance, r.Namespace, kServeServerlessEnabled)
 	if err != nil {
