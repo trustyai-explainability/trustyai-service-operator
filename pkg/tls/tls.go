@@ -29,6 +29,7 @@ import (
 	openshifttls "github.com/openshift/controller-runtime-common/pkg/tls"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -60,11 +61,14 @@ func normalizeTLSProfileSpec(spec configv1.TLSProfileSpec) configv1.TLSProfileSp
 
 // Result holds the resolved TLS configuration.
 type Result struct {
-	TLSOpts      []func(*tls.Config)
+	TLSOpts []func(*tls.Config)
+	// APIAvailable also means the API may exist after transient failure; watch it.
 	APIAvailable bool
-	ProfileSpec  *configv1.TLSSecurityProfile
-	TLSAdherence string
-	ProxyArgs    ProxyTLSArguments
+	// AdherenceFetched distinguishes observed NoOpinion from an unread policy.
+	AdherenceFetched bool
+	ProfileSpec      *configv1.TLSSecurityProfile
+	TLSAdherence     string
+	ProxyArgs        ProxyTLSArguments
 }
 
 var proxyArgsState = struct {
@@ -120,8 +124,9 @@ func init() {
 
 // Resolve reads the cluster TLS profile from apiservers.config.openshift.io/cluster
 // and returns TLS option functions for controller-runtime. On non-OpenShift
-// clusters or transient API errors, it returns hardened Intermediate defaults.
-// Authorization and unexpected failures return errors to prevent startup.
+// clusters it returns hardened Intermediate defaults. Transient API errors are
+// retried within a bounded startup budget, then degrade to validated Intermediate
+// with a recovery watcher. Authorization and unexpected failures prevent startup.
 func Resolve(ctx context.Context, cfg *rest.Config) (Result, error) {
 	var result Result
 
@@ -135,47 +140,42 @@ func Resolve(ctx context.Context, cfg *rest.Config) (Result, error) {
 	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	state, err := readTLSProfileState(fetchCtx, apiClient)
-	if err != nil {
+	state, err := readTLSProfileStateWithRetry(fetchCtx, func(ctx context.Context) (profileState, error) {
+		return readTLSProfileState(ctx, apiClient)
+	}, wait.Backoff{Duration: 250 * time.Millisecond, Factor: 2, Jitter: 0.1, Steps: 5})
+	return resolveTLSProfileState(state, err)
+}
+
+// resolveTLSProfileState applies the classified bootstrap error contract. Both
+// profile and adherence come from one response, so a failed read observes neither.
+func resolveTLSProfileState(state profileState, readErr error) (Result, error) {
+	result := Result{APIAvailable: readErr == nil, AdherenceFetched: readErr == nil}
+	if readErr != nil {
 		switch {
-		case meta.IsNoMatchError(err):
+		case apierrors.IsForbidden(readErr), apierrors.IsUnauthorized(readErr):
+			return Result{}, fmt.Errorf("permission denied reading APIServer TLS profile: %w", readErr)
+		case errors.Is(readErr, context.Canceled):
+			return Result{}, fmt.Errorf("TLS bootstrap canceled: %w", readErr)
+		case meta.IsNoMatchError(readErr):
 			log.Info("TLS profile not available (non-OpenShift cluster)")
-		case apierrors.IsNotFound(err):
+		case apierrors.IsNotFound(readErr):
 			log.Info("APIServer resource not found, using hardened defaults")
-		case apierrors.IsServiceUnavailable(err),
-			apierrors.IsTimeout(err),
-			apierrors.IsServerTimeout(err),
-			apierrors.IsTooManyRequests(err),
-			errors.Is(err, context.DeadlineExceeded):
-			log.Info("Transient API error reading TLS profile, using hardened defaults", "error", err)
+		case isTransientTLSReadError(readErr):
+			log.Info("TLS bootstrap retries exhausted, using Intermediate until the watcher recovers", "error", readErr)
 			result.APIAvailable = true
-		case apierrors.IsForbidden(err), apierrors.IsUnauthorized(err):
-			return result, fmt.Errorf("permission denied reading APIServer TLS profile: %w", err)
 		default:
-			return result, fmt.Errorf("failed to read APIServer TLS profile: %w", err)
+			return Result{}, fmt.Errorf("failed to read APIServer TLS profile: %w", readErr)
 		}
-		result.TLSOpts, err = tlsOptsForProfile(nil, TLSAdherenceNoOpinion)
-		if err != nil {
-			return result, err
-		}
-		if result.APIAvailable {
-			// A transient read failure must not replace a previously published
-			// strict profile with NoOpinion arguments. Keep the last known-good
-			// value until the watcher can confirm the current APIServer state.
-			result.ProxyArgs = CurrentProxyTLSArguments()
-		} else {
-			result.ProxyArgs, _ = ResolveProxyTLSArguments(nil, TLSAdherenceNoOpinion, nil, fipsModeEnabled())
-		}
-		return result, nil //nolint:nilerr // intentional fail-open: use hardened defaults for transient/expected errors
+		state = profileState{profile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType}, adherence: TLSAdherenceNoOpinion}
 	}
 
-	result.APIAvailable = true
 	result.ProfileSpec = state.profile
 	result.TLSAdherence = state.adherence
 
+	var err error
 	result.TLSOpts, err = tlsOptsForProfile(state.profile, state.adherence)
 	if err != nil {
-		return result, err
+		return Result{}, err
 	}
 	// Resolve the APIServer profile and adherence together before publishing
 	// the complete configuration to workload builders.
@@ -186,9 +186,41 @@ func Resolve(ctx context.Context, cfg *rest.Config) (Result, error) {
 		fipsModeEnabled(),
 	)
 	if err != nil {
-		return result, err
+		return Result{}, fmt.Errorf("resolving proxy TLS arguments: %w", err)
 	}
 	return result, nil
+}
+
+func isTransientTLSReadError(err error) bool {
+	return apierrors.IsServiceUnavailable(err) || apierrors.IsTimeout(err) ||
+		apierrors.IsServerTimeout(err) || apierrors.IsTooManyRequests(err) ||
+		errors.Is(err, context.DeadlineExceeded)
+}
+
+// readTLSProfileStateWithRetry never substitutes defaults for an unread policy.
+// The caller supplies a deadline covering both requests and backoff sleeps.
+func readTLSProfileStateWithRetry(ctx context.Context, read func(context.Context) (profileState, error), backoff wait.Backoff) (profileState, error) {
+	var state profileState
+	var lastErr error
+	err := wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
+		var err error
+		state, err = read(ctx)
+		if err == nil {
+			return true, nil
+		}
+		lastErr = err
+		switch {
+		case isTransientTLSReadError(err):
+			log.Info("Transient API error reading TLS profile, retrying without publishing defaults", "error", err)
+			return false, nil
+		default:
+			return false, err
+		}
+	})
+	if err != nil {
+		return profileState{}, fmt.Errorf("reading TLS policy before startup: %w", errors.Join(err, lastErr))
+	}
+	return state, nil
 }
 
 func tlsOptsForProfile(profile *configv1.TLSSecurityProfile, adherence string) ([]func(*tls.Config), error) {

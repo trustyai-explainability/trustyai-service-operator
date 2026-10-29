@@ -20,20 +20,25 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 )
 
-func TestResolveRetainsProxyArgumentsOnTransientAPIServerFailure(t *testing.T) {
+func TestResolveDegradesOnTransientAPIServerFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
@@ -45,18 +50,131 @@ func TestResolveRetainsProxyArgumentsOnTransientAPIServerFailure(t *testing.T) {
 		t.Fatalf("ResolveProxyTLSArguments() returned unexpected error: %v", err)
 	}
 	previous := CurrentProxyTLSArguments()
-	SetProxyTLSArguments(lastKnownGood)
 	defer SetProxyTLSArguments(previous)
+	for _, tt := range []struct {
+		name string
+		args ProxyTLSArguments
+	}{
+		{name: "cold start with process defaults", args: mustDefaultProxyTLSArguments(fipsModeEnabled())},
+		{name: "previously published strict policy", args: lastKnownGood},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			SetProxyTLSArguments(tt.args)
+			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			defer cancel()
+			result, err := Resolve(ctx, &rest.Config{Host: server.URL})
+			if err != nil {
+				t.Fatalf("Resolve() error = %v, want validated fallback", err)
+			}
+			assertIntermediateBootstrap(t, result, true)
+			if !reflect.DeepEqual(CurrentProxyTLSArguments(), tt.args) {
+				t.Fatal("Resolve() changed published arguments on failure")
+			}
+		})
+	}
+}
 
+func TestResolveRetriesThenUsesStrictModernPolicy(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if attempts.Add(1) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"apiVersion":"config.openshift.io/v1","kind":"APIServer","metadata":{"name":"cluster"},"spec":{"tlsSecurityProfile":{"type":"Modern"},"tlsAdherence":"StrictAllComponents"}}`))
+	}))
+	defer server.Close()
+
+	previous := CurrentProxyTLSArguments()
 	result, err := Resolve(context.Background(), &rest.Config{Host: server.URL})
 	if err != nil {
-		t.Fatalf("Resolve() returned unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if !result.APIAvailable {
-		t.Fatal("Resolve() should retry after a transient APIServer failure")
+	if attempts.Load() != 2 || !result.APIAvailable || !result.AdherenceFetched || result.TLSAdherence != TLSAdherenceStrictAllComponents {
+		t.Fatalf("unexpected resolved state after %d requests: %#v", attempts.Load(), result)
 	}
-	if !reflect.DeepEqual(result.ProxyArgs, lastKnownGood) {
-		t.Errorf("ProxyArgs = %#v, want last known-good arguments %#v", result.ProxyArgs, lastKnownGood)
+	cfg := &tls.Config{}
+	for _, opt := range result.TLSOpts {
+		opt(cfg)
+	}
+	wantArgs, err := ResolveProxyTLSArguments(result.ProfileSpec, TLSAdherenceStrictAllComponents, nil, fipsModeEnabled())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MinVersion != tls.VersionTLS13 || !reflect.DeepEqual(result.ProxyArgs, wantArgs) {
+		t.Fatalf("resolved configuration weakened Strict/Modern: %#v, %#v", cfg, result.ProxyArgs)
+	}
+	if !reflect.DeepEqual(CurrentProxyTLSArguments(), previous) {
+		t.Fatal("Resolve() must leave publishing to the caller after successful resolution")
+	}
+}
+
+func TestReadTLSProfileStateWithRetry(t *testing.T) {
+	for _, transient := range []error{
+		apierrors.NewServiceUnavailable("unavailable"),
+		apierrors.NewTooManyRequests("throttled", 0),
+		apierrors.NewTimeoutError("timeout", 0),
+		apierrors.NewServerTimeout(schema.GroupResource{Resource: "apiservers"}, "get", 0),
+		context.DeadlineExceeded,
+	} {
+		t.Run(transient.Error(), func(t *testing.T) {
+			for _, recover := range []bool{false, true} {
+				attempts := 0
+				want := profileState{profile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}, adherence: TLSAdherenceStrictAllComponents}
+				state, err := readTLSProfileStateWithRetry(context.Background(), func(context.Context) (profileState, error) {
+					attempts++
+					if recover && attempts == 2 {
+						return want, nil
+					}
+					return profileState{}, transient
+				}, wait.Backoff{Steps: 3})
+				if recover {
+					if err != nil || attempts != 2 || !reflect.DeepEqual(state, want) {
+						t.Fatalf("recovery: attempts=%d state=%#v err=%v", attempts, state, err)
+					}
+				} else if !errors.Is(err, transient) || attempts != 3 || !reflect.DeepEqual(state, profileState{}) {
+					t.Fatalf("exhaustion: attempts=%d state=%#v err=%v", attempts, state, err)
+				}
+			}
+		})
+	}
+}
+
+func TestReadTLSProfileStateDoesNotRetryPermanentErrors(t *testing.T) {
+	for _, permanent := range []error{
+		apierrors.NewForbidden(schema.GroupResource{Resource: "apiservers"}, "cluster", errors.New("denied")),
+		apierrors.NewUnauthorized("denied"),
+		apierrors.NewNotFound(schema.GroupResource{Resource: "apiservers"}, "cluster"),
+		errors.New("invalid profile"),
+		context.Canceled,
+	} {
+		attempts := 0
+		_, err := readTLSProfileStateWithRetry(context.Background(), func(context.Context) (profileState, error) {
+			attempts++
+			return profileState{}, permanent
+		}, wait.Backoff{Steps: 3})
+		if !errors.Is(err, permanent) || attempts != 1 {
+			t.Fatalf("permanent error %v: attempts=%d err=%v", permanent, attempts, err)
+		}
+	}
+}
+
+func TestResolveNotFoundUsesNonOpenShiftDefaults(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	result, err := Resolve(context.Background(), &rest.Config{Host: server.URL})
+	if err != nil || result.APIAvailable {
+		t.Fatalf("non-OpenShift fallback: result=%#v err=%v", result, err)
+	}
+	cfg := &tls.Config{}
+	for _, opt := range result.TLSOpts {
+		opt(cfg)
+	}
+	if cfg.MinVersion != tls.VersionTLS12 || len(result.ProxyArgs.Args) == 0 {
+		t.Fatalf("missing hardened defaults: %#v, %#v", cfg, result.ProxyArgs)
 	}
 }
 

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
+	openshifttls "github.com/openshift/controller-runtime-common/pkg/tls"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/dynamic"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -51,7 +52,8 @@ func NewProfileWatcher(c client.Client, initialProfile *configv1.TLSSecurityProf
 }
 
 // NewProfileWatcherWithAdherence seeds the watcher with the profile and
-// adherence state read from the APIServer during operator bootstrap.
+// adherence baseline from bootstrap, including Intermediate/NoOpinion after a
+// transient read failure. The production reader is installed by SetupWithManager.
 func NewProfileWatcherWithAdherence(c client.Client, initialProfile *configv1.TLSSecurityProfile, initialAdherence string, onRestart func()) *ProfileWatcher {
 	return &ProfileWatcher{
 		Client:        c,
@@ -81,7 +83,13 @@ func (w *ProfileWatcher) Reconcile(ctx context.Context, _ reconcile.Request) (re
 		watcherLog.Info("TLS profile state fetch did not succeed, retrying", "retryAfter", profileRetryInterval, "error", err)
 		return reconcile.Result{RequeueAfter: profileRetryInterval}, nil
 	}
-	if !reflect.DeepEqual(w.lastProfile, state.profile) || w.lastAdherence != state.adherence {
+	// Compare effective specs: absent and explicit Intermediate are equivalent.
+	// Invalid profiles must trigger bootstrap validation, not be silently ignored.
+	previous, previousErr := openshifttls.GetTLSProfileSpec(w.lastProfile)
+	current, currentErr := openshifttls.GetTLSProfileSpec(state.profile)
+	profileChanged := previousErr != nil || currentErr != nil ||
+		!reflect.DeepEqual(normalizeTLSProfileSpec(previous), normalizeTLSProfileSpec(current))
+	if profileChanged || w.lastAdherence != state.adherence {
 		watcherLog.Info("TLS security profile or adherence changed, triggering operand refresh", "adherence", state.adherence)
 		w.lastProfile = state.profile
 		w.lastAdherence = state.adherence
