@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"os"
 	"time"
@@ -46,6 +47,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
@@ -250,4 +252,27 @@ func run() int {
 	}
 
 	return 0
+}
+
+// configureManagerTLS applies the same validated policy (observed or permitted
+// Intermediate fallback) to every operator
+// TLS listener. Keep certificate and metrics authentication settings supplied by
+// the caller; TLSOpts alone does not enable secure metrics serving.
+//
+// Resolve must succeed before this is called. Operand proxy arguments are
+// published separately, only after the complete startup result is validated.
+//
+// It lives in this file rather than a sibling file of package main because the
+// container image and the make build/run targets compile cmd/main.go on its own,
+// so any helper kept in another file would be invisible to them.
+func configureManagerTLS(options *ctrl.Options, resolved pkgtls.Result, enableWebhook bool) {
+	// Independent slices prevent one server's option changes from affecting the
+	// other. Profile callbacks include the component's explicit h2 ALPN policy.
+	options.Metrics.TLSOpts = append([]func(*tls.Config){}, resolved.TLSOpts...)
+	if enableWebhook {
+		options.WebhookServer = webhook.NewServer(webhook.Options{
+			Port:    9443,
+			TLSOpts: append([]func(*tls.Config){}, resolved.TLSOpts...),
+		})
+	}
 }
