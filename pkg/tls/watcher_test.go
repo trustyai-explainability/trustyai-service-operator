@@ -56,6 +56,13 @@ func mustReconcile(t *testing.T, w *ProfileWatcher) reconcile.Result {
 	return result
 }
 
+func TestProfileWatcherRunsOnEveryReplica(t *testing.T) {
+	w := NewProfileWatcherWithAdherence(nil, nil, TLSAdherenceNoOpinion, nil)
+	if w.NeedLeaderElection() {
+		t.Fatal("every replica must observe TLS policy changes, including non-leaders")
+	}
+}
+
 func TestReconcile_ProfileUnchanged(t *testing.T) {
 	profile := &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType}
 	scheme := newTestScheme(t)

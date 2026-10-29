@@ -19,5 +19,10 @@ jobs:
         with:
           go-version-file: "go.mod"
 
+      - name: Validate rendered TLS profile RBAC
+        run: |
+          make kustomize
+          KUSTOMIZE_BINARY="$PWD/bin/kustomize" go test ./cmd -run '^TestTLS' -count=1
+
       - name: Test
         run: make test ENVTEST_K8S_VERSION=${{ matrix.envtest-k8s-version }} GO_TEST_FLAGS="-p 1"
