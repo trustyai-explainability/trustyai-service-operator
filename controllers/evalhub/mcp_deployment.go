@@ -89,6 +89,9 @@ func (r *EvalHubReconciler) reconcileMCPDeployment(ctx context.Context, instance
 }
 
 func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance *evalhubv1.EvalHub) (appsv1.DeploymentSpec, error) {
+	if err := validateManagedTLS(instance); err != nil {
+		return appsv1.DeploymentSpec{}, err
+	}
 	labels := mcpLabels(instance)
 	mcpSpec := instance.Spec.MCP
 
@@ -136,6 +139,7 @@ func (r *EvalHubReconciler) buildMCPDeploymentSpec(ctx context.Context, instance
 		})
 	}
 
+	defaultEnvVars = append(defaultEnvVars, managedHTTPEnv("EVALHUB_TLS_CERT_FILE", "EVALHUB_TLS_KEY_FILE")...)
 	env := mergeEnvVars(defaultEnvVars, mcpSpec.Env,
 		"EVALHUB_HOST", "EVALHUB_PORT", "EVALHUB_TLS_CERT_FILE", "EVALHUB_TLS_KEY_FILE")
 

@@ -31,8 +31,8 @@ type ServiceConfig struct {
 	DisableAuth     bool   `json:"disable_auth,omitempty"`
 	TerminationFile string `json:"termination_file"`
 	EvalInitImage   string `json:"eval_init_image,omitempty"`
-	TLSCertFile     string `json:"tls_cert_file,omitempty"`
-	TLSKeyFile      string `json:"tls_key_file,omitempty"`
+	TLSCertFile     string `json:"tls_cert_file"`
+	TLSKeyFile      string `json:"tls_key_file"`
 }
 
 // DatabaseConfig represents the database configuration in config.yaml
@@ -181,6 +181,7 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 	config := EvalHubConfig{
 		Service: ServiceConfig{
 			Port:            evalHubAppPort,
+			Host:            "127.0.0.1",
 			DisableAuth:     true,
 			TerminationFile: "/tmp/termination-log",
 			EvalInitImage:   evalHubImage,
@@ -189,8 +190,6 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 			"PORT":                        "service.port",
 			"API_HOST":                    "service.host",
 			"DISABLE_AUTH":                "service.disable_auth",
-			"TLS_CERT_FILE":               "service.tls_cert_file",
-			"TLS_KEY_FILE":                "service.tls_key_file",
 			"DB_URL":                      "database.url",
 			"MLFLOW_TRACKING_URI":         "mlflow.tracking_uri",
 			"MLFLOW_CA_CERT_PATH":         "mlflow.ca_cert_path",

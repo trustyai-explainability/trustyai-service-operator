@@ -163,6 +163,19 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		return RequeueWithError(fmt.Errorf("spec.database.secret is required for postgresql"))
 	}
 
+	if err := validateManagedTLS(instance); err != nil {
+		instance.SetStatus("Ready", "UnsupportedNativeTLS", err.Error(), corev1.ConditionFalse)
+		instance.Status.Phase = "Error"
+		if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
+			return RequeueWithError(updateErr)
+		}
+		if r.EventRecorder != nil {
+			r.EventRecorder.Event(instance, corev1.EventTypeWarning, "UnsupportedNativeTLS", err.Error())
+		}
+		tracing.SetSpanOutcome(span, "validation_error")
+		return RequeueWithError(err)
+	}
+
 	// Multi-tenant EvalHub must not be deployed in a tenant-labelled namespace.
 	// Single-tenant instances may be placed anywhere.
 	if instance.Spec.IsMultiTenancy() {
