@@ -76,6 +76,7 @@ func TestReconcileStatusesStaysProgressingWhilePodsStart(t *testing.T) {
 	})
 
 	require.Equal(t, utils.PhaseProgressing, status.Phase)
+	require.Equal(t, "http://nemo-guardrails.models-as-a-service.svc.cluster.local", status.Endpoint)
 	condition := utils.GetStatusCondition(status.Conditions, "DeploymentReady")
 	require.NotNil(t, condition)
 	require.Equal(t, corev1.ConditionFalse, condition.Status)
@@ -105,4 +106,23 @@ func TestReconcileStatusesReportsErrorWhenRolloutIsStuck(t *testing.T) {
 	completeCondition := utils.GetStatusCondition(status.Conditions, utils.ConditionReconcileComplete)
 	require.NotNil(t, completeCondition)
 	require.Equal(t, utils.ReconcileFailed, completeCondition.Reason)
+}
+
+func TestInternalServiceEndpointUsesPublishedWorkloadIdentity(t *testing.T) {
+	instance := &nemoguardrailsv1alpha1.NemoGuardrails{}
+	const (
+		serviceName = "ai-tenant-marketing-team-nemo-noauth"
+		namespace   = "odh-ai-gateway-infra"
+	)
+
+	require.Equal(t,
+		"http://ai-tenant-marketing-team-nemo-noauth.odh-ai-gateway-infra.svc.cluster.local",
+		internalServiceEndpoint(instance, serviceName, namespace),
+	)
+
+	instance.Annotations = map[string]string{"security.opendatahub.io/enable-auth": "true"}
+	require.Equal(t,
+		"https://ai-tenant-marketing-team-nemo-noauth.odh-ai-gateway-infra.svc.cluster.local",
+		internalServiceEndpoint(instance, serviceName, namespace),
+	)
 }
