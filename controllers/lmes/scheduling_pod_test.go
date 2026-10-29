@@ -35,32 +35,48 @@ import (
 	lmesv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/lmes/v1alpha1"
 )
 
-// schedulingStubClient answers pod lookups from a canned result so the
-// scheduling branches can be exercised without an API server.
+// podReadResult is one canned answer to a pod lookup.
+type podReadResult struct {
+	pod *corev1.Pod
+	err error
+}
+
+// schedulingStubClient answers pod reads from a scripted sequence so the
+// scheduling branches can be exercised without an API server. The last entry
+// repeats once the sequence is exhausted.
 type schedulingStubClient struct {
 	client.Client
-	pod        *corev1.Pod
-	getErr     error
+	reads      []podReadResult
+	readCalls  int
+	createErr  error
 	createdPod *corev1.Pod
 }
 
 func (c *schedulingStubClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 	if pod, ok := obj.(*corev1.Pod); ok {
-		switch {
-		case c.getErr != nil:
-			return c.getErr
-		case c.pod != nil:
-			c.pod.DeepCopyInto(pod)
-			return nil
-		default:
+		if len(c.reads) == 0 {
 			return apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, key.Name)
 		}
+		index := c.readCalls
+		if index > len(c.reads)-1 {
+			index = len(c.reads) - 1
+		}
+		c.readCalls++
+		result := c.reads[index]
+		if result.err != nil {
+			return result.err
+		}
+		result.pod.DeepCopyInto(pod)
+		return nil
 	}
 	return c.Client.Get(ctx, key, obj, opts...)
 }
 
 func (c *schedulingStubClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
 	if pod, ok := obj.(*corev1.Pod); ok {
+		if c.createErr != nil {
+			return c.createErr
+		}
 		c.createdPod = pod.DeepCopy()
 		return nil
 	}
@@ -94,15 +110,27 @@ func newOwnedPod(job *lmesv1alpha1.LMEvalJob) *corev1.Pod {
 	}
 }
 
+func newTerminatingPod(job *lmesv1alpha1.LMEvalJob) *corev1.Pod {
+	pod := newOwnedPod(job)
+	now := metav1.Now()
+	pod.DeletionTimestamp = &now
+	pod.Finalizers = []string{"test/finalizer"}
+	return pod
+}
+
 func newSchedulingReconciler(c *schedulingStubClient) *LMEvalJobReconciler {
 	return &LMEvalJobReconciler{Client: c}
 }
 
 func Test_ensureExecutionPod(t *testing.T) {
 	job := newSchedulingTestJob()
+	found := func(pod *corev1.Pod) podReadResult { return podReadResult{pod: pod} }
+	notFound := func() podReadResult {
+		return podReadResult{err: apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, job.GetPodName())}
+	}
 
 	t.Run("creates the pod when none exists", func(t *testing.T) {
-		c := &schedulingStubClient{Client: fake.NewClientBuilder().Build()}
+		c := &schedulingStubClient{Client: fake.NewClientBuilder().Build(), reads: []podReadResult{notFound()}}
 		created, err := newSchedulingReconciler(c).ensureExecutionPod(context.Background(), job, newOwnedPod(job), logr.Discard())
 		require.NoError(t, err)
 		assert.True(t, created)
@@ -111,7 +139,7 @@ func Test_ensureExecutionPod(t *testing.T) {
 	})
 
 	t.Run("accepts an existing owned pod without creating a second one", func(t *testing.T) {
-		c := &schedulingStubClient{Client: fake.NewClientBuilder().Build(), pod: newOwnedPod(job)}
+		c := &schedulingStubClient{Client: fake.NewClientBuilder().Build(), reads: []podReadResult{found(newOwnedPod(job))}}
 		created, err := newSchedulingReconciler(c).ensureExecutionPod(context.Background(), job, newOwnedPod(job), logr.Discard())
 		require.NoError(t, err)
 		assert.False(t, created)
@@ -119,11 +147,7 @@ func Test_ensureExecutionPod(t *testing.T) {
 	})
 
 	t.Run("waits for a terminating pod instead of scheduling on top of it", func(t *testing.T) {
-		terminating := newOwnedPod(job)
-		now := metav1.Now()
-		terminating.DeletionTimestamp = &now
-		terminating.Finalizers = []string{"test/finalizer"}
-		c := &schedulingStubClient{Client: fake.NewClientBuilder().Build(), pod: terminating}
+		c := &schedulingStubClient{Client: fake.NewClientBuilder().Build(), reads: []podReadResult{found(newTerminatingPod(job))}}
 
 		created, err := newSchedulingReconciler(c).ensureExecutionPod(context.Background(), job, newOwnedPod(job), logr.Discard())
 		assert.False(t, created)
@@ -131,10 +155,38 @@ func Test_ensureExecutionPod(t *testing.T) {
 		assert.Nil(t, c.createdPod)
 	})
 
+	t.Run("waits when the create race is lost to a terminating pod", func(t *testing.T) {
+		// The pod was missing from the cache, so creation was attempted, but the
+		// server already holds a same-named pod and it is being deleted.
+		c := &schedulingStubClient{
+			Client:    fake.NewClientBuilder().Build(),
+			reads:     []podReadResult{notFound(), found(newTerminatingPod(job))},
+			createErr: apierrors.NewAlreadyExists(schema.GroupResource{Resource: "pods"}, job.GetPodName()),
+		}
+
+		created, err := newSchedulingReconciler(c).ensureExecutionPod(context.Background(), job, newOwnedPod(job), logr.Discard())
+		assert.False(t, created)
+		assert.ErrorIs(t, err, errPodTerminating, "a terminating pod must never be adopted as scheduled")
+		assert.Nil(t, c.createdPod)
+	})
+
+	t.Run("accepts a healthy pod when the create race is lost", func(t *testing.T) {
+		c := &schedulingStubClient{
+			Client:    fake.NewClientBuilder().Build(),
+			reads:     []podReadResult{notFound(), found(newOwnedPod(job))},
+			createErr: apierrors.NewAlreadyExists(schema.GroupResource{Resource: "pods"}, job.GetPodName()),
+		}
+
+		created, err := newSchedulingReconciler(c).ensureExecutionPod(context.Background(), job, newOwnedPod(job), logr.Discard())
+		require.NoError(t, err)
+		assert.False(t, created)
+		assert.Nil(t, c.createdPod)
+	})
+
 	t.Run("treats a pod read failure as retryable", func(t *testing.T) {
 		c := &schedulingStubClient{
 			Client: fake.NewClientBuilder().Build(),
-			getErr: errors.New("connection reset by peer"),
+			reads:  []podReadResult{{err: errors.New("connection reset by peer")}},
 		}
 
 		created, err := newSchedulingReconciler(c).ensureExecutionPod(context.Background(), job, newOwnedPod(job), logr.Discard())
@@ -146,7 +198,7 @@ func Test_ensureExecutionPod(t *testing.T) {
 	t.Run("rejects an unrelated pod with the same name", func(t *testing.T) {
 		foreign := newOwnedPod(job)
 		foreign.OwnerReferences = nil
-		c := &schedulingStubClient{Client: fake.NewClientBuilder().Build(), pod: foreign}
+		c := &schedulingStubClient{Client: fake.NewClientBuilder().Build(), reads: []podReadResult{found(foreign)}}
 
 		created, err := newSchedulingReconciler(c).ensureExecutionPod(context.Background(), job, newOwnedPod(job), logr.Discard())
 		assert.False(t, created)

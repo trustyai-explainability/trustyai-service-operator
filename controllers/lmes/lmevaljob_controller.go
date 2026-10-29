@@ -727,8 +727,16 @@ func (r *LMEvalJobReconciler) ensureExecutionPod(ctx context.Context, job *lmesv
 		}
 		// Lost the race against a concurrent create. Accept the pod only if it
 		// really belongs to this job, otherwise the name is a collision.
-		if _, getErr := r.getPod(ctx, job); getErr != nil {
+		existing, getErr := r.getPod(ctx, job)
+		if getErr != nil {
 			return false, fmt.Errorf("pod %s already exists but is not controlled by this LMEvalJob: %w", pod.Name, getErr)
+		}
+		if existing.DeletionTimestamp != nil {
+			// The pod is on its way out: scheduling against it would leave the
+			// job Scheduled with a pod that checkScheduledPod will never find.
+			log.Info("pod is terminating, waiting before scheduling the LMEvalJob",
+				"podName", existing.Name)
+			return false, errPodTerminating
 		}
 		log.Info("pod was created concurrently for the LMEvalJob", "podName", pod.Name)
 		return false, nil
