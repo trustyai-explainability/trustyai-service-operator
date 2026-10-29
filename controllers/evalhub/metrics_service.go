@@ -19,9 +19,10 @@ func metricsServiceName(instance *evalhubv1.EvalHub) string {
 
 func metricsServiceLabels(instance *evalhubv1.EvalHub) map[string]string {
 	return map[string]string{
-		"app":       "eval-hub",
-		"instance":  instance.Name,
-		"component": "metrics",
+		"app":                          "eval-hub",
+		"instance":                     instance.Name,
+		"component":                    "metrics",
+		"openshift.io/user-monitoring": "true",
 	}
 }
 
