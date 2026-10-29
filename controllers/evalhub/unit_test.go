@@ -131,13 +131,13 @@ func TestEvalHubReconciler_reconcileConfigMap(t *testing.T) {
 		// Verify configmap was created
 		configMap := &corev1.ConfigMap{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
-			Name:      evalHubName + "-config",
+			Name:      evalHubConfigMapName(evalHub),
 			Namespace: testNamespace,
 		}, configMap)
 		require.NoError(t, err)
 
 		// Check basic configmap properties
-		assert.Equal(t, evalHubName+"-config", configMap.Name)
+		assert.Equal(t, evalHubConfigMapName(evalHub), configMap.Name)
 		assert.Equal(t, testNamespace, configMap.Namespace)
 
 		// Check data keys exist
@@ -3416,6 +3416,8 @@ func TestEvalHubReconciler_cleanupDiscoveryConfigMaps(t *testing.T) {
 	})
 }
 
+// TestGenerateAuthConfigData_MethodsPresent verifies generated endpoint policies include explicit HTTP methods
+// and correct RBAC mappings.
 func TestGenerateAuthConfigData_MethodsPresent(t *testing.T) {
 	var parsed struct {
 		Authorization struct {
@@ -3467,6 +3469,29 @@ func TestGenerateAuthConfigData_MethodsPresent(t *testing.T) {
 		assert.Equal(t, "list", resource.ResourceAttributes.Verb)
 	}
 	assert.Equal(t, 1, infoEndpoints, "info endpoint must be declared exactly once")
+
+	cloneEndpoints := 0
+	for _, endpoint := range parsed.Authorization.Endpoints {
+		if endpoint.Path != "/api/v1/evaluations/collections/*/clones" {
+			continue
+		}
+
+		cloneEndpoints++
+		require.Len(t, endpoint.Mappings, 1, "clone endpoint must have one POST mapping")
+		mapping := endpoint.Mappings[0]
+		assert.Equal(t, []string{"post"}, mapping.Methods)
+		require.Len(t, mapping.Resources, 2, "clone endpoint must check source read and clone create permissions")
+		verbs := make([]string, 0, len(mapping.Resources))
+		for _, resource := range mapping.Resources {
+			assert.Equal(t, "X-Tenant", resource.Rewrites.ByHTTPHeader.Name)
+			assert.Equal(t, "{{.FromHeader}}", resource.ResourceAttributes.Namespace)
+			assert.Equal(t, "trustyai.opendatahub.io", resource.ResourceAttributes.APIGroup)
+			assert.Equal(t, "collections", resource.ResourceAttributes.Resource)
+			verbs = append(verbs, resource.ResourceAttributes.Verb)
+		}
+		assert.ElementsMatch(t, []string{"create", "get"}, verbs)
+	}
+	assert.Equal(t, 1, cloneEndpoints, "collection clone endpoint must be declared exactly once")
 }
 
 func TestGenerateMCPAuthConfigData_MethodsPresent(t *testing.T) {

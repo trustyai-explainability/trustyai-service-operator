@@ -297,7 +297,7 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("Checking that ConfigMap is created")
-		configMapCreated := waitForConfigMap(evalHubName+"-config", testNamespace)
+		configMapCreated := waitForConfigMap(evalHubConfigMapName(evalHub), testNamespace)
 		Expect(configMapCreated.Data).To(HaveKey("config.yaml"))
 
 		By("Checking that the NetworkPolicy precedes Deployment creation")

@@ -1,7 +1,9 @@
 package evalhub
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -55,6 +57,14 @@ var _ = Describe("EvalHub ConfigMap", func() {
 	})
 
 	Context("When reconciling configmap", func() {
+		It("should include an auth-policy hash in the configmap name", func() {
+			digest := sha256.Sum256([]byte(testNamespace + "\x00" + evalHubName + "\x00" + generateAuthConfigData()))
+			wantSuffix := fmt.Sprintf("-config-%x", digest[:8])
+			name := evalHubConfigMapName(evalHub)
+			Expect(strings.HasSuffix(name, wantSuffix)).To(BeTrue())
+			Expect(len(name)).To(BeNumerically("<=", 253))
+		})
+
 		It("should create configmap with correct specifications", func() {
 			By("Reconciling configmap")
 			err := reconciler.reconcileConfigMap(ctx, evalHub)
@@ -63,13 +73,13 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			By("Verifying configmap exists")
 			configMap := &corev1.ConfigMap{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-config",
+				Name:      evalHubConfigMapName(evalHub),
 				Namespace: testNamespace,
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking configmap specifications")
-			Expect(configMap.Name).To(Equal(evalHubName + "-config"))
+			Expect(configMap.Name).To(Equal(evalHubConfigMapName(evalHub)))
 			Expect(configMap.Namespace).To(Equal(testNamespace))
 
 			// Check owner reference
@@ -84,7 +94,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting configmap")
-			configMap := waitForConfigMap(evalHubName+"-config", testNamespace)
+			configMap := waitForConfigMap(evalHubConfigMapName(evalHub), testNamespace)
 
 			By("Checking required keys exist")
 			Expect(configMap.Data).To(HaveKey("config.yaml"))
@@ -96,7 +106,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Getting configmap")
-			configMap := waitForConfigMap(evalHubName+"-config", testNamespace)
+			configMap := waitForConfigMap(evalHubConfigMapName(evalHub), testNamespace)
 
 			By("Parsing config.yaml")
 			var config EvalHubConfig
@@ -112,7 +122,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			By("Getting initial configmap")
 			configMap := &corev1.ConfigMap{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-config",
+				Name:      evalHubConfigMapName(evalHub),
 				Namespace: testNamespace,
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred())
@@ -131,7 +141,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 
 			By("Verifying configmap is updated")
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-config",
+				Name:      evalHubConfigMapName(evalHub),
 				Namespace: testNamespace,
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred())
@@ -159,7 +169,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			By("Verifying configmap was created")
 			configMap := &corev1.ConfigMap{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      "non-persisted-config",
+				Name:      evalHubConfigMapName(nonPersistedEvalHub),
 				Namespace: testNamespace,
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred(), "configmap should be created successfully")
@@ -191,7 +201,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			By("Getting configmap")
 			configMap := &corev1.ConfigMap{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      "db-configmap-evalhub-config",
+				Name:      evalHubConfigMapName(dbEvalHub),
 				Namespace: testNamespace,
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred())
@@ -226,7 +236,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			By("Getting configmap")
 			configMap := &corev1.ConfigMap{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      "sqlite-configmap-evalhub-config",
+				Name:      evalHubConfigMapName(sqliteEvalHub),
 				Namespace: testNamespace,
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred())
@@ -251,7 +261,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			By("Getting configmap")
 			configMap := &corev1.ConfigMap{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-config",
+				Name:      evalHubConfigMapName(evalHub),
 				Namespace: testNamespace,
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred())
@@ -290,7 +300,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			By("Getting configmap")
 			configMap := &corev1.ConfigMap{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      "otel-configmap-evalhub-config",
+				Name:      evalHubConfigMapName(otelEvalHub),
 				Namespace: testNamespace,
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred())
@@ -321,7 +331,7 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			By("Getting configmap")
 			configMap := &corev1.ConfigMap{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      evalHubName + "-config",
+				Name:      evalHubConfigMapName(evalHub),
 				Namespace: testNamespace,
 			}, configMap)
 			Expect(err).NotTo(HaveOccurred())

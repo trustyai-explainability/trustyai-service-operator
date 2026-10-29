@@ -2,6 +2,7 @@ package evalhub
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
@@ -345,7 +346,7 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: instance.Name + "-config",
+						Name: evalHubConfigMapName(instance),
 					},
 				},
 			},
@@ -449,9 +450,14 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 		})
 	}
 	// Pod template with EvalHub + kube-rbac-proxy and required volumes
+	// Hash auth.yaml so authorization changes trigger a rollout and existing proxy pods use the new policy.
+	authConfigHash := fmt.Sprintf("%x", sha256.Sum256([]byte(generateAuthConfigData())))
 	podTemplate := corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: labels,
+			Annotations: map[string]string{
+				evalHubAuthConfigHashAnnotation: authConfigHash,
+			},
 		},
 		Spec: corev1.PodSpec{
 			ServiceAccountName: generateServiceAccountName(instance),

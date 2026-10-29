@@ -33,6 +33,7 @@ const (
 	kubeRBACProxyContainerName       = "kube-rbac-proxy"
 	kubeRBACProxyConfigMountPath     = "/etc/kube-rbac-proxy/auth.yaml"
 	evalHubAuthConfigMapKey          = "auth.yaml"
+	evalHubAuthConfigHashAnnotation  = "trustyai.opendatahub.io/auth-config-hash"
 	kubeRBACProxyUpstreamCAMountPath = "/etc/kube-rbac-proxy/upstream-ca"
 	kubeRBACProxyHealthPort          = 9443
 

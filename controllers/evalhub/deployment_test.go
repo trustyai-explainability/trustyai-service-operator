@@ -1,6 +1,7 @@
 package evalhub
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"strings"
 	"time"
@@ -104,6 +105,10 @@ var _ = Describe("EvalHub Deployment", func() {
 			Expect(labels["app"]).To(Equal("eval-hub"))
 			Expect(labels["instance"]).To(Equal(evalHubName))
 			Expect(labels["component"]).To(Equal("api"))
+
+			By("checking the proxy authorization config hash is attached to the pod template")
+			expectedAuthConfigHash := fmt.Sprintf("%x", sha256.Sum256([]byte(generateAuthConfigData())))
+			Expect(deployment.Spec.Template.Annotations[evalHubAuthConfigHashAnnotation]).To(Equal(expectedAuthConfigHash))
 		})
 
 		It("should configure evalhub container correctly", func() {
@@ -510,7 +515,7 @@ var _ = Describe("EvalHub Deployment", func() {
 			By("Checking evalhub config volume")
 			Expect(evalHubConfigVolume).NotTo(BeNil())
 			Expect(evalHubConfigVolume.VolumeSource.ConfigMap).NotTo(BeNil())
-			Expect(evalHubConfigVolume.VolumeSource.ConfigMap.Name).To(Equal(evalHubName + "-config"))
+			Expect(evalHubConfigVolume.VolumeSource.ConfigMap.Name).To(Equal(evalHubConfigMapName(evalHub)))
 
 			By("Checking TLS volume")
 			Expect(tlsVolume).NotTo(BeNil())

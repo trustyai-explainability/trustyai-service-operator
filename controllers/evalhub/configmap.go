@@ -3,6 +3,7 @@ package evalhub
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"sort"
@@ -115,6 +116,19 @@ type EvalHubConfig struct {
 	Sidecar     *SidecarConfig  `json:"sidecar,omitempty"`
 }
 
+// evalHubConfigMapName returns a ConfigMap name tied to the instance and the
+// authorization policy. A new policy therefore gets a new ConfigMap reference,
+// so a pod always mounts the auth.yaml matching its pod-template hash.
+func evalHubConfigMapName(instance *evalhubv1.EvalHub) string {
+	digest := sha256.Sum256([]byte(instance.Namespace + "\x00" + instance.Name + "\x00" + generateAuthConfigData()))
+	suffix := fmt.Sprintf("-config-%x", digest[:8])
+	name := instance.Name
+	if maxNameLength := 253 - len(suffix); len(name) > maxNameLength {
+		name = strings.TrimRight(name[:maxNameLength], ".-")
+	}
+	return name + suffix
+}
+
 // reconcileConfigMap creates or updates the ConfigMap for EvalHub configuration
 func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
@@ -122,7 +136,7 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.Name + "-config",
+			Name:      evalHubConfigMapName(instance),
 			Namespace: instance.Namespace,
 		},
 	}
@@ -399,6 +413,26 @@ func generateAuthConfigData() string {
                 namespace: "{{.FromHeader}}"
                 apiGroup: mlflow.kubeflow.org
                 resource: experiments
+                verb: get
+    - path: /api/v1/evaluations/collections/*/clones
+      mappings:
+        - methods: [post]
+          resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: collections
+                verb: create
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: collections
                 verb: get
     - path: /api/v1/evaluations/collections/*
       mappings:
