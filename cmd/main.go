@@ -46,7 +46,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	ctrlwebhook "sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	evalhubv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1alpha1"
@@ -141,13 +140,11 @@ func run() int {
 		setupLog.Error(err, "unable to resolve TLS configuration")
 		return 1
 	}
-	tlsOpts := tlsResult.TLSOpts
 	pkgtls.SetProxyTLSArguments(tlsResult.ProxyArgs)
 
 	metricsOpts := server.Options{
 		BindAddress:   metricsAddr,
 		SecureServing: secureMetrics,
-		TLSOpts:       tlsOpts,
 	}
 	if secureMetrics {
 		metricsOpts.FilterProvider = filters.WithAuthenticationAndAuthorization
@@ -183,12 +180,7 @@ func run() int {
 		// LeaderElectionReleaseOnCancel: true,
 	}
 
-	if slices.Contains(enabledServices, serviceEvalHub) || slices.Contains(enabledServices, serviceTAS) {
-		mgrOpts.WebhookServer = ctrlwebhook.NewServer(ctrlwebhook.Options{
-			Port:    9443,
-			TLSOpts: tlsOpts,
-		})
-	}
+	configureManagerTLS(&mgrOpts, tlsResult, slices.Contains(enabledServices, serviceEvalHub) || slices.Contains(enabledServices, serviceTAS))
 
 	mgr, err := ctrl.NewManager(cfg, mgrOpts)
 	if err != nil {
