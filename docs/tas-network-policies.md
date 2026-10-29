@@ -19,7 +19,10 @@ All listed ports are TCP destination **Pod** ports, after Service translation.
 | KServe Serverless/Knative | Same KServe peer; operator ConfigMap `kServeServerless=enabled` | 8080, in addition to 4443 |
 
 The TLS Service maps 443 to kube-rbac-proxy on 8443. The internal Service maps
-443 to 4443 and 80 to 8080. Local ServiceMonitor scraping uses the authenticated
+443 to the profile-configured internal TLS proxy on 4443 and 80 to 8080. The
+application no longer owns the 4443 listener or its serving keys; see
+[TAS TLS termination](tas-tls-termination.md) for the consumer/auth boundary and
+image qualification requirements. Local ServiceMonitor scraping uses the authenticated
 listener; central scraping uses HTTP on 8080. No ingress grant is made for the
 proxy health listener or the loopback-only upstream.
 

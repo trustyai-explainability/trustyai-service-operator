@@ -56,7 +56,7 @@ func setupAndTestDeploymentDefault(instance *trustyaiopendatahubiov1.TrustyAISer
 	Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
 	Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
 
-	Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
+	Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(3))
 	Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal(testTrustAIServiceImage))
 	Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal(testKubeRBACProxyImage))
 
@@ -129,7 +129,7 @@ func setupAndTestDeploymentConfigMap(instance *trustyaiopendatahubiov1.TrustyAIS
 	Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
 	Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
 
-	Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
+	Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(3))
 	Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal(serviceImage))
 	Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal(kubeRBACProxyImage))
 
@@ -1056,7 +1056,7 @@ var _ = Describe("TrustyAI operator", func() {
 				Expect(deployment.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
 				Expect(deployment.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
 
-				Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(2))
+				Expect(len(deployment.Spec.Template.Spec.Containers)).Should(Equal(3))
 				Expect(deployment.Spec.Template.Spec.Containers[0].Image).Should(Equal(testTrustAIServiceImage))
 				Expect(deployment.Spec.Template.Spec.Containers[1].Image).Should(Equal(testKubeRBACProxyImage))
 

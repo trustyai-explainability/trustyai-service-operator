@@ -6,6 +6,7 @@ import (
 
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -25,6 +26,7 @@ func TestTASDeploymentPathsRetainNetworkPolicyIdentity(t *testing.T) {
 			objects := []client.Object{owner, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage)}
 			if existing {
 				deployment, _, _ := tasNetworkPolicyWorkloadFixture(owner)
+				deployment.Spec.Template.Spec.Containers = []corev1.Container{{Name: "trustyai-service", Image: testTrustAIServiceImage}}
 				objects = append(objects, deployment)
 			}
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
