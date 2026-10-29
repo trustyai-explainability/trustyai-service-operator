@@ -7,6 +7,7 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	appsv1 "k8s.io/api/apps/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -72,18 +73,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	deployer := deploy.NewDeployer(
-		deploy.WithFieldOwner(trustyaimodule.FieldManagerModule),
-		deploy.WithApplyOrder(),
-		// ClusterRole/ClusterRoleBinding are cluster-scoped; Kubernetes rejects
-		// a namespace-scoped owner (the TrustyAI CR) on a cluster-scoped
-		// resource, so they cannot use owner-reference-based ownership/GC.
-		// They are cleaned up explicitly in handleDeletion instead.
-		deploy.WithExcludeFromOwnership(
-			rbacv1.SchemeGroupVersion.WithKind("ClusterRole"),
-			rbacv1.SchemeGroupVersion.WithKind("ClusterRoleBinding"),
-		),
-	)
+	deployer := newDeployer()
 
 	if err := (&trustyaimodule.TrustyAIModuleReconciler{
 		Client:                mgr.GetClient(),
@@ -111,4 +101,20 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func newDeployer() *deploy.Deployer {
+	return deploy.NewDeployer(
+		deploy.WithFieldOwner(trustyaimodule.FieldManagerModule),
+		deploy.WithApplyOrder(),
+		deploy.WithMergeStrategy(appsv1.SchemeGroupVersion.WithKind("Deployment"), deploy.MergeDeployments),
+		// ClusterRole/ClusterRoleBinding are cluster-scoped; Kubernetes rejects
+		// a namespace-scoped owner (the TrustyAI CR) on a cluster-scoped
+		// resource, so they cannot use owner-reference-based ownership/GC.
+		// They are cleaned up explicitly in handleDeletion instead.
+		deploy.WithExcludeFromOwnership(
+			rbacv1.SchemeGroupVersion.WithKind("ClusterRole"),
+			rbacv1.SchemeGroupVersion.WithKind("ClusterRoleBinding"),
+		),
+	)
 }
