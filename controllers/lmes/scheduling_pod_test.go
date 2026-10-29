@@ -183,6 +183,49 @@ func Test_ensureExecutionPod(t *testing.T) {
 		assert.Nil(t, c.createdPod)
 	})
 
+	t.Run("retries read failures after losing the create race", func(t *testing.T) {
+		for _, tt := range []struct {
+			name string
+			err  error
+		}{
+			{name: "pod not yet visible", err: notFound().err},
+			{name: "transient read failure", err: errors.New("connection reset by peer")},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				c := &schedulingStubClient{
+					Client:    fake.NewClientBuilder().Build(),
+					reads:     []podReadResult{notFound(), {err: tt.err}},
+					createErr: apierrors.NewAlreadyExists(schema.GroupResource{Resource: "pods"}, job.GetPodName()),
+				}
+
+				created, err := newSchedulingReconciler(c).ensureExecutionPod(context.Background(), job, newOwnedPod(job), logr.Discard())
+				assert.False(t, created)
+				assert.ErrorIs(t, err, errPodLookupFailed, "an unverified collision must not fail the job")
+				assert.ErrorIs(t, err, tt.err, "preserve the underlying lookup error")
+				assert.Equal(t, 2, c.readCalls)
+				assert.Nil(t, c.createdPod)
+			})
+		}
+	})
+
+	t.Run("rejects an unrelated pod after losing the create race", func(t *testing.T) {
+		foreign := newOwnedPod(job)
+		foreign.OwnerReferences = nil
+		c := &schedulingStubClient{
+			Client:    fake.NewClientBuilder().Build(),
+			reads:     []podReadResult{notFound(), found(foreign)},
+			createErr: apierrors.NewAlreadyExists(schema.GroupResource{Resource: "pods"}, job.GetPodName()),
+		}
+
+		created, err := newSchedulingReconciler(c).ensureExecutionPod(context.Background(), job, newOwnedPod(job), logr.Discard())
+		assert.False(t, created)
+		require.Error(t, err)
+		assert.NotErrorIs(t, err, errPodLookupFailed, "a verified name collision must still fail the job")
+		assert.NotErrorIs(t, err, errPodTerminating)
+		assert.Contains(t, err.Error(), "not controlled by this LMEvalJob")
+		assert.Nil(t, c.createdPod)
+	})
+
 	t.Run("treats a pod read failure as retryable", func(t *testing.T) {
 		c := &schedulingStubClient{
 			Client: fake.NewClientBuilder().Build(),
