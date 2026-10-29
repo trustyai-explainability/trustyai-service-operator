@@ -27,6 +27,8 @@ func mcpConfigFilePath() string {
 // Tokens are supplied via EVALHUB_TOKEN env, not this file.
 type MCPConfig struct {
 	BaseURL            string `json:"base_url"`
+	TLSCertFile        string `json:"tls_cert_file"`
+	TLSKeyFile         string `json:"tls_key_file"`
 	Transport          string `json:"transport,omitempty"`
 	Host               string `json:"host,omitempty"`
 	Port               int    `json:"port,omitempty"`

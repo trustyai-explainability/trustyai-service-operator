@@ -152,8 +152,8 @@ var _ = Describe("buildDeploymentSpec", func() {
 		}
 		Expect(envVarMap["API_HOST"]).To(Equal("127.0.0.1"))
 		Expect(envVarMap["PORT"]).To(Equal(fmt.Sprintf("%d", evalHubAppPort)))
-		Expect(envVarMap).NotTo(HaveKey("TLS_CERT_FILE"))
-		Expect(envVarMap).NotTo(HaveKey("TLS_KEY_FILE"))
+		Expect(envVarMap).To(HaveKeyWithValue("TLS_CERT_FILE", ""))
+		Expect(envVarMap).To(HaveKeyWithValue("TLS_KEY_FILE", ""))
 		Expect(envVarMap["LOG_LEVEL"]).To(Equal("INFO"))
 		Expect(envVarMap["MAX_CONCURRENT_EVALUATIONS"]).To(Equal("10"))
 		Expect(envVarMap["DEFAULT_TIMEOUT_MINUTES"]).To(Equal("60"))

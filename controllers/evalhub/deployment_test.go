@@ -191,8 +191,8 @@ var _ = Describe("EvalHub Deployment", func() {
 			// EvalHub listens HTTP on loopback; kube-rbac-proxy terminates TLS on servicePort
 			Expect(envVars["API_HOST"]).To(Equal("127.0.0.1"))
 			Expect(envVars["PORT"]).To(Equal(fmt.Sprintf("%d", evalHubAppPort)))
-			Expect(envVars).NotTo(HaveKey("TLS_CERT_FILE"))
-			Expect(envVars).NotTo(HaveKey("TLS_KEY_FILE"))
+			Expect(envVars).To(HaveKeyWithValue("TLS_CERT_FILE", ""))
+			Expect(envVars).To(HaveKeyWithValue("TLS_KEY_FILE", ""))
 			Expect(envVars["LOG_LEVEL"]).To(Equal("INFO"))
 			Expect(envVars["MAX_CONCURRENT_EVALUATIONS"]).To(Equal("10"))
 			Expect(envVars["DEFAULT_TIMEOUT_MINUTES"]).To(Equal("60"))
