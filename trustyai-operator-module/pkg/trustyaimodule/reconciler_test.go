@@ -8,12 +8,13 @@ import (
 	. "github.com/onsi/gomega"
 
 	common "github.com/opendatahub-io/odh-platform-utilities/api/common"
-	"github.com/opendatahub-io/odh-platform-utilities/pkg/deploy"
+	"github.com/opendatahub-io/odh-platform-utilities/pkg/metadata/annotations"
 	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -43,15 +44,27 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 
 	newReconcilerWithDeployer := func() *TrustyAIModuleReconciler {
 		r := newReconciler()
-		r.Deployer = deploy.NewDeployer(
-			deploy.WithFieldOwner(FieldManagerModule),
-			deploy.WithApplyOrder(),
-			deploy.WithExcludeFromOwnership(
-				rbacv1.SchemeGroupVersion.WithKind("ClusterRole"),
-				rbacv1.SchemeGroupVersion.WithKind("ClusterRoleBinding"),
-			),
-		)
+		r.Deployer = NewModuleDeployer()
 		return r
+	}
+
+	managerContainer := func(dep *appsv1.Deployment) *corev1.Container {
+		for i := range dep.Spec.Template.Spec.Containers {
+			if dep.Spec.Template.Spec.Containers[i].Name == ManagerContainerName {
+				return &dep.Spec.Template.Spec.Containers[i]
+			}
+		}
+		return nil
+	}
+
+	patchManagerCPULimit := func(dep *appsv1.Deployment, cpu string) {
+		container := managerContainer(dep)
+		Expect(container).NotTo(BeNil())
+		if container.Resources.Limits == nil {
+			container.Resources.Limits = corev1.ResourceList{}
+		}
+		container.Resources.Limits[corev1.ResourceCPU] = resource.MustParse(cpu)
+		Expect(k8sClient.Update(ctx, dep)).To(Succeed())
 	}
 
 	reconcileUntilCurrent := func(r *TrustyAIModuleReconciler) {
@@ -354,6 +367,71 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 				Name: OperatorDeploymentName, Namespace: testNamespace,
 			}, dep)).To(Succeed())
 			Expect(deploymentEnableServicesArg(dep)).To(Equal("--enable-services=NEMO_GUARDRAILS"))
+		})
+
+		It("preserves user CPU limits on the service operator Deployment when unmanaged", func() {
+			// Regression for RHOAIENG-101065 / ODS-2664: without
+			// opendatahub.io/managed=true, reconcile must keep allowlisted
+			// resource fields (e.g. CPU limit 1001m) instead of resetting to
+			// the manifest default (900m).
+			r := newReconcilerWithDeployer()
+			reconcileUntilCurrent(r)
+
+			dep := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: OperatorDeploymentName, Namespace: testNamespace,
+			}, dep)).To(Succeed())
+
+			container := managerContainer(dep)
+			Expect(container).NotTo(BeNil())
+			Expect(container.Resources.Limits.Cpu().String()).To(Equal("900m"))
+
+			patchManagerCPULimit(dep, "1001m")
+
+			module := &platformv1alpha1.TrustyAI{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
+			module.Spec.EnabledServices = platformv1alpha1.EnabledServices{TAS: true, LMES: true}
+			Expect(k8sClient.Update(ctx, module)).To(Succeed())
+
+			reconcileUntilCurrent(r)
+
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: OperatorDeploymentName, Namespace: testNamespace,
+			}, dep)).To(Succeed())
+			container = managerContainer(dep)
+			Expect(container).NotTo(BeNil())
+			Expect(container.Resources.Limits.Cpu().String()).To(Equal("1001m"))
+			Expect(deploymentEnableServicesArg(dep)).To(Equal("--enable-services=TAS,LMES"))
+		})
+
+		It("reverts CPU limits when opendatahub.io/managed=true", func() {
+			r := newReconcilerWithDeployer()
+			reconcileUntilCurrent(r)
+
+			dep := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: OperatorDeploymentName, Namespace: testNamespace,
+			}, dep)).To(Succeed())
+
+			if dep.Annotations == nil {
+				dep.Annotations = map[string]string{}
+			}
+			dep.Annotations[annotations.ManagedByODHOperator] = "true"
+			Expect(k8sClient.Update(ctx, dep)).To(Succeed())
+
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: OperatorDeploymentName, Namespace: testNamespace,
+			}, dep)).To(Succeed())
+			patchManagerCPULimit(dep, "1001m")
+
+			reconcileUntilCurrent(r)
+
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: OperatorDeploymentName, Namespace: testNamespace,
+			}, dep)).To(Succeed())
+			container := managerContainer(dep)
+			Expect(container).NotTo(BeNil())
+			Expect(container.Resources.Limits.Cpu().String()).To(Equal("900m"))
 		})
 
 		It("records the module operator version in status.releases", func() {

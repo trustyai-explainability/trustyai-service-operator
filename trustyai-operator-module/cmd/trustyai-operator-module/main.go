@@ -7,7 +7,6 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -16,7 +15,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/opendatahub-io/odh-platform-utilities/pkg/deploy"
 	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-operator-module/pkg/trustyaimodule"
 )
@@ -72,25 +70,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	deployer := deploy.NewDeployer(
-		deploy.WithFieldOwner(trustyaimodule.FieldManagerModule),
-		deploy.WithApplyOrder(),
-		// ClusterRole/ClusterRoleBinding are cluster-scoped; Kubernetes rejects
-		// a namespace-scoped owner (the TrustyAI CR) on a cluster-scoped
-		// resource, so they cannot use owner-reference-based ownership/GC.
-		// They are cleaned up explicitly in handleDeletion instead.
-		deploy.WithExcludeFromOwnership(
-			rbacv1.SchemeGroupVersion.WithKind("ClusterRole"),
-			rbacv1.SchemeGroupVersion.WithKind("ClusterRoleBinding"),
-		),
-	)
-
 	if err := (&trustyaimodule.TrustyAIModuleReconciler{
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
 		Namespace:             namespace,
 		ManifestsTemplatePath: manifestsPath,
-		Deployer:              deployer,
+		Deployer:              trustyaimodule.NewModuleDeployer(),
 		EventRecorder:         mgr.GetEventRecorderFor("trustyai-module"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "TrustyAI")
