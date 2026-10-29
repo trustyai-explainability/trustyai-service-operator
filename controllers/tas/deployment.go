@@ -265,6 +265,16 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 			return r.updateDeployment(ctx, instance, image, caBundle)
 		}
 	}
+	// A manager restart must refresh TLS on existing workloads, not only new ones.
+	// Patch only TLS-owned fields so manual rollout annotations and storage/image
+	// settings are not overwritten by a routine profile change.
+	desired, err := r.createDeploymentObject(ctx, instance, image, caBundle)
+	if err != nil {
+		return err
+	}
+	if err := r.ensureTASTLSDeployment(ctx, instance, deploy, desired); err != nil {
+		return err
+	}
 	// The caller reconciles the policy before legacy workloads enter its selector.
 	return r.ensureTASDeploymentIdentity(ctx, instance, deploy)
 }

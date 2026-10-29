@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"sigs.k8s.io/yaml"
+
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -84,10 +86,14 @@ func TestCreateKubeRBACProxyConfigMapObject(t *testing.T) {
 		"resource: \"services\"",
 		"name: \"test-service\"",
 		"verb: \"get\"",
-		"upstreamConfig:",
-		"url: \"http://127.0.0.1:8081\"",
-		"tlsConfig:",
-		"minVersion: \"VersionTLS12\"",
+	}
+
+	var parsed map[string]interface{}
+	if err := yaml.Unmarshal([]byte(configData), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed) != 1 || parsed["authorization"] == nil {
+		t.Fatalf("proxy ConfigMap must contain only authorization, got %#v", parsed)
 	}
 
 	for _, expected := range testCases {
