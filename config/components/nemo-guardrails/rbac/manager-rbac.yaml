@@ -134,3 +134,10 @@ rules:
   - deployments/finalizers
   verbs:
   - update
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch

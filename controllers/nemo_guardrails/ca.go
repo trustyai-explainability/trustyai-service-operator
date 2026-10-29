@@ -2,6 +2,8 @@ package nemo_guardrails
 
 import (
 	"context"
+	"fmt"
+
 	"github.com/go-logr/logr"
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
@@ -79,12 +81,15 @@ func (r *NemoGuardrailsReconciler) LoadCAConfigs(ctx context.Context, logger log
 	}
 
 	if nemoGuardrails.Spec.CABundleConfig != nil {
-		caBundleConfigNamespace := nemoGuardrails.Spec.CABundleConfig.ConfigMapNamespace
-		if caBundleConfigNamespace == "" {
-			caBundleConfigNamespace = nemoGuardrails.Namespace
-		}
-		userCAConfigMap, err := utils.GetConfigMapByName(ctx, r.Client, nemoGuardrails.Spec.CABundleConfig.ConfigMapName, caBundleConfigNamespace)
-		if err != nil {
+		caBundleConfigNamespace, nsErr := userCABundleNamespace(&nemoGuardrails, targetNamespace)
+		if nsErr != nil {
+			logger.Info("Rejecting user-specified CA bundle ConfigMap because its namespace is neither the NemoGuardrails namespace nor the workload namespace")
+			caStatus.UserCAFound = false
+			caStatus.UserCAError = nsErr.Error()
+			if r.Recorder != nil {
+				r.Recorder.Event(&nemoGuardrails, corev1.EventTypeWarning, eventReasonCABundleNamespaceRejected, nsErr.Error())
+			}
+		} else if userCAConfigMap, err := utils.GetConfigMapByName(ctx, r.Client, nemoGuardrails.Spec.CABundleConfig.ConfigMapName, caBundleConfigNamespace); err != nil {
 			logger.Info("Could not find or load the user-specified CA bundle configmap, so will not be mounted.")
 			caStatus.UserCAFound = false
 			caStatus.UserCAError = err.Error()
@@ -110,6 +115,21 @@ func (r *NemoGuardrailsReconciler) LoadCAConfigs(ctx context.Context, logger log
 	}
 
 	return caBundleInitContainerConfig, configMapsToMount, caStatus
+}
+
+// userCABundleNamespace is the namespace LoadCAConfigs may read a user CA ConfigMap from.
+// An empty namespace defaults to the custom resource namespace. The workload namespace is also
+// accepted, and a ConfigMap there is mounted in place. Any other namespace is rejected so
+// reconciliation does not read or copy a ConfigMap from a namespace unrelated to this custom resource.
+func userCABundleNamespace(nemo *nemoguardrailsv1alpha1.NemoGuardrails, workloadNamespace string) (string, error) {
+	ns := nemo.Spec.CABundleConfig.ConfigMapNamespace
+	if ns == "" {
+		ns = nemo.Namespace
+	}
+	if ns != nemo.Namespace && ns != workloadNamespace {
+		return "", fmt.Errorf("CA bundle ConfigMap namespace %q must be the NemoGuardrails namespace %q or the workload namespace %q", ns, nemo.Namespace, workloadNamespace)
+	}
+	return ns, nil
 }
 
 // AddCAToDeployment modifies the NemoDeployment to contain the CA bundle init container and all necessary volumes

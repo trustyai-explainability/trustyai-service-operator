@@ -56,7 +56,14 @@ type NemoGuardrailsSpec struct {
 	// CEL cost estimator on an unbounded list.
 	// +kubebuilder:validation:MaxItems=64
 	// +kubebuilder:validation:XValidation:rule="self.all(c, self.exists_one(o, o.name == c.name))",message="nemoConfigs names must be unique"
-	NemoConfigs    []NemoConfig           `json:"nemoConfigs"`
+	NemoConfigs []NemoConfig `json:"nemoConfigs"`
+	// CABundleConfig names a ConfigMap of additional CA certificates to trust.
+	// configMapNamespace defaults to the namespace of this NemoGuardrails. It may also be set to
+	// the namespace the workload is deployed into (for example the AI Gateway infra namespace),
+	// in which case the ConfigMap is mounted in place instead of copied.
+	// Any other namespace is rejected: the CA bundle is not mounted, and the error is reported
+	// in status.ca.userCAError and as a Warning event.
+	// +optional
 	CABundleConfig *common.CABundleConfig `json:"caBundleConfig,omitempty"`
 	// Number of replicas for the NeMo Guardrails deployment
 	// +optional
@@ -175,7 +182,7 @@ type NemoGuardrailStatus struct {
 	// +optional
 	CA *CAStatus `json:"ca,omitempty"`
 	// Endpoint is the internal Service URL for the NeMo Guardrails server.
-	// Only set when the server is protected by authentication (security.opendatahub.io/enable-auth: "true").
+	// It uses https when authentication is enabled and http when authentication is disabled.
 	// +optional
 	Endpoint string `json:"endpoint,omitempty"`
 	// WorkloadNamespace is the namespace where the Deployment was last reconciled.
