@@ -17,8 +17,6 @@ func metricsServiceName(instance *evalhubv1.EvalHub) string {
 	return instance.Name + "-metrics"
 }
 
-// metricsServiceLabels returns labels for the metrics Service and ServiceMonitor selector.
-// Discovery labels (e.g., openshift.io/user-monitoring) belong in ServiceMonitor metadata only.
 func metricsServiceLabels(instance *evalhubv1.EvalHub) map[string]string {
 	return map[string]string{
 		"app":       "eval-hub",

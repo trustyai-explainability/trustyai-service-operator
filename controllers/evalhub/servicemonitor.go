@@ -34,9 +34,6 @@ func (r *EvalHubReconciler) isServiceMonitorSupported() bool {
 func serviceMonitorName(instance *evalhubv1.EvalHub) string {
 	return instance.Name + "-metrics"
 }
-
-// serviceMonitorMetadataLabels returns labels for ServiceMonitor metadata,
-// including discovery labels for Prometheus.
 func serviceMonitorMetadataLabels(instance *evalhubv1.EvalHub) map[string]string {
 	labels := metricsServiceLabels(instance)
 	labels["openshift.io/user-monitoring"] = "true"
@@ -70,8 +67,6 @@ func (r *EvalHubReconciler) buildServiceMonitor(instance *evalhubv1.EvalHub) *mo
 	}
 }
 
-// reconcileServiceMonitor ensures a ServiceMonitor exists for the EvalHub instance.
-// Reconciles metadata labels to support upgrades from versions that didn't set discovery labels.
 func (r *EvalHubReconciler) reconcileServiceMonitor(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
 	log.Info("Reconciling ServiceMonitor", "name", serviceMonitorName(instance))
@@ -90,8 +85,6 @@ func (r *EvalHubReconciler) reconcileServiceMonitor(ctx context.Context, instanc
 		}
 		return err
 	}
-
-	// Reconcile metadata labels for upgrade path
 	needsUpdate := false
 	if found.Labels == nil {
 		found.Labels = map[string]string{}
