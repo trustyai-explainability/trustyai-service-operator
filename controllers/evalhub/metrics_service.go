@@ -54,7 +54,12 @@ func (r *EvalHubReconciler) reconcileMetricsService(ctx context.Context, instanc
 		return r.Create(ctx, service)
 	}
 
-	service.Labels = metricsServiceLabels(instance)
+	if service.Labels == nil {
+		service.Labels = make(map[string]string)
+	}
+	for k, v := range metricsServiceLabels(instance) {
+		service.Labels[k] = v
+	}
 	service.Spec.Ports = desiredSpec.Ports
 	service.Spec.Selector = desiredSpec.Selector
 	service.Spec.Type = desiredSpec.Type
