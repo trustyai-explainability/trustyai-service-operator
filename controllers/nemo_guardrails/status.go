@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
@@ -47,7 +48,8 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 		if !publishAddress {
 			return
 		}
-		saved.Status.Endpoint = endpoint
+		// A scheme change waits until the new pods are Ready. Until then the previous URL still matches the pods that are serving.
+		saved.Status.Endpoint = endpointWhileRolling(saved.Status.Endpoint, endpoint, deploymentReady)
 		saved.Status.WorkloadNamespace = targetNamespace
 	}
 
@@ -99,6 +101,25 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+// endpointWhileRolling keeps a published URL while a rollout is still serving the previous protocol.
+func endpointWhileRolling(previous, desired string, deploymentReady bool) string {
+	if deploymentReady || previous == "" || urlScheme(previous) == urlScheme(desired) {
+		return desired
+	}
+	return previous
+}
+
+func urlScheme(endpoint string) string {
+	switch {
+	case strings.HasPrefix(endpoint, "https://"):
+		return "https"
+	case strings.HasPrefix(endpoint, "http://"):
+		return "http"
+	default:
+		return ""
+	}
 }
 
 func internalServiceEndpoint(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, serviceName, namespace string) string {

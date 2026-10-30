@@ -176,6 +176,7 @@ type NemoGuardrailStatus struct {
 	CA *CAStatus `json:"ca,omitempty"`
 	// Endpoint is the internal Service URL for the NeMo Guardrails server.
 	// It uses https when authentication is enabled and http when authentication is disabled.
+	// A scheme change is published after the Deployment rollout finishes.
 	// +optional
 	Endpoint string `json:"endpoint,omitempty"`
 	// WorkloadNamespace is the namespace where the Deployment was last reconciled.

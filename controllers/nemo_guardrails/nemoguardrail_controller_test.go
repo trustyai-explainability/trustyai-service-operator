@@ -665,13 +665,26 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		}, time.Second*2, time.Millisecond*100).Should(Equal(expectedEndpoint))
 	})
 
-	It("should set status.endpoint to the internal http Service address when auth is disabled", func() {
+	It("should keep the published https endpoint until the Deployment rollout finishes when auth is disabled", func() {
 		controllerReconciler := &NemoGuardrailsReconciler{
 			Client:    k8sClient,
 			Scheme:    k8sClient.Scheme(),
 			Namespace: operatorNamespace,
 		}
-		expectedEndpoint := fmt.Sprintf("http://%s.%s.svc.cluster.local", resourceName, namespace)
+		publishedEndpoint := fmt.Sprintf("https://%s.%s.svc.cluster.local", resourceName, namespace)
+
+		By("Reconciling with auth enabled so the endpoint is published as https")
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(func() string {
+			nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+			if err := k8sClient.Get(ctx, typeNamespacedName, nemo); err != nil {
+				return ""
+			}
+			return nemo.Status.Endpoint
+		}, time.Second*10, time.Millisecond*100).Should(Equal(publishedEndpoint))
 
 		By("Disabling auth and restoring exposeRoute to its default (true)")
 		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
@@ -681,20 +694,20 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		nemo.Spec.ExposeRoute = &exposeTrue
 		Expect(k8sClient.Update(ctx, nemo)).To(Succeed())
 
-		By("Reconciling")
-		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+		By("Reconciling while the Deployment is not Ready")
+		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
 			NamespacedName: typeNamespacedName,
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-		By("Checking that status.endpoint reports the internal Service address")
-		Eventually(func() string {
+		By("Checking that status.endpoint stays https until the Deployment is Ready")
+		Consistently(func() string {
 			nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
 			if err := k8sClient.Get(ctx, typeNamespacedName, nemo); err != nil {
 				return "unexpected-get-error"
 			}
 			return nemo.Status.Endpoint
-		}, time.Second*10, time.Millisecond*100).Should(Equal(expectedEndpoint))
+		}, time.Second*2, time.Millisecond*100).Should(Equal(publishedEndpoint))
 	})
 
 	It("should not delete an unrelated route that shares the CR name", func() {
