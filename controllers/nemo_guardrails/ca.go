@@ -2,6 +2,8 @@ package nemo_guardrails
 
 import (
 	"context"
+	"fmt"
+
 	"github.com/go-logr/logr"
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
@@ -79,12 +81,12 @@ func (r *NemoGuardrailsReconciler) LoadCAConfigs(ctx context.Context, logger log
 	}
 
 	if nemoGuardrails.Spec.CABundleConfig != nil {
-		caBundleConfigNamespace := nemoGuardrails.Spec.CABundleConfig.ConfigMapNamespace
-		if caBundleConfigNamespace == "" {
-			caBundleConfigNamespace = nemoGuardrails.Namespace
-		}
-		userCAConfigMap, err := utils.GetConfigMapByName(ctx, r.Client, nemoGuardrails.Spec.CABundleConfig.ConfigMapName, caBundleConfigNamespace)
-		if err != nil {
+		caBundleConfigNamespace, nsErr := userCABundleNamespace(&nemoGuardrails)
+		if nsErr != nil {
+			logger.Info("Rejecting user-specified CA bundle ConfigMap because its namespace differs from the NemoGuardrails namespace")
+			caStatus.UserCAFound = false
+			caStatus.UserCAError = nsErr.Error()
+		} else if userCAConfigMap, err := utils.GetConfigMapByName(ctx, r.Client, nemoGuardrails.Spec.CABundleConfig.ConfigMapName, caBundleConfigNamespace); err != nil {
 			logger.Info("Could not find or load the user-specified CA bundle configmap, so will not be mounted.")
 			caStatus.UserCAFound = false
 			caStatus.UserCAError = err.Error()
@@ -110,6 +112,20 @@ func (r *NemoGuardrailsReconciler) LoadCAConfigs(ctx context.Context, logger log
 	}
 
 	return caBundleInitContainerConfig, configMapsToMount, caStatus
+}
+
+// userCABundleNamespace is the namespace LoadCAConfigs may read a user CA ConfigMap from.
+// An empty namespace defaults to the custom resource namespace. Any other namespace is
+// rejected so reconciliation does not read or copy a ConfigMap outside that namespace.
+func userCABundleNamespace(nemo *nemoguardrailsv1alpha1.NemoGuardrails) (string, error) {
+	ns := nemo.Spec.CABundleConfig.ConfigMapNamespace
+	if ns == "" {
+		ns = nemo.Namespace
+	}
+	if ns != nemo.Namespace {
+		return "", fmt.Errorf("CA bundle ConfigMap namespace %q must match the NemoGuardrails namespace %q", ns, nemo.Namespace)
+	}
+	return ns, nil
 }
 
 // AddCAToDeployment modifies the NemoDeployment to contain the CA bundle init container and all necessary volumes

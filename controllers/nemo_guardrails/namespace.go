@@ -241,11 +241,8 @@ func (r *NemoGuardrailsReconciler) copiedConfigMapNames(ctx context.Context, nem
 		}
 	}
 	if ca := nemoGuardrails.Spec.CABundleConfig; ca != nil && ca.ConfigMapName != "" {
-		sourceNamespace := ca.ConfigMapNamespace
-		if sourceNamespace == "" {
-			sourceNamespace = nemoGuardrails.Namespace
-		}
-		if sourceNamespace != namespace {
+		sourceNamespace, nsErr := userCABundleNamespace(nemoGuardrails)
+		if nsErr == nil && sourceNamespace != namespace {
 			source := &corev1.ConfigMap{}
 			err := r.Get(ctx, types.NamespacedName{Name: ca.ConfigMapName, Namespace: sourceNamespace}, source)
 			if err == nil && source.Namespace != namespace {
@@ -586,16 +583,23 @@ func (r *NemoGuardrailsReconciler) ensureReferencedSecretsInNamespace(ctx contex
 		if envVar.ValueFrom == nil || envVar.ValueFrom.SecretKeyRef == nil {
 			continue
 		}
-		secretName := envVar.ValueFrom.SecretKeyRef.Name
+		ref := envVar.ValueFrom.SecretKeyRef
+		secretName := ref.Name
+		if secretName == "" {
+			continue
+		}
 		if seen[secretName] {
 			continue
 		}
-		seen[secretName] = true
 
 		source := &corev1.Secret{}
 		if err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: owner.Namespace}, source); err != nil {
+			if errors.IsNotFound(err) && ref.Optional != nil && *ref.Optional {
+				continue
+			}
 			return fmt.Errorf("secret %s/%s referenced by spec.env: %w", owner.Namespace, secretName, err)
 		}
+		seen[secretName] = true
 		if _, err := r.ensureSecretInNamespace(ctx, owner, source, targetNamespace); err != nil {
 			return err
 		}

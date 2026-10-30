@@ -2,6 +2,7 @@ package nemo_guardrails
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -20,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -541,6 +543,66 @@ func TestRequireOwnedOrAbsentLeavesUnownedDeployment(t *testing.T) {
 }
 
 func int32Ptr(v int32) *int32 { return &v }
+
+func TestEnsureReferencedSecretsInNamespace(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	optional := true
+	present := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "present", Namespace: "models"},
+		Data:       map[string][]byte{"token": []byte("value")},
+	}
+	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
+		ObjectMeta: metav1.ObjectMeta{Name: "nemo", Namespace: "models", UID: "cr-uid"},
+		Spec: nemoguardrailsv1alpha1.NemoGuardrailsSpec{Env: []corev1.EnvVar{
+			{Name: "EMPTY", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{}}},
+			{Name: "MAYBE", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "missing-optional"},
+				Optional:             &optional,
+			}}},
+			{Name: "TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "present"},
+			}}},
+		}},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(present).Build()
+	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
+
+	require.NoError(t, reconciler.ensureReferencedSecretsInNamespace(context.Background(), cr, "redhat-ai-gateway-infra"))
+	copied := &corev1.Secret{}
+	copyName := copiedObjectName("models", "nemo", "present", "redhat-ai-gateway-infra")
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: copyName, Namespace: "redhat-ai-gateway-infra"}, copied))
+	require.Equal(t, []byte("value"), copied.Data["token"])
+	err := c.Get(context.Background(), types.NamespacedName{
+		Name: copiedObjectName("models", "nemo", "missing-optional", "redhat-ai-gateway-infra"), Namespace: "redhat-ai-gateway-infra",
+	}, &corev1.Secret{})
+	require.True(t, apierrors.IsNotFound(err))
+
+	required := cr.DeepCopy()
+	required.Spec.Env = []corev1.EnvVar{{
+		Name: "REQUIRED",
+		ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "missing-required"},
+		}},
+	}}
+	err = reconciler.ensureReferencedSecretsInNamespace(context.Background(), required, "redhat-ai-gateway-infra")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing-required")
+
+	broken := fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if key.Name == "broken" {
+				return fmt.Errorf("apiserver timeout")
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+	}).Build()
+	reconciler.Client = broken
+	required.Spec.Env[0].ValueFrom.SecretKeyRef.Name = "broken"
+	err = reconciler.ensureReferencedSecretsInNamespace(context.Background(), required, "redhat-ai-gateway-infra")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "apiserver timeout")
+}
 
 func TestRetireUnscopedNamesRemovesLegacyObjects(t *testing.T) {
 	scheme := runtime.NewScheme()
