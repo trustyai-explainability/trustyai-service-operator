@@ -432,7 +432,7 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
 		r := &NemoGuardrailsReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Namespace: operatorNamespace}
-		ca, cms, _ := r.LoadCAConfigs(ctx, log.FromContext(ctx), *nemo)
+		ca, cms, _ := r.LoadCAConfigs(ctx, log.FromContext(ctx), *nemo, r.workloadNamespace(nemo))
 		baseline, err := r.createDeployment(ctx, nemo, ca, cms)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(baseline.Spec.Template.Spec.ResourceClaims).To(BeEmpty())
@@ -665,33 +665,49 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		}, time.Second*2, time.Millisecond*100).Should(Equal(expectedEndpoint))
 	})
 
-	It("should not set status.endpoint when auth is disabled even if the Route is exposed", func() {
+	It("should keep the published https endpoint until the Deployment rollout finishes when auth is disabled", func() {
 		controllerReconciler := &NemoGuardrailsReconciler{
 			Client:    k8sClient,
 			Scheme:    k8sClient.Scheme(),
 			Namespace: operatorNamespace,
 		}
+		publishedEndpoint := fmt.Sprintf("https://%s.%s.svc.cluster.local", resourceName, namespace)
 
-		By("Disabling auth on the CR while keeping exposeRoute at its default (true)")
-		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
-		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
-		nemo.Annotations[constants.AuthAnnotationKey] = "false"
-		Expect(k8sClient.Update(ctx, nemo)).To(Succeed())
-
-		By("Reconciling")
+		By("Reconciling with auth enabled so the endpoint is published as https")
 		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 			NamespacedName: typeNamespacedName,
 		})
 		Expect(err).NotTo(HaveOccurred())
+		Eventually(func() string {
+			nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+			if err := k8sClient.Get(ctx, typeNamespacedName, nemo); err != nil {
+				return ""
+			}
+			return nemo.Status.Endpoint
+		}, time.Second*10, time.Millisecond*100).Should(Equal(publishedEndpoint))
 
-		By("Checking that status.endpoint stays empty")
+		By("Disabling auth and restoring exposeRoute to its default (true)")
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
+		nemo.Annotations[constants.AuthAnnotationKey] = "false"
+		exposeTrue := true
+		nemo.Spec.ExposeRoute = &exposeTrue
+		Expect(k8sClient.Update(ctx, nemo)).To(Succeed())
+
+		By("Reconciling while the Deployment is not Ready")
+		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Checking that status.endpoint stays https until the Deployment is Ready")
 		Consistently(func() string {
 			nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
 			if err := k8sClient.Get(ctx, typeNamespacedName, nemo); err != nil {
 				return "unexpected-get-error"
 			}
 			return nemo.Status.Endpoint
-		}, time.Second*2, time.Millisecond*100).Should(BeEmpty())
+		}, time.Second*2, time.Millisecond*100).Should(Equal(publishedEndpoint))
 	})
 
 	It("should not delete an unrelated route that shares the CR name", func() {

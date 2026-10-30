@@ -175,9 +175,13 @@ type NemoGuardrailStatus struct {
 	// +optional
 	CA *CAStatus `json:"ca,omitempty"`
 	// Endpoint is the internal Service URL for the NeMo Guardrails server.
-	// Only set when the server is protected by authentication (security.opendatahub.io/enable-auth: "true").
+	// It uses https when authentication is enabled and http when authentication is disabled.
+	// A scheme change is published after the Deployment rollout finishes.
 	// +optional
 	Endpoint string `json:"endpoint,omitempty"`
+	// WorkloadNamespace is the namespace where the Deployment was last reconciled.
+	// +optional
+	WorkloadNamespace string `json:"workloadNamespace,omitempty"`
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 }

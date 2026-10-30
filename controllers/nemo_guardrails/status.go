@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
@@ -29,24 +30,27 @@ func (r *NemoGuardrailsReconciler) updateStatus(ctx context.Context, original *n
 	return saved, err
 }
 
-func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails) (ctrl.Result, error) {
-	deploymentReady, deploymentErr := utils.CheckDeploymentReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
+func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) (ctrl.Result, error) {
+	identity := newWorkloadIdentity(nemoGuardrails, targetNamespace)
+	deploymentReady, deploymentErr := utils.CheckDeploymentReady(ctx, r.Client, identity.Name, targetNamespace)
 
 	exposeRoute := nemoGuardrails.Spec.ExposeRoute != nil && *nemoGuardrails.Spec.ExposeRoute
 	routeReady := !exposeRoute
 	if exposeRoute {
-		routeReady, _ = utils.CheckRouteReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
+		routeReady, _ = utils.CheckRouteReady(ctx, r.Client, identity.Name, targetNamespace)
 	}
 
-	// showEndpointStatus is true only when the server is protected by auth
-	showEndpointStatus := utils.RequiresAuth(nemoGuardrails)
-	endpoint := ""
-	if showEndpointStatus {
-		endpoint = fmt.Sprintf("https://%s.%s.svc.cluster.local", nemoGuardrails.Name, nemoGuardrails.Namespace)
-	}
-	// sets the endpoint status based on the showEndpointStatus flag
+	endpoint := internalServiceEndpoint(nemoGuardrails, identity.Name, targetNamespace)
+	// Publish the new address once the Deployment is Ready and, when a Route is required, that Route is admitted.
+	// Until then a namespace move keeps the previous endpoint and workload namespace.
+	publishAddress := previousWorkloadNamespace(nemoGuardrails) == targetNamespace || (deploymentReady && routeReady)
 	setEndpoint := func(saved *nemoguardrailsv1alpha1.NemoGuardrails) {
-		saved.Status.Endpoint = endpoint
+		if !publishAddress {
+			return
+		}
+		// A scheme change waits until the new pods are Ready. Until then the previous URL still matches the pods that are serving.
+		saved.Status.Endpoint = endpointWhileRolling(saved.Status.Endpoint, endpoint, deploymentReady)
+		saved.Status.WorkloadNamespace = targetNamespace
 	}
 
 	if deploymentReady && routeReady {
@@ -97,4 +101,31 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+// endpointWhileRolling keeps a published URL while a rollout is still serving the previous protocol.
+func endpointWhileRolling(previous, desired string, deploymentReady bool) string {
+	if deploymentReady || previous == "" || urlScheme(previous) == urlScheme(desired) {
+		return desired
+	}
+	return previous
+}
+
+func urlScheme(endpoint string) string {
+	switch {
+	case strings.HasPrefix(endpoint, "https://"):
+		return "https"
+	case strings.HasPrefix(endpoint, "http://"):
+		return "http"
+	default:
+		return ""
+	}
+}
+
+func internalServiceEndpoint(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, serviceName, namespace string) string {
+	scheme := "http"
+	if utils.RequiresAuth(nemoGuardrails) {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s.%s.svc.cluster.local", scheme, serviceName, namespace)
 }
