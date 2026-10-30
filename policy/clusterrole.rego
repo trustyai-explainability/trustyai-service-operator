@@ -27,6 +27,8 @@ allowed_api_resources := {
 	["apps", "replicasets"],
 	["apps", "deployments/finalizers"],
 	["apps", "deployments/status"],
+	# NeMo verifies the Deployment -> ReplicaSet -> Pod chain before labelling Pods.
+	["apps", "replicasets"],
 
 	# --- batch ---
 	["batch", "jobs"],
