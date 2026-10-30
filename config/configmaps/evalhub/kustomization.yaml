@@ -26,7 +26,6 @@ resources:
   - collection-leaderboard-v2.yaml
   - collection-model-validation.yaml
   - collection-multimodal-v1.yaml
-  - collection-open-telco-v1.yaml
   - collection-reasoning-v1.yaml
   - collection-safety-and-fairness-v1.yaml
   - collection-safety-ethical-principles-v1.yaml
