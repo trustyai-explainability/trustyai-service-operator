@@ -56,6 +56,7 @@ import (
 	tasv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
+	tascontroller "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	"github.com/trustyai-explainability/trustyai-service-operator/pkg/tracing"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
@@ -202,6 +203,12 @@ func run() int {
 			setupLog.Error(err, "unable to create TrustyAIService conversion webhook")
 			return 1
 		}
+		mgr.GetWebhookServer().Register(
+			tascontroller.InferenceServiceLoggerWebhookPath,
+			&ctrlwebhook.Admission{
+				Handler: tascontroller.NewInferenceServiceLoggerWebhook(mgr.GetAPIReader(), mgr.GetScheme()),
+			},
+		)
 	}
 
 	recorder := mgr.GetEventRecorderFor("trustyai-service-operator")
