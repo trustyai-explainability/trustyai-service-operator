@@ -58,7 +58,7 @@ func reconcileStatusesFor(t *testing.T, deploymentStatus appsv1.DeploymentStatus
 	require.NoError(t, c.Status().Update(context.Background(), deployment))
 
 	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme}
-	_, err := reconciler.reconcileStatuses(context.Background(), instance)
+	_, err := reconciler.reconcileStatuses(context.Background(), instance, instance.Namespace)
 	require.NoError(t, err)
 
 	updated := &nemoguardrailsv1alpha1.NemoGuardrails{}

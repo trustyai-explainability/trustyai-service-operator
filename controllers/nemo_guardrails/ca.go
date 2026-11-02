@@ -35,7 +35,7 @@ func GetCABundleVolumeName(configmap corev1.ConfigMap) string {
 }
 
 // LoadCAConfigs grabs the default CA certificates from odh-trusted-ca, the Openshift serving ca, and user-specified configmaps. Any configmaps that are not found are skipped
-func (r *NemoGuardrailsReconciler) LoadCAConfigs(ctx context.Context, logger logr.Logger, nemoGuardrails nemoguardrailsv1alpha1.NemoGuardrails) (utils.CABundleInitContainerConfig, []corev1.ConfigMap, *nemoguardrailsv1alpha1.CAStatus) {
+func (r *NemoGuardrailsReconciler) LoadCAConfigs(ctx context.Context, logger logr.Logger, nemoGuardrails nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) (utils.CABundleInitContainerConfig, []corev1.ConfigMap, *nemoguardrailsv1alpha1.CAStatus) {
 	// === CA handling =====
 	caBundleInitContainerConfig := utils.CABundleInitContainerConfig{
 		CABundleInitName:           caBundleInitContainerName,
@@ -48,7 +48,7 @@ func (r *NemoGuardrailsReconciler) LoadCAConfigs(ctx context.Context, logger log
 	var configMapsToMount []corev1.ConfigMap
 	caStatus := &nemoguardrailsv1alpha1.CAStatus{}
 
-	odhTrustedConfigMap, err := utils.GetConfigMapByName(ctx, r.Client, odhTrustedCABundle, nemoGuardrails.Namespace)
+	odhTrustedConfigMap, err := utils.GetConfigMapByName(ctx, r.Client, odhTrustedCABundle, targetNamespace)
 	if err != nil {
 		logger.Info("Could not find or load ODH trusted CA bundle configmap, so will not be mounted.")
 		caStatus.ODHTrustedCAFound = false
@@ -63,7 +63,7 @@ func (r *NemoGuardrailsReconciler) LoadCAConfigs(ctx context.Context, logger log
 		caStatus.ODHTrustedCAFound = true
 	}
 
-	openshiftServingConfigMap, err := utils.GetConfigMapByName(ctx, r.Client, nemoGuardrails.Name+"-ca-bundle", nemoGuardrails.Namespace)
+	openshiftServingConfigMap, err := utils.GetConfigMapByName(ctx, r.Client, newWorkloadIdentity(&nemoGuardrails, targetNamespace).Name+"-ca-bundle", targetNamespace)
 	if err != nil {
 		logger.Info("Could not find or load OpenShift serving CA bundle configmap, so will not be mounted.")
 		caStatus.OpenshiftServingCAFound = false
@@ -79,12 +79,26 @@ func (r *NemoGuardrailsReconciler) LoadCAConfigs(ctx context.Context, logger log
 	}
 
 	if nemoGuardrails.Spec.CABundleConfig != nil {
-		userCAConfigMap, err := utils.GetConfigMapByName(ctx, r.Client, nemoGuardrails.Spec.CABundleConfig.ConfigMapName, nemoGuardrails.Spec.CABundleConfig.ConfigMapNamespace)
+		caBundleConfigNamespace := nemoGuardrails.Spec.CABundleConfig.ConfigMapNamespace
+		if caBundleConfigNamespace == "" {
+			caBundleConfigNamespace = nemoGuardrails.Namespace
+		}
+		userCAConfigMap, err := utils.GetConfigMapByName(ctx, r.Client, nemoGuardrails.Spec.CABundleConfig.ConfigMapName, caBundleConfigNamespace)
 		if err != nil {
 			logger.Info("Could not find or load the user-specified CA bundle configmap, so will not be mounted.")
 			caStatus.UserCAFound = false
 			caStatus.UserCAError = err.Error()
 		} else {
+			if userCAConfigMap.Namespace != targetNamespace {
+				copied, copyErr := r.ensureConfigMapInNamespace(ctx, &nemoGuardrails, userCAConfigMap, targetNamespace)
+				if copyErr != nil {
+					logger.Error(copyErr, "Could not copy the user-specified CA bundle configmap into the deployment namespace")
+					caStatus.UserCAFound = false
+					caStatus.UserCAError = copyErr.Error()
+					return caBundleInitContainerConfig, configMapsToMount, caStatus
+				}
+				userCAConfigMap = copied
+			}
 			configMapsToMount = append(configMapsToMount, *userCAConfigMap)
 			caBundleInitContainerConfig.CABundleSources = append(caBundleInitContainerConfig.CABundleSources, utils.CABundleSourceVolume{
 				CABundleSourceVolumeName: GetCABundleVolumeName(*userCAConfigMap),

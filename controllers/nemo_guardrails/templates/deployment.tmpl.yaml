@@ -111,28 +111,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{.NemoGuardrails.Name}}
-  namespace: {{.NemoGuardrails.Namespace}}
+  name: {{.WorkloadName}}
+  namespace: {{.Namespace}}
   labels:
-    app: {{.NemoGuardrails.Name}}
-    component: {{.NemoGuardrails.Name}}
-    deploy-name: {{.NemoGuardrails.Name}}
-    app.kubernetes.io/instance: {{.NemoGuardrails.Name}}
-    app.kubernetes.io/name: {{.NemoGuardrails.Name}}
+    app: {{.SelectorName}}
+    component: {{.SelectorName}}
+    deploy-name: {{.SelectorName}}
+    app.kubernetes.io/instance: {{.SelectorName}}
+    app.kubernetes.io/name: {{.SelectorName}}
     app.kubernetes.io/part-of: trustyai
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: {{.NemoGuardrails.Name}}
+      app: {{.SelectorName}}
   template:
     metadata:
       labels:
-        app: {{.NemoGuardrails.Name}}
-        component: {{.NemoGuardrails.Name}}
-        deploy-name: {{.NemoGuardrails.Name}}
-        app.kubernetes.io/instance: {{.NemoGuardrails.Name}}
-        app.kubernetes.io/name: {{.NemoGuardrails.Name}}
+        app: {{.SelectorName}}
+        component: {{.SelectorName}}
+        deploy-name: {{.SelectorName}}
+        app.kubernetes.io/instance: {{.SelectorName}}
+        app.kubernetes.io/name: {{.SelectorName}}
         app.kubernetes.io/part-of: trustyai
     spec:
       containers:
@@ -153,12 +153,12 @@ spec:
       {{ if .UseAuthProxy }}
       - {{- template "kubeRBACProxy" .KubeRbacProxyConfig }}
       - {{- template "kubeRBACProxyAdmin" .KubeRbacProxyAdminConfig }}
-      serviceAccountName: {{.NemoGuardrails.Name}}-serviceaccount
+      serviceAccountName: {{.ServiceAccountName}}
       {{ end }}
       volumes:
       - name: tls-certs
         secret:
-          secretName: {{.NemoGuardrails.Name}}-tls
+          secretName: {{.WorkloadName}}-tls
           defaultMode: 420
       {{ if .UseAuthProxy }}
       - name: kube-rbac-config
