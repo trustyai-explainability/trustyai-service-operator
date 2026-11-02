@@ -8,4 +8,6 @@ const (
 	finalizerName                     = "trustyai.opendatahub.io/nemo-guardrails-finalizer"
 	invalidAllowedConsumersReason     = "InvalidAllowedConsumers"
 	validAllowedConsumersReason       = "ValidAllowedConsumers"
+
+	eventReasonCABundleNamespaceRejected = "CABundleNamespaceRejected"
 )

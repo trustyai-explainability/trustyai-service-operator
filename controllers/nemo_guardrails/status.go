@@ -39,12 +39,7 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 		routeReady, _ = utils.CheckRouteReady(ctx, r.Client, identity.Name, targetNamespace)
 	}
 
-	// showEndpointStatus is true only when the server is protected by auth
-	showEndpointStatus := utils.RequiresAuth(nemoGuardrails)
-	endpoint := ""
-	if showEndpointStatus {
-		endpoint = fmt.Sprintf("https://%s.%s.svc.cluster.local", identity.Name, targetNamespace)
-	}
+	endpoint := internalServiceEndpoint(nemoGuardrails, identity.Name, targetNamespace)
 	// Publish the new address once the Deployment is Ready and, when a Route is required, that Route is admitted.
 	// Until then a namespace move keeps the previous endpoint and workload namespace.
 	publishAddress := previousWorkloadNamespace(nemoGuardrails) == targetNamespace || (deploymentReady && routeReady)
@@ -104,4 +99,12 @@ func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGu
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+func internalServiceEndpoint(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, serviceName, namespace string) string {
+	scheme := "http"
+	if utils.RequiresAuth(nemoGuardrails) {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s.%s.svc.cluster.local", scheme, serviceName, namespace)
 }
