@@ -71,6 +71,26 @@ func processRouteConfig(owner metav1.Object, routeConfig RouteConfig) GenericCon
 	return GetGenericConfig(routeConfig.Name, routeConfig.Namespace, routeConfig)
 }
 
+// RouteAdmitted reports whether the Route exists and has been admitted.
+// A missing or not-yet-admitted Route is not an error.
+func RouteAdmitted(ctx context.Context, c client.Client, name string, namespace string) (bool, error) {
+	existingRoute := &routev1.Route{}
+	if err := c.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, existingRoute); err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	for _, ingress := range existingRoute.Status.Ingress {
+		for _, condition := range ingress.Conditions {
+			if condition.Type == routev1.RouteAdmitted && condition.Status == "True" {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 // CheckRouteReady verifies if a route is created and admitted
 func CheckRouteReady(ctx context.Context, c client.Client, name string, namespace string) (bool, error) {
 	// Retry logic for getting the route and checking its readiness

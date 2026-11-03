@@ -244,9 +244,10 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		namespace = nil
 	})
 
-	It("should include Open-Telco in default collections and mount its ConfigMap", func() {
-		By("Checking that CRD defaulting selects Open-Telco when collections are omitted")
-		Expect(evalHub.Spec.Collections).To(ContainElement("open-telco-v1"))
+	It("should include Coding in default collections and mount its ConfigMap", func() {
+		By("Checking that CRD defaulting selects Coding when collections are omitted")
+		Expect(evalHub.Spec.Collections).To(ContainElement("coding-v1"))
+		Expect(evalHub.Spec.Collections).NotTo(ContainElement("open-telco-v1"))
 
 		By("Reconciling status, finalizer, and resources")
 		for range 3 {
@@ -254,10 +255,10 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 			Expect(err).NotTo(HaveOccurred())
 		}
 
-		By("Checking that the Open-Telco collection ConfigMap is copied and owned by the EvalHub")
-		collectionCMName := evalHubName + "-collection-open-telco-v1"
+		By("Checking that the Coding collection ConfigMap is copied and owned by the EvalHub")
+		collectionCMName := evalHubName + "-collection-coding-v1"
 		collectionCM := waitForConfigMap(collectionCMName, testNamespace)
-		Expect(collectionCM.Data).To(HaveKeyWithValue("open-telco-v1.yaml", "id: open-telco-v1\nname: open-telco-v1\n"))
+		Expect(collectionCM.Data).To(HaveKeyWithValue("coding-v1.yaml", "id: coding-v1\nname: coding-v1\n"))
 		Expect(collectionCM.OwnerReferences).To(HaveLen(1))
 		Expect(collectionCM.OwnerReferences[0].UID).To(Equal(evalHub.UID))
 
