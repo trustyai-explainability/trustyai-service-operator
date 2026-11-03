@@ -29,24 +29,31 @@ func (r *NemoGuardrailsReconciler) updateStatus(ctx context.Context, original *n
 	return saved, err
 }
 
-func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails) (ctrl.Result, error) {
-	deploymentReady, deploymentErr := utils.CheckDeploymentReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
+func (r *NemoGuardrailsReconciler) reconcileStatuses(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) (ctrl.Result, error) {
+	identity := newWorkloadIdentity(nemoGuardrails, targetNamespace)
+	deploymentReady, deploymentErr := utils.CheckDeploymentReady(ctx, r.Client, identity.Name, targetNamespace)
 
 	exposeRoute := nemoGuardrails.Spec.ExposeRoute != nil && *nemoGuardrails.Spec.ExposeRoute
 	routeReady := !exposeRoute
 	if exposeRoute {
-		routeReady, _ = utils.CheckRouteReady(ctx, r.Client, nemoGuardrails.Name, nemoGuardrails.Namespace)
+		routeReady, _ = utils.CheckRouteReady(ctx, r.Client, identity.Name, targetNamespace)
 	}
 
 	// showEndpointStatus is true only when the server is protected by auth
 	showEndpointStatus := utils.RequiresAuth(nemoGuardrails)
 	endpoint := ""
 	if showEndpointStatus {
-		endpoint = fmt.Sprintf("https://%s.%s.svc.cluster.local", nemoGuardrails.Name, nemoGuardrails.Namespace)
+		endpoint = fmt.Sprintf("https://%s.%s.svc.cluster.local", identity.Name, targetNamespace)
 	}
-	// sets the endpoint status based on the showEndpointStatus flag
+	// Publish the new address once the Deployment is Ready and, when a Route is required, that Route is admitted.
+	// Until then a namespace move keeps the previous endpoint and workload namespace.
+	publishAddress := previousWorkloadNamespace(nemoGuardrails) == targetNamespace || (deploymentReady && routeReady)
 	setEndpoint := func(saved *nemoguardrailsv1alpha1.NemoGuardrails) {
+		if !publishAddress {
+			return
+		}
 		saved.Status.Endpoint = endpoint
+		saved.Status.WorkloadNamespace = targetNamespace
 	}
 
 	if deploymentReady && routeReady {

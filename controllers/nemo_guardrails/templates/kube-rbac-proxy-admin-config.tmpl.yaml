@@ -1,8 +1,8 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Owner.Name}}-rbac-proxy-admin-config
-  namespace: {{ .Owner.Namespace }}
+  name: {{ .Name }}
+  namespace: {{ .Namespace }}
   labels:
     app: {{ .Owner.Name }}
     app.kubernetes.io/instance: {{ .Owner.Name }}
