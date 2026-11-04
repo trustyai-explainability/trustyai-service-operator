@@ -7,6 +7,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	openshifttls "github.com/openshift/controller-runtime-common/pkg/tls"
+	ocpcrypto "github.com/openshift/library-go/pkg/crypto"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -58,6 +59,16 @@ func optionsForProfile(
 	}
 	resolved := &tls.Config{}
 	configureTLS(resolved)
+	if len(spec.Groups) > 0 {
+		curveIDs, unsupportedGroups := ocpcrypto.TLSGroupsToCurveIDs(spec.Groups)
+		if len(unsupportedGroups) > 0 {
+			log.Info("Dropping unsupported TLS groups", "dropped", unsupportedGroups)
+		}
+		if len(curveIDs) == 0 {
+			return nil, fmt.Errorf("TLS profile has no usable groups: %v", spec.Groups)
+		}
+		resolved.CurvePreferences = curveIDs
+	}
 	if minVersion != tls.VersionTLS13 {
 		if len(spec.Ciphers) == 0 {
 			return nil, fmt.Errorf("TLS profile has no cipher suites for TLS <= 1.2")
@@ -82,6 +93,7 @@ func optionsForProfile(
 	return []func(*tls.Config){func(dst *tls.Config) {
 		dst.MinVersion = resolved.MinVersion
 		dst.CipherSuites = append([]uint16(nil), resolved.CipherSuites...)
+		dst.CurvePreferences = append([]tls.CurveID(nil), resolved.CurvePreferences...)
 		dst.NextProtos = append([]string(nil), resolved.NextProtos...)
 	}}, nil
 }

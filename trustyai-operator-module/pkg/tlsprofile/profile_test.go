@@ -118,6 +118,46 @@ func TestOptionsForProfileValidationAndCipherFiltering(t *testing.T) {
 	}
 }
 
+func TestOptionsForProfileGroups(t *testing.T) {
+	profile := &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
+			MinTLSVersion: configv1.VersionTLS13,
+			Groups: []configv1.TLSGroup{
+				configv1.TLSGroup("FutureGroup"),
+				configv1.TLSGroupSecP256r1,
+				configv1.TLSGroupX25519,
+			},
+		}},
+	}
+	config := resolvedConfig(t, profile, AdherenceStrict, false)
+	want := []tls.CurveID{tls.CurveP256, tls.X25519}
+	if !reflect.DeepEqual(config.CurvePreferences, want) {
+		t.Fatalf("CurvePreferences = %v, want %v", config.CurvePreferences, want)
+	}
+
+	emptyGroups := &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
+			MinTLSVersion: configv1.VersionTLS13,
+		}},
+	}
+	if got := resolvedConfig(t, emptyGroups, AdherenceStrict, false).CurvePreferences; got != nil {
+		t.Fatalf("empty groups CurvePreferences = %v, want nil Go defaults", got)
+	}
+
+	allUnusable := &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
+			MinTLSVersion: configv1.VersionTLS13,
+			Groups:        []configv1.TLSGroup{configv1.TLSGroup("FutureGroup")},
+		}},
+	}
+	if _, err := optionsForProfile(allUnusable, AdherenceStrict, false); err == nil {
+		t.Fatal("optionsForProfile() accepted a profile with no usable groups")
+	}
+}
+
 func TestResolveProfileStateFallbacks(t *testing.T) {
 	resource := schema.GroupResource{Group: "config.openshift.io", Resource: "apiservers"}
 	for _, readErr := range []error{
