@@ -103,6 +103,51 @@ func encodeNetworkPolicyIngressIntent(intent *NetworkPolicyIngressIntent) (strin
 	return string(data), nil
 }
 
+// managedNetworkPolicyIntentAnnotations are the annotation keys generated from
+// trusted intent arguments. ApplyNetworkPolicyIntentAnnotations owns them: any
+// value already on the object is replaced or removed, never merged.
+var managedNetworkPolicyIntentAnnotations = []string{
+	networkPolicyEgressModeAnnotation,
+	networkPolicyRationaleAnnotation,
+	networkPolicyRiskAnnotation,
+	networkPolicyBehaviorAnnotation,
+	networkPolicyIngressIntentAnnotation,
+}
+
+// ApplyNetworkPolicyIntentAnnotations records the trusted ingress and egress
+// intent on the policy, replacing any previously recorded intent and preserving
+// unrelated annotations. The rationale reaches the object so the accepted risk
+// is auditable where the policy runs, not only in the controller source.
+func ApplyNetworkPolicyIntentAnnotations(policy *networkingv1.NetworkPolicy, ingress *NetworkPolicyIngressIntent, egress *NetworkPolicyEgressIntent) error {
+	if policy == nil {
+		return fmt.Errorf("network policy is required")
+	}
+	annotations := policy.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	for _, key := range managedNetworkPolicyIntentAnnotations {
+		delete(annotations, key)
+	}
+	if egress != nil {
+		annotations[networkPolicyEgressModeAnnotation] = string(egress.Mode)
+		annotations[networkPolicyRationaleAnnotation] = egress.Rationale
+		annotations[networkPolicyRiskAnnotation] = egress.ResidualRisk
+		if egress.Mode == NetworkPolicyAllowAll {
+			annotations[networkPolicyBehaviorAnnotation] = "Unrestricted outbound traffic; other additive policies cannot narrow this grant."
+		}
+	}
+	if ingress != nil {
+		encoded, err := encodeNetworkPolicyIngressIntent(ingress)
+		if err != nil {
+			return fmt.Errorf("encode typed namespace-only ingress peer intent: %w", err)
+		}
+		annotations[networkPolicyIngressIntentAnnotation] = encoded
+	}
+	policy.SetAnnotations(annotations)
+	return nil
+}
+
 // ReconcileWorkloadNetworkPolicy creates or repairs one policy, preserving
 // unrelated metadata. API errors/conflicts are returned to the controller for
 // retry, never interpreted as absence. Neither owner nor desired policy input
@@ -132,20 +177,8 @@ func ReconcileWorkloadNetworkPolicy(ctx context.Context, c client.Client, scheme
 	policy.Labels, _ = identity.Labels()
 	policy.Labels[networkPolicyManagedByLabel] = networkPolicyManager
 	policy.Annotations = map[string]string{}
-	if desired.Egress != nil {
-		policy.Annotations[networkPolicyEgressModeAnnotation] = string(desired.Egress.Mode)
-		policy.Annotations[networkPolicyRationaleAnnotation] = desired.Egress.Rationale
-		policy.Annotations[networkPolicyRiskAnnotation] = desired.Egress.ResidualRisk
-		if desired.Egress.Mode == NetworkPolicyAllowAll {
-			policy.Annotations[networkPolicyBehaviorAnnotation] = "Unrestricted outbound traffic; other additive policies cannot narrow this grant."
-		}
-	}
-	if desired.Ingress != nil {
-		encoded, err := encodeNetworkPolicyIngressIntent(desired.Ingress)
-		if err != nil {
-			return fmt.Errorf("encode typed namespace-only ingress peer intent: %w", err)
-		}
-		policy.Annotations[networkPolicyIngressIntentAnnotation] = encoded
+	if err := ApplyNetworkPolicyIntentAnnotations(policy, desired.Ingress, desired.Egress); err != nil {
+		return err
 	}
 	if err := controllerutil.SetControllerReference(ownerWithGVK, policy, scheme); err != nil {
 		return err
@@ -174,11 +207,8 @@ func ReconcileWorkloadNetworkPolicy(ctx context.Context, c client.Client, scheme
 	if updated.Annotations == nil {
 		updated.Annotations = map[string]string{}
 	}
-	for _, key := range []string{networkPolicyEgressModeAnnotation, networkPolicyRationaleAnnotation, networkPolicyRiskAnnotation, networkPolicyBehaviorAnnotation, networkPolicyIngressIntentAnnotation} {
-		delete(updated.Annotations, key)
-	}
-	for key, value := range policy.Annotations {
-		updated.Annotations[key] = value
+	if err := ApplyNetworkPolicyIntentAnnotations(updated, desired.Ingress, desired.Egress); err != nil {
+		return err
 	}
 	if err := controllerutil.SetControllerReference(ownerWithGVK, updated, scheme); err != nil {
 		return err

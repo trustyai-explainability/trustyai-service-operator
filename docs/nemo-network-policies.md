@@ -112,6 +112,14 @@ broaden existing customer restrictions. A `Restricted` profile requires
 CR-driven destination inputs and remains a follow-up decision with platform and
 security owners.
 
+Both intents are recorded on the object, so the accepted risk is auditable where
+the policy runs rather than only in the controller source:
+`trustyai.opendatahub.io/network-policy-egress-mode`, `-egress-rationale`,
+`-egress-residual-risk`, `-egress-behavior`, and
+`trustyai.opendatahub.io/network-policy-ingress-namespace-only-peers` for the
+namespace-only peer record. They are regenerated on every reconcile, so a hand
+edit to them is repaired like any other drift.
+
 ## Status, validation and limits
 
 - A policy creation or repair failure is reported as a `NetworkPolicy`

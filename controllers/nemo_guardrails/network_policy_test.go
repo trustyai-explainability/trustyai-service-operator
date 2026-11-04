@@ -485,6 +485,61 @@ func TestReportNetworkPolicyStatus(t *testing.T) {
 	}
 }
 
+// The intent annotations are the object-level record of a reviewed exception, so
+// they are pinned by their published keys rather than through utils internals.
+const (
+	testNemoEgressModeAnnotation      = "trustyai.opendatahub.io/network-policy-egress-mode"
+	testNemoEgressRationaleAnnotation = "trustyai.opendatahub.io/network-policy-egress-rationale"
+	testNemoEgressRiskAnnotation      = "trustyai.opendatahub.io/network-policy-egress-residual-risk"
+	testNemoIngressIntentAnnotation   = "trustyai.opendatahub.io/network-policy-ingress-namespace-only-peers"
+)
+
+func TestReconcileNemoNetworkPolicyRecordsIntentAnnotations(t *testing.T) {
+	ctx := context.Background()
+	scheme, owner := nemoNetworkPolicyFixture(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme, Namespace: testNemoControllerNS}
+
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner, testNemoInfraNamespace); err != nil {
+		t.Fatalf("reconcileNetworkPolicy() error = %v", err)
+	}
+	desired, err := buildNemoGuardrailsNetworkPolicy(owner, testNemoInfraNamespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := client.ObjectKeyFromObject(desired.Policy)
+	actual := &networkingv1.NetworkPolicy{}
+	if err := c.Get(ctx, key, actual); err != nil {
+		t.Fatal(err)
+	}
+	annotations := actual.GetAnnotations()
+	if annotations[testNemoEgressModeAnnotation] != string(utils.NetworkPolicyAllowAll) {
+		t.Fatalf("egress mode annotation = %q, want %q", annotations[testNemoEgressModeAnnotation], utils.NetworkPolicyAllowAll)
+	}
+	if annotations[testNemoEgressRationaleAnnotation] == "" || annotations[testNemoEgressRiskAnnotation] == "" {
+		t.Fatalf("egress rationale or residual risk not recorded: %#v", annotations)
+	}
+	if annotations[testNemoIngressIntentAnnotation] == "" {
+		t.Fatalf("namespace-only ingress peer intent not recorded: %#v", annotations)
+	}
+
+	// A later hand edit to the recorded rationale is repaired like any other drift.
+	actual.Annotations[testNemoEgressRiskAnnotation] = "unreviewed"
+	if err := c.Update(ctx, actual); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner, testNemoInfraNamespace); err != nil {
+		t.Fatalf("reconcileNetworkPolicy() after tampering error = %v", err)
+	}
+	repaired := &networkingv1.NetworkPolicy{}
+	if err := c.Get(ctx, key, repaired); err != nil {
+		t.Fatal(err)
+	}
+	if repaired.Annotations[testNemoEgressRiskAnnotation] == "unreviewed" || repaired.Annotations[testNemoEgressRiskAnnotation] == "" {
+		t.Fatalf("residual risk annotation = %q, want the reviewed value restored", repaired.Annotations[testNemoEgressRiskAnnotation])
+	}
+}
+
 func TestHasNemoNetworkPolicyIdentity(t *testing.T) {
 	policy := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
 		utils.NetworkPolicyComponentLabel: nemoNetworkPolicyComponent,

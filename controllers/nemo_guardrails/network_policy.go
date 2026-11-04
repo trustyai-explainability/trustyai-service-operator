@@ -288,7 +288,7 @@ func (r *NemoGuardrailsReconciler) reconcileNetworkPolicy(ctx context.Context, i
 	if err := r.decorateOwnedNetworkPolicy(owner, identity, desired.Policy); err != nil {
 		return err
 	}
-	return r.applyNetworkPolicy(ctx, owner, identity, desired.Policy)
+	return r.applyNetworkPolicy(ctx, owner, identity, desired)
 }
 
 // decorateOwnedNetworkPolicy records ownership and the managed marker on the
@@ -322,14 +322,24 @@ func (r *NemoGuardrailsReconciler) decorateOwnedNetworkPolicy(owner *nemoguardra
 	return nil
 }
 
-func (r *NemoGuardrailsReconciler) applyNetworkPolicy(ctx context.Context, owner *nemoguardrailsv1alpha1.NemoGuardrails, identity utils.NetworkPolicyIdentity, desired *networkingv1.NetworkPolicy) error {
+// applyNetworkPolicy writes the desired policy and records the trusted ingress and
+// egress intent on the object, so the accepted risk travels with the rule set
+// that implements it.
+func (r *NemoGuardrailsReconciler) applyNetworkPolicy(ctx context.Context, owner *nemoguardrailsv1alpha1.NemoGuardrails, identity utils.NetworkPolicyIdentity, desired utils.WorkloadNetworkPolicy) error {
+	if desired.Policy == nil {
+		return fmt.Errorf("NemoGuardrails NetworkPolicy is required")
+	}
+	policy := desired.Policy
+	if err := utils.ApplyNetworkPolicyIntentAnnotations(policy, desired.Ingress, desired.Egress); err != nil {
+		return err
+	}
 	existing := &networkingv1.NetworkPolicy{}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(desired), existing); err != nil {
+	if err := r.Get(ctx, client.ObjectKeyFromObject(policy), existing); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("get NemoGuardrails NetworkPolicy: %w", err)
 		}
-		if err := r.Create(ctx, desired); err != nil {
-			return fmt.Errorf("create NemoGuardrails NetworkPolicy %s/%s: %w", desired.Namespace, desired.Name, err)
+		if err := r.Create(ctx, policy); err != nil {
+			return fmt.Errorf("create NemoGuardrails NetworkPolicy %s/%s: %w", policy.Namespace, policy.Name, err)
 		}
 		return nil
 	}
@@ -341,10 +351,13 @@ func (r *NemoGuardrailsReconciler) applyNetworkPolicy(ctx context.Context, owner
 	}
 
 	updated := existing.DeepCopy()
-	updated.Spec = *desired.Spec.DeepCopy()
-	updated.Labels = mergeNemoLabels(existing.Labels, desired.Labels)
-	updated.Annotations = mergeNemoLabels(existing.Annotations, desired.Annotations)
+	updated.Spec = *policy.Spec.DeepCopy()
+	updated.Labels = mergeNemoLabels(existing.Labels, policy.Labels)
+	updated.Annotations = mergeNemoLabels(existing.Annotations, policy.Annotations)
 	if err := r.decorateOwnedNetworkPolicy(owner, identity, updated); err != nil {
+		return err
+	}
+	if err := utils.ApplyNetworkPolicyIntentAnnotations(updated, desired.Ingress, desired.Egress); err != nil {
 		return err
 	}
 
