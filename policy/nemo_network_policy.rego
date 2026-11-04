@@ -2,7 +2,13 @@ package rbac
 
 import rego.v1
 
-nemo_manager_role_names := {"nemo-guardrails-manager-role"}
+# The component manifest carries the bare role name; every overlay in
+# config/overlays applies namePrefix, so policy-check and CI only ever see the
+# prefixed name. Both forms must match or the guard below never fires.
+nemo_manager_role_names := {
+	"nemo-guardrails-manager-role",
+	"trustyai-service-operator-nemo-guardrails-manager-role",
+}
 
 # NeMo reconciles its operand NetworkPolicy in the workload namespace, which can
 # differ from the custom resource namespace. Cross-namespace policies cannot carry
