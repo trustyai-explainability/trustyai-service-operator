@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 
+	configv1 "github.com/openshift/api/config/v1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -16,6 +18,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
+	"github.com/trustyai-explainability/trustyai-operator-module/pkg/tlsprofile"
 	"github.com/trustyai-explainability/trustyai-operator-module/pkg/trustyaimodule"
 )
 
@@ -26,6 +29,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(configv1.AddToScheme(scheme))
 	utilruntime.Must(platformv1alpha1.AddToScheme(scheme))
 }
 
@@ -34,7 +38,7 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
+	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8443", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager.")
@@ -47,7 +51,8 @@ func main() {
 
 	manifestsPath := "/opt/manifests-template"
 	if info, err := os.Stat(manifestsPath); err != nil || !info.IsDir() {
-		setupLog.Error(fmt.Errorf("manifests template directory not found or not a directory: %s", manifestsPath), "startup check failed")
+		setupErr := fmt.Errorf("manifests template directory not found or not a directory: %s", manifestsPath)
+		setupLog.Error(setupErr, "startup check failed")
 		os.Exit(1)
 	}
 
@@ -57,9 +62,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	config := ctrl.GetConfigOrDie()
+	tlsResult, err := tlsprofile.Resolve(context.Background(), config)
+	if err != nil {
+		setupLog.Error(err, "unable to resolve cluster TLS profile")
+		os.Exit(1)
+	}
+
+	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme:                  scheme,
-		Metrics:                 metricsserver.Options{BindAddress: metricsAddr},
+		Metrics:                 metricsserver.Options{BindAddress: metricsAddr, TLSOpts: tlsResult.TLSOpts},
 		LeaderElection:          enableLeaderElection,
 		LeaderElectionID:        "trustyai-operator-module-controller-manager",
 		LeaderElectionNamespace: namespace,
@@ -91,8 +103,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	managerCtx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
+	defer cancel()
+	if tlsResult.Watch {
+		watcher := tlsprofile.NewProfileWatcher(tlsResult, func() {
+			setupLog.Info("TLS security profile or adherence changed, restarting for metrics TLS refresh")
+			cancel()
+		})
+		if err := watcher.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to set up TLS profile watcher")
+			os.Exit(1)
+		}
+	}
+
 	setupLog.Info("starting trustyai-operator-module manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(managerCtx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
