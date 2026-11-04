@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"flag"
 	"fmt"
 	"os"
@@ -14,13 +13,12 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	pkgtls "github.com/opendatahub-io/odh-platform-utilities/framework/tls"
 	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
+	"github.com/trustyai-explainability/trustyai-operator-module/pkg/tlsprofile"
 	"github.com/trustyai-explainability/trustyai-operator-module/pkg/trustyaimodule"
 )
 
@@ -65,28 +63,10 @@ func main() {
 	}
 
 	config := ctrl.GetConfigOrDie()
-	bootstrapClient, err := client.New(config, client.Options{Scheme: scheme})
-	if err != nil {
-		setupLog.Error(err, "unable to create bootstrap client for TLS profile")
-		os.Exit(1)
-	}
-	tlsResult, err := pkgtls.LoadWithAdherence(context.Background(), bootstrapClient)
+	tlsResult, err := tlsprofile.Resolve(context.Background(), config)
 	if err != nil {
 		setupLog.Error(err, "unable to resolve cluster TLS profile")
 		os.Exit(1)
-	}
-
-	tlsProfile := tlsResult.Spec
-	if !pkgtls.ShouldHonorClusterTLSProfile(tlsResult.AdherencePolicy) {
-		tlsProfile = *configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
-	}
-	tlsOption, unsupported, err := pkgtls.ConfigFromProfileStrict(tlsProfile)
-	if err != nil {
-		setupLog.Error(err, "unable to configure metrics TLS")
-		os.Exit(1)
-	}
-	if len(unsupported) > 0 {
-		setupLog.Info("TLS profile contains settings unsupported by Go", "unsupported", unsupported)
 	}
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
@@ -94,7 +74,7 @@ func main() {
 		Metrics: metricsserver.Options{
 			BindAddress:   metricsAddr,
 			SecureServing: true,
-			TLSOpts:       []func(*tls.Config){tlsOption},
+			TLSOpts:       tlsResult.TLSOpts,
 		},
 		LeaderElection:          enableLeaderElection,
 		LeaderElectionID:        "trustyai-operator-module-controller-manager",
@@ -130,19 +110,10 @@ func main() {
 	managerCtx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	defer cancel()
 	if tlsResult.Watchable {
-		watcher := &pkgtls.SecurityProfileWatcher{
-			Client:                    mgr.GetClient(),
-			InitialTLSProfileSpec:     tlsResult.Spec,
-			InitialTLSAdherencePolicy: tlsResult.AdherencePolicy,
-			OnProfileChange: func(context.Context, configv1.TLSProfileSpec, configv1.TLSProfileSpec) {
-				setupLog.Info("TLS security profile changed, restarting for metrics TLS refresh")
-				cancel()
-			},
-			OnAdherencePolicyChange: func(context.Context, configv1.TLSAdherencePolicy, configv1.TLSAdherencePolicy) {
-				setupLog.Info("TLS adherence policy changed, restarting for metrics TLS refresh")
-				cancel()
-			},
-		}
+		watcher := tlsprofile.NewSecurityProfileWatcher(mgr.GetClient(), tlsResult.Profile, tlsResult.Adherence, func() {
+			setupLog.Info("TLS profile or adherence changed, restarting for metrics TLS refresh")
+			cancel()
+		})
 		if err := watcher.SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to set up TLS profile watcher")
 			os.Exit(1)

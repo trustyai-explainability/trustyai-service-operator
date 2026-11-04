@@ -149,14 +149,8 @@ github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJw
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
 github.com/opendatahub-io/odh-platform-utilities v0.3.1-0.20260805133659-5c0bb4bc0e75 h1:Tv1GvPfF7S6yXmz9zK2pXB6gEB45gccL3Cjs8Gy5Bqk=
 github.com/opendatahub-io/odh-platform-utilities v0.3.1-0.20260805133659-5c0bb4bc0e75/go.mod h1:RbnUlLqR+D6BxqpZFjtzkKcz9UtB6BjMUOiLuBY0aeE=
-github.com/opendatahub-io/odh-platform-utilities/framework v0.3.0 h1:Nr1hCBLixUPkyIOZwHzcw2SKwgMBtpNT+n2gP2Rgt4Y=
-github.com/opendatahub-io/odh-platform-utilities/framework v0.3.0/go.mod h1:dbnC+EVIrhij8Crb3/digHuho2t82OdddnUjBgtaszc=
 github.com/openshift/api v0.0.0-20261002115817-f8795cdde518 h1:m0CfIxttdj/Wu0N/uHNgj3ZCB6zQpkWhbdr6rTK1q60=
 github.com/openshift/api v0.0.0-20261002115817-f8795cdde518/go.mod h1:2oI3aXQFDjjl7l4xA9ZPSkB+l+lyfWLg7P2sWg9yEvM=
-github.com/openshift/controller-runtime-common v0.0.0-20261005093240-b39eb7218441 h1:rxX9ejX5FTDiYguenwomjnlq1wnTho5Z45ocygeVLF0=
-github.com/openshift/controller-runtime-common v0.0.0-20261005093240-b39eb7218441/go.mod h1:wRo2jx/+tZd6HnYYmKayArJgL3T6LLbovLr28DGukMg=
-github.com/openshift/library-go v0.0.0-20261001144932-192662696fc7 h1:PDH/v+jap31Eb4N9q+Q3X05QHIXZA4sVyr4zb/n+Cv0=
-github.com/openshift/library-go v0.0.0-20261001144932-192662696fc7/go.mod h1:k0EA2kHPdvdKgyV38lWS1u1eIgMBgrpWkCl2ei4A3ug=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
@@ -255,8 +249,6 @@ k8s.io/apiextensions-apiserver v0.37.1 h1:7fIQG8eThDSTVYBWg/DOpI8v5wYfKCo0N8/TDM
 k8s.io/apiextensions-apiserver v0.37.1/go.mod h1:1Q3ujWwHgnhBoGsdmGORflwK1sDFmuaqH1OsMDWk2Gs=
 k8s.io/apimachinery v0.37.1 h1:hGCYyvKHCwtwMitj2vU4vYx0Z16N9GyZk9BBnz0wDAE=
 k8s.io/apimachinery v0.37.1/go.mod h1:jF84AyUi/IRIXRot5f+lm6MpxoWI+F1XgjaMmwCdTFw=
-k8s.io/apiserver v0.37.1 h1:dUsNwjsvItyVKNpC1N0AhQ0OBSiUJKfWz004vPifOe0=
-k8s.io/apiserver v0.37.1/go.mod h1:EWXW6PntGfOC2uD9GGVobnOExgFoX1z0hZo7f7Rs7Ng=
 k8s.io/client-go v0.37.1 h1:QTv/5ha4jAHtW9qxxVBkQVFBRDb4jHfFopQqqMdc+wM=
 k8s.io/client-go v0.37.1/go.mod h1:dnAPtTnCNY38Ho04D2KdY1F4IKausa9UbqaAZKl60SY=
 k8s.io/klog/v2 v2.140.0 h1:Tf+J3AH7xnUzZyVVXhTgGhEKnFqye14aadWv7bzXdzc=
