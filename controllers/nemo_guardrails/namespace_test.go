@@ -13,6 +13,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -177,6 +178,7 @@ func TestReleasePreviousWorkloadKeepsOldNamespaceOnCollision(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	expose := true
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
 		ObjectMeta: metav1.ObjectMeta{
@@ -213,6 +215,7 @@ func TestReleasePreviousWorkloadKeepsOldNamespaceOnConfigMapCollision(t *testing
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	defaultName := nemoGuardrailsDefaultConfigPrefix + "-rails"
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
 		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
@@ -252,6 +255,7 @@ func TestReleasePreviousWorkloadKeepsOldNamespaceOnSecretCollision(t *testing.T)
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
 		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
 		Spec: nemoguardrailsv1alpha1.NemoGuardrailsSpec{
@@ -282,6 +286,7 @@ func TestReleaseReadyWorkloadKeepsPreviousUntilReady(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
 		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
 		Status:     nemoguardrailsv1alpha1.NemoGuardrailStatus{WorkloadNamespace: "old"},
@@ -301,6 +306,7 @@ func TestReleaseReadyWorkloadRemovesPreviousWhenReady(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
 		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
 		Status:     nemoguardrailsv1alpha1.NemoGuardrailStatus{WorkloadNamespace: "old"},
@@ -321,6 +327,7 @@ func TestReleaseReadyWorkloadKeepsPreviousUntilRouteAdmitted(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	expose := true
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
 		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
@@ -343,6 +350,7 @@ func TestReleaseReadyWorkloadRemovesPreviousWhenRouteAdmitted(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	expose := true
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
 		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
@@ -373,6 +381,7 @@ func TestReleaseReadyWorkloadKeepsPreviousOnDeadline(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
 		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
 		Status:     nemoguardrailsv1alpha1.NemoGuardrailStatus{WorkloadNamespace: "old"},
@@ -497,6 +506,7 @@ func TestRejectUnownedServiceAccount(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid",
@@ -516,6 +526,7 @@ func TestRequireOwnedOrAbsentLeavesUnownedDeployment(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
 		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
 	}
@@ -547,6 +558,7 @@ func TestRetireUnscopedNamesRemovesLegacyObjects(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
 		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
 		Spec: nemoguardrailsv1alpha1.NemoGuardrailsSpec{
@@ -597,6 +609,7 @@ func TestRetireUnscopedNamesKeepsUnscopedUntilReady(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
 		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
 	}
@@ -659,6 +672,7 @@ func TestReconcileDeletionDuringMigrationRemovesInfraObjects(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	require.NoError(t, rbacv1.AddToScheme(scheme))
 	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 
@@ -694,6 +708,7 @@ func TestDeleteOwnedInNamespaceLeavesOtherObjects(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
+	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
 		ObjectMeta: metav1.ObjectMeta{Name: "nemo-guardrails", Namespace: "control-plane", UID: "cr-uid"},
 	}

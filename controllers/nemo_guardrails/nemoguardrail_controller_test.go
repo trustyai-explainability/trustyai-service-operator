@@ -8,6 +8,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/tas"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"time"
@@ -139,7 +140,8 @@ var _ = Describe("NemoGuardrails Controller", func() {
 			// Envtest has no garbage collector. Preserve identity before deletion
 			// so cleanup cannot remove another CR's workload.
 			deletedOwner := resource.DeepCopy()
-			desiredPolicy, policyErr := buildNemoGuardrailsNetworkPolicy(deletedOwner)
+			workloadNamespace := (&NemoGuardrailsReconciler{Namespace: operatorNamespace}).workloadNamespace(deletedOwner)
+			desiredPolicy, policyErr := buildNemoGuardrailsNetworkPolicy(deletedOwner, workloadNamespace)
 			Expect(policyErr).NotTo(HaveOccurred())
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 
@@ -160,18 +162,20 @@ var _ = Describe("NemoGuardrails Controller", func() {
 				return errors.IsNotFound(err)
 			}, time.Second*5, time.Millisecond*100).Should(BeTrue())
 
-			// Explicitly collect only this deleted CR's Deployment and policy.
+			// Envtest has no garbage collector. The finalizer cleanup above already
+			// removes the owned Deployment and operand NetworkPolicy; delete them
+			// here only if anything is left, and only after verifying ownership.
 			deployment := &appsv1.Deployment{}
-			if err := k8sClient.Get(ctx, typeNamespacedName, deployment); err == nil {
-				Expect(nemoControllerReferenceMatches(deployment, deletedOwner, nemoguardrailsv1alpha1.GroupVersion.Group, "NemoGuardrails")).To(BeTrue())
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: deletedOwner.Name, Namespace: workloadNamespace}, deployment); err == nil {
+				Expect(utils.IsOwnedBy(deployment, deletedOwner)).To(BeTrue())
 				Expect(k8sClient.Delete(ctx, deployment)).To(Succeed())
 			} else {
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 			}
 			policy := &networkingv1.NetworkPolicy{}
-			policyKey := types.NamespacedName{Name: desiredPolicy.Policy.Name, Namespace: deletedOwner.Namespace}
+			policyKey := types.NamespacedName{Name: desiredPolicy.Policy.Name, Namespace: workloadNamespace}
 			if err := k8sClient.Get(ctx, policyKey, policy); err == nil {
-				Expect(nemoControllerReferenceMatches(policy, deletedOwner, nemoguardrailsv1alpha1.GroupVersion.Group, "NemoGuardrails")).To(BeTrue())
+				Expect(utils.IsOwnedBy(policy, deletedOwner)).To(BeTrue())
 				Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
 			} else {
 				Expect(errors.IsNotFound(err)).To(BeTrue())

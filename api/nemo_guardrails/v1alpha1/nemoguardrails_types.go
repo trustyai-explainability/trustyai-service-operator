@@ -82,22 +82,30 @@ type NemoGuardrailsSpec struct {
 	// When omitted, only a MaaS AIGuardrail in the same namespace as this CR may attach to it.
 	// +optional
 	AllowedConsumers *AllowedConsumers `json:"allowedConsumers,omitempty"`
-	// NetworkPolicy configures additional callers. Policies are always enabled.
+	// NetworkPolicy configures additional callers. The operand NetworkPolicy is
+	// always reconciled; it cannot be disabled.
 	// +optional
 	NetworkPolicy *NemoNetworkPolicy `json:"networkPolicy,omitempty"`
 }
 
-// NemoNetworkPolicy extends the built-in router and managed gateway ingress rules.
+// NemoNetworkPolicy extends the built-in MaaS payload-processing, gateway and
+// Route ingress rules of the operand NetworkPolicy.
 type NemoNetworkPolicy struct {
-	// AdditionalIngress permits callers on the public service listener only.
-	// Namespace and Pod selectors are ANDed; both must be nonempty.
-	// This does not authorize consumer attachments or bypass authentication.
+	// AdditionalIngress permits callers on the public Service listener only.
+	// Namespace and Pod selectors are ANDed, and both must positively identify
+	// callers: empty and exclusion-only selectors are rejected.
+	// This does not authorize consumer attachments or bypass authentication,
+	// and it never grants the authenticated admin listener.
 	// +optional
 	// +kubebuilder:validation:MaxItems=32
 	AdditionalIngress []NemoIngressPeer `json:"additionalIngress,omitempty"`
 }
 
 // NemoIngressPeer identifies callers across namespaces, never relative to the CR.
+// Both selectors must be nonempty. The controller additionally requires a
+// positive identity constraint and rejects empty, exclusion-only, empty-peer and
+// universal-CIDR forms, failing closed without writing a policy; the CR reports
+// the rejection through its NetworkPolicy condition.
 // +kubebuilder:validation:XValidation:rule="(has(self.namespaceSelector.matchLabels) && size(self.namespaceSelector.matchLabels) > 0) || (has(self.namespaceSelector.matchExpressions) && size(self.namespaceSelector.matchExpressions) > 0)",message="namespaceSelector must be nonempty"
 // +kubebuilder:validation:XValidation:rule="(has(self.podSelector.matchLabels) && size(self.podSelector.matchLabels) > 0) || (has(self.podSelector.matchExpressions) && size(self.podSelector.matchExpressions) > 0)",message="podSelector must be nonempty"
 type NemoIngressPeer struct {

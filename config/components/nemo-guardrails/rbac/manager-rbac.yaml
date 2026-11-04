@@ -79,12 +79,6 @@ rules:
   - patch
   - delete
 - apiGroups:
-  - apps
-  resources:
-  - replicasets
-  verbs:
-  - get
-- apiGroups:
   - networking.k8s.io
   resources:
   - networkpolicies
@@ -94,6 +88,8 @@ rules:
   - watch
   - create
   - update
+  - patch
+  - delete
 - apiGroups:
   - ""
   resources:

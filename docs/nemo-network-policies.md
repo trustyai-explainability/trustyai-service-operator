@@ -1,19 +1,73 @@
-# NeMo Guardrails NetworkPolicies
+# NeMo Guardrails operand NetworkPolicies
 
-The controller always reconciles an identity-scoped policy before selecting its
-workload Pods. There is no opt-out. A policy API object does not prove CNI
-propagation or effective isolation; live qualification remains necessary.
+The controller always reconciles one operand `NetworkPolicy` per `NemoGuardrails`
+instance. There is no opt-out: a namespace or cluster default-deny baseline must
+not leave the workload uncovered. The policy object implements
+[ODH-ADR-Operator-0016](https://github.com/opendatahub-io/architecture-decision-records/blob/main/architecture-decision-records/operator/ODH-ADR-Operator-0016-networkpolicy-platform-contract.md)
+for this operand.
+
+## Where the policy lives, and who owns it
+
+The policy is created in the **workload namespace** resolved by the controller,
+not in the custom resource namespace: `redhat-ai-gateway-infra` when the operator
+runs in `redhat-ods-applications`, `odh-ai-gateway-infra` when it runs in
+`opendatahub`, and the custom resource namespace otherwise. That namespace must
+exist and carry `trustyai.opendatahub.io/nemo-guardrails-workload=true`; the
+controller does not create the policy anywhere else.
+
+Kubernetes rejects an owner reference that crosses namespaces, so one of two
+ownership records is used:
+
+- Same namespace: a controller owner reference on the `NemoGuardrails` custom
+  resource, which garbage-collects the policy with the operand.
+- Workload namespace differs from the custom resource namespace: the
+  `trustyai.opendatahub.io/owner-uid` label plus `owner-name` / `owner-namespace`
+  annotations. The controller watches the policy through an explicit mapping and
+  **deletes it during operand cleanup**; nothing else garbage-collects it.
+
+In both cases the policy is reconciled declaratively: it is created, repaired
+after drift, recreated after deletion, updated when the desired rules change, and
+removed when the operand is removed. The controller refuses to adopt an object at
+its policy name that it did not author (the
+`trustyai.opendatahub.io/network-policy-managed-by: trustyai-service-operator`
+marker is required).
+
+## Target selector
+
+`spec.podSelector` is exactly the reserved identity labels the controller stamps
+on the Deployment's Pod template:
+
+```yaml
+trustyai.opendatahub.io/component: nemo-guardrails
+trustyai.opendatahub.io/role: service
+trustyai.opendatahub.io/owner-uid: <custom resource UID>
+```
+
+Only the Deployment template is labelled; the immutable Deployment selector is
+never modified and running Pods are never edited. An existing Deployment therefore
+rolls once to pick the labels up. Until that rollout completes, Pods carrying only
+the previous labels are not selected by this policy (they are not denied traffic),
+so an upgrade cannot strand the server.
 
 ## Ingress
 
-- With Route exposure enabled, OpenShift ingress-policy-group namespaces may
-  reach the public listener. This is a documented namespace-only exception.
-- Independently of Route exposure, Istio-managed gateway Pods in
-  `openshift-ingress` may reach that listener. The peer ANDs
-  `kubernetes.io/metadata.name=openshift-ingress` on the namespace with
-  `gateway.istio.io/managed=istio.io-gateway-controller` on the Pod, matching
-  MaaS's payload-processing NetworkPolicy contract.
-- Custom callers require explicit namespace AND Pod selectors:
+Every rule is limited to the listener the deployment actually serves:
+**TCP 8000** without authentication or **TCP 8443** with kube-rbac-proxy. The
+authenticated admin listener (8444) is never granted, and no rule allows all
+ports.
+
+Built-in peers, all documented traffic sources:
+
+| Peer | Selector | Why |
+| --- | --- | --- |
+| MaaS payload processing | namespace `openshift-ingress` + Pods with `app in (payload-processing, payload-pre-processing)` | The AI Gateway payload-processing ext_proc Deployment is the component that posts guardrail checks to this server, and it opens matching egress to the NeMo Service. |
+| MaaS payload processing, co-located | Pods with the same `app` selector, no namespace selector | Some topologies run payload processing in the workload namespace itself. |
+| Gateway data plane | namespace `openshift-ingress` + Pods with `gateway.istio.io/managed=istio.io-gateway-controller` | Istio-managed gateway Pods that call the server directly. This mirrors MaaS's payload-processing policy contract. |
+| OpenShift router | namespace selector `network.openshift.io/policy-group=ingress` (namespace-only, with recorded rationale and residual risk) | `spec.exposeRoute` Route traffic is sourced by router Pods, for which no stable supported Pod selector exists. The peer is removed when Route exposure is disabled. |
+
+`openshift-ingress` is the default MaaS gateway namespace
+(`maas-controller --gateway-namespace`). A tenant Gateway, or payload processing,
+in any other namespace is **not** in the default set and needs an explicit peer:
 
 ```yaml
 spec:
@@ -21,47 +75,58 @@ spec:
     additionalIngress:
       - namespaceSelector:
           matchLabels:
-            kubernetes.io/metadata.name: custom-gateway
+            kubernetes.io/metadata.name: redhat-ai-gateway-tenant-a
         podSelector:
           matchLabels:
-            app.kubernetes.io/name: my-client
+            app: payload-processing
 ```
 
-Peers are additive. The controller fixes destination ports to TCP 8000 without
-authentication or TCP 8443 with authentication; it does not grant admin-listener
-access. Selectors must satisfy the shared policy validator: they must positively
-identify callers, not match everything using empty or exclusion-only selectors.
-Namespace and Pod labels are trust inputs, not cryptographic identities.
-Application authentication remains necessary.
+Peers are additive. Namespace and Pod selectors are ANDed in one peer, both must
+positively identify callers, and the API rejects empty or exclusion-only
+selectors. Namespace and Pod labels are trust inputs, not cryptographic
+identities; application authentication remains necessary.
 
-`allowedConsumers` authorizes AIGuardrail resource attachments; it does not
-identify network sources and is deliberately not translated into peers.
+`allowedConsumers` authorises AIGuardrail attachments, not network sources, and is
+deliberately not translated into peers.
 
-## Upgrade and compatibility
+Kubelet probes are node-originated. Standard `NetworkPolicy` cannot select a node
+peer, so probe traffic is left to the CNI's node exemption rather than compensated
+for with a broad ingress rule.
 
-Supported managed gateway and router paths are permitted by default. Arbitrary
-existing Service callers are NOT automatically preserved: administrators must
-configure additionalIngress before upgrading. Disabling Route exposure removes
-only the router exception, not gateway or custom caller access.
+## Egress
 
-Egress remains a documented AllowAll compatibility profile because model, rails,
-action and tool endpoints come from user configuration. This is not exfiltration
-protection and can broaden existing customer restrictions: NetworkPolicy grants
-are additive.
+Egress is the documented **AllowAll** compatibility profile:
 
-## Scope and cross-namespace callers
+```yaml
+policyTypes:
+- Egress
+egress:
+- {}
+```
 
-This change is independent of PR #973 and contains none of its placement,
-ownership or migration implementation. Policy placement follows the workload
-placement implemented by current main: the NeMo CR's namespace.
+Outbound destinations come entirely from user-mounted configuration (model
+providers, rails services, action and tool endpoints, optional telemetry), so no
+complete allowlist can be derived from the custom resource. This is not
+exfiltration protection, and because NetworkPolicy grants are additive it can
+broaden existing customer restrictions. A `Restricted` profile requires
+CR-driven destination inputs and remains a follow-up decision with platform and
+security owners.
 
-Cross-namespace *callers* are supported through the built-in managed gateway
-peer and additionalIngress namespace-and-Pod selectors. Callers need not run in
-the CR or workload namespace, and allowedConsumers is not used to infer their
-location. This addresses the router-only ingress restriction raised on #1029.
+## Status, validation and limits
 
-Cross-namespace *workload placement* is a separate controller change. If #973
-merges, policy placement, ownership, watches and cleanup must follow that new
-workload identity. This PR does not claim compatibility with that unmerged
-placement implementation. A namespaced CR cannot own a policy in another
-namespace via an ownerReference.
+- A policy creation or repair failure is reported as a `NetworkPolicy`
+  condition (`NetworkPolicyReconcileFailed`) and marks the operand not ready
+  instead of failing silently; a successful reconcile clears it.
+- Deleting the policy triggers a reconcile that recreates it. Deleting the
+  operand removes the policy in every namespace the controller may have used.
+- Unit tests cover peer construction, authentication-dependent ports, Route
+  exposure changes, drift repair, deletion/recreation, namespace authority and
+  cleanup. `make policy-test` and `make policy-check` validate the RBAC contract
+  for the rendered manifests.
+- A `NetworkPolicy` object does not prove CNI enforcement: live qualification of
+  gateway, payload-processing, router and monitoring paths in each supported
+  profile is still required, as is recording the additive grants that other
+  policies may contribute.
+- Egress restrictions on payload-processing are owned by the AI Gateway
+  controller, which opens egress to the NeMo Service namespace and Pod selector;
+  this document only covers the NeMo side of that path.

@@ -363,17 +363,24 @@ spec:
                 - message: nemoConfigs names must be unique
                   rule: self.all(c, self.exists_one(o, o.name == c.name))
               networkPolicy:
-                description: NetworkPolicy configures additional callers. Policies
-                  are always enabled.
+                description: |-
+                  NetworkPolicy configures additional callers. The operand NetworkPolicy is
+                  always reconciled; it cannot be disabled.
                 properties:
                   additionalIngress:
                     description: |-
-                      AdditionalIngress permits callers on the public service listener only.
-                      Namespace and Pod selectors are ANDed; both must be nonempty.
-                      This does not authorize consumer attachments or bypass authentication.
+                      AdditionalIngress permits callers on the public Service listener only.
+                      Namespace and Pod selectors are ANDed, and both must positively identify
+                      callers: empty and exclusion-only selectors are rejected.
+                      This does not authorize consumer attachments or bypass authentication,
+                      and it never grants the authenticated admin listener.
                     items:
-                      description: NemoIngressPeer identifies callers across namespaces,
-                        never relative to the CR.
+                      description: |-
+                        NemoIngressPeer identifies callers across namespaces, never relative to the CR.
+                        Both selectors must be nonempty. The controller additionally requires a
+                        positive identity constraint and rejects empty, exclusion-only, empty-peer and
+                        universal-CIDR forms, failing closed without writing a policy; the CR reports
+                        the rejection through its NetworkPolicy condition.
                       properties:
                         namespaceSelector:
                           description: |-

@@ -13,6 +13,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -176,6 +177,14 @@ func (r *NemoGuardrailsReconciler) rejectUnownedWorkload(ctx context.Context, ne
 			return err
 		}
 	}
+	// The operand NetworkPolicy is reconciled in the target namespace, so a
+	// foreign object at its deterministic name must block the move before any
+	// previous workload is deleted.
+	if policyName, err := nemoNetworkPolicyName(nemoGuardrails); err == nil {
+		if err := r.requireOwnedOrAbsent(ctx, nemoGuardrails, "NetworkPolicy", &networkingv1.NetworkPolicy{ObjectMeta: meta(policyName)}); err != nil {
+			return err
+		}
+	}
 	copiedNames, err := r.copiedConfigMapNames(ctx, nemoGuardrails, namespace)
 	if err != nil {
 		return err
@@ -312,9 +321,22 @@ func (r *NemoGuardrailsReconciler) releaseReadyWorkload(ctx context.Context, nem
 	return r.deleteOwnedInNamespace(ctx, nemoGuardrails, previous)
 }
 
-func (r *NemoGuardrailsReconciler) deleteOwnedInNamespace(ctx context.Context, owner client.Object, namespace string) error {
+func (r *NemoGuardrailsReconciler) deleteOwnedInNamespace(ctx context.Context, owner *nemoguardrailsv1alpha1.NemoGuardrails, namespace string) error {
 	if namespace == "" {
 		return nil
+	}
+	// The operand NetworkPolicy cannot rely on garbage collection when it lives
+	// in the workload namespace instead of the custom resource namespace, so it
+	// is deleted here alongside the workload it protects.
+	if err := deleteOwned(ctx, r.Client, namespace, owner, &networkingv1.NetworkPolicyList{}, func(list client.ObjectList) []client.Object {
+		items := list.(*networkingv1.NetworkPolicyList).Items
+		objects := make([]client.Object, len(items))
+		for i := range items {
+			objects[i] = &items[i]
+		}
+		return objects
+	}); err != nil {
+		return err
 	}
 	if err := deleteOwned(ctx, r.Client, namespace, owner, &appsv1.DeploymentList{}, func(list client.ObjectList) []client.Object {
 		items := list.(*appsv1.DeploymentList).Items
@@ -393,6 +415,9 @@ func (r *NemoGuardrailsReconciler) deleteOwnedInNamespace(ctx context.Context, o
 			&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: name + "-serviceaccount", Namespace: namespace}},
 			&routev1.Route{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}},
 		)
+	}
+	if policyName, err := nemoNetworkPolicyName(owner); err == nil {
+		named = append(named, &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: policyName, Namespace: namespace}})
 	}
 	for _, obj := range named {
 		if err := r.deleteNamedIfOwned(ctx, owner, obj); err != nil {
