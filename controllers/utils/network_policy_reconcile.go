@@ -17,7 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -31,14 +30,20 @@ const (
 // NetworkPolicyAuthority is supplied by a controller after its own placement and
 // namespace authorization checks. RBAC/labels alone do not establish authority.
 // VerifiedAdoptionUID must originate from independently verified provenance,
-// never a lookup by matching name/labels. Empty means ownerless adoption is denied.
+// never a lookup by matching name/labels. Empty means ownerless adoption is denied
+// unless Ownership is CrossNamespaceOwnership, where the owner annotations written
+// by SetOwnerReference are the only record the API server permits.
 type NetworkPolicyAuthority struct {
 	Namespaces          map[string]bool
 	VerifiedAdoptionUID types.UID
+	Ownership           NetworkPolicyOwnership
 }
 
 func verifyPolicyAuthority(ctx context.Context, c client.Client, scheme *runtime.Scheme, owner client.Object, namespace string, authority NetworkPolicyAuthority, allowDeleting bool) (client.Object, error) {
-	if owner == nil || owner.GetUID() == "" || namespace == "" || !authority.Namespaces[namespace] || owner.GetNamespace() != namespace {
+	if owner == nil || owner.GetUID() == "" || namespace == "" || !authority.Namespaces[namespace] {
+		return nil, fmt.Errorf("policy namespace/owner is outside authorized scope")
+	}
+	if owner.GetNamespace() != namespace && authority.Ownership != CrossNamespaceOwnership {
 		return nil, fmt.Errorf("policy namespace/owner is outside authorized scope")
 	}
 	if scheme == nil {
@@ -65,20 +70,30 @@ func verifyExistingPolicy(existing *networkingv1.NetworkPolicy, owner client.Obj
 	if ref != nil && !matchesController(existing, owner) {
 		return fmt.Errorf("policy has a foreign controller owner")
 	}
-	if uid, ok := existing.Labels[NetworkPolicyOwnerUIDLabel]; ok {
-		expected := string(owner.GetUID())
-		if len(validation.IsValidLabelValue(expected)) > 0 {
-			expected = policyHash(expected)
-		}
-		if uid != expected {
-			return fmt.Errorf("policy owner label contradicts requested owner")
-		}
+	expectedOwnerUID := OwnerUIDLabelValue(owner)
+	if uid, ok := existing.Labels[NetworkPolicyOwnerUIDLabel]; ok && uid != expectedOwnerUID {
+		return fmt.Errorf("policy owner label contradicts requested owner")
 	}
-	if manager, ok := existing.Labels[networkPolicyManagedByLabel]; ok && manager != networkPolicyManager {
+	if manager, ok := existing.Labels[NetworkPolicyManagedByLabel]; ok && manager != NetworkPolicyManagedBy {
 		return fmt.Errorf("policy has a foreign manager")
 	}
-	if ref == nil && (authority.VerifiedAdoptionUID == "" || authority.VerifiedAdoptionUID != existing.UID) {
-		return fmt.Errorf("ownerless policy requires independently verified adoption UID")
+	if ref == nil {
+		switch authority.Ownership {
+		case CrossNamespaceOwnership:
+			// The API server rejects a controller reference that crosses
+			// namespaces, so the label and annotation record is the ownership proof.
+			if existing.Labels[NetworkPolicyOwnerUIDLabel] != expectedOwnerUID {
+				return fmt.Errorf("cross-namespace policy is missing the owner UID label")
+			}
+			if existing.Annotations[OwnerNameAnnotation] != owner.GetName() ||
+				existing.Annotations[OwnerNamespaceAnnotation] != owner.GetNamespace() {
+				return fmt.Errorf("cross-namespace policy owner annotations contradict requested owner")
+			}
+		default:
+			if authority.VerifiedAdoptionUID == "" || authority.VerifiedAdoptionUID != existing.UID {
+				return fmt.Errorf("ownerless policy requires independently verified adoption UID")
+			}
+		}
 	}
 	return nil
 }
@@ -175,12 +190,12 @@ func ReconcileWorkloadNetworkPolicy(ctx context.Context, c client.Client, scheme
 	}
 	// Explicit managed metadata is generated from trusted arguments, not desired annotations.
 	policy.Labels, _ = identity.Labels()
-	policy.Labels[networkPolicyManagedByLabel] = networkPolicyManager
+	policy.Labels[NetworkPolicyManagedByLabel] = NetworkPolicyManagedBy
 	policy.Annotations = map[string]string{}
 	if err := ApplyNetworkPolicyIntentAnnotations(policy, desired.Ingress, desired.Egress); err != nil {
 		return err
 	}
-	if err := controllerutil.SetControllerReference(ownerWithGVK, policy, scheme); err != nil {
+	if err := SetOwnerReference(ownerWithGVK, policy, scheme); err != nil {
 		return err
 	}
 	existing := &networkingv1.NetworkPolicy{}
@@ -210,7 +225,7 @@ func ReconcileWorkloadNetworkPolicy(ctx context.Context, c client.Client, scheme
 	if err := ApplyNetworkPolicyIntentAnnotations(updated, desired.Ingress, desired.Egress); err != nil {
 		return err
 	}
-	if err := controllerutil.SetControllerReference(ownerWithGVK, updated, scheme); err != nil {
+	if err := SetOwnerReference(ownerWithGVK, updated, scheme); err != nil {
 		return err
 	}
 	normalizePolicy(updated)

@@ -210,7 +210,7 @@ func TestBuildNemoGuardrailsNetworkPolicyRequiresPersistedIdentity(t *testing.T)
 func TestReconcileNemoNetworkPolicyWorkloadNamespace(t *testing.T) {
 	ctx := context.Background()
 	scheme, owner := nemoNetworkPolicyFixture(t)
-	reconciler := &NemoGuardrailsReconciler{Client: fake.NewClientBuilder().WithScheme(scheme).Build(), Scheme: scheme, Namespace: testNemoControllerNS}
+	reconciler := &NemoGuardrailsReconciler{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner).Build(), Scheme: scheme, Namespace: testNemoControllerNS}
 
 	if err := reconciler.reconcileNetworkPolicy(ctx, owner, testNemoInfraNamespace); err != nil {
 		t.Fatalf("reconcileNetworkPolicy() error = %v", err)
@@ -232,8 +232,8 @@ func TestReconcileNemoNetworkPolicyWorkloadNamespace(t *testing.T) {
 	if actual.Annotations[utils.OwnerNameAnnotation] != owner.Name || actual.Annotations[utils.OwnerNamespaceAnnotation] != owner.Namespace {
 		t.Fatalf("owner annotations = %#v, want the owning custom resource", actual.Annotations)
 	}
-	if actual.Labels[nemoNetworkPolicyManagerLabel] != nemoNetworkPolicyManager {
-		t.Fatalf("managed-by label = %q, want %q", actual.Labels[nemoNetworkPolicyManagerLabel], nemoNetworkPolicyManager)
+	if actual.Labels[utils.NetworkPolicyManagedByLabel] != utils.NetworkPolicyManagedBy {
+		t.Fatalf("managed-by label = %q, want %q", actual.Labels[utils.NetworkPolicyManagedByLabel], utils.NetworkPolicyManagedBy)
 	}
 	if !hasNemoNetworkPolicyIdentity(actual) {
 		t.Fatal("policy is not visible to the explicit watch predicate")
@@ -247,7 +247,7 @@ func TestReconcileNemoNetworkPolicyWorkloadNamespace(t *testing.T) {
 func TestReconcileNemoNetworkPolicySameNamespaceOwnsByControllerReference(t *testing.T) {
 	ctx := context.Background()
 	scheme, owner := nemoNetworkPolicyFixture(t)
-	reconciler := &NemoGuardrailsReconciler{Client: fake.NewClientBuilder().WithScheme(scheme).Build(), Scheme: scheme, Namespace: "operator-ns"}
+	reconciler := &NemoGuardrailsReconciler{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner).Build(), Scheme: scheme, Namespace: "operator-ns"}
 
 	if err := reconciler.reconcileNetworkPolicy(ctx, owner, owner.Namespace); err != nil {
 		t.Fatalf("reconcileNetworkPolicy() error = %v", err)
@@ -268,7 +268,7 @@ func TestReconcileNemoNetworkPolicySameNamespaceOwnsByControllerReference(t *tes
 func TestReconcileNemoNetworkPolicyRepairsDriftAndDeletion(t *testing.T) {
 	ctx := context.Background()
 	scheme, owner := nemoNetworkPolicyFixture(t)
-	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner).Build()
 	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme, Namespace: testNemoControllerNS}
 
 	if err := reconciler.reconcileNetworkPolicy(ctx, owner, testNemoInfraNamespace); err != nil {
@@ -335,7 +335,7 @@ func TestReconcileNemoNetworkPolicyRefusesForeignPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	foreign := desired.Policy.DeepCopy()
-	foreign.Labels = map[string]string{nemoNetworkPolicyManagerLabel: "another-controller"}
+	foreign.Labels = map[string]string{utils.NetworkPolicyManagedByLabel: "another-controller"}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(foreign).Build()
 	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme, Namespace: testNemoControllerNS}
 
@@ -354,7 +354,7 @@ func TestReconcileNemoNetworkPolicyRefusesForeignPolicy(t *testing.T) {
 func TestReconcileNemoNetworkPolicyRemovesRouterPeerWhenRouteExposureDisabled(t *testing.T) {
 	ctx := context.Background()
 	scheme, owner := nemoNetworkPolicyFixture(t)
-	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner).Build()
 	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme, Namespace: testNemoControllerNS}
 
 	if err := reconciler.reconcileNetworkPolicy(ctx, owner, testNemoInfraNamespace); err != nil {
@@ -391,55 +391,26 @@ func TestReconcileNemoNetworkPolicyRemovesRouterPeerWhenRouteExposureDisabled(t 
 	}
 }
 
-func TestStampNemoNetworkPolicyIdentity(t *testing.T) {
-	scheme, owner := nemoNetworkPolicyFixture(t)
-	reconciler := &NemoGuardrailsReconciler{Client: fake.NewClientBuilder().WithScheme(scheme).Build(), Scheme: scheme, Namespace: testNemoControllerNS}
-	deployment := nemoNetworkPolicyDeploymentFixture(owner, testNemoInfraNamespace)
-	if err := utils.SetOwnerReference(owner, deployment, scheme); err != nil {
-		t.Fatal(err)
-	}
-	identity, err := nemoNetworkPolicyIdentity(owner)
-	if err != nil {
-		t.Fatal(err)
-	}
-	selectorBefore := deployment.Spec.Selector.DeepCopy()
-	if err := stampNemoNetworkPolicyIdentity(deployment, owner, identity); err != nil {
-		t.Fatalf("stampNemoNetworkPolicyIdentity() error = %v", err)
-	}
-	wantLabels, err := identity.Labels()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for key, value := range wantLabels {
-		if deployment.Spec.Template.Labels[key] != value {
-			t.Errorf("Pod template label %q = %q, want %q", key, deployment.Spec.Template.Labels[key], value)
-		}
-	}
-	if !reflect.DeepEqual(deployment.Spec.Selector, selectorBefore) {
-		t.Fatalf("Deployment selector = %#v, want the immutable original %#v", deployment.Spec.Selector, selectorBefore)
-	}
-
-	foreign := nemoNetworkPolicyDeploymentFixture(owner, testNemoInfraNamespace)
-	foreign.Labels[utils.OwnerUIDLabel] = "another-owner"
-	if err := stampNemoNetworkPolicyIdentity(foreign, owner, identity); err == nil {
-		t.Fatal("stampNemoNetworkPolicyIdentity labelled an unowned Deployment")
-	}
-	_ = reconciler
-}
-
-// TestDeleteOwnedInNamespaceRemovesNetworkPolicy covers operand cleanup for the
-// shared namespace placement, where the policy has no owner reference and
-// Kubernetes therefore cannot garbage collect it.
 func TestDeleteOwnedInNamespaceRemovesNetworkPolicy(t *testing.T) {
 	ctx := context.Background()
 	scheme, owner := nemoNetworkPolicyFixture(t)
-	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner).Build()
 	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme, Namespace: testNemoControllerNS}
 	if err := reconciler.reconcileNetworkPolicy(ctx, owner, testNemoInfraNamespace); err != nil {
 		t.Fatalf("reconcileNetworkPolicy() error = %v", err)
 	}
 	desired, err := buildNemoGuardrailsNetworkPolicy(owner, testNemoInfraNamespace)
 	if err != nil {
+		t.Fatal(err)
+	}
+	// The fake client runs no API server, so the policy has no UID to pin the delete
+	// to. Assign the one the server would, which also keeps cleanup honest about it.
+	created := &networkingv1.NetworkPolicy{}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(desired.Policy), created); err != nil {
+		t.Fatal(err)
+	}
+	created.UID = types.UID("nemo-policy-uid")
+	if err := c.Update(ctx, created); err != nil {
 		t.Fatal(err)
 	}
 	if err := reconciler.deleteOwnedInNamespace(ctx, owner, testNemoInfraNamespace); err != nil {
@@ -497,7 +468,7 @@ const (
 func TestReconcileNemoNetworkPolicyRecordsIntentAnnotations(t *testing.T) {
 	ctx := context.Background()
 	scheme, owner := nemoNetworkPolicyFixture(t)
-	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner).Build()
 	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme, Namespace: testNemoControllerNS}
 
 	if err := reconciler.reconcileNetworkPolicy(ctx, owner, testNemoInfraNamespace); err != nil {
@@ -543,7 +514,7 @@ func TestReconcileNemoNetworkPolicyRecordsIntentAnnotations(t *testing.T) {
 func TestHasNemoNetworkPolicyIdentity(t *testing.T) {
 	policy := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
 		utils.NetworkPolicyComponentLabel: nemoNetworkPolicyComponent,
-		nemoNetworkPolicyManagerLabel:     nemoNetworkPolicyManager,
+		utils.NetworkPolicyManagedByLabel: utils.NetworkPolicyManagedBy,
 	}}}
 	if !hasNemoNetworkPolicyIdentity(policy) {
 		t.Fatal("managed NemoGuardrails policy was not recognized")
@@ -554,7 +525,7 @@ func TestHasNemoNetworkPolicyIdentity(t *testing.T) {
 		t.Fatal("another component's policy was mapped to NemoGuardrails")
 	}
 	unmanaged := policy.DeepCopy()
-	delete(unmanaged.Labels, nemoNetworkPolicyManagerLabel)
+	delete(unmanaged.Labels, utils.NetworkPolicyManagedByLabel)
 	if hasNemoNetworkPolicyIdentity(unmanaged) {
 		t.Fatal("an unmanaged policy was mapped to NemoGuardrails")
 	}

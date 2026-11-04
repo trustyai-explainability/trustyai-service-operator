@@ -6,13 +6,9 @@ import (
 
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
-	apiequality "k8s.io/apimachinery/pkg/api/equality"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -27,13 +23,6 @@ const (
 	nemoNetworkPolicyComponent           = "nemo-guardrails"
 	nemoNetworkPolicyRole                = "service"
 	nemoNetworkPolicyPurpose             = "service"
-
-	// nemoNetworkPolicyManagerLabel marks a policy this controller reconciles.
-	// Reconcile adopts an existing policy only when it carries this marker with
-	// nemoNetworkPolicyManager, so an object at the deterministic policy name
-	// that this operator did not author is never overwritten.
-	nemoNetworkPolicyManagerLabel = "trustyai.opendatahub.io/network-policy-managed-by"
-	nemoNetworkPolicyManager      = "trustyai-service-operator"
 
 	// nemoMaaSCallerNamespace is where MaaS runs the gateway data plane and its
 	// payload-processing ext_proc Deployments by default
@@ -64,14 +53,6 @@ const (
 	nemoNetworkPolicyFailedReason     = "NetworkPolicyReconcileFailed"
 	nemoNetworkPolicyReconciledReason = "NetworkPolicyReady"
 )
-
-// nemoNetworkPolicyOwner supplies an explicit GVK to shared identity and
-// ownership helpers. API reads do not consistently preserve TypeMeta.
-func nemoNetworkPolicyOwner(instance *nemoguardrailsv1alpha1.NemoGuardrails) *nemoguardrailsv1alpha1.NemoGuardrails {
-	owner := instance.DeepCopy()
-	owner.GetObjectKind().SetGroupVersionKind(nemoguardrailsv1alpha1.GroupVersion.WithKind("NemoGuardrails"))
-	return owner
-}
 
 func nemoNetworkPolicyIdentity(instance *nemoguardrailsv1alpha1.NemoGuardrails) (utils.NetworkPolicyIdentity, error) {
 	if instance == nil || instance.Name == "" || instance.Namespace == "" || instance.UID == "" {
@@ -267,7 +248,9 @@ func buildNemoGuardrailsNetworkPolicy(instance *nemoguardrailsv1alpha1.NemoGuard
 // cross-namespace owner references. Ownership is then recorded with the
 // owner-uid label plus owner name/namespace annotations (utils.SetOwnerReference),
 // the policy is watched through an explicit mapping, and deletion is performed by
-// the controller during operand cleanup.
+// the controller during operand cleanup. Reconciliation and the managed metadata
+// are owned by utils.ReconcileWorkloadNetworkPolicy, so this operand keeps the same
+// validation, adoption, intent-annotation and drift rules as the other components.
 func (r *NemoGuardrailsReconciler) reconcileNetworkPolicy(ctx context.Context, instance *nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) error {
 	if targetNamespace == "" {
 		return fmt.Errorf("NemoGuardrails workload namespace is required before NetworkPolicy reconciliation")
@@ -283,210 +266,17 @@ func (r *NemoGuardrailsReconciler) reconcileNetworkPolicy(ctx context.Context, i
 	if err != nil {
 		return err
 	}
-
-	owner := nemoNetworkPolicyOwner(instance)
-	if err := r.decorateOwnedNetworkPolicy(owner, identity, desired.Policy); err != nil {
-		return err
-	}
-	return r.applyNetworkPolicy(ctx, owner, identity, desired)
+	return utils.ReconcileWorkloadNetworkPolicy(ctx, r.Client, r.Scheme, instance, identity, desired, nemoNetworkPolicyAuthority(targetNamespace))
 }
 
-// decorateOwnedNetworkPolicy records ownership and the managed marker on the
-// desired policy. Owner name and namespace annotations are always set, so the
-// namespace-scoped and cross-namespace cases share one watch mapping.
-func (r *NemoGuardrailsReconciler) decorateOwnedNetworkPolicy(owner *nemoguardrailsv1alpha1.NemoGuardrails, identity utils.NetworkPolicyIdentity, policy *networkingv1.NetworkPolicy) error {
-	if err := utils.SetOwnerReference(owner, policy, r.Scheme); err != nil {
-		return fmt.Errorf("set NemoGuardrails ownership on NetworkPolicy: %w", err)
+// nemoNetworkPolicyAuthority authorises exactly the resolved workload namespace,
+// including the shared AI Gateway namespace, and accepts the label and annotation
+// ownership record because a controller reference cannot cross namespaces.
+func nemoNetworkPolicyAuthority(namespace string) utils.NetworkPolicyAuthority {
+	return utils.NetworkPolicyAuthority{
+		Namespaces: map[string]bool{namespace: true},
+		Ownership:  utils.CrossNamespaceOwnership,
 	}
-	identityLabels, err := identity.Labels()
-	if err != nil {
-		return err
-	}
-	labels := policy.GetLabels()
-	if labels == nil {
-		labels = map[string]string{}
-	}
-	for key, value := range identityLabels {
-		labels[key] = value
-	}
-	labels[nemoNetworkPolicyManagerLabel] = nemoNetworkPolicyManager
-	policy.SetLabels(labels)
-
-	annotations := policy.GetAnnotations()
-	if annotations == nil {
-		annotations = map[string]string{}
-	}
-	annotations[utils.OwnerNameAnnotation] = owner.GetName()
-	annotations[utils.OwnerNamespaceAnnotation] = owner.GetNamespace()
-	policy.SetAnnotations(annotations)
-	return nil
-}
-
-// applyNetworkPolicy writes the desired policy and records the trusted ingress and
-// egress intent on the object, so the accepted risk travels with the rule set
-// that implements it.
-func (r *NemoGuardrailsReconciler) applyNetworkPolicy(ctx context.Context, owner *nemoguardrailsv1alpha1.NemoGuardrails, identity utils.NetworkPolicyIdentity, desired utils.WorkloadNetworkPolicy) error {
-	if desired.Policy == nil {
-		return fmt.Errorf("NemoGuardrails NetworkPolicy is required")
-	}
-	policy := desired.Policy
-	if err := utils.ApplyNetworkPolicyIntentAnnotations(policy, desired.Ingress, desired.Egress); err != nil {
-		return err
-	}
-	existing := &networkingv1.NetworkPolicy{}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(policy), existing); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("get NemoGuardrails NetworkPolicy: %w", err)
-		}
-		if err := r.Create(ctx, policy); err != nil {
-			return fmt.Errorf("create NemoGuardrails NetworkPolicy %s/%s: %w", policy.Namespace, policy.Name, err)
-		}
-		return nil
-	}
-	if err := verifyNemoNetworkPolicyOwnership(existing, owner, identity); err != nil {
-		return err
-	}
-	if !existing.DeletionTimestamp.IsZero() {
-		return fmt.Errorf("NemoGuardrails NetworkPolicy %s/%s is deleting; retry after deletion completes", existing.Namespace, existing.Name)
-	}
-
-	updated := existing.DeepCopy()
-	updated.Spec = *policy.Spec.DeepCopy()
-	updated.Labels = mergeNemoLabels(existing.Labels, policy.Labels)
-	updated.Annotations = mergeNemoLabels(existing.Annotations, policy.Annotations)
-	if err := r.decorateOwnedNetworkPolicy(owner, identity, updated); err != nil {
-		return err
-	}
-	if err := utils.ApplyNetworkPolicyIntentAnnotations(updated, desired.Ingress, desired.Egress); err != nil {
-		return err
-	}
-
-	baseline := existing.DeepCopy()
-	normalizeNemoNetworkPolicy(baseline)
-	normalizeNemoNetworkPolicy(updated)
-	if apiequality.Semantic.DeepEqual(baseline.Spec, updated.Spec) &&
-		apiequality.Semantic.DeepEqual(baseline.Labels, updated.Labels) &&
-		apiequality.Semantic.DeepEqual(baseline.Annotations, updated.Annotations) &&
-		apiequality.Semantic.DeepEqual(baseline.OwnerReferences, updated.OwnerReferences) {
-		return nil
-	}
-	if err := r.Update(ctx, updated); err != nil {
-		return fmt.Errorf("update NemoGuardrails NetworkPolicy %s/%s: %w", updated.Namespace, updated.Name, err)
-	}
-	return nil
-}
-
-// verifyNemoNetworkPolicyOwnership rejects an object that this operator did not
-// author for this instance. An ownerless policy is adopted only when it carries
-// the managed marker and this instance's identity labels.
-func verifyNemoNetworkPolicyOwnership(existing *networkingv1.NetworkPolicy, owner client.Object, identity utils.NetworkPolicyIdentity) error {
-	if existing == nil || owner == nil {
-		return fmt.Errorf("existing NetworkPolicy and owner are required")
-	}
-	if ref := metav1.GetControllerOf(existing); ref != nil {
-		refGroupVersion, err := schema.ParseGroupVersion(ref.APIVersion)
-		if err != nil || ref.UID != owner.GetUID() || ref.Name != owner.GetName() || refGroupVersion.Group != identity.OwnerKind.Group || ref.Kind != identity.OwnerKind.Kind {
-			return fmt.Errorf("NetworkPolicy %s/%s has a foreign controller owner", existing.Namespace, existing.Name)
-		}
-	}
-	labels := existing.GetLabels()
-	if labels[nemoNetworkPolicyManagerLabel] != nemoNetworkPolicyManager {
-		return fmt.Errorf("NetworkPolicy %s/%s is not managed by %s", existing.Namespace, existing.Name, nemoNetworkPolicyManager)
-	}
-	if labels[utils.NetworkPolicyComponentLabel] != identity.Component || labels[utils.NetworkPolicyRoleLabel] != identity.Role {
-		return fmt.Errorf("NetworkPolicy %s/%s identity labels do not match the NemoGuardrails workload identity", existing.Namespace, existing.Name)
-	}
-	if uid, ok := labels[utils.OwnerUIDLabel]; ok && uid != string(identity.OwnerUID) {
-		return fmt.Errorf("NetworkPolicy %s/%s owner label contradicts this NemoGuardrails UID", existing.Namespace, existing.Name)
-	}
-	annotations := existing.GetAnnotations()
-	if name, ok := annotations[utils.OwnerNameAnnotation]; ok && name != owner.GetName() {
-		return fmt.Errorf("NetworkPolicy %s/%s owner name annotation contradicts this NemoGuardrails name", existing.Namespace, existing.Name)
-	}
-	if namespace, ok := annotations[utils.OwnerNamespaceAnnotation]; ok && namespace != owner.GetNamespace() {
-		return fmt.Errorf("NetworkPolicy %s/%s owner namespace annotation contradicts this NemoGuardrails namespace", existing.Namespace, existing.Name)
-	}
-	return nil
-}
-
-func mergeNemoLabels(current, required map[string]string) map[string]string {
-	if len(required) == 0 {
-		return current
-	}
-	merged := make(map[string]string, len(current)+len(required))
-	for key, value := range current {
-		merged[key] = value
-	}
-	for key, value := range required {
-		merged[key] = value
-	}
-	return merged
-}
-
-// normalizeNemoNetworkPolicy removes representations the API server may choose
-// for empty collections, so drift detection compares meaning, not encoding.
-func normalizeNemoNetworkPolicy(policy *networkingv1.NetworkPolicy) {
-	if len(policy.Labels) == 0 {
-		policy.Labels = nil
-	}
-	if len(policy.Annotations) == 0 {
-		policy.Annotations = nil
-	}
-	if len(policy.Spec.Ingress) == 0 {
-		policy.Spec.Ingress = nil
-	}
-	if len(policy.Spec.Egress) == 0 {
-		policy.Spec.Egress = nil
-	}
-	for index := range policy.Spec.Egress {
-		if len(policy.Spec.Egress[index].To) == 0 {
-			policy.Spec.Egress[index].To = nil
-		}
-		if len(policy.Spec.Egress[index].Ports) == 0 {
-			policy.Spec.Egress[index].Ports = nil
-		}
-	}
-}
-
-// stampNemoNetworkPolicyIdentity adds the reserved identity labels to a
-// Deployment this controller is about to create or update. Only the template is
-// touched: the immutable selector is never modified. Running Pods are replaced by
-// the resulting rollout and are never edited in place.
-func stampNemoNetworkPolicyIdentity(deployment *appsv1.Deployment, instance *nemoguardrailsv1alpha1.NemoGuardrails, identity utils.NetworkPolicyIdentity) error {
-	if deployment == nil || instance == nil {
-		return fmt.Errorf("deployment and NemoGuardrails instance are required")
-	}
-	if identity.OwnerUID != instance.GetUID() {
-		return fmt.Errorf("policy identity does not belong to this NemoGuardrails UID")
-	}
-	if !utils.IsOwnedBy(deployment, instance) {
-		return fmt.Errorf("refusing to label a NemoGuardrails Deployment that is not owned by this instance")
-	}
-	labels, err := identity.Labels()
-	if err != nil {
-		return err
-	}
-	if deployment.Spec.Selector == nil {
-		return fmt.Errorf("NemoGuardrails Deployment selector is required")
-	}
-	for key, value := range labels {
-		if selected, ok := deployment.Spec.Selector.MatchLabels[key]; ok && selected != value {
-			return fmt.Errorf("immutable selector conflicts with reserved label %s", key)
-		}
-	}
-	template := deployment.Spec.Template.DeepCopy()
-	if template.Labels == nil {
-		template.Labels = map[string]string{}
-	}
-	for key, value := range labels {
-		template.Labels[key] = value
-	}
-	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
-	if err != nil || !selector.Matches(klabels.Set(template.Labels)) {
-		return fmt.Errorf("reserved labels conflict with the Deployment selector")
-	}
-	deployment.Spec.Template = *template
-	return nil
 }
 
 // enqueueNemoFromNetworkPolicy maps a policy event back to its custom resource.
@@ -511,7 +301,7 @@ func hasNemoNetworkPolicyIdentity(object client.Object) bool {
 	}
 	labels := object.GetLabels()
 	return labels[utils.NetworkPolicyComponentLabel] == nemoNetworkPolicyComponent &&
-		labels[nemoNetworkPolicyManagerLabel] == nemoNetworkPolicyManager
+		labels[utils.NetworkPolicyManagedByLabel] == utils.NetworkPolicyManagedBy
 }
 
 // reportNetworkPolicyFailure surfaces a policy failure on the custom resource so

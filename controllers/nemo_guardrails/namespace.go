@@ -328,14 +328,7 @@ func (r *NemoGuardrailsReconciler) deleteOwnedInNamespace(ctx context.Context, o
 	// The operand NetworkPolicy cannot rely on garbage collection when it lives
 	// in the workload namespace instead of the custom resource namespace, so it
 	// is deleted here alongside the workload it protects.
-	if err := deleteOwned(ctx, r.Client, namespace, owner, &networkingv1.NetworkPolicyList{}, func(list client.ObjectList) []client.Object {
-		items := list.(*networkingv1.NetworkPolicyList).Items
-		objects := make([]client.Object, len(items))
-		for i := range items {
-			objects[i] = &items[i]
-		}
-		return objects
-	}); err != nil {
+	if err := r.deleteNamedNetworkPolicyIfOwned(ctx, owner, namespace); err != nil {
 		return err
 	}
 	if err := deleteOwned(ctx, r.Client, namespace, owner, &appsv1.DeploymentList{}, func(list client.ObjectList) []client.Object {
@@ -416,13 +409,41 @@ func (r *NemoGuardrailsReconciler) deleteOwnedInNamespace(ctx context.Context, o
 			&routev1.Route{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}},
 		)
 	}
-	if policyName, err := nemoNetworkPolicyName(owner); err == nil {
-		named = append(named, &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: policyName, Namespace: namespace}})
-	}
 	for _, obj := range named {
 		if err := r.deleteNamedIfOwned(ctx, owner, obj); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// deleteNamedNetworkPolicyIfOwned removes the operand policy at its deterministic
+// name. Cross-namespace policies have no garbage collector, so this is the only
+// deletion path. utils.DeleteOwnedWorkloadNetworkPolicy verifies ownership through
+// the record the reconcile writes, refuses a policy whose UID changed, and pins the
+// delete to the UID and resourceVersion, so a replacement at the same name survives.
+func (r *NemoGuardrailsReconciler) deleteNamedNetworkPolicyIfOwned(ctx context.Context, owner *nemoguardrailsv1alpha1.NemoGuardrails, namespace string) error {
+	if namespace == "" {
+		return nil
+	}
+	policyName, err := nemoNetworkPolicyName(owner)
+	if err != nil {
+		return nil
+	}
+	policy := &networkingv1.NetworkPolicy{}
+	if err := r.Get(ctx, types.NamespacedName{Name: policyName, Namespace: namespace}, policy); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	if !utils.IsOwnedBy(policy, owner) {
+		// A foreign object at the deterministic name is not ours to delete. The
+		// namespace-move guard reports it before anything is removed.
+		return nil
+	}
+	if err := utils.DeleteOwnedWorkloadNetworkPolicy(ctx, r.Client, r.Scheme, owner, client.ObjectKeyFromObject(policy), policy.UID, nemoNetworkPolicyAuthority(namespace)); err != nil {
+		return fmt.Errorf("delete NemoGuardrails NetworkPolicy %s/%s: %w", namespace, policyName, err)
 	}
 	return nil
 }

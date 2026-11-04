@@ -22,9 +22,36 @@ const (
 	NetworkPolicyComponentLabel = "trustyai.opendatahub.io/component"
 	NetworkPolicyRoleLabel      = "trustyai.opendatahub.io/role"
 	NetworkPolicyOwnerUIDLabel  = "trustyai.opendatahub.io/owner-uid"
-	networkPolicyManagedByLabel = "trustyai.opendatahub.io/network-policy-managed-by"
-	networkPolicyManager        = "trustyai-service-operator"
+	// NetworkPolicyManagedByLabel marks a policy this operator reconciles. Controllers
+	// share the marker so one component never adopts another component's policy.
+	NetworkPolicyManagedByLabel = "trustyai.opendatahub.io/network-policy-managed-by"
+	NetworkPolicyManagedBy      = "trustyai-service-operator"
 )
+
+// NetworkPolicyOwnership selects which ownership record a helper accepts for an
+// object. The zero value keeps the original rule: only a controller reference in
+// the owner's own namespace. Operands placed in a shared workload namespace
+// cannot carry a cross-namespace controller reference, so they must opt in to the
+// owner-uid label plus owner name/namespace annotations that SetOwnerReference
+// writes instead.
+type NetworkPolicyOwnership int
+
+const (
+	// SameNamespaceOwnership accepts only a controller reference in the owner namespace.
+	SameNamespaceOwnership NetworkPolicyOwnership = iota
+	// CrossNamespaceOwnership also accepts the label and annotation ownership record.
+	CrossNamespaceOwnership
+)
+
+// OwnerUIDLabelValue is the value SetOwnerReference and NetworkPolicyIdentity.Labels
+// record for an owner UID, hashing the few UIDs that are not valid label values.
+func OwnerUIDLabelValue(owner metav1.Object) string {
+	uid := string(owner.GetUID())
+	if len(validation.IsValidLabelValue(uid)) > 0 {
+		return policyHash(uid)
+	}
+	return uid
+}
 
 // NetworkPolicyIdentity describes a workload, not its display name or API version.
 // Labels are selection metadata, not authorization against a label-forging tenant.
@@ -103,7 +130,9 @@ func matchesController(obj metav1.Object, owner client.Object) bool {
 // template. The scheme resolves the owner's GVK without relying on TypeMeta being
 // populated. The caller must retain legacy policies until old replicas drain and
 // protect reserved-label authority. Immutable selectors are never modified.
-func LabelOwnedNetworkPolicyDeployment(deployment *appsv1.Deployment, scheme *runtime.Scheme, owner client.Object, identity NetworkPolicyIdentity) error {
+// ownership selects which record proves ownership; cross-namespace owners are
+// recorded by SetOwnerReference as a label plus annotations, never a reference.
+func LabelOwnedNetworkPolicyDeployment(deployment *appsv1.Deployment, scheme *runtime.Scheme, owner client.Object, identity NetworkPolicyIdentity, ownership NetworkPolicyOwnership) error {
 	if deployment == nil || owner == nil {
 		return fmt.Errorf("deployment and policy owner are required")
 	}
@@ -116,7 +145,18 @@ func LabelOwnedNetworkPolicyDeployment(deployment *appsv1.Deployment, scheme *ru
 	}
 	ownerWithGVK := owner.DeepCopyObject().(client.Object)
 	ownerWithGVK.GetObjectKind().SetGroupVersionKind(gvk)
-	if !identityOwnedBy(identity, ownerWithGVK) || deployment.Namespace != owner.GetNamespace() || !matchesController(deployment, ownerWithGVK) {
+	if !identityOwnedBy(identity, ownerWithGVK) {
+		return fmt.Errorf("deployment does not belong to the supplied policy owner")
+	}
+	if ownership == CrossNamespaceOwnership {
+		// A shared workload namespace cannot hold a controller reference to a
+		// namespaced custom resource, so the label and annotation record is the
+		// only ownership proof available. IsOwnedBy requires the owner UID label and
+		// rejects a contradicting owner name or namespace annotation.
+		if !IsOwnedBy(deployment, ownerWithGVK) {
+			return fmt.Errorf("deployment is not owned by the supplied policy owner")
+		}
+	} else if deployment.Namespace != owner.GetNamespace() || !matchesController(deployment, ownerWithGVK) {
 		return fmt.Errorf("deployment does not belong to the supplied policy owner")
 	}
 	labels, err := identity.Labels()

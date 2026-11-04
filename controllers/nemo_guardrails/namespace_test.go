@@ -34,6 +34,8 @@ func TestCreateDeploymentUsesCRNamespaceOnUnknownPlatform(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
@@ -79,6 +81,8 @@ func TestCreateDeploymentCentralizesIntoPlatformInfraNamespace(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
 		ObjectMeta: metav1.ObjectMeta{
@@ -177,6 +181,8 @@ func TestReleasePreviousWorkloadKeepsOldNamespaceOnCollision(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
 	require.NoError(t, networkingv1.AddToScheme(scheme))
 	expose := true
@@ -214,6 +220,8 @@ func TestReleasePreviousWorkloadKeepsOldNamespaceOnConfigMapCollision(t *testing
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
 	require.NoError(t, networkingv1.AddToScheme(scheme))
 	defaultName := nemoGuardrailsDefaultConfigPrefix + "-rails"
@@ -254,6 +262,8 @@ func TestReleasePreviousWorkloadKeepsOldNamespaceOnSecretCollision(t *testing.T)
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
 	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
@@ -285,6 +295,8 @@ func TestReleaseReadyWorkloadKeepsPreviousUntilReady(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
 	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
@@ -305,6 +317,8 @@ func TestReleaseReadyWorkloadRemovesPreviousWhenReady(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
 	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
@@ -326,6 +340,8 @@ func TestReleaseReadyWorkloadKeepsPreviousUntilRouteAdmitted(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
 	require.NoError(t, networkingv1.AddToScheme(scheme))
 	expose := true
@@ -349,6 +365,8 @@ func TestReleaseReadyWorkloadRemovesPreviousWhenRouteAdmitted(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
 	require.NoError(t, networkingv1.AddToScheme(scheme))
 	expose := true
@@ -380,6 +398,8 @@ func TestReleaseReadyWorkloadKeepsPreviousOnDeadline(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
 	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
@@ -505,6 +525,8 @@ func TestRejectUnownedServiceAccount(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
 	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
@@ -525,6 +547,8 @@ func TestRequireOwnedOrAbsentLeavesUnownedDeployment(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
 	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
@@ -557,6 +581,8 @@ func TestRetireUnscopedNamesRemovesLegacyObjects(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
 	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
@@ -608,6 +634,8 @@ func TestRetireUnscopedNamesKeepsUnscopedUntilReady(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
 	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
@@ -671,6 +699,8 @@ func TestReconcileDeletionDuringMigrationRemovesInfraObjects(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
 	require.NoError(t, networkingv1.AddToScheme(scheme))
 	require.NoError(t, rbacv1.AddToScheme(scheme))
@@ -707,6 +737,8 @@ func TestDeleteOwnedInNamespaceLeavesOtherObjects(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, appsv1.AddToScheme(scheme))
+	// The shared NetworkPolicy helpers resolve the owner GVK from the scheme.
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, routev1.AddToScheme(scheme))
 	require.NoError(t, networkingv1.AddToScheme(scheme))
 	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
