@@ -76,17 +76,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	tlsProfile := tlsResult.Spec
-	if !pkgtls.ShouldHonorClusterTLSProfile(tlsResult.AdherencePolicy) {
-		tlsProfile = *configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
-	}
-	tlsOption, unsupported, err := pkgtls.ConfigFromProfileStrict(tlsProfile)
-	if err != nil {
-		setupLog.Error(err, "unable to configure metrics TLS")
-		os.Exit(1)
-	}
-	if len(unsupported) > 0 {
-		setupLog.Info("TLS profile contains settings unsupported by Go", "unsupported", unsupported)
+	// Only apply the cluster profile under adhering policies (Strict and
+	// unknown). NoOpinion and Legacy keep the component's serving defaults:
+	// SecureServing with Go's TLS 1.2 minimum and default cipher suites.
+	var metricsTLSOpts []func(*tls.Config)
+	if pkgtls.ShouldHonorClusterTLSProfile(tlsResult.AdherencePolicy) {
+		tlsOption, unsupported, err := pkgtls.ConfigFromProfileStrict(tlsResult.Spec)
+		if err != nil {
+			setupLog.Error(err, "unable to configure metrics TLS")
+			os.Exit(1)
+		}
+		if len(unsupported) > 0 {
+			setupLog.Info("TLS profile contains settings unsupported by Go", "unsupported", unsupported)
+		}
+		metricsTLSOpts = append(metricsTLSOpts, tlsOption)
 	}
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
@@ -94,7 +97,7 @@ func main() {
 		Metrics: metricsserver.Options{
 			BindAddress:   metricsAddr,
 			SecureServing: true,
-			TLSOpts:       []func(*tls.Config){tlsOption},
+			TLSOpts:       metricsTLSOpts,
 		},
 		LeaderElection:          enableLeaderElection,
 		LeaderElectionID:        "trustyai-operator-module-controller-manager",
