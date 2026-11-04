@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -70,7 +71,9 @@ func main() {
 		setupLog.Error(err, "unable to create bootstrap client for TLS profile")
 		os.Exit(1)
 	}
-	tlsResult, err := pkgtls.LoadWithAdherence(context.Background(), bootstrapClient)
+	tlsCtx, tlsCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer tlsCancel()
+	tlsResult, err := pkgtls.LoadWithAdherence(tlsCtx, bootstrapClient)
 	if err != nil {
 		setupLog.Error(err, "unable to resolve cluster TLS profile")
 		os.Exit(1)
