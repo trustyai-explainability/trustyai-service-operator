@@ -81,9 +81,13 @@ spec:
             app: payload-processing
 ```
 
-Peers are additive. Namespace and Pod selectors are ANDed in one peer, both must
-positively identify callers, and the API rejects empty or exclusion-only
-selectors. Namespace and Pod labels are trust inputs, not cryptographic
+Peers are additive. Namespace and Pod selectors are ANDed in one peer and both
+must positively identify callers. The two rejection points differ, and the
+difference matters at apply time: the API server rejects an **empty** selector
+through the CRD validation rules, while an **exclusion-only** selector is
+accepted by the API server and then refused by the controller, which fails
+closed, writes no policy, and reports `NetworkPolicyReconcileFailed` on the
+custom resource. Namespace and Pod labels are trust inputs, not cryptographic
 identities; application authentication remains necessary.
 
 `allowedConsumers` authorises AIGuardrail attachments, not network sources, and is
