@@ -325,12 +325,6 @@ func (r *NemoGuardrailsReconciler) deleteOwnedInNamespace(ctx context.Context, o
 	if namespace == "" {
 		return nil
 	}
-	// The operand NetworkPolicy cannot rely on garbage collection when it lives
-	// in the workload namespace instead of the custom resource namespace, so it
-	// is deleted here alongside the workload it protects.
-	if err := r.deleteNamedNetworkPolicyIfOwned(ctx, owner, namespace); err != nil {
-		return err
-	}
 	if err := deleteOwned(ctx, r.Client, namespace, owner, &appsv1.DeploymentList{}, func(list client.ObjectList) []client.Object {
 		items := list.(*appsv1.DeploymentList).Items
 		objects := make([]client.Object, len(items))
@@ -413,6 +407,13 @@ func (r *NemoGuardrailsReconciler) deleteOwnedInNamespace(ctx context.Context, o
 		if err := r.deleteNamedIfOwned(ctx, owner, obj); err != nil {
 			return err
 		}
+	}
+	// The operand NetworkPolicy cannot rely on garbage collection when it lives in
+	// the workload namespace instead of the custom resource namespace, so it is
+	// deleted here. It goes last on purpose: a Pod with no policy selecting it is
+	// not isolated at all, so the policy must outlive the workload it protects.
+	if err := r.deleteNamedNetworkPolicyIfOwned(ctx, owner, namespace); err != nil {
+		return err
 	}
 	return nil
 }

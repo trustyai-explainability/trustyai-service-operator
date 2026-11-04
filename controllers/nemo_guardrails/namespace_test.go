@@ -2,6 +2,7 @@ package nemo_guardrails
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -761,4 +762,69 @@ func TestDeleteOwnedInNamespaceLeavesOtherObjects(t *testing.T) {
 	require.Error(t, c.Get(context.Background(), client.ObjectKeyFromObject(legacy), &appsv1.Deployment{}))
 	require.Error(t, c.Get(context.Background(), client.ObjectKeyFromObject(labeled), &corev1.ConfigMap{}))
 	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(other), &appsv1.Deployment{}))
+}
+
+// recordingDeleteClient records the kind of every Delete. Final state alone cannot
+// distinguish a cleanup that removes the policy first from one that removes it last.
+type recordingDeleteClient struct {
+	client.Client
+	deleted []string
+}
+
+func (c *recordingDeleteClient) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+	c.deleted = append(c.deleted, reflect.TypeOf(obj).Elem().Name())
+	return c.Client.Delete(ctx, obj, opts...)
+}
+
+func TestDeleteOwnedInNamespaceRemovesWorkloadBeforeNetworkPolicy(t *testing.T) {
+	ctx := context.Background()
+	scheme, owner := nemoNetworkPolicyFixture(t)
+	inner := fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner).Build()
+	recorder := &recordingDeleteClient{Client: inner}
+	reconciler := &NemoGuardrailsReconciler{Client: recorder, Scheme: scheme, Namespace: testNemoControllerNS}
+
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner, testNemoInfraNamespace); err != nil {
+		t.Fatalf("reconcileNetworkPolicy() error = %v", err)
+	}
+	desired, err := buildNemoGuardrailsNetworkPolicy(owner, testNemoInfraNamespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The fake client runs no API server: pin the UID cleanup needs, and place the
+	// workload Deployment the policy protects.
+	policy := &networkingv1.NetworkPolicy{}
+	if err := inner.Get(ctx, client.ObjectKeyFromObject(desired.Policy), policy); err != nil {
+		t.Fatal(err)
+	}
+	policy.UID = types.UID("nemo-policy-uid")
+	if err := inner.Update(ctx, policy); err != nil {
+		t.Fatal(err)
+	}
+	deployment := nemoNetworkPolicyDeploymentFixture(owner, testNemoInfraNamespace)
+	if err := utils.SetOwnerReference(owner, deployment, scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := inner.Create(ctx, deployment); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder.deleted = nil
+	if err := reconciler.deleteOwnedInNamespace(ctx, owner, testNemoInfraNamespace); err != nil {
+		t.Fatalf("deleteOwnedInNamespace() error = %v", err)
+	}
+	indexOf := func(kind string) int {
+		for i, recorded := range recorder.deleted {
+			if recorded == kind {
+				return i
+			}
+		}
+		return -1
+	}
+	workload, policyIndex := indexOf("Deployment"), indexOf("NetworkPolicy")
+	if workload < 0 || policyIndex < 0 {
+		t.Fatalf("cleanup deletes = %v, want both the Deployment and the NetworkPolicy", recorder.deleted)
+	}
+	if policyIndex < workload {
+		t.Fatalf("cleanup deletes = %v, want the NetworkPolicy removed after the workload it protects", recorder.deleted)
+	}
 }
