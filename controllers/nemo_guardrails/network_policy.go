@@ -282,7 +282,7 @@ func nemoNetworkPolicyAuthority(namespace string) utils.NetworkPolicyAuthority {
 // enqueueNemoFromNetworkPolicy maps a policy event back to its custom resource.
 // It replaces Owns() for policies that cannot carry a controller reference
 // because they live in the workload namespace rather than the CR namespace.
-func (r *NemoGuardrailsReconciler) enqueueNemoFromNetworkPolicy(_ context.Context, object client.Object) []reconcile.Request {
+func (r *NemoGuardrailsReconciler) enqueueNemoFromNetworkPolicy(ctx context.Context, object client.Object) []reconcile.Request {
 	if !hasNemoNetworkPolicyIdentity(object) {
 		return nil
 	}
@@ -290,6 +290,20 @@ func (r *NemoGuardrailsReconciler) enqueueNemoFromNetworkPolicy(_ context.Contex
 	name := annotations[utils.OwnerNameAnnotation]
 	namespace := annotations[utils.OwnerNamespaceAnnotation]
 	if name == "" || namespace == "" {
+		return nil
+	}
+	// The labels and annotations are writable by anyone who can create a
+	// NetworkPolicy in a namespace they control, so the enqueued custom resource must
+	// confirm it is the instance the policy records before it reaches the queue.
+	ownerUID := object.GetLabels()[utils.NetworkPolicyOwnerUIDLabel]
+	if ownerUID == "" {
+		return nil
+	}
+	owner := &nemoguardrailsv1alpha1.NemoGuardrails{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, owner); err != nil {
+		return nil
+	}
+	if utils.OwnerUIDLabelValue(owner) != ownerUID {
 		return nil
 	}
 	return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: namespace, Name: name}}}

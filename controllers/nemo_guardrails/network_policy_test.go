@@ -625,3 +625,52 @@ func nemoNetworkPolicyDeploymentFixture(owner *nemoguardrailsv1alpha1.NemoGuardr
 		},
 	}
 }
+
+func TestEnqueueNemoFromNetworkPolicyRequiresMatchingOwnerUID(t *testing.T) {
+	ctx := context.Background()
+	scheme, owner := nemoNetworkPolicyFixture(t)
+	reconciler := &NemoGuardrailsReconciler{
+		Client:    fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner).Build(),
+		Scheme:    scheme,
+		Namespace: testNemoControllerNS,
+	}
+	policy := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{
+		Name:      "policy",
+		Namespace: testNemoInfraNamespace,
+		Labels: map[string]string{
+			utils.NetworkPolicyComponentLabel: nemoNetworkPolicyComponent,
+			utils.NetworkPolicyManagedByLabel: utils.NetworkPolicyManagedBy,
+			utils.NetworkPolicyOwnerUIDLabel:  string(owner.UID),
+		},
+		Annotations: map[string]string{
+			utils.OwnerNameAnnotation:      owner.Name,
+			utils.OwnerNamespaceAnnotation: owner.Namespace,
+		},
+	}}
+
+	requests := reconciler.enqueueNemoFromNetworkPolicy(ctx, policy)
+	if len(requests) != 1 || requests[0].Name != owner.Name || requests[0].Namespace != owner.Namespace {
+		t.Fatalf("mapping = %#v, want the recorded owner", requests)
+	}
+
+	// A forged owner UID must not enqueue somebody else's resource.
+	forged := policy.DeepCopy()
+	forged.Labels[utils.NetworkPolicyOwnerUIDLabel] = "another-instance-uid"
+	if requests := reconciler.enqueueNemoFromNetworkPolicy(ctx, forged); len(requests) != 0 {
+		t.Fatalf("mapping = %#v, want none for a forged owner UID", requests)
+	}
+
+	// A policy with no owner UID record at all is not mapped either.
+	unlabelled := policy.DeepCopy()
+	delete(unlabelled.Labels, utils.NetworkPolicyOwnerUIDLabel)
+	if requests := reconciler.enqueueNemoFromNetworkPolicy(ctx, unlabelled); len(requests) != 0 {
+		t.Fatalf("mapping = %#v, want none without an owner UID", requests)
+	}
+
+	// Annotations naming a custom resource that does not exist are ignored.
+	missing := policy.DeepCopy()
+	missing.Annotations[utils.OwnerNameAnnotation] = "does-not-exist"
+	if requests := reconciler.enqueueNemoFromNetworkPolicy(ctx, missing); len(requests) != 0 {
+		t.Fatalf("mapping = %#v, want none for an unknown custom resource", requests)
+	}
+}
