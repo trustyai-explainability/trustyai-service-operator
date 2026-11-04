@@ -27,6 +27,7 @@ allowed_api_resources := {
 	["apps", "replicasets"],
 	["apps", "deployments/finalizers"],
 	["apps", "deployments/status"],
+
 	# --- batch ---
 	["batch", "jobs"],
 
