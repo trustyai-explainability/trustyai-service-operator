@@ -100,6 +100,35 @@ func TestResolveProxyTLSArgumentsRejectsEmptyStrictCipherList(t *testing.T) {
 	}
 }
 
+func TestResolveProxyTLSArgumentsHTTP2CipherSuites(t *testing.T) {
+	tests := []struct {
+		name       string
+		minVersion configv1.TLSProtocolVersion
+		ciphers    []string
+		wantError  bool
+	}{
+		{"TLS 1.2 AES-256-only", configv1.VersionTLS12, []string{"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"}, true},
+		{"TLS 1.2 AES-128-GCM", configv1.VersionTLS12, []string{http2RequiredECDHERSAAES128GCM}, false},
+		{"TLS 1.3", configv1.VersionTLS13, []string{"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			profile := &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType, Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
+				MinTLSVersion: tt.minVersion,
+				Ciphers:       tt.ciphers,
+			}}}
+			_, err := ResolveProxyTLSArguments(profile, TLSAdherenceStrictAllComponents, nil, false)
+			if (err != nil) != tt.wantError {
+				t.Fatalf("ResolveProxyTLSArguments() error = %v, wantError %v", err, tt.wantError)
+			}
+			if tt.wantError && (!strings.Contains(err.Error(), "Custom") || !strings.Contains(err.Error(), "cannot serve HTTP/2")) {
+				t.Fatalf("error = %v, want profile name and HTTP/2 limitation", err)
+			}
+		})
+	}
+}
+
 func TestResolveProxyTLSArgumentsOldProfileRetainsUsableCiphers(t *testing.T) {
 	got, err := ResolveProxyTLSArguments(&configv1.TLSSecurityProfile{Type: configv1.TLSProfileOldType}, TLSAdherenceStrictAllComponents, nil, false)
 	if err != nil {
