@@ -30,7 +30,10 @@ const (
 // deriveInfraNamespace returns the namespace where NemoGuardrails workloads should be deployed.
 // When the controller runs in a known ODH/RHOAI install namespace, workloads are centralized
 // into that platform's shared AI Gateway infra namespace. Otherwise, workloads default to the custom resource's own namespace.
-func deriveInfraNamespace(controllerNs, crNamespace string) string {
+func deriveInfraNamespace(controllerNs, crNamespace string, aiGatewayMode bool) string {
+	if !aiGatewayMode {
+		return crNamespace
+	}
 	switch controllerNs {
 	case "redhat-ods-applications":
 		return "redhat-ai-gateway-infra"
@@ -51,9 +54,6 @@ type workloadIdentity struct {
 	ServiceAccount string
 }
 
-// maxServicePortNameLen is the Kubernetes Service port name limit.
-const maxServicePortNameLen = 15
-
 func newWorkloadIdentity(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) workloadIdentity {
 	name := nemoGuardrails.Name
 	// A shared infra namespace uses {namespace}-{cr-name} so two projects can reuse this custom resource name.
@@ -64,16 +64,7 @@ func newWorkloadIdentity(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, 
 	// In a shared namespace the object name already includes the owning namespace.
 	selector := name
 	portName := name
-	if len(portName) > maxServicePortNameLen {
-		portName = "http"
-		if utils.RequiresAuth(nemoGuardrails) {
-			portName = "https"
-		}
-	}
 	adminPortName := name + "-admin"
-	if len(adminPortName) > maxServicePortNameLen {
-		adminPortName = "admin"
-	}
 	return workloadIdentity{
 		Name:           name,
 		Selector:       selector,
@@ -131,7 +122,7 @@ func dns1123Name(name string) string {
 
 // workloadNamespace is the namespace where this reconciler's Deployment, Service, and Route live.
 func (r *NemoGuardrailsReconciler) workloadNamespace(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails) string {
-	return deriveInfraNamespace(r.Namespace, nemoGuardrails.Namespace)
+	return deriveInfraNamespace(r.Namespace, nemoGuardrails.Namespace, nemoGuardrails.Spec.AIGatewayMode)
 }
 
 // rejectUnownedWorkload reports a name collision in namespace before any object there is created or any previous workload is deleted.

@@ -82,6 +82,14 @@ type NemoGuardrailsSpec struct {
 	// When omitted, only a MaaS AIGuardrail in the same namespace as this CR may attach to it.
 	// +optional
 	AllowedConsumers *AllowedConsumers `json:"allowedConsumers,omitempty"`
+
+	// AIGatewayMode enables cross-namespace deployment for AIGateway compatibility.
+	// If enabled, NemoGuardrails workloads will be created in the AI Gateway infra namespace. All referenced configmaps
+	// and secrets will also be copied into the infra namespace, and their lifecycle will be manged by the NemoGuardrails controller.
+	// If AIGatewayMode is false or unspecified, workloads will be created in the same namespace as the Custom Resource.
+	// +optional
+	// +kubebuilder:default=false
+	AIGatewayMode bool `json:"aiGatewayMode,omitempty"`
 }
 
 // NemoGuardrailsTemplate defines the template for the NemoGuardrails deployment

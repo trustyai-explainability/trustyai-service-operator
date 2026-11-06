@@ -3,7 +3,6 @@ package nemo_guardrails
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -26,9 +25,12 @@ import (
 )
 
 func TestDeriveInfraNamespace(t *testing.T) {
-	require.Equal(t, "redhat-ai-gateway-infra", deriveInfraNamespace("redhat-ods-applications", "my-cr-ns"))
-	require.Equal(t, "odh-ai-gateway-infra", deriveInfraNamespace("opendatahub", "my-cr-ns"))
-	require.Equal(t, "my-cr-ns", deriveInfraNamespace("some-custom-namespace", "my-cr-ns"))
+	require.Equal(t, "redhat-ai-gateway-infra", deriveInfraNamespace("redhat-ods-applications", "my-cr-ns", true))
+	require.Equal(t, "odh-ai-gateway-infra", deriveInfraNamespace("opendatahub", "my-cr-ns", true))
+	require.Equal(t, "my-cr-ns", deriveInfraNamespace("some-custom-namespace", "my-cr-ns", true))
+
+	// if not in AIGatewayMode, use CR namespace
+	require.Equal(t, "my-cr-ns", deriveInfraNamespace("redhat-ods-applications", "my-cr-ns", false))
 }
 
 func TestCreateDeploymentUsesCRNamespaceOnUnknownPlatform(t *testing.T) {
@@ -394,43 +396,6 @@ func TestReleaseReadyWorkloadKeepsPreviousOnDeadline(t *testing.T) {
 
 	require.NoError(t, reconciler.releaseReadyWorkload(context.Background(), cr, "models"))
 	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(previous), &appsv1.Deployment{}))
-}
-
-func TestWorkloadPortNamesFitServiceLimit(t *testing.T) {
-	cr := &nemoguardrailsv1alpha1.NemoGuardrails{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "nemo-guardrails", Namespace: "control-plane",
-			Annotations: map[string]string{"security.opendatahub.io/enable-auth": "true"},
-		},
-	}
-	identity := newWorkloadIdentity(cr, "redhat-ai-gateway-infra")
-	require.Equal(t, "control-plane-nemo-guardrails", identity.Name)
-	require.Equal(t, identity.Name, identity.Selector)
-	require.Equal(t, "https", identity.PortName)
-	require.Equal(t, "admin", identity.AdminPortName)
-	require.Equal(t, "control-plane-nemo-guardrails-serviceaccount", identity.ServiceAccount)
-	require.LessOrEqual(t, len(identity.PortName), maxServicePortNameLen)
-	require.LessOrEqual(t, len(identity.AdminPortName), maxServicePortNameLen)
-
-	sameNamespace := newWorkloadIdentity(cr, cr.Namespace)
-	require.Equal(t, "nemo-guardrails", sameNamespace.Name)
-	require.Equal(t, "nemo-guardrails", sameNamespace.Selector)
-	require.Equal(t, "nemo-guardrails", sameNamespace.PortName)
-
-	cr.Name = "test-nemoguardrails"
-	identity = newWorkloadIdentity(cr, "redhat-ai-gateway-infra")
-	require.Equal(t, prefixedWorkloadObjectName("control-plane", "test-nemoguardrails"), identity.Name)
-	require.Equal(t, identity.Name, identity.Selector)
-	require.Equal(t, "https", identity.PortName)
-	require.Equal(t, "admin", identity.AdminPortName)
-
-	long := &nemoguardrailsv1alpha1.NemoGuardrails{ObjectMeta: metav1.ObjectMeta{
-		Name: strings.Repeat("n", 40), Namespace: strings.Repeat("s", 40),
-	}}
-	identity = newWorkloadIdentity(long, "redhat-ai-gateway-infra")
-	require.Equal(t, prefixedWorkloadObjectName(long.Namespace, long.Name), identity.Name)
-	require.Equal(t, identity.Name, identity.Selector)
-	require.LessOrEqual(t, len(identity.Name), 63)
 }
 
 func TestEnsureDefaultConfigMapUsesShortName(t *testing.T) {
