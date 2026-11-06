@@ -3,11 +3,14 @@ package nemo_guardrails
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/tas"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"time"
@@ -22,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -210,6 +214,57 @@ var _ = Describe("NemoGuardrails Controller", func() {
 			}
 			return nemo.Status.CA != nil
 		}, time.Second*10, time.Millisecond*100).Should(BeTrue())
+	})
+
+	It("reports a proxy TLS profile failure on the resource and recovers", func() {
+		previous, previousErr := pkgtls.CurrentProxyTLSArguments(), pkgtls.CurrentProxyTLSArgumentsError()
+		defer pkgtls.SetProxyTLSArguments(previous, previousErr)
+		pkgtls.SetProxyTLSArguments(pkgtls.ProxyTLSArguments{}, stderrors.New("cannot serve HTTP/2 with the selected TLS 1.2 cipher list"))
+
+		recorder := record.NewFakeRecorder(10)
+		controllerReconciler := &NemoGuardrailsReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			Namespace: operatorNamespace,
+			Recorder:  recorder,
+		}
+
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+		Expect(err).To(MatchError(ContainSubstring(pkgtls.ProxyTLSProfileUnsupportedMessage)))
+
+		nemo := &nemoguardrailsv1alpha1.NemoGuardrails{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, nemo)).To(Succeed())
+		Expect(nemo.Status.Phase).To(Equal(utils.PhaseError))
+		deploymentCondition := utils.GetStatusCondition(nemo.Status.Conditions, "DeploymentReady")
+		Expect(deploymentCondition).NotTo(BeNil())
+		Expect(deploymentCondition.Reason).To(Equal(pkgtls.ReasonProxyTLSProfileUnsupported))
+		Expect(deploymentCondition.Status).To(Equal(corev1.ConditionFalse))
+		completeCondition := utils.GetStatusCondition(nemo.Status.Conditions, utils.ConditionReconcileComplete)
+		Expect(completeCondition).NotTo(BeNil())
+		Expect(completeCondition.Reason).To(Equal(pkgtls.ReasonProxyTLSProfileUnsupported))
+		Expect(completeCondition.Status).To(Equal(corev1.ConditionFalse))
+		select {
+		case event := <-recorder.Events:
+			Expect(event).To(ContainSubstring(pkgtls.ReasonProxyTLSProfileUnsupported))
+		default:
+			Fail("expected a warning event for the unusable proxy TLS profile")
+		}
+
+		// Recovery: once the profile is usable the render succeeds and the status
+		// pass replaces the TLS reason with ordinary readiness reporting.
+		pkgtls.SetProxyTLSArguments(previous, nil)
+		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(func() string {
+			current := &nemoguardrailsv1alpha1.NemoGuardrails{}
+			if err := k8sClient.Get(ctx, typeNamespacedName, current); err != nil {
+				return ""
+			}
+			if condition := utils.GetStatusCondition(current.Status.Conditions, "DeploymentReady"); condition != nil {
+				return condition.Reason
+			}
+			return ""
+		}, time.Second*10, time.Millisecond*100).ShouldNot(Equal(pkgtls.ReasonProxyTLSProfileUnsupported))
 	})
 
 	It("should add user environment variables to the deployment", func() {

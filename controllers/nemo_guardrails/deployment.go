@@ -270,7 +270,7 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 		// rendered: a proxy-free workload must not be blocked by an invalid
 		// proxy TLS profile.
 		if err := pkgtls.CurrentProxyTLSArgumentsError(); err != nil {
-			return nil, fmt.Errorf("cluster TLS profile cannot be applied to the kube-rbac-proxy sidecars: %w", err)
+			return nil, fmt.Errorf("%s: %w", pkgtls.ProxyTLSProfileUnsupportedMessage, err)
 		}
 		if err := r.setAuthConfig(ctx, nemoGuardrails, &deploymentConfig); err != nil {
 			return nil, err

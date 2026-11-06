@@ -5,6 +5,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
+	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -197,6 +198,16 @@ func UpdateRouteNotAvailable(saved *trustyaiopendatahubiov1.TrustyAIService) {
 
 func UpdateTrustyAIServiceAvailable(saved *trustyaiopendatahubiov1.TrustyAIService) {
 	saved.SetStatus(StatusTypeAvailable, StatusAvailable, StatusAvailable, v1.ConditionTrue)
+}
+
+// UpdateTLSProfileUnsupported reports a cluster TLS profile the kube-rbac-proxy
+// sidecars cannot serve. The Deployment is left untouched, so the last known good
+// workload keeps serving, and reconcileStatuses rewrites Ready and
+// ProvisioningSucceeded as soon as the profile is usable again.
+func UpdateTLSProfileUnsupported(saved *trustyaiopendatahubiov1.TrustyAIService, message string) {
+	UpdateTrustyAIServiceNotAvailable(saved)
+	saved.SetStatus(ConditionTypeReady, pkgtls.ReasonProxyTLSProfileUnsupported, message, v1.ConditionFalse)
+	saved.SetStatus(ConditionTypeProvisioningSucceeded, "ProvisioningBlocked", message, v1.ConditionFalse)
 }
 
 func UpdateTrustyAIServiceNotAvailable(saved *trustyaiopendatahubiov1.TrustyAIService) {

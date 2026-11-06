@@ -41,7 +41,7 @@ func (r *EvalHubReconciler) reconcileMCPDeployment(ctx context.Context, instance
 		return r.deleteMCPResource(ctx, instance, &appsv1.Deployment{}, name)
 	}
 	if err := pkgtls.CurrentProxyTLSArgumentsError(); err != nil {
-		return fmt.Errorf("cluster TLS profile cannot be applied to the kube-rbac-proxy sidecars: %w", err)
+		return fmt.Errorf("%s: %w", pkgtls.ProxyTLSProfileUnsupportedMessage, err)
 	}
 
 	log.Info("Reconciling MCP Deployment", "name", name)
