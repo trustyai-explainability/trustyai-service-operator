@@ -21,6 +21,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ import (
 	openshifttls "github.com/openshift/controller-runtime-common/pkg/tls"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -232,9 +234,24 @@ func resolveTLSProfileState(state profileState, readErr error) (Result, error) {
 }
 
 func isTransientTLSReadError(err error) bool {
-	return apierrors.IsServiceUnavailable(err) || apierrors.IsTimeout(err) ||
+	// Explicitly transient API statuses first.
+	if apierrors.IsServiceUnavailable(err) || apierrors.IsTimeout(err) ||
 		apierrors.IsServerTimeout(err) || apierrors.IsTooManyRequests(err) ||
-		errors.Is(err, context.DeadlineExceeded)
+		apierrors.IsInternalError(err) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	// Any other API-status error is a server-side rejection the caller did
+	// not already classify (NotFound and NoMatch are handled earlier): fail
+	// closed rather than letting the transport predicates below catch it.
+	var statusErr *apierrors.StatusError
+	if errors.As(err, &statusErr) {
+		return false
+	}
+	// Transport-level errors for non-API-status failures.
+	var netErr net.Error
+	return utilnet.IsConnectionRefused(err) || utilnet.IsConnectionReset(err) ||
+		utilnet.IsProbableEOF(err) || utilnet.IsHTTP2ConnectionLost(err) ||
+		(errors.As(err, &netErr) && netErr.Timeout())
 }
 
 // readTLSProfileStateWithRetry never substitutes defaults for an unread policy.
