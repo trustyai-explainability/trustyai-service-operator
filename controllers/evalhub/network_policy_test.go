@@ -212,6 +212,7 @@ func TestReconcileEvalHubMCPNetworkPolicyLifecycle(t *testing.T) {
 	scheme := runtime.NewScheme()
 	for _, addToScheme := range []func(*runtime.Scheme) error{
 		corev1.AddToScheme,
+		appsv1.AddToScheme,
 		networkingv1.AddToScheme,
 		evalhubv1.AddToScheme,
 	} {
@@ -418,6 +419,7 @@ func TestReconcileEvalHubNetworkPolicyRepairsDriftAndDeletion(t *testing.T) {
 	scheme := runtime.NewScheme()
 	for _, addToScheme := range []func(*runtime.Scheme) error{
 		corev1.AddToScheme,
+		appsv1.AddToScheme,
 		networkingv1.AddToScheme,
 		evalhubv1.AddToScheme,
 	} {
@@ -561,4 +563,96 @@ func equalNetworkPolicyLabels(a, b map[string]string) bool {
 		}
 	}
 	return true
+}
+
+// The identity labels live on the Deployment template, so removing them from a
+// running Pod takes it out of the selector without touching the policy. The
+// reconciler has to put them back, or the Pod keeps serving outside the grants
+// this page describes.
+func TestReconcileEvalHubNetworkPolicyRestoresStrippedPodIdentity(t *testing.T) {
+	scheme := runtime.NewScheme()
+	for _, addToScheme := range []func(*runtime.Scheme) error{
+		corev1.AddToScheme,
+		appsv1.AddToScheme,
+		networkingv1.AddToScheme,
+		evalhubv1.AddToScheme,
+	} {
+		if err := addToScheme(scheme); err != nil {
+			t.Fatalf("register test types: %v", err)
+		}
+	}
+	owner := testEvalHubNetworkPolicyOwner()
+	owner.GetObjectKind().SetGroupVersionKind(evalhubv1.GroupVersion.WithKind("EvalHub"))
+	identity, err := evalHubNetworkPolicyIdentity(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identityLabels, err := identity.Labels()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	controller := true
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      owner.Name,
+			Namespace: owner.Namespace,
+			UID:       types.UID("evalhub-deployment-uid"),
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: evalhubv1.GroupVersion.String(), Kind: "EvalHub", Name: owner.Name, UID: owner.UID, Controller: &controller,
+			}},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "eval-hub"}},
+		},
+	}
+	replicaSet := &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      owner.Name + "-abc",
+			Namespace: owner.Namespace,
+			UID:       types.UID("evalhub-replicaset-uid"),
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "apps/v1", Kind: "Deployment", Name: deployment.Name, UID: deployment.UID, Controller: &controller,
+			}},
+		},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      owner.Name + "-abc-1",
+			Namespace: owner.Namespace,
+			Labels:    map[string]string{"app": "eval-hub"},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "apps/v1", Kind: "ReplicaSet", Name: replicaSet.Name, UID: replicaSet.UID, Controller: &controller,
+			}},
+		},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner, deployment, replicaSet, pod).Build()
+	reconciler := &EvalHubReconciler{Client: c, Scheme: scheme, Namespace: "redhat-ods-applications"}
+	ctx := context.Background()
+
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
+		t.Fatalf("reconcileNetworkPolicy() error = %v", err)
+	}
+	actual := &corev1.Pod{}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(pod), actual); err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range identityLabels {
+		if actual.Labels[key] != value {
+			t.Fatalf("Pod label %q = %q, want %q restored", key, actual.Labels[key], value)
+		}
+	}
+
+	// A second pass leaves the Pod untouched.
+	before := actual.ResourceVersion
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
+		t.Fatalf("second reconcileNetworkPolicy() error = %v", err)
+	}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(pod), actual); err != nil {
+		t.Fatal(err)
+	}
+	if actual.ResourceVersion != before {
+		t.Fatalf("second reconcile rewrote the Pod (resourceVersion %q -> %q)", before, actual.ResourceVersion)
+	}
 }

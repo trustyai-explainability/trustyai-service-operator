@@ -6,12 +6,14 @@ import (
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -371,6 +373,9 @@ func (r *EvalHubReconciler) reconcileNetworkPolicy(ctx context.Context, instance
 	if err := utils.ReconcileWorkloadNetworkPolicy(ctx, r.Client, r.Scheme, instance, identity, desired, authority); err != nil {
 		return err
 	}
+	if err := r.repairWorkloadPodIdentity(ctx, instance, instance.Name, identity); err != nil {
+		return err
+	}
 
 	if !instance.Spec.IsMCPEnabled() {
 		return r.deleteEvalHubMCPNetworkPolicy(ctx, instance, authority)
@@ -383,5 +388,42 @@ func (r *EvalHubReconciler) reconcileNetworkPolicy(ctx context.Context, instance
 	if err != nil {
 		return err
 	}
-	return utils.ReconcileWorkloadNetworkPolicy(ctx, r.Client, r.Scheme, instance, mcpIdentity, mcpDesired, authority)
+	if err := utils.ReconcileWorkloadNetworkPolicy(ctx, r.Client, r.Scheme, instance, mcpIdentity, mcpDesired, authority); err != nil {
+		return err
+	}
+	return r.repairWorkloadPodIdentity(ctx, instance, mcpDeploymentName(instance), mcpIdentity)
+}
+
+// repairWorkloadPodIdentity re-stamps reserved identity labels on Pods of a
+// workload Deployment. The labels are authored into the Deployment template, so
+// the repair is about running Pods: a Pod that loses them leaves the policy
+// selector and would otherwise keep serving outside the policy it is meant to be
+// governed by. It runs after the policy reconcile, never before, so a Pod cannot
+// enter a selector whose allow rules have not converged yet.
+func (r *EvalHubReconciler) repairWorkloadPodIdentity(ctx context.Context, instance *evalhubv1.EvalHub, deploymentName string, identity utils.NetworkPolicyIdentity) error {
+	deployment := &appsv1.Deployment{}
+	key := client.ObjectKey{Namespace: instance.Namespace, Name: deploymentName}
+	if err := r.Get(ctx, key, deployment); err != nil {
+		// The policy is authored before the Deployment exists on first install.
+		// There is nothing to relabel, and the Deployment watch reconciles once it does.
+		return client.IgnoreNotFound(err)
+	}
+	reader := r.APIReader
+	if reader == nil {
+		reader = r.Client
+	}
+	restored, err := utils.RepairOwnedWorkloadNetworkPolicyPodLabels(ctx, r.Client, reader, deployment, r.Scheme, evalHubNetworkPolicyOwner(instance), identity)
+	if err != nil {
+		return err
+	}
+	for _, pod := range restored {
+		log.FromContext(ctx).Info("Restored NetworkPolicy identity labels on an EvalHub Pod",
+			"pod", pod.Namespace+"/"+pod.Name, "deployment", key)
+		if r.EventRecorder != nil {
+			// A Pod serving outside its policy is a posture regression, not routine drift.
+			r.EventRecorder.Eventf(instance, corev1.EventTypeWarning, "PodIdentityRestored",
+				"Restored NetworkPolicy identity labels on Pod %s/%s", pod.Namespace, pod.Name)
+		}
+	}
+	return nil
 }

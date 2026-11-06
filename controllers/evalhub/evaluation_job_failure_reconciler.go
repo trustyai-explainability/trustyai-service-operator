@@ -102,7 +102,7 @@ func failureWatcherLogFields() []any {
 
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
-//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups="",resources=pods/log,verbs=get
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;list
 //+kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=evalhubs,verbs=get;list;watch
