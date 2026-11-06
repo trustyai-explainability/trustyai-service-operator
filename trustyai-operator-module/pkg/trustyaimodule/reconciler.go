@@ -16,6 +16,7 @@ import (
 	platformv1alpha1 "github.com/trustyai-explainability/trustyai-operator-module/pkg/apis/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -507,5 +508,10 @@ func (r *TrustyAIModuleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Service{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&rbacv1.RoleBinding{}).
+		// The module renders the workload operator's NetworkPolicies as part of its
+		// operand manifest set, so they are operand policies under
+		// ODH-ADR-Operator-0016: deleting one must enqueue a reconcile instead of
+		// waiting for the periodic requeue.
+		Owns(&networkingv1.NetworkPolicy{}).
 		Complete(r)
 }
