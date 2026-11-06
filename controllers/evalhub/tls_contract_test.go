@@ -188,8 +188,8 @@ func TestManagedTLSPolicyChangesRefreshExistingDeployments(t *testing.T) {
 	t.Cleanup(func() { pkgtls.SetProxyTLSArguments(previous) })
 	r, instance := managedTLSFixture(t)
 	ctx := context.Background()
-	custom := func(cipher string) *configv1.TLSSecurityProfile {
-		return &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType, Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{MinTLSVersion: configv1.VersionTLS12, Ciphers: []string{cipher}}}}
+	custom := func(ciphers ...string) *configv1.TLSSecurityProfile {
+		return &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType, Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{MinTLSVersion: configv1.VersionTLS12, Ciphers: ciphers}}}
 	}
 	modern := &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}
 	policies := []struct {
@@ -202,9 +202,12 @@ func TestManagedTLSPolicyChangesRefreshExistingDeployments(t *testing.T) {
 		{modern, pkgtls.TLSAdherenceLegacyAdheringComponentsOnly, nil, false},
 		{modern, pkgtls.TLSAdherenceStrictAllComponents, nil, true},
 		{custom("ECDHE-RSA-AES128-GCM-SHA256"), pkgtls.TLSAdherenceStrictAllComponents, []string{"secp256r1"}, true},
-		{custom("ECDHE-RSA-AES256-GCM-SHA384"), pkgtls.TLSAdherenceStrictAllComponents, []string{"secp256r1"}, true},
-		{custom("ECDHE-RSA-AES256-GCM-SHA384"), pkgtls.TLSAdherenceStrictAllComponents, []string{"secp384r1"}, true},
-		{custom("ECDHE-RSA-AES256-GCM-SHA384"), "future-strict", []string{"secp384r1"}, false},
+		// AES-256-only lists cannot serve HTTP/2 and are rejected by the proxy
+		// argument resolver, so the refresh cases use distinct lists that keep
+		// an HTTP/2-compatible AES-128-GCM suite.
+		{custom("ECDHE-RSA-AES128-GCM-SHA256", "ECDHE-RSA-AES256-GCM-SHA384"), pkgtls.TLSAdherenceStrictAllComponents, []string{"secp256r1"}, true},
+		{custom("ECDHE-ECDSA-AES128-GCM-SHA256", "ECDHE-RSA-AES256-GCM-SHA384"), pkgtls.TLSAdherenceStrictAllComponents, []string{"secp384r1"}, true},
+		{custom("ECDHE-ECDSA-AES128-GCM-SHA256", "ECDHE-RSA-AES256-GCM-SHA384"), "future-strict", []string{"secp384r1"}, false},
 	}
 	old := map[string]corev1.PodTemplateSpec{}
 	for index, policy := range policies {
