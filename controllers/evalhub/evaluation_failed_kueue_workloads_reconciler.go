@@ -312,9 +312,9 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 	}
 
 	providerID := job.Labels[evalHubProviderIDLabel]
-	benchmarkID := job.Labels[evalHubBenchmarkIDLabel]
+	benchmarkID := strings.TrimSpace(job.Annotations[evalHubBenchmarkIDAnnotation])
 	if providerID == "" || benchmarkID == "" {
-		log.V(1).Info("skip EvalHub POST: missing provider_id or benchmark_id label on Job",
+		log.V(1).Info("skip EvalHub POST: missing provider_id label or benchmark_id metadata on Job",
 			append(evaluationFailedKueueWorkloadsLogFields(), "action", "skip_missing_label",
 				"workload", wl.Name, "job", job.Name, "namespace", job.Namespace)...)
 		return ctrl.Result{}, nil

@@ -76,10 +76,11 @@ func evalHubEvaluationJob(name, ns string, extra map[string]string) *batchv1.Job
 	}
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: ns,
-			UID:       types.UID("uid-" + name),
-			Labels:    labels,
+			Name:        name,
+			Namespace:   ns,
+			UID:         types.UID("uid-" + name),
+			Labels:      labels,
+			Annotations: map[string]string{evalHubBenchmarkIDAnnotation: "bench-1"},
 		},
 		Status: batchv1.JobStatus{
 			Conditions: []batchv1.JobCondition{{
@@ -461,4 +462,3 @@ func TestJobFailureReconciler_StaleFailedMount_DoesNotFail(t *testing.T) {
 	default:
 	}
 }
-
