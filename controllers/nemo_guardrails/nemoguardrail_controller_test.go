@@ -20,6 +20,7 @@ import (
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -139,6 +140,12 @@ var _ = Describe("NemoGuardrails Controller", func() {
 		err := k8sClient.Get(ctx, typeNamespacedName, resource)
 		if err == nil {
 			By("Cleanup the specific resource instance NemoGuardrails")
+			// Envtest has no garbage collector. Preserve identity before deletion
+			// so cleanup cannot remove another CR's workload.
+			deletedOwner := resource.DeepCopy()
+			workloadNamespace := (&NemoGuardrailsReconciler{Namespace: operatorNamespace}).workloadNamespace(deletedOwner)
+			desiredPolicy, policyErr := buildNemoGuardrailsNetworkPolicy(deletedOwner, workloadNamespace)
+			Expect(policyErr).NotTo(HaveOccurred())
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 
 			// Explicitly trigger reconciliation to handle finalizer removal
@@ -157,6 +164,25 @@ var _ = Describe("NemoGuardrails Controller", func() {
 				err := k8sClient.Get(ctx, typeNamespacedName, resource)
 				return errors.IsNotFound(err)
 			}, time.Second*5, time.Millisecond*100).Should(BeTrue())
+
+			// Envtest has no garbage collector. The finalizer cleanup above already
+			// removes the owned Deployment and operand NetworkPolicy; delete them
+			// here only if anything is left, and only after verifying ownership.
+			deployment := &appsv1.Deployment{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: deletedOwner.Name, Namespace: workloadNamespace}, deployment); err == nil {
+				Expect(utils.IsOwnedBy(deployment, deletedOwner)).To(BeTrue())
+				Expect(k8sClient.Delete(ctx, deployment)).To(Succeed())
+			} else {
+				Expect(errors.IsNotFound(err)).To(BeTrue())
+			}
+			policy := &networkingv1.NetworkPolicy{}
+			policyKey := types.NamespacedName{Name: desiredPolicy.Policy.Name, Namespace: workloadNamespace}
+			if err := k8sClient.Get(ctx, policyKey, policy); err == nil {
+				Expect(utils.IsOwnedBy(policy, deletedOwner)).To(BeTrue())
+				Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
+			} else {
+				Expect(errors.IsNotFound(err)).To(BeTrue())
+			}
 
 			// ClusterRoleBinding should be deleted - oinly check CRB due to envtest issues
 			Eventually(func() bool {
