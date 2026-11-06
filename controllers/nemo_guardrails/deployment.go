@@ -315,7 +315,7 @@ func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGua
 	// add user environment variables
 	if nemoGuardrails.Spec.Env != nil && len(nemoGuardrails.Spec.Env) > 0 {
 		log.FromContext(ctx).Info("Updating NemoGuardrails env with user-provided environment variables")
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, rewriteSecretRefs(nemoGuardrails, targetNamespace)...)
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, rewriteResourceRefs(nemoGuardrails, targetNamespace)...)
 	}
 
 	if nemoGuardrails.Spec.Resources != nil {

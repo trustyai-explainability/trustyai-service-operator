@@ -40,6 +40,14 @@ spec:
           spec:
             description: NemoGuardrailsSpec defines the desired state of NemoGuardrails
             properties:
+              aiGatewayMode:
+                default: false
+                description: |-
+                  AIGatewayMode enables cross-namespace deployment for AIGateway compatibility.
+                  If enabled, NemoGuardrails workloads will be created in the AI Gateway infra namespace. All referenced configmaps
+                  and secrets will also be copied into the infra namespace, and their lifecycle will be manged by the NemoGuardrails controller.
+                  If AIGatewayMode is false or unspecified, workloads will be created in the same namespace as the Custom Resource.
+                type: boolean
               allowedConsumers:
                 description: |-
                   AllowedConsumers authorizes which namespaces may attach a consumer to this server.
