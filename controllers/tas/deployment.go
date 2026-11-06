@@ -116,7 +116,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, instance, identity); err != nil {
+	if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, instance, identity, utils.SameNamespaceOwnership); err != nil {
 		return nil, fmt.Errorf("stamping NetworkPolicy identity on TAS Deployment: %w", err)
 	}
 	return deployment, nil

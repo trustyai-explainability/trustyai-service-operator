@@ -27,6 +27,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -62,6 +63,7 @@ const (
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get
@@ -239,6 +241,16 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
+	// ====== Reconcile the operand NetworkPolicy =========================================================================
+	// The policy is reconciled before any Deployment creation or update so the
+	// allow rules exist before Pods are created in the workload namespace. CNI
+	// enforcement propagation is asynchronous.
+	if err := r.reconcileNetworkPolicy(ctx, nemoGuardrails, targetNamespace); err != nil {
+		r.reportNetworkPolicyFailure(ctx, nemoGuardrails, err)
+		return ctrl.Result{}, err
+	}
+	r.reportNetworkPolicyReady(ctx, nemoGuardrails)
+
 	// ====== Copy referenced secrets to workload namespace ===============================================================
 	if err := r.ensureReferencedSecretsInNamespace(ctx, nemoGuardrails, targetNamespace); err != nil {
 		utils.LogErrorReconciling(ctx, err, "referenced secrets", nemoGuardrails.Name, targetNamespace)
@@ -342,6 +354,12 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *NemoGuardrailsReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&nemoguardrailsv1alpha1.NemoGuardrails{}).
+		// The operand policy lives in the workload namespace, which may differ
+		// from the custom resource namespace, so a controller reference cannot
+		// always be set. An explicit mapping watch on the managed marker and the
+		// owner annotations covers both placements and recreates deleted
+		// policies without competing with another field manager.
+		Watches(&networkingv1.NetworkPolicy{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNemoFromNetworkPolicy), builder.WithPredicates(predicate.NewPredicateFuncs(hasNemoNetworkPolicyIdentity))).
 		// Watch for changes to ConfigMaps referenced by NemoGuardrails CRs.
 		// OnlyMetadata caches only object metadata (~1KB each) instead of full
 		// objects, preventing OOM when many ConfigMaps exist cluster-wide.

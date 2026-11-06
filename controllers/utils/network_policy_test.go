@@ -724,7 +724,7 @@ func TestNetworkPolicyOwnershipAndAuthority(t *testing.T) {
 			case "owner label conflict":
 				existing.Labels = map[string]string{NetworkPolicyOwnerUIDLabel: "foreign"}
 			case "foreign manager":
-				existing.Labels = map[string]string{networkPolicyManagedByLabel: "foreign"}
+				existing.Labels = map[string]string{NetworkPolicyManagedByLabel: "foreign"}
 			case "stale live owner":
 				owner.UID = "stale"
 			case "approved adoption":
@@ -808,7 +808,7 @@ func TestNetworkPolicyOwnedTemplate(t *testing.T) {
 	owner.TypeMeta = metav1.TypeMeta{} // API-decoded typed objects need not retain TypeMeta.
 	d := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: owner.Namespace, OwnerReferences: []metav1.OwnerReference{{APIVersion: "v1", Kind: "ConfigMap", Name: owner.Name, UID: owner.UID, Controller: new(true)}}}, Spec: appsv1.DeploymentSpec{Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "legacy"}}, Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "legacy", NetworkPolicyRoleLabel: "user-override"}}}}}
 	selector, _ := json.Marshal(d.Spec.Selector)
-	if err := LabelOwnedNetworkPolicyDeployment(d, scheme, owner, identity); err != nil {
+	if err := LabelOwnedNetworkPolicyDeployment(d, scheme, owner, identity, SameNamespaceOwnership); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := json.Marshal(d.Spec.Selector)
@@ -817,7 +817,7 @@ func TestNetworkPolicyOwnedTemplate(t *testing.T) {
 	}
 	d.OwnerReferences = nil
 	before, _ := json.Marshal(d)
-	if err := LabelOwnedNetworkPolicyDeployment(d, scheme, owner, identity); err == nil {
+	if err := LabelOwnedNetworkPolicyDeployment(d, scheme, owner, identity, SameNamespaceOwnership); err == nil {
 		t.Fatal("foreign deployment labeled")
 	}
 	after, _ = json.Marshal(d)
@@ -844,5 +844,148 @@ func TestNetworkPolicyStatusErrors(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// crossNamespaceFixture places the owner in "operand" and the policy in a shared
+// workload namespace, which is the placement a cross-namespace operand needs.
+func crossNamespaceFixture(t *testing.T) (*runtime.Scheme, *corev1.ConfigMap, *policyCountingClient, NetworkPolicyIdentity, *networkingv1.NetworkPolicy, NetworkPolicyAuthority) {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := networkingv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	identity, p := policyFixture()
+	p.Namespace = "workload"
+	// The AllowAll profile is exactly one port-less, peer-less egress rule.
+	p.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{{}}
+	owner := &corev1.ConfigMap{TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"}, ObjectMeta: metav1.ObjectMeta{Name: "instance", Namespace: "operand", UID: identity.OwnerUID}}
+	c := &policyCountingClient{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner).Build()}
+	authority := NetworkPolicyAuthority{
+		Namespaces: map[string]bool{"operand": true, "workload": true},
+		Ownership:  CrossNamespaceOwnership,
+	}
+	return scheme, owner, c, identity, p, authority
+}
+
+func TestCrossNamespacePolicyRecordsOwnershipWithoutReference(t *testing.T) {
+	ctx := context.Background()
+	scheme, owner, c, identity, p, authority := crossNamespaceFixture(t)
+	request := WorkloadNetworkPolicy{Policy: p, Egress: allowIntent()}
+	if err := ReconcileWorkloadNetworkPolicy(ctx, c, scheme, owner, identity, request, authority); err != nil {
+		t.Fatal(err)
+	}
+	got := &networkingv1.NetworkPolicy{}
+	key := client.ObjectKeyFromObject(p)
+	if err := c.Get(ctx, key, got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.OwnerReferences) != 0 {
+		t.Fatalf("ownerReferences = %#v, want none: a controller reference cannot cross namespaces", got.OwnerReferences)
+	}
+	if got.Labels[NetworkPolicyOwnerUIDLabel] != string(owner.UID) {
+		t.Fatalf("owner UID label = %q, want %q", got.Labels[NetworkPolicyOwnerUIDLabel], owner.UID)
+	}
+	if got.Annotations[OwnerNameAnnotation] != owner.Name || got.Annotations[OwnerNamespaceAnnotation] != owner.Namespace {
+		t.Fatalf("owner annotations = %#v, want the owning custom resource", got.Annotations)
+	}
+	if !IsOwnedBy(got, owner) {
+		t.Fatal("recorded ownership is not recognised by IsOwnedBy")
+	}
+	// Reconcile is idempotent over the annotation ownership record.
+	if err := ReconcileWorkloadNetworkPolicy(ctx, c, scheme, owner, identity, request, authority); err != nil {
+		t.Fatal(err)
+	}
+	if c.updates != 0 {
+		t.Fatal("cross-namespace reconciliation is not idempotent")
+	}
+	// Cleanup deletes exactly the recorded incarnation.
+	policyUID := got.UID
+	if policyUID == "" {
+		policyUID = "policy-uid"
+		got.UID = policyUID
+		if err := c.Update(ctx, got); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := DeleteOwnedWorkloadNetworkPolicy(ctx, c, scheme, owner, key, "another-incarnation", authority); err == nil {
+		t.Fatal("cleanup accepted a different policy UID")
+	}
+	if err := DeleteOwnedWorkloadNetworkPolicy(ctx, c, scheme, owner, key, policyUID, authority); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Get(ctx, key, &networkingv1.NetworkPolicy{}); !apierrors.IsNotFound(err) {
+		t.Fatal("policy survived cleanup")
+	}
+}
+
+func TestCrossNamespacePolicyRequiresExplicitOwnershipMode(t *testing.T) {
+	ctx := context.Background()
+	scheme, owner, c, identity, p, authority := crossNamespaceFixture(t)
+	// The zero value keeps the original same-namespace rule for every existing caller.
+	authority.Ownership = SameNamespaceOwnership
+	request := WorkloadNetworkPolicy{Policy: p, Egress: allowIntent()}
+	if err := ReconcileWorkloadNetworkPolicy(ctx, c, scheme, owner, identity, request, authority); err == nil {
+		t.Fatal("cross-namespace placement accepted without opting in")
+	}
+	// A policy at the name that does not carry the owner record is never adopted.
+	authority.Ownership = CrossNamespaceOwnership
+	if err := ReconcileWorkloadNetworkPolicy(ctx, c, scheme, owner, identity, request, authority); err != nil {
+		t.Fatal(err)
+	}
+	got := &networkingv1.NetworkPolicy{}
+	key := client.ObjectKeyFromObject(p)
+	if err := c.Get(ctx, key, got); err != nil {
+		t.Fatal(err)
+	}
+	delete(got.Annotations, OwnerNamespaceAnnotation)
+	if err := c.Update(ctx, got); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcileWorkloadNetworkPolicy(ctx, c, scheme, owner, identity, request, authority); err == nil {
+		t.Fatal("policy with a stripped owner record was adopted")
+	}
+}
+
+func TestNetworkPolicyOwnedTemplateCrossNamespace(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	identity := NetworkPolicyIdentity{OwnerKind: schema.GroupKind{Kind: "ConfigMap"}, OwnerUID: "owner-uid", Component: "evalhub", Role: "api"}
+	owner := &corev1.ConfigMap{TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"}, ObjectMeta: metav1.ObjectMeta{Name: "instance", Namespace: "operand", UID: identity.OwnerUID}}
+	newDeployment := func() *appsv1.Deployment {
+		d := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: "workload"}, Spec: appsv1.DeploymentSpec{Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "legacy"}}, Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "legacy"}}}}}
+		if err := SetOwnerReference(owner, d, scheme); err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	if err := LabelOwnedNetworkPolicyDeployment(newDeployment(), scheme, owner, identity, SameNamespaceOwnership); err == nil {
+		t.Fatal("cross-namespace deployment labelled without opting in")
+	}
+	stamped := newDeployment()
+	if err := LabelOwnedNetworkPolicyDeployment(stamped, scheme, owner, identity, CrossNamespaceOwnership); err != nil {
+		t.Fatal(err)
+	}
+	labels, err := identity.Labels()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range labels {
+		if stamped.Spec.Template.Labels[key] != value {
+			t.Fatalf("template label %q = %q, want %q", key, stamped.Spec.Template.Labels[key], value)
+		}
+	}
+	foreign := newDeployment()
+	delete(foreign.Annotations, OwnerNameAnnotation)
+	if err := LabelOwnedNetworkPolicyDeployment(foreign, scheme, owner, identity, CrossNamespaceOwnership); err == nil {
+		t.Fatal("deployment without the owner record was labelled")
 	}
 }

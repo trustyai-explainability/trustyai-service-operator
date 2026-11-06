@@ -17,6 +17,9 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"maps"
+	"slices"
+
 	"github.com/trustyai-explainability/trustyai-service-operator/api/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -82,6 +85,97 @@ type NemoGuardrailsSpec struct {
 	// When omitted, only a MaaS AIGuardrail in the same namespace as this CR may attach to it.
 	// +optional
 	AllowedConsumers *AllowedConsumers `json:"allowedConsumers,omitempty"`
+	// NetworkPolicy configures additional callers. The operand NetworkPolicy is
+	// always reconciled; it cannot be disabled.
+	// +optional
+	NetworkPolicy *NemoNetworkPolicy `json:"networkPolicy,omitempty"`
+}
+
+// NemoNetworkPolicy extends the built-in MaaS payload-processing, gateway and
+// Route ingress rules of the operand NetworkPolicy.
+type NemoNetworkPolicy struct {
+	// AdditionalIngress permits callers on the public Service listener only.
+	// Namespace and Pod selectors are ANDed, and both must positively identify
+	// callers: empty and exclusion-only selectors are rejected.
+	// This does not authorize consumer attachments or bypass authentication,
+	// and it never grants the authenticated admin listener.
+	// +optional
+	// +kubebuilder:validation:MaxItems=32
+	AdditionalIngress []NemoIngressPeer `json:"additionalIngress,omitempty"`
+}
+
+// NemoIngressPeer identifies callers across namespaces, never relative to the CR.
+// Both selectors must positively identify callers: a nonempty matchLabels value,
+// an Exists expression, or an In expression with a nonempty value. The CRD rejects
+// empty and exclusion-only selectors at admission, and a namespaceSelector may not
+// rely on the universal Exists form of kubernetes.io/metadata.name. The controller
+// revalidates the same constraints and additionally rejects empty-peer and
+// universal-CIDR forms, failing closed without writing a policy; the CR reports
+// that rejection through its NetworkPolicy condition.
+type NemoIngressPeer struct {
+	// NamespaceSelector selects the caller namespaces and is ANDed with
+	// PodSelector. An Exists constraint on kubernetes.io/metadata.name matches every
+	// namespace, so it is rejected unless a nonempty matchLabels value or an In
+	// expression with a nonempty value also narrows the selector.
+	// +kubebuilder:validation:XValidation:rule="(has(self.matchLabels) && self.matchLabels.exists(k, size(self.matchLabels[k]) > 0)) || (has(self.matchExpressions) && self.matchExpressions.exists(e, e.operator == 'In' && has(e.values) && e.values.exists(v, size(v) > 0))) || !(has(self.matchExpressions) && self.matchExpressions.exists(e, e.key == 'kubernetes.io/metadata.name' && e.operator == 'Exists'))",message="namespaceSelector may not rely on Exists kubernetes.io/metadata.name alone; add a nonempty matchLabels value or an In expression with a nonempty value"
+	NamespaceSelector NemoLabelSelector `json:"namespaceSelector"`
+	// PodSelector selects the caller Pods inside the selected namespaces.
+	PodSelector NemoLabelSelector `json:"podSelector"`
+}
+
+// NemoLabelSelector is metav1.LabelSelector with bounded collections. These
+// selectors need admission rules that inspect matchLabels values and
+// matchExpressions, and the API server rejects a comprehension over an unbounded
+// collection as over its CEL cost budget: every rule under additionalIngress is
+// cost-multiplied by that list's maxItems. The wire shape is identical to
+// metav1.LabelSelector. Use LabelSelector to build the canonical selector.
+// +structType=atomic
+// +kubebuilder:validation:XValidation:rule="(has(self.matchLabels) && self.matchLabels.exists(k, size(self.matchLabels[k]) > 0)) || (has(self.matchExpressions) && self.matchExpressions.exists(e, e.operator == 'Exists' || (e.operator == 'In' && has(e.values) && e.values.exists(v, size(v) > 0))))",message="selector requires a positive identity constraint: a nonempty matchLabels value, an Exists expression, or an In expression with a nonempty value"
+type NemoLabelSelector struct {
+	// MatchLabels is a map of {key,value} pairs. A single {key,value} in the
+	// matchLabels map is equivalent to an element of matchExpressions, whose key
+	// field is "key", the operator is "In", and the values array contains only
+	// "value". The requirements are ANDed.
+	// +optional
+	// +kubebuilder:validation:MaxProperties=32
+	MatchLabels map[string]string `json:"matchLabels,omitempty"`
+	// MatchExpressions is a list of label selector requirements. The requirements
+	// are ANDed.
+	// +optional
+	// +kubebuilder:validation:MaxItems=32
+	// +listType=atomic
+	MatchExpressions []NemoLabelSelectorRequirement `json:"matchExpressions,omitempty"`
+}
+
+// NemoLabelSelectorRequirement is metav1.LabelSelectorRequirement with a bounded
+// values list, bounded for the same admission-rule cost reason as NemoLabelSelector.
+type NemoLabelSelectorRequirement struct {
+	// Key is the label key that the selector applies to.
+	Key string `json:"key"`
+	// Operator represents a key's relationship to a set of values. Valid operators
+	// are In, NotIn, Exists and DoesNotExist.
+	Operator metav1.LabelSelectorOperator `json:"operator"`
+	// Values is an array of string values. If the operator is In or NotIn, the
+	// values array must be non-empty. If the operator is Exists or DoesNotExist, the
+	// values array must be empty.
+	// +optional
+	// +kubebuilder:validation:MaxItems=32
+	// +listType=atomic
+	Values []string `json:"values,omitempty"`
+}
+
+// LabelSelector returns a deep copy of the canonical Kubernetes selector used to
+// build the operand NetworkPolicy and to revalidate the peer in the controller.
+func (s NemoLabelSelector) LabelSelector() metav1.LabelSelector {
+	selector := metav1.LabelSelector{MatchLabels: maps.Clone(s.MatchLabels)}
+	for _, expression := range s.MatchExpressions {
+		selector.MatchExpressions = append(selector.MatchExpressions, metav1.LabelSelectorRequirement{
+			Key:      expression.Key,
+			Operator: expression.Operator,
+			Values:   slices.Clone(expression.Values),
+		})
+	}
+	return selector
 }
 
 // NemoGuardrailsTemplate defines the template for the NemoGuardrails deployment
