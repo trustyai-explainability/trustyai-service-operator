@@ -171,6 +171,8 @@ func TestIsTransientTLSReadError(t *testing.T) {
 		{name: "internal server error", err: apierrors.NewInternalError(errors.New("internal error")), want: true},
 		{name: "connection refused", err: &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}, want: true},
 		{name: "forbidden", err: apierrors.NewForbidden(schema.GroupResource{Resource: "apiservers"}, "cluster", errors.New("denied")), want: false},
+		{name: "bad request (unexpected API status)", err: apierrors.NewBadRequest("invalid request"), want: false},
+		{name: "invalid (unexpected API status)", err: apierrors.NewInvalid(schema.GroupKind{Group: "config.openshift.io", Kind: "APIServer"}, "cluster", nil), want: false},
 	}
 
 	for _, tt := range tests {
