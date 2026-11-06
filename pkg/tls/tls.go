@@ -77,6 +77,18 @@ type Result struct {
 	ProxyArgsErr error
 }
 
+const (
+	// ReasonProxyTLSProfileUnsupported is the condition and event reason
+	// reconcilers publish when the cluster TLS profile cannot be rendered into
+	// kube-rbac-proxy arguments. It is exported so the resources affected by
+	// one process-wide policy failure report it under the same reason.
+	ReasonProxyTLSProfileUnsupported = "TLSProfileUnsupported"
+
+	// ProxyTLSProfileUnsupportedMessage is the shared message prefix for that
+	// failure. Callers append the underlying profile error.
+	ProxyTLSProfileUnsupportedMessage = "cluster TLS profile cannot be applied to the kube-rbac-proxy sidecars"
+)
+
 var proxyArgsState = struct {
 	sync.RWMutex
 	args ProxyTLSArguments

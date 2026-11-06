@@ -19,12 +19,14 @@ package tas
 import (
 	"context"
 	goerrors "errors"
+	"fmt"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	"time"
 
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -103,6 +105,31 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules,verbs=create;list;watch;get;update;patch;delete
 //+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=create;list;watch;get;update;patch;delete
 //+kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=list;watch;get
+
+// reconcileDeployment renders the operand Deployment and reports a cluster TLS
+// profile the proxy sidecars cannot serve on the resource. Without this, a
+// render failure would leave a previously Ready instance claiming readiness
+// while its Deployment is never updated.
+func (r *TrustyAIServiceReconciler) reconcileDeployment(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, caBundle CustomCertificatesBundle, migration bool) error {
+	err := r.ensureDeployment(ctx, instance, caBundle, migration)
+	if err == nil {
+		return nil
+	}
+	tlsErr := pkgtls.CurrentProxyTLSArgumentsError()
+	if tlsErr == nil {
+		return err
+	}
+	message := fmt.Sprintf("%s: %v", pkgtls.ProxyTLSProfileUnsupportedMessage, tlsErr)
+	if _, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1.TrustyAIService) {
+		UpdateTLSProfileUnsupported(saved, message)
+	}); updateErr != nil {
+		return goerrors.Join(err, fmt.Errorf("updating status after proxy TLS failure: %w", updateErr))
+	}
+	if r.EventRecorder != nil {
+		r.EventRecorder.Event(instance, v1.EventTypeWarning, pkgtls.ReasonProxyTLSProfileUnsupported, message)
+	}
+	return err
+}
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -253,7 +280,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// Check for migration annotation
 	if _, ok := instance.Annotations[migrationAnnotationKey]; ok {
 		log.Info("Found migration annotation. Migrating.")
-		err = r.ensureDeployment(ctx, instance, caBundle, true)
+		err = r.reconcileDeployment(ctx, instance, caBundle, true)
 		//err = r.redeployForMigration(ctx, instance)
 
 		if err != nil {
@@ -268,7 +295,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	} else {
 		// Ensure Deployment object
-		err = r.ensureDeployment(ctx, instance, caBundle, false)
+		err = r.reconcileDeployment(ctx, instance, caBundle, false)
 		log.Info("No annotation found")
 		if err != nil {
 			return RequeueWithError(err)

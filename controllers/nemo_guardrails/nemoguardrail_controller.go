@@ -25,6 +25,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/nemo_guardrails/templates"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -246,6 +247,27 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// ====== Create deployment ========================================================================================
+	// Sidecars are rendered only when auth is enabled, so an unusable proxy TLS
+	// profile is not a proxy-free workload's problem. When they are rendered the
+	// Deployment call below fails; report that on the resource instead of leaving
+	// the previous Complete=True condition behind.
+	useAuthProxy := utils.RequiresAuth(nemoGuardrails)
+	if useAuthProxy {
+		if tlsErr := pkgtls.CurrentProxyTLSArgumentsError(); tlsErr != nil {
+			message := fmt.Sprintf("%s: %v", pkgtls.ProxyTLSProfileUnsupportedMessage, tlsErr)
+			if _, updateErr := r.updateStatus(ctx, nemoGuardrails, func(saved *nemoguardrailsv1alpha1.NemoGuardrails) {
+				utils.SetResourceCondition(&saved.Status.Conditions, "Deployment", pkgtls.ReasonProxyTLSProfileUnsupported, message, corev1.ConditionFalse)
+				utils.SetCompleteCondition(&saved.Status.Conditions, corev1.ConditionFalse, pkgtls.ReasonProxyTLSProfileUnsupported, message)
+				saved.Status.Phase = utils.PhaseError
+			}); updateErr != nil {
+				return ctrl.Result{}, updateErr
+			}
+			if r.Recorder != nil {
+				r.Recorder.Event(nemoGuardrails, corev1.EventTypeWarning, pkgtls.ReasonProxyTLSProfileUnsupported, message)
+			}
+			return ctrl.Result{}, fmt.Errorf("%s: %w", pkgtls.ProxyTLSProfileUnsupportedMessage, tlsErr)
+		}
+	}
 	existingDeployment := &appsv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Name: identity.Name, Namespace: targetNamespace}, existingDeployment)
 	if err != nil && errors.IsNotFound(err) {
@@ -287,7 +309,7 @@ func (r *NemoGuardrailsReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Namespace:     targetNamespace,
 		Owner:         nemoGuardrails,
 		Version:       constants.Version,
-		UseAuthProxy:  utils.RequiresAuth(nemoGuardrails),
+		UseAuthProxy:  useAuthProxy,
 		WorkloadName:  identity.Name,
 		SelectorName:  identity.Selector,
 		PortName:      identity.PortName,

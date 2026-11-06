@@ -27,7 +27,7 @@ func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *e
 	log.Info("Reconciling Deployment", "name", instance.Name)
 
 	if err := pkgtls.CurrentProxyTLSArgumentsError(); err != nil {
-		return fmt.Errorf("cluster TLS profile cannot be applied to the kube-rbac-proxy sidecars: %w", err)
+		return fmt.Errorf("%s: %w", pkgtls.ProxyTLSProfileUnsupportedMessage, err)
 	}
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
