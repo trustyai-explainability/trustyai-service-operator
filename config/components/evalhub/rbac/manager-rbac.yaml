@@ -102,6 +102,7 @@ rules:
   - watch
   - create
   - update
+  - delete
 - apiGroups:
   - ""
   resources:
@@ -291,6 +292,7 @@ rules:
   - get
   - list
   - watch
+  - patch
 - apiGroups:
   - ""
   resources:

@@ -6,11 +6,14 @@ import (
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -233,16 +236,126 @@ func buildEvalHubNetworkPolicy(instance *evalhubv1.EvalHub, applicationsNamespac
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: instance.Namespace},
 			Spec: networkingv1.NetworkPolicySpec{
 				PodSelector: metav1.LabelSelector{MatchLabels: identityLabels},
-				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
-				Ingress:     ingress,
+				PolicyTypes: []networkingv1.PolicyType{
+					networkingv1.PolicyTypeIngress,
+					networkingv1.PolicyTypeEgress,
+				},
+				Ingress: ingress,
+				Egress:  []networkingv1.NetworkPolicyEgressRule{{}},
 			},
 		},
 		Ingress: intent,
+		// ODH-ADR-Operator-0016 requires every operand workload to be selected by
+		// a policy that declares Egress with an explicit behavior. Allow-all is the
+		// documented compatibility posture: EvalHub reaches the Kubernetes API
+		// server, tenant namespaces, model and judge endpoints, MLflow and object
+		// storage whose addresses are resolved from the CR, provider manifests and
+		// model auth Secrets at evaluation time, so no complete static allowlist
+		// exists. This does not broaden today's posture (an unselected Pod already
+		// has unrestricted egress) and is not exfiltration protection: NetworkPolicy
+		// is additive, so no other policy can narrow this grant.
+		Egress: &utils.NetworkPolicyEgressIntent{
+			Mode: utils.NetworkPolicyAllowAll,
+			Rationale: "EvalHub reaches the Kubernetes API server, tenant namespaces, model and judge " +
+				"endpoints, MLflow and object storage whose addresses are supplied at evaluation time.",
+			ResidualRisk: "Outbound traffic is unrestricted, including for job callbacks and provider " +
+				"calls. This provides no exfiltration protection and a restricted profile remains a " +
+				"follow-up decision.",
+		},
 	}
-	if err := utils.ValidateWorkloadNetworkPolicyWithIngressIntent(desired.Policy, identity, nil, intent); err != nil {
+	// The set validator requires both directions for the same target selector, so an
+	// ingress-only regression cannot be merged silently.
+	if err := utils.ValidateWorkloadNetworkPolicySet([]utils.WorkloadNetworkPolicy{desired}, identity); err != nil {
 		return utils.WorkloadNetworkPolicy{}, err
 	}
 	return desired, nil
+}
+
+// evalHubMCPNetworkPolicyName returns the generated policy name for the MCP
+// workload. Name and namespace are derived from the persisted identity, so the
+// delete path and the reconcile path cannot disagree.
+func evalHubMCPNetworkPolicyName(instance *evalhubv1.EvalHub) (string, error) {
+	identity, err := evalHubMCPNetworkPolicyIdentity(instance)
+	if err != nil {
+		return "", err
+	}
+	return identity.Name("mcp-ingress")
+}
+
+// buildEvalHubMCPNetworkPolicy authors the policy for the optional EvalHub MCP
+// server Deployment. The MCP server is a user-facing endpoint: it is exposed by
+// its own Service and OpenShift Route, so it needs its own workload-scoped
+// coverage rather than relying on the API policy, which only names the MCP Pod
+// as an API caller.
+func buildEvalHubMCPNetworkPolicy(instance *evalhubv1.EvalHub) (utils.WorkloadNetworkPolicy, error) {
+	identity, err := evalHubMCPNetworkPolicyIdentity(instance)
+	if err != nil {
+		return utils.WorkloadNetworkPolicy{}, err
+	}
+	identityLabels, err := identity.Labels()
+	if err != nil {
+		return utils.WorkloadNetworkPolicy{}, err
+	}
+	name, err := identity.Name("mcp-ingress")
+	if err != nil {
+		return utils.WorkloadNetworkPolicy{}, err
+	}
+
+	routerNamespaceSelector := metav1.LabelSelector{MatchLabels: map[string]string{
+		evalHubNetworkPolicyNamespaceGroupLabel: evalHubNetworkPolicyIngressGroup,
+	}}
+	intent := &utils.NetworkPolicyIngressIntent{NamespaceOnlyPeers: []utils.NetworkPolicyNamespaceOnlyPeerIntent{{
+		NamespaceSelector: routerNamespaceSelector,
+		Rationale:         "OpenShift Route traffic is sourced by router Pods in ingress namespaces; no stable supported router Pod selector is assumed.",
+		ResidualRisk:      "Any Pod in a namespace carrying the OpenShift ingress policy-group label can reach the EvalHub MCP server on TCP 8443.",
+	}}}
+
+	desired := utils.WorkloadNetworkPolicy{
+		Policy: &networkingv1.NetworkPolicy{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: instance.Namespace},
+			Spec: networkingv1.NetworkPolicySpec{
+				PodSelector: metav1.LabelSelector{MatchLabels: identityLabels},
+				PolicyTypes: []networkingv1.PolicyType{
+					networkingv1.PolicyTypeIngress,
+					networkingv1.PolicyTypeEgress,
+				},
+				Ingress: []networkingv1.NetworkPolicyIngressRule{{
+					From:  []networkingv1.NetworkPolicyPeer{{NamespaceSelector: routerNamespaceSelector.DeepCopy()}},
+					Ports: []networkingv1.NetworkPolicyPort{evalHubNetworkPolicyTCPPort(mcpServicePort)},
+				}},
+				// The MCP server has no metrics endpoint of its own and no in-cluster
+				// callers are part of the supported contract: clients reach it through
+				// the Route, and it calls the EvalHub API outbound.
+				Egress: []networkingv1.NetworkPolicyEgressRule{{}},
+			},
+		},
+		Ingress: intent,
+		Egress: &utils.NetworkPolicyEgressIntent{
+			Mode:         utils.NetworkPolicyAllowAll,
+			Rationale:    "The MCP server calls the EvalHub API in-cluster and needs Kubernetes API, DNS and model-provider access whose addresses are supplied at evaluation time.",
+			ResidualRisk: "Outbound traffic is unrestricted. NetworkPolicy is additive, so no other policy can narrow this grant.",
+		},
+	}
+	if err := utils.ValidateWorkloadNetworkPolicySet([]utils.WorkloadNetworkPolicy{desired}, identity); err != nil {
+		return utils.WorkloadNetworkPolicy{}, err
+	}
+	return desired, nil
+}
+
+// deleteEvalHubMCPNetworkPolicy removes the MCP policy when the server is
+// disabled. The shared delete helper refuses to adopt or delete an object it does
+// not control, so a same-name foreign policy is left in place.
+func (r *EvalHubReconciler) deleteEvalHubMCPNetworkPolicy(ctx context.Context, instance *evalhubv1.EvalHub, authority utils.NetworkPolicyAuthority) error {
+	name, err := evalHubMCPNetworkPolicyName(instance)
+	if err != nil {
+		return err
+	}
+	key := client.ObjectKey{Name: name, Namespace: instance.Namespace}
+	existing := &networkingv1.NetworkPolicy{}
+	if err := r.Get(ctx, key, existing); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	return utils.DeleteOwnedWorkloadNetworkPolicy(ctx, r.Client, r.Scheme, evalHubNetworkPolicyOwner(instance), key, existing.UID, authority)
 }
 
 func (r *EvalHubReconciler) reconcileNetworkPolicy(ctx context.Context, instance *evalhubv1.EvalHub) error {
@@ -257,5 +370,60 @@ func (r *EvalHubReconciler) reconcileNetworkPolicy(ctx context.Context, instance
 	// NetworkPolicies protect only the EvalHub's own namespace. Tenant namespaces
 	// contribute callback sources but are never controlled by this reconciler.
 	authority := utils.NetworkPolicyAuthority{Namespaces: map[string]bool{instance.Namespace: true}}
-	return utils.ReconcileWorkloadNetworkPolicy(ctx, r.Client, r.Scheme, instance, identity, desired, authority)
+	if err := utils.ReconcileWorkloadNetworkPolicy(ctx, r.Client, r.Scheme, instance, identity, desired, authority); err != nil {
+		return err
+	}
+	if err := r.repairWorkloadPodIdentity(ctx, instance, instance.Name, identity); err != nil {
+		return err
+	}
+
+	if !instance.Spec.IsMCPEnabled() {
+		return r.deleteEvalHubMCPNetworkPolicy(ctx, instance, authority)
+	}
+	mcpIdentity, err := evalHubMCPNetworkPolicyIdentity(instance)
+	if err != nil {
+		return err
+	}
+	mcpDesired, err := buildEvalHubMCPNetworkPolicy(instance)
+	if err != nil {
+		return err
+	}
+	if err := utils.ReconcileWorkloadNetworkPolicy(ctx, r.Client, r.Scheme, instance, mcpIdentity, mcpDesired, authority); err != nil {
+		return err
+	}
+	return r.repairWorkloadPodIdentity(ctx, instance, mcpDeploymentName(instance), mcpIdentity)
+}
+
+// repairWorkloadPodIdentity re-stamps reserved identity labels on Pods of a
+// workload Deployment. The labels are authored into the Deployment template, so
+// the repair is about running Pods: a Pod that loses them leaves the policy
+// selector and would otherwise keep serving outside the policy it is meant to be
+// governed by. It runs after the policy reconcile, never before, so a Pod cannot
+// enter a selector whose allow rules have not converged yet.
+func (r *EvalHubReconciler) repairWorkloadPodIdentity(ctx context.Context, instance *evalhubv1.EvalHub, deploymentName string, identity utils.NetworkPolicyIdentity) error {
+	deployment := &appsv1.Deployment{}
+	key := client.ObjectKey{Namespace: instance.Namespace, Name: deploymentName}
+	if err := r.Get(ctx, key, deployment); err != nil {
+		// The policy is authored before the Deployment exists on first install.
+		// There is nothing to relabel, and the Deployment watch reconciles once it does.
+		return client.IgnoreNotFound(err)
+	}
+	reader := r.APIReader
+	if reader == nil {
+		reader = r.Client
+	}
+	restored, err := utils.RepairOwnedWorkloadNetworkPolicyPodLabels(ctx, r.Client, reader, deployment, r.Scheme, evalHubNetworkPolicyOwner(instance), identity)
+	if err != nil {
+		return err
+	}
+	for _, pod := range restored {
+		log.FromContext(ctx).Info("Restored NetworkPolicy identity labels on an EvalHub Pod",
+			"pod", pod.Namespace+"/"+pod.Name, "deployment", key)
+		if r.EventRecorder != nil {
+			// A Pod serving outside its policy is a posture regression, not routine drift.
+			r.EventRecorder.Eventf(instance, corev1.EventTypeWarning, "PodIdentityRestored",
+				"Restored NetworkPolicy identity labels on Pod %s/%s", pod.Namespace, pod.Name)
+		}
+	}
+	return nil
 }

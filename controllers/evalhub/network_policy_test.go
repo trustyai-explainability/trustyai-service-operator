@@ -31,8 +31,8 @@ func TestBuildEvalHubNetworkPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := utils.ValidateWorkloadNetworkPolicyWithIngressIntent(desired.Policy, identity, nil, desired.Ingress); err != nil {
-		t.Fatalf("ValidateWorkloadNetworkPolicyWithIngressIntent() error = %v", err)
+	if err := utils.ValidateWorkloadNetworkPolicySet([]utils.WorkloadNetworkPolicy{desired}, identity); err != nil {
+		t.Fatalf("ValidateWorkloadNetworkPolicySet() error = %v", err)
 	}
 
 	wantTarget, err := identity.Labels()
@@ -42,11 +42,17 @@ func TestBuildEvalHubNetworkPolicy(t *testing.T) {
 	if !equalNetworkPolicyLabels(desired.Policy.Spec.PodSelector.MatchLabels, wantTarget) {
 		t.Errorf("target selector = %#v, want identity labels %#v", desired.Policy.Spec.PodSelector.MatchLabels, wantTarget)
 	}
-	if len(desired.Policy.Spec.PolicyTypes) != 1 || desired.Policy.Spec.PolicyTypes[0] != networkingv1.PolicyTypeIngress {
-		t.Fatalf("policyTypes = %v, want only Ingress", desired.Policy.Spec.PolicyTypes)
+	if len(desired.Policy.Spec.PolicyTypes) != 2 ||
+		desired.Policy.Spec.PolicyTypes[0] != networkingv1.PolicyTypeIngress ||
+		desired.Policy.Spec.PolicyTypes[1] != networkingv1.PolicyTypeEgress {
+		t.Fatalf("policyTypes = %v, want Ingress and Egress", desired.Policy.Spec.PolicyTypes)
 	}
-	if len(desired.Policy.Spec.Egress) != 0 {
-		t.Fatalf("egress rules = %#v, want none", desired.Policy.Spec.Egress)
+	if len(desired.Policy.Spec.Egress) != 1 || len(desired.Policy.Spec.Egress[0].To) != 0 || len(desired.Policy.Spec.Egress[0].Ports) != 0 {
+		t.Fatalf("egress rules = %#v, want exactly one empty allow-all rule", desired.Policy.Spec.Egress)
+	}
+	if desired.Egress == nil || desired.Egress.Mode != utils.NetworkPolicyAllowAll ||
+		desired.Egress.Rationale == "" || desired.Egress.ResidualRisk == "" {
+		t.Fatalf("egress intent = %#v, want a documented allow-all posture", desired.Egress)
 	}
 	if len(desired.Policy.Spec.Ingress) != 5 {
 		t.Fatalf("got %d ingress rules with MCP disabled, want router, dashboard, operator, evaluation-job, and metrics rules", len(desired.Policy.Spec.Ingress))
@@ -149,6 +155,114 @@ func TestBuildEvalHubNetworkPolicyAllowsMCPOnlyWhenEnabled(t *testing.T) {
 	assertEvalHubNetworkPolicyPort(t, mcpRule, servicePort)
 }
 
+func TestBuildEvalHubMCPNetworkPolicy(t *testing.T) {
+	instance := testEvalHubNetworkPolicyOwner()
+	enabled := true
+	instance.Spec.MCP = &evalhubv1.EvalHubMCPSpec{Enabled: &enabled}
+
+	desired, err := buildEvalHubMCPNetworkPolicy(instance)
+	if err != nil {
+		t.Fatalf("buildEvalHubMCPNetworkPolicy() error = %v", err)
+	}
+	identity, err := evalHubMCPNetworkPolicyIdentity(instance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := utils.ValidateWorkloadNetworkPolicySet([]utils.WorkloadNetworkPolicy{desired}, identity); err != nil {
+		t.Fatalf("ValidateWorkloadNetworkPolicySet() error = %v", err)
+	}
+
+	wantTarget, err := identity.Labels()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !equalNetworkPolicyLabels(desired.Policy.Spec.PodSelector.MatchLabels, wantTarget) {
+		t.Errorf("target selector = %#v, want MCP identity labels %#v", desired.Policy.Spec.PodSelector.MatchLabels, wantTarget)
+	}
+	if len(desired.Policy.Spec.PolicyTypes) != 2 ||
+		desired.Policy.Spec.PolicyTypes[0] != networkingv1.PolicyTypeIngress ||
+		desired.Policy.Spec.PolicyTypes[1] != networkingv1.PolicyTypeEgress {
+		t.Fatalf("policyTypes = %v, want Ingress and Egress", desired.Policy.Spec.PolicyTypes)
+	}
+	if len(desired.Policy.Spec.Ingress) != 1 {
+		t.Fatalf("got %d ingress rules for the MCP server, want exactly the Route rule", len(desired.Policy.Spec.Ingress))
+	}
+	router := desired.Policy.Spec.Ingress[0]
+	if len(router.From) != 1 || router.From[0].NamespaceSelector == nil || router.From[0].PodSelector != nil ||
+		!equalNetworkPolicyLabels(router.From[0].NamespaceSelector.MatchLabels, map[string]string{
+			evalHubNetworkPolicyNamespaceGroupLabel: evalHubNetworkPolicyIngressGroup,
+		}) {
+		t.Errorf("MCP Route peer = %#v, want the reviewed ingress namespace-only selector", router.From)
+	}
+	assertEvalHubNetworkPolicyPort(t, router, mcpServicePort)
+	if len(desired.Policy.Spec.Egress) != 1 || len(desired.Policy.Spec.Egress[0].To) != 0 || len(desired.Policy.Spec.Egress[0].Ports) != 0 {
+		t.Fatalf("egress rules = %#v, want exactly one empty allow-all rule", desired.Policy.Spec.Egress)
+	}
+	if desired.Egress == nil || desired.Egress.Mode != utils.NetworkPolicyAllowAll ||
+		desired.Egress.Rationale == "" || desired.Egress.ResidualRisk == "" {
+		t.Fatalf("egress intent = %#v, want a documented allow-all posture", desired.Egress)
+	}
+	if desired.Ingress == nil || len(desired.Ingress.NamespaceOnlyPeers) != 1 ||
+		desired.Ingress.NamespaceOnlyPeers[0].Rationale == "" || desired.Ingress.NamespaceOnlyPeers[0].ResidualRisk == "" {
+		t.Fatalf("typed MCP ingress intent = %#v, want one reviewed namespace-only peer", desired.Ingress)
+	}
+}
+
+func TestReconcileEvalHubMCPNetworkPolicyLifecycle(t *testing.T) {
+	scheme := runtime.NewScheme()
+	for _, addToScheme := range []func(*runtime.Scheme) error{
+		corev1.AddToScheme,
+		appsv1.AddToScheme,
+		networkingv1.AddToScheme,
+		evalhubv1.AddToScheme,
+	} {
+		if err := addToScheme(scheme); err != nil {
+			t.Fatalf("register test types: %v", err)
+		}
+	}
+	enabled := true
+	owner := testEvalHubNetworkPolicyOwner()
+	owner.GetObjectKind().SetGroupVersionKind(evalhubv1.GroupVersion.WithKind("EvalHub"))
+	owner.Spec.MCP = &evalhubv1.EvalHubMCPSpec{Enabled: &enabled}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner).Build()
+	reconciler := &EvalHubReconciler{Client: c, Scheme: scheme, Namespace: "redhat-ods-applications"}
+	ctx := context.Background()
+
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
+		t.Fatalf("reconcile with MCP enabled: %v", err)
+	}
+	name, err := evalHubMCPNetworkPolicyName(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := client.ObjectKey{Namespace: owner.Namespace, Name: name}
+	actual := &networkingv1.NetworkPolicy{}
+	if err := c.Get(ctx, key, actual); err != nil {
+		t.Fatalf("get MCP NetworkPolicy: %v", err)
+	}
+	if ref := actual.OwnerReferences; len(ref) != 1 || ref[0].UID != owner.UID {
+		t.Fatalf("MCP policy owner references = %#v, want the EvalHub UID %q", ref, owner.UID)
+	}
+	// The fake client does not assign UIDs; the cleanup path requires the
+	// persisted UID, so stamp one the way the API server would.
+	actual.UID = "mcp-policy-uid"
+	if err := c.Update(ctx, actual); err != nil {
+		t.Fatalf("stamp MCP policy UID: %v", err)
+	}
+
+	disabled := false
+	owner.Spec.MCP = &evalhubv1.EvalHubMCPSpec{Enabled: &disabled}
+	if err := c.Update(ctx, owner); err != nil {
+		t.Fatalf("disable MCP: %v", err)
+	}
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
+		t.Fatalf("reconcile with MCP disabled: %v", err)
+	}
+	if err := c.Get(ctx, key, &networkingv1.NetworkPolicy{}); err == nil {
+		t.Fatal("MCP NetworkPolicy still exists after MCP was disabled")
+	}
+}
+
 func TestBuildEvalHubNetworkPolicyRejectsMissingIdentity(t *testing.T) {
 	if _, err := buildEvalHubNetworkPolicy(nil, "redhat-ods-applications"); err == nil {
 		t.Fatal("buildEvalHubNetworkPolicy(nil) succeeded, want error")
@@ -181,8 +295,8 @@ func TestBuildEvalHubNetworkPolicyAuthorizesDashboardUIPeer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := utils.ValidateWorkloadNetworkPolicyWithIngressIntent(desired.Policy, identity, nil, desired.Ingress); err != nil {
-		t.Fatalf("ValidateWorkloadNetworkPolicyWithIngressIntent() error = %v", err)
+	if err := utils.ValidateWorkloadNetworkPolicySet([]utils.WorkloadNetworkPolicy{desired}, identity); err != nil {
+		t.Fatalf("ValidateWorkloadNetworkPolicySet() error = %v", err)
 	}
 
 	var dashboardPeer *networkingv1.NetworkPolicyPeer
@@ -305,6 +419,7 @@ func TestReconcileEvalHubNetworkPolicyRepairsDriftAndDeletion(t *testing.T) {
 	scheme := runtime.NewScheme()
 	for _, addToScheme := range []func(*runtime.Scheme) error{
 		corev1.AddToScheme,
+		appsv1.AddToScheme,
 		networkingv1.AddToScheme,
 		evalhubv1.AddToScheme,
 	} {
@@ -448,4 +563,96 @@ func equalNetworkPolicyLabels(a, b map[string]string) bool {
 		}
 	}
 	return true
+}
+
+// The identity labels live on the Deployment template, so removing them from a
+// running Pod takes it out of the selector without touching the policy. The
+// reconciler has to put them back, or the Pod keeps serving outside the grants
+// this page describes.
+func TestReconcileEvalHubNetworkPolicyRestoresStrippedPodIdentity(t *testing.T) {
+	scheme := runtime.NewScheme()
+	for _, addToScheme := range []func(*runtime.Scheme) error{
+		corev1.AddToScheme,
+		appsv1.AddToScheme,
+		networkingv1.AddToScheme,
+		evalhubv1.AddToScheme,
+	} {
+		if err := addToScheme(scheme); err != nil {
+			t.Fatalf("register test types: %v", err)
+		}
+	}
+	owner := testEvalHubNetworkPolicyOwner()
+	owner.GetObjectKind().SetGroupVersionKind(evalhubv1.GroupVersion.WithKind("EvalHub"))
+	identity, err := evalHubNetworkPolicyIdentity(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identityLabels, err := identity.Labels()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	controller := true
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      owner.Name,
+			Namespace: owner.Namespace,
+			UID:       types.UID("evalhub-deployment-uid"),
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: evalhubv1.GroupVersion.String(), Kind: "EvalHub", Name: owner.Name, UID: owner.UID, Controller: &controller,
+			}},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "eval-hub"}},
+		},
+	}
+	replicaSet := &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      owner.Name + "-abc",
+			Namespace: owner.Namespace,
+			UID:       types.UID("evalhub-replicaset-uid"),
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "apps/v1", Kind: "Deployment", Name: deployment.Name, UID: deployment.UID, Controller: &controller,
+			}},
+		},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      owner.Name + "-abc-1",
+			Namespace: owner.Namespace,
+			Labels:    map[string]string{"app": "eval-hub"},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "apps/v1", Kind: "ReplicaSet", Name: replicaSet.Name, UID: replicaSet.UID, Controller: &controller,
+			}},
+		},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner, deployment, replicaSet, pod).Build()
+	reconciler := &EvalHubReconciler{Client: c, Scheme: scheme, Namespace: "redhat-ods-applications"}
+	ctx := context.Background()
+
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
+		t.Fatalf("reconcileNetworkPolicy() error = %v", err)
+	}
+	actual := &corev1.Pod{}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(pod), actual); err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range identityLabels {
+		if actual.Labels[key] != value {
+			t.Fatalf("Pod label %q = %q, want %q restored", key, actual.Labels[key], value)
+		}
+	}
+
+	// A second pass leaves the Pod untouched.
+	before := actual.ResourceVersion
+	if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
+		t.Fatalf("second reconcileNetworkPolicy() error = %v", err)
+	}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(pod), actual); err != nil {
+		t.Fatal(err)
+	}
+	if actual.ResourceVersion != before {
+		t.Fatalf("second reconcile rewrote the Pod (resourceVersion %q -> %q)", before, actual.ResourceVersion)
+	}
 }

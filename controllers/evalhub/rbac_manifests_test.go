@@ -12,7 +12,7 @@ import (
 )
 
 func TestEvalHubNetworkPolicyRBACIsMinimalAndSynchronized(t *testing.T) {
-	assertEvalHubNetworkPolicyVerbs(t, "manager-rbac.yaml", []string{"create", "get", "list", "update", "watch"})
+	assertEvalHubNetworkPolicyVerbs(t, "manager-rbac.yaml", []string{"create", "delete", "get", "list", "update", "watch"})
 }
 
 func TestEvalHubJobsWriterNetworkPolicyRBACIsMinimalAndSynchronized(t *testing.T) {
