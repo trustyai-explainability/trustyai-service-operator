@@ -377,122 +377,151 @@ spec:
                     items:
                       description: |-
                         NemoIngressPeer identifies callers across namespaces, never relative to the CR.
-                        Both selectors must be nonempty. The controller additionally requires a
-                        positive identity constraint and rejects empty, exclusion-only, empty-peer and
+                        Both selectors must positively identify callers: a nonempty matchLabels value,
+                        an Exists expression, or an In expression with a nonempty value. The CRD rejects
+                        empty and exclusion-only selectors at admission, and a namespaceSelector may not
+                        rely on the universal Exists form of kubernetes.io/metadata.name. The controller
+                        revalidates the same constraints and additionally rejects empty-peer and
                         universal-CIDR forms, failing closed without writing a policy; the CR reports
-                        the rejection through its NetworkPolicy condition.
+                        that rejection through its NetworkPolicy condition.
                       properties:
                         namespaceSelector:
                           description: |-
-                            A label selector is a label query over a set of resources. The result of matchLabels and
-                            matchExpressions are ANDed. An empty label selector matches all objects. A null
-                            label selector matches no objects.
+                            NamespaceSelector selects the caller namespaces and is ANDed with
+                            PodSelector. An Exists constraint on kubernetes.io/metadata.name matches every
+                            namespace, so it is rejected unless a nonempty matchLabels value or an In
+                            expression with a nonempty value also narrows the selector.
                           properties:
                             matchExpressions:
-                              description: matchExpressions is a list of label selector
-                                requirements. The requirements are ANDed.
+                              description: |-
+                                MatchExpressions is a list of label selector requirements. The requirements
+                                are ANDed.
                               items:
                                 description: |-
-                                  A label selector requirement is a selector that contains values, a key, and an operator that
-                                  relates the key and values.
+                                  NemoLabelSelectorRequirement is metav1.LabelSelectorRequirement with a bounded
+                                  values list, bounded for the same admission-rule cost reason as NemoLabelSelector.
                                 properties:
                                   key:
-                                    description: key is the label key that the selector
+                                    description: Key is the label key that the selector
                                       applies to.
                                     type: string
                                   operator:
                                     description: |-
-                                      operator represents a key's relationship to a set of values.
-                                      Valid operators are In, NotIn, Exists and DoesNotExist.
+                                      Operator represents a key's relationship to a set of values. Valid operators
+                                      are In, NotIn, Exists and DoesNotExist.
                                     type: string
                                   values:
                                     description: |-
-                                      values is an array of string values. If the operator is In or NotIn,
-                                      the values array must be non-empty. If the operator is Exists or DoesNotExist,
-                                      the values array must be empty. This array is replaced during a strategic
-                                      merge patch.
+                                      Values is an array of string values. If the operator is In or NotIn, the
+                                      values array must be non-empty. If the operator is Exists or DoesNotExist, the
+                                      values array must be empty.
                                     items:
                                       type: string
+                                    maxItems: 32
                                     type: array
                                     x-kubernetes-list-type: atomic
                                 required:
                                 - key
                                 - operator
                                 type: object
+                              maxItems: 32
                               type: array
                               x-kubernetes-list-type: atomic
                             matchLabels:
                               additionalProperties:
                                 type: string
                               description: |-
-                                matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
-                                map is equivalent to an element of matchExpressions, whose key field is "key", the
-                                operator is "In", and the values array contains only "value". The requirements are ANDed.
+                                MatchLabels is a map of {key,value} pairs. A single {key,value} in the
+                                matchLabels map is equivalent to an element of matchExpressions, whose key
+                                field is "key", the operator is "In", and the values array contains only
+                                "value". The requirements are ANDed.
+                              maxProperties: 32
                               type: object
                           type: object
                           x-kubernetes-map-type: atomic
+                          x-kubernetes-validations:
+                          - message: namespaceSelector may not rely on Exists kubernetes.io/metadata.name
+                              alone; add a nonempty matchLabels value or an In expression
+                              with a nonempty value
+                            rule: (has(self.matchLabels) && self.matchLabels.exists(k,
+                              size(self.matchLabels[k]) > 0)) || (has(self.matchExpressions)
+                              && self.matchExpressions.exists(e, e.operator == 'In'
+                              && has(e.values) && e.values.exists(v, size(v) > 0)))
+                              || !(has(self.matchExpressions) && self.matchExpressions.exists(e,
+                              e.key == 'kubernetes.io/metadata.name' && e.operator
+                              == 'Exists'))
+                          - message: 'selector requires a positive identity constraint:
+                              a nonempty matchLabels value, an Exists expression,
+                              or an In expression with a nonempty value'
+                            rule: (has(self.matchLabels) && self.matchLabels.exists(k,
+                              size(self.matchLabels[k]) > 0)) || (has(self.matchExpressions)
+                              && self.matchExpressions.exists(e, e.operator == 'Exists'
+                              || (e.operator == 'In' && has(e.values) && e.values.exists(v,
+                              size(v) > 0))))
                         podSelector:
-                          description: |-
-                            A label selector is a label query over a set of resources. The result of matchLabels and
-                            matchExpressions are ANDed. An empty label selector matches all objects. A null
-                            label selector matches no objects.
+                          description: PodSelector selects the caller Pods inside
+                            the selected namespaces.
                           properties:
                             matchExpressions:
-                              description: matchExpressions is a list of label selector
-                                requirements. The requirements are ANDed.
+                              description: |-
+                                MatchExpressions is a list of label selector requirements. The requirements
+                                are ANDed.
                               items:
                                 description: |-
-                                  A label selector requirement is a selector that contains values, a key, and an operator that
-                                  relates the key and values.
+                                  NemoLabelSelectorRequirement is metav1.LabelSelectorRequirement with a bounded
+                                  values list, bounded for the same admission-rule cost reason as NemoLabelSelector.
                                 properties:
                                   key:
-                                    description: key is the label key that the selector
+                                    description: Key is the label key that the selector
                                       applies to.
                                     type: string
                                   operator:
                                     description: |-
-                                      operator represents a key's relationship to a set of values.
-                                      Valid operators are In, NotIn, Exists and DoesNotExist.
+                                      Operator represents a key's relationship to a set of values. Valid operators
+                                      are In, NotIn, Exists and DoesNotExist.
                                     type: string
                                   values:
                                     description: |-
-                                      values is an array of string values. If the operator is In or NotIn,
-                                      the values array must be non-empty. If the operator is Exists or DoesNotExist,
-                                      the values array must be empty. This array is replaced during a strategic
-                                      merge patch.
+                                      Values is an array of string values. If the operator is In or NotIn, the
+                                      values array must be non-empty. If the operator is Exists or DoesNotExist, the
+                                      values array must be empty.
                                     items:
                                       type: string
+                                    maxItems: 32
                                     type: array
                                     x-kubernetes-list-type: atomic
                                 required:
                                 - key
                                 - operator
                                 type: object
+                              maxItems: 32
                               type: array
                               x-kubernetes-list-type: atomic
                             matchLabels:
                               additionalProperties:
                                 type: string
                               description: |-
-                                matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
-                                map is equivalent to an element of matchExpressions, whose key field is "key", the
-                                operator is "In", and the values array contains only "value". The requirements are ANDed.
+                                MatchLabels is a map of {key,value} pairs. A single {key,value} in the
+                                matchLabels map is equivalent to an element of matchExpressions, whose key
+                                field is "key", the operator is "In", and the values array contains only
+                                "value". The requirements are ANDed.
+                              maxProperties: 32
                               type: object
                           type: object
                           x-kubernetes-map-type: atomic
+                          x-kubernetes-validations:
+                          - message: 'selector requires a positive identity constraint:
+                              a nonempty matchLabels value, an Exists expression,
+                              or an In expression with a nonempty value'
+                            rule: (has(self.matchLabels) && self.matchLabels.exists(k,
+                              size(self.matchLabels[k]) > 0)) || (has(self.matchExpressions)
+                              && self.matchExpressions.exists(e, e.operator == 'Exists'
+                              || (e.operator == 'In' && has(e.values) && e.values.exists(v,
+                              size(v) > 0))))
                       required:
                       - namespaceSelector
                       - podSelector
                       type: object
-                      x-kubernetes-validations:
-                      - message: namespaceSelector must be nonempty
-                        rule: (has(self.namespaceSelector.matchLabels) && size(self.namespaceSelector.matchLabels)
-                          > 0) || (has(self.namespaceSelector.matchExpressions) &&
-                          size(self.namespaceSelector.matchExpressions) > 0)
-                      - message: podSelector must be nonempty
-                        rule: (has(self.podSelector.matchLabels) && size(self.podSelector.matchLabels)
-                          > 0) || (has(self.podSelector.matchExpressions) && size(self.podSelector.matchExpressions)
-                          > 0)
                     maxItems: 32
                     type: array
                 type: object

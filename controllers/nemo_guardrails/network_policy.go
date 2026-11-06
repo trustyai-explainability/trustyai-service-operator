@@ -178,10 +178,12 @@ func buildNemoGuardrailsNetworkPolicy(instance *nemoguardrailsv1alpha1.NemoGuard
 	}
 	if instance.Spec.NetworkPolicy != nil {
 		for _, peer := range instance.Spec.NetworkPolicy.AdditionalIngress {
+			namespaceSelector := peer.NamespaceSelector.LabelSelector()
+			podSelector := peer.PodSelector.LabelSelector()
 			ingress = append(ingress, networkingv1.NetworkPolicyIngressRule{
 				From: []networkingv1.NetworkPolicyPeer{{
-					NamespaceSelector: peer.NamespaceSelector.DeepCopy(),
-					PodSelector:       peer.PodSelector.DeepCopy(),
+					NamespaceSelector: &namespaceSelector,
+					PodSelector:       &podSelector,
 				}},
 				Ports: []networkingv1.NetworkPolicyPort{nemoNetworkPolicyTCPPort(listenerPort)},
 			})

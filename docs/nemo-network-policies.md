@@ -82,13 +82,19 @@ spec:
 ```
 
 Peers are additive. Namespace and Pod selectors are ANDed in one peer and both
-must positively identify callers. The two rejection points differ, and the
-difference matters at apply time: the API server rejects an **empty** selector
-through the CRD validation rules, while an **exclusion-only** selector is
-accepted by the API server and then refused by the controller, which fails
-closed, writes no policy, and reports `NetworkPolicyReconcileFailed` on the
-custom resource. Namespace and Pod labels are trust inputs, not cryptographic
-identities; application authentication remains necessary.
+must positively identify callers: a nonempty `matchLabels` value, an `Exists`
+expression, or an `In` expression with a nonempty value. Empty and
+exclusion-only selectors are rejected by the CRD validation rules at admission,
+as is a namespace selector that relies on the universal `Exists` form of
+`kubernetes.io/metadata.name`. The selector collections are bounded
+(`maxProperties: 32`, `maxItems: 32`) because the API server rejects a CEL rule
+that iterates an unbounded collection under `additionalIngress` as over its cost
+budget. The controller revalidates the same contract on every reconcile and
+still fails closed - writing no policy and reporting
+`NetworkPolicyReconcileFailed` on the custom resource - for anything that reaches
+it, including a selector stored before this validation existed. Namespace and
+Pod labels are trust inputs, not cryptographic identities; application
+authentication remains necessary.
 
 `allowedConsumers` authorises AIGuardrail attachments, not network sources, and is
 deliberately not translated into peers.

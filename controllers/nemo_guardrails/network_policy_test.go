@@ -159,8 +159,8 @@ func TestBuildNemoGuardrailsNetworkPolicyAdditionalIngress(t *testing.T) {
 	exposeRoute := false
 	instance.Spec.ExposeRoute = &exposeRoute
 	instance.Spec.NetworkPolicy = &nemoguardrailsv1alpha1.NemoNetworkPolicy{AdditionalIngress: []nemoguardrailsv1alpha1.NemoIngressPeer{{
-		NamespaceSelector: metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "custom-gateway"}},
-		PodSelector:       metav1.LabelSelector{MatchLabels: map[string]string{"app": "client"}},
+		NamespaceSelector: nemoguardrailsv1alpha1.NemoLabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "custom-gateway"}},
+		PodSelector:       nemoguardrailsv1alpha1.NemoLabelSelector{MatchLabels: map[string]string{"app": "client"}},
 	}}}
 	desired, err := buildNemoGuardrailsNetworkPolicy(instance, testNemoInfraNamespace)
 	if err != nil {
@@ -173,19 +173,38 @@ func TestBuildNemoGuardrailsNetworkPolicyAdditionalIngress(t *testing.T) {
 	if len(custom.From) != 1 || custom.From[0].PodSelector == nil || custom.From[0].NamespaceSelector == nil {
 		t.Fatal("namespace and Pod selectors must be ANDed in one peer")
 	}
+	if got := custom.From[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"]; got != "custom-gateway" {
+		t.Fatalf("namespace selector = %#v, want the configured namespace name", custom.From[0].NamespaceSelector)
+	}
+	if got := custom.From[0].PodSelector.MatchLabels["app"]; got != "client" {
+		t.Fatalf("Pod selector = %#v, want the configured caller", custom.From[0].PodSelector)
+	}
 	assertNemoNetworkPolicyPorts(t, custom, testNemoServerPort)
 
 	// An exclusion-only or empty selector must fail closed instead of granting
 	// the whole cluster.
-	instance.Spec.NetworkPolicy.AdditionalIngress[0].PodSelector = metav1.LabelSelector{}
+	instance.Spec.NetworkPolicy.AdditionalIngress[0].PodSelector = nemoguardrailsv1alpha1.NemoLabelSelector{}
 	if _, err := buildNemoGuardrailsNetworkPolicy(instance, testNemoInfraNamespace); err == nil {
 		t.Fatal("empty Pod selector must fail closed")
 	}
-	instance.Spec.NetworkPolicy.AdditionalIngress[0].PodSelector = metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
+	instance.Spec.NetworkPolicy.AdditionalIngress[0].PodSelector = nemoguardrailsv1alpha1.NemoLabelSelector{MatchExpressions: []nemoguardrailsv1alpha1.NemoLabelSelectorRequirement{{
 		Key: "app", Operator: metav1.LabelSelectorOpNotIn, Values: []string{"blocked"},
 	}}}
 	if _, err := buildNemoGuardrailsNetworkPolicy(instance, testNemoInfraNamespace); err == nil {
 		t.Fatal("exclusion-only Pod selector must fail closed")
+	}
+
+	// A positive expression is admitted and carried into the policy unchanged.
+	instance.Spec.NetworkPolicy.AdditionalIngress[0].PodSelector = nemoguardrailsv1alpha1.NemoLabelSelector{MatchExpressions: []nemoguardrailsv1alpha1.NemoLabelSelectorRequirement{{
+		Key: "app", Operator: metav1.LabelSelectorOpIn, Values: []string{"client"},
+	}}}
+	desired, err = buildNemoGuardrailsNetworkPolicy(instance, testNemoInfraNamespace)
+	if err != nil {
+		t.Fatalf("positive In expression rejected: %v", err)
+	}
+	expressions := desired.Policy.Spec.Ingress[3].From[0].PodSelector.MatchExpressions
+	if len(expressions) != 1 || expressions[0].Key != "app" || len(expressions[0].Values) != 1 || expressions[0].Values[0] != "client" {
+		t.Fatalf("Pod selector expressions = %#v, want the configured expression", expressions)
 	}
 }
 
