@@ -21,12 +21,14 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -157,6 +159,26 @@ func TestReadTLSProfileStateDoesNotRetryPermanentErrors(t *testing.T) {
 		if !errors.Is(err, permanent) || attempts != 1 {
 			t.Fatalf("permanent error %v: attempts=%d err=%v", permanent, attempts, err)
 		}
+	}
+}
+
+func TestIsTransientTLSReadError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "internal server error", err: apierrors.NewInternalError(errors.New("internal error")), want: true},
+		{name: "connection refused", err: &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}, want: true},
+		{name: "forbidden", err: apierrors.NewForbidden(schema.GroupResource{Resource: "apiservers"}, "cluster", errors.New("denied")), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isTransientTLSReadError(tt.err); got != tt.want {
+				t.Errorf("isTransientTLSReadError(%v) = %t, want %t", tt.err, got, tt.want)
+			}
+		})
 	}
 }
 
