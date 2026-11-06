@@ -585,6 +585,10 @@ func (r *NemoGuardrailsReconciler) ensureReferencedSecretsInNamespace(ctx contex
 
 		source := &corev1.Secret{}
 		if err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: owner.Namespace}, source); err != nil {
+			// if it's an optional secret, it doesn't matter if it doesn't exist
+			if envVar.ValueFrom.SecretKeyRef.Optional != nil && *envVar.ValueFrom.SecretKeyRef.Optional {
+				continue
+			}
 			return fmt.Errorf("secret %s/%s referenced by spec.env: %w", owner.Namespace, secretName, err)
 		}
 		if _, err := r.ensureSecretInNamespace(ctx, owner, source, targetNamespace); err != nil {
@@ -722,14 +726,17 @@ func copyStringMap(in map[string]string) map[string]string {
 	return out
 }
 
-func rewriteSecretRefs(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) []corev1.EnvVar {
+func rewriteResourceRefs(nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, targetNamespace string) []corev1.EnvVar {
 	env := make([]corev1.EnvVar, len(nemoGuardrails.Spec.Env))
 	for i, variable := range nemoGuardrails.Spec.Env {
 		env[i] = *variable.DeepCopy()
-		if env[i].ValueFrom == nil || env[i].ValueFrom.SecretKeyRef == nil {
+		if env[i].ValueFrom == nil {
 			continue
+		} else if env[i].ValueFrom.SecretKeyRef != nil {
+			env[i].ValueFrom.SecretKeyRef.Name = copiedObjectName(nemoGuardrails.Namespace, nemoGuardrails.Name, env[i].ValueFrom.SecretKeyRef.Name, targetNamespace)
+		} else if env[i].ValueFrom.ConfigMapKeyRef != nil {
+			env[i].ValueFrom.ConfigMapKeyRef.Name = copiedObjectName(nemoGuardrails.Namespace, nemoGuardrails.Name, env[i].ValueFrom.ConfigMapKeyRef.Name, targetNamespace)
 		}
-		env[i].ValueFrom.SecretKeyRef.Name = copiedObjectName(nemoGuardrails.Namespace, nemoGuardrails.Name, env[i].ValueFrom.SecretKeyRef.Name, targetNamespace)
 	}
 	return env
 }
