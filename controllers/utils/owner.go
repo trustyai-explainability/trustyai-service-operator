@@ -10,9 +10,12 @@ import (
 // Kubernetes rejects owner references that cross namespaces.
 const OwnerUIDLabel = "trustyai.opendatahub.io/owner-uid"
 
+// OwnerNameAnnotation and OwnerNamespaceAnnotation record which custom resource
+// owns an object whose namespace prevents a controller reference. They are also
+// the mapping input for explicit watches over label-owned objects.
 const (
-	ownerNameAnnotation      = "trustyai.opendatahub.io/owner-name"
-	ownerNamespaceAnnotation = "trustyai.opendatahub.io/owner-namespace"
+	OwnerNameAnnotation      = "trustyai.opendatahub.io/owner-name"
+	OwnerNamespaceAnnotation = "trustyai.opendatahub.io/owner-namespace"
 )
 
 // IsOwnedBy reports whether obj is owned by owner.
@@ -31,8 +34,8 @@ func IsOwnedBy(obj, owner metav1.Object) bool {
 	if obj.GetLabels()[OwnerUIDLabel] != string(owner.GetUID()) {
 		return false
 	}
-	name := obj.GetAnnotations()[ownerNameAnnotation]
-	namespace := obj.GetAnnotations()[ownerNamespaceAnnotation]
+	name := obj.GetAnnotations()[OwnerNameAnnotation]
+	namespace := obj.GetAnnotations()[OwnerNamespaceAnnotation]
 	if name == "" && namespace == "" {
 		return true
 	}
@@ -59,8 +62,8 @@ func SetOwnerReference(owner, object metav1.Object, scheme *runtime.Scheme) erro
 		if annotations == nil {
 			annotations = map[string]string{}
 		}
-		annotations[ownerNameAnnotation] = owner.GetName()
-		annotations[ownerNamespaceAnnotation] = ownerNamespace
+		annotations[OwnerNameAnnotation] = owner.GetName()
+		annotations[OwnerNamespaceAnnotation] = ownerNamespace
 		object.SetAnnotations(annotations)
 		return nil
 	}

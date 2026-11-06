@@ -162,7 +162,7 @@ func TestNetworkPolicyTemplateSelectorConflicts(t *testing.T) {
 		deployment := ownedDeploymentFixture(owner)
 		deployment.Spec.Selector = selector
 		original := deployment.DeepCopy()
-		if err := LabelOwnedNetworkPolicyDeployment(deployment, scheme, owner, identity); err == nil {
+		if err := LabelOwnedNetworkPolicyDeployment(deployment, scheme, owner, identity, SameNamespaceOwnership); err == nil {
 			t.Fatal("selector conflict accepted")
 		}
 		if deployment.Spec.Template.Labels[NetworkPolicyRoleLabel] != original.Spec.Template.Labels[NetworkPolicyRoleLabel] {

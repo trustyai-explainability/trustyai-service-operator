@@ -73,7 +73,7 @@ func (r *EvalHubReconciler) reconcileMCPDeployment(ctx context.Context, instance
 		if err := controllerutil.SetControllerReference(instance, deployment, r.Scheme); err != nil {
 			return err
 		}
-		if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, evalHubNetworkPolicyOwner(instance), identity); err != nil {
+		if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, evalHubNetworkPolicyOwner(instance), identity, utils.SameNamespaceOwnership); err != nil {
 			return err
 		}
 		log.Info("Creating MCP Deployment", "name", name)
@@ -84,7 +84,7 @@ func (r *EvalHubReconciler) reconcileMCPDeployment(ctx context.Context, instance
 	if err := controllerutil.SetControllerReference(instance, deployment, r.Scheme); err != nil {
 		return err
 	}
-	if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, evalHubNetworkPolicyOwner(instance), identity); err != nil {
+	if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, evalHubNetworkPolicyOwner(instance), identity, utils.SameNamespaceOwnership); err != nil {
 		return err
 	}
 	log.Info("Updating MCP Deployment", "name", name)

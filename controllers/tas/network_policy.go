@@ -355,7 +355,7 @@ func (r *TrustyAIServiceReconciler) ensureTASDeploymentIdentity(ctx context.Cont
 		return err
 	}
 	before := deployment.Spec.Template.Labels
-	if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, owner, identity); err != nil {
+	if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, owner, identity, utils.SameNamespaceOwnership); err != nil {
 		return fmt.Errorf("add reserved TAS identity to Deployment template: %w", err)
 	}
 	if reflect.DeepEqual(before, deployment.Spec.Template.Labels) {
