@@ -377,11 +377,14 @@ spec:
                 properties:
                   additionalIngress:
                     description: |-
-                      AdditionalIngress permits callers on the public Service listener only.
+                      AdditionalIngress permits callers that are not one of the built-in peers.
                       Namespace and Pod selectors are ANDed, and both must positively identify
-                      callers: empty and exclusion-only selectors are rejected.
-                      This does not authorize consumer attachments or bypass authentication,
-                      and it never grants the authenticated admin listener.
+                      callers: empty and exclusion-only selectors are rejected. A peer reaches the
+                      public Service listener and, when it names the admin listener, the
+                      authenticated admin listener too; that requires the custom resource to
+                      request authentication, without which the Service publishes no admin listener.
+                      This does not authorize consumer attachments and does not bypass
+                      authentication: the admin listener still requires an authorized token.
                     items:
                       description: |-
                         NemoIngressPeer identifies callers across namespaces, never relative to the CR.
@@ -393,6 +396,23 @@ spec:
                         universal-CIDR forms, failing closed without writing a policy; the CR reports
                         that rejection through its NetworkPolicy condition.
                       properties:
+                        listeners:
+                          default:
+                          - Public
+                          description: |-
+                            Listeners selects which Service listeners admit this peer. It defaults to
+                            the public listener. Admin adds the authenticated admin listener, the same
+                            handler in-cluster callers use to enumerate a server's guardrails, and is
+                            accepted only when the custom resource requests authentication.
+                          items:
+                            description: NemoListener is one Service listener a configured
+                              peer is admitted on.
+                            enum:
+                            - Public
+                            - Admin
+                            type: string
+                          maxItems: 2
+                          type: array
                         namespaceSelector:
                           description: |-
                             NamespaceSelector selects the caller namespaces and is ANDed with

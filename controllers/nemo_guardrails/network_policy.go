@@ -151,6 +151,29 @@ func nemoCompatibilityIngressPorts(instance *nemoguardrailsv1alpha1.NemoGuardrai
 	return ports
 }
 
+// nemoAdditionalIngressPorts is the Service surface one configured peer reaches:
+// the public listener, plus the authenticated admin listener when the peer names
+// it. The admin listener is published only while the auth proxy is enabled, so a
+// peer that asks for it without authentication is rejected rather than written as
+// a rule for a port nothing listens on.
+func nemoAdditionalIngressPorts(
+	instance *nemoguardrailsv1alpha1.NemoGuardrails,
+	peer nemoguardrailsv1alpha1.NemoIngressPeer,
+	index int,
+) ([]networkingv1.NetworkPolicyPort, error) {
+	ports := []networkingv1.NetworkPolicyPort{nemoNetworkPolicyTCPPort(nemoIngressListenerPort(instance))}
+	if !peer.WantsAdminListener() {
+		return ports, nil
+	}
+	if !utils.RequiresAuth(instance) {
+		return nil, fmt.Errorf(
+			"networkPolicy.additionalIngress[%d] requests the admin listener, but the custom resource does not request authentication; the Service publishes no admin listener to admit",
+			index,
+		)
+	}
+	return append(ports, nemoNetworkPolicyTCPPort(nemoAuthProxyAdminPort)), nil
+}
+
 // buildNemoGuardrailsNetworkPolicy authors the operand NetworkPolicy for one
 // NemoGuardrails instance in its workload namespace.
 //
@@ -163,12 +186,14 @@ func nemoCompatibilityIngressPorts(instance *nemoguardrailsv1alpha1.NemoGuardrai
 //     share that namespace and cannot be enumerated from the custom resource.
 //   - Shared AI Gateway namespace (spec.aiGatewayMode): only documented callers
 //     are admitted — MaaS payload processing and Istio-managed gateway Pods — on
-//     the public listener; the admin listener is never granted.
+//     the public listener, plus any configured peer, which is the only way the
+//     admin listener is granted in this profile.
 //
-// Both profiles also admit spec.networkPolicy.additionalIngress peers and, while
-// Route exposure is enabled, OpenShift ingress-policy-group namespaces, and both
-// keep a namespace-only peer record with its rationale and residual risk on the
-// policy.
+// Both profiles also admit spec.networkPolicy.additionalIngress peers, on the
+// public listener and on the authenticated admin listener when a peer names it,
+// and OpenShift ingress-policy-group namespaces while Route exposure is enabled.
+// Both keep a namespace-only peer record with its rationale and residual risk on
+// the policy.
 //
 // Egress is the reviewed AllowAll profile in both placements: outbound
 // destinations are entirely user-configured, so no complete allowlist can be
@@ -254,7 +279,11 @@ func buildNemoGuardrailsNetworkPolicy(instance *nemoguardrailsv1alpha1.NemoGuard
 		Ports: []networkingv1.NetworkPolicyPort{nemoNetworkPolicyTCPPort(listenerPort)},
 	})
 	if instance.Spec.NetworkPolicy != nil {
-		for _, peer := range instance.Spec.NetworkPolicy.AdditionalIngress {
+		for index, peer := range instance.Spec.NetworkPolicy.AdditionalIngress {
+			ports, err := nemoAdditionalIngressPorts(instance, peer, index)
+			if err != nil {
+				return utils.WorkloadNetworkPolicy{}, err
+			}
 			namespaceSelector := peer.NamespaceSelector.LabelSelector()
 			podSelector := peer.PodSelector.LabelSelector()
 			ingress = append(ingress, networkingv1.NetworkPolicyIngressRule{
@@ -262,7 +291,7 @@ func buildNemoGuardrailsNetworkPolicy(instance *nemoguardrailsv1alpha1.NemoGuard
 					NamespaceSelector: &namespaceSelector,
 					PodSelector:       &podSelector,
 				}},
-				Ports: []networkingv1.NetworkPolicyPort{nemoNetworkPolicyTCPPort(listenerPort)},
+				Ports: ports,
 			})
 		}
 	}

@@ -82,9 +82,12 @@ endpoint that was reachable before this policy existed. It does not grant any
 other namespace.
 
 The restricted profile is the more restrictive choice and has no co-located
-callers by construction: it grants the public listener only, and never the admin
-listener. Selecting it means enabling `spec.aiGatewayMode`, which is the
-supported administrator control for a narrower profile for this operand.
+callers by construction: it grants the public listener, plus the admin listener
+only to a peer that names it explicitly, which is what an in-cluster consumer
+such as the platform UI needs in order to enumerate a server's guardrails. No
+built-in peer and no namespace-only peer is granted the admin listener.
+Selecting it means enabling `spec.aiGatewayMode`, which is the supported
+administrator control for a narrower profile for this operand.
 
 The public listener is **TCP 8000** without authentication or **TCP 8443** with
 kube-rbac-proxy; the admin listener is **TCP 8444**.
@@ -113,6 +116,34 @@ spec:
           matchLabels:
             app: payload-processing
 ```
+
+A peer reaches the public listener by default. An in-cluster consumer that needs
+the admin listener, such as the platform UI reading the guardrails a server
+exposes, names it:
+
+```yaml
+spec:
+  networkPolicy:
+    additionalIngress:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: ui-namespace
+        podSelector:
+          matchLabels:
+            app: guardrails-ui
+        listeners:
+          - Public
+          - Admin
+```
+
+The admin listener is published only while
+`security.opendatahub.io/enable-auth: "true"` is set on the `NemoGuardrails`
+custom resource, so a peer that asks for it without that annotation fails
+closed: no policy is written and the custom resource reports
+`NetworkPolicyReconcileFailed`. The
+grant is network access only. The admin listener still requires a token that
+kube-rbac-proxy authorises, and the caller still needs RBAC to act on what it
+reads.
 
 Peers are additive. Namespace and Pod selectors are ANDed in one peer and both
 must positively identify callers: a nonempty `matchLabels` value, an `Exists`

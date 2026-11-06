@@ -208,6 +208,78 @@ func TestBuildNemoGuardrailsNetworkPolicyAdditionalIngress(t *testing.T) {
 	}
 }
 
+// TestBuildNemoGuardrailsNetworkPolicyAdditionalIngressAdminListener covers the
+// in-cluster consumer of the admin listener: callers that are not one of the
+// built-in peers, such as the platform UI, enumerate a server's guardrails over
+// the admin port from their own namespace.
+func TestBuildNemoGuardrailsNetworkPolicyAdditionalIngressAdminListener(t *testing.T) {
+	instance := testNemoNetworkPolicyOwner()
+	instance.Annotations = map[string]string{constants.AuthAnnotationKey: "true"}
+	instance.Spec.NetworkPolicy = &nemoguardrailsv1alpha1.NemoNetworkPolicy{AdditionalIngress: []nemoguardrailsv1alpha1.NemoIngressPeer{{
+		NamespaceSelector: nemoguardrailsv1alpha1.NemoLabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "ui-namespace"}},
+		PodSelector:       nemoguardrailsv1alpha1.NemoLabelSelector{MatchLabels: map[string]string{"app": "guardrails-ui"}},
+		Listeners:         []nemoguardrailsv1alpha1.NemoListener{nemoguardrailsv1alpha1.NemoListenerAdmin},
+	}}}
+	desired, err := buildNemoGuardrailsNetworkPolicy(instance, testNemoInfraNamespace)
+	if err != nil {
+		t.Fatalf("buildNemoGuardrailsNetworkPolicy() error = %v", err)
+	}
+	identity, err := nemoNetworkPolicyIdentity(instance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := utils.ValidateWorkloadNetworkPolicyWithIngressIntent(desired.Policy, identity, desired.Egress, desired.Ingress); err != nil {
+		t.Fatalf("ValidateWorkloadNetworkPolicyWithIngressIntent() error = %v", err)
+	}
+	// The restricted (AI Gateway) profile must honour an explicit admin peer: the
+	// in-cluster caller is in another namespace by construction.
+	custom := nemoIngressRuleForNamespace(t, desired.Policy, "ui-namespace")
+	if custom.From[0].PodSelector.MatchLabels["app"] != "guardrails-ui" {
+		t.Fatalf("Pod selector = %#v, want the configured caller", custom.From[0].PodSelector)
+	}
+	assertNemoNetworkPolicyPorts(t, custom, testNemoAuthProxyListener, nemoAuthProxyAdminPort)
+
+	// No built-in rule gains the admin listener from an explicit peer.
+	for _, rule := range desired.Policy.Spec.Ingress {
+		if reflect.DeepEqual(rule, custom) {
+			continue
+		}
+		for _, port := range rule.Ports {
+			if port.Port != nil && port.Port.IntVal == nemoAuthProxyAdminPort {
+				t.Fatalf("built-in ingress rule grants the authenticated admin listener: %#v", rule)
+			}
+		}
+	}
+
+	// Without authentication the Service publishes no admin listener, so asking for
+	// it fails closed rather than writing a rule for a closed port.
+	instance.Annotations = nil
+	if _, err := buildNemoGuardrailsNetworkPolicy(instance, testNemoInfraNamespace); err == nil {
+		t.Fatal("admin listener peer without authentication must fail closed")
+	}
+
+	// Naming both listeners admits both, and the documented caller set is unchanged.
+	instance.Annotations = map[string]string{constants.AuthAnnotationKey: "true"}
+	instance.Spec.NetworkPolicy.AdditionalIngress[0].Listeners = []nemoguardrailsv1alpha1.NemoListener{
+		nemoguardrailsv1alpha1.NemoListenerPublic,
+		nemoguardrailsv1alpha1.NemoListenerAdmin,
+	}
+	desired, err = buildNemoGuardrailsNetworkPolicy(instance, testNemoInfraNamespace)
+	if err != nil {
+		t.Fatalf("buildNemoGuardrailsNetworkPolicy() error = %v", err)
+	}
+	assertNemoNetworkPolicyPorts(t, nemoIngressRuleForNamespace(t, desired.Policy, "ui-namespace"), testNemoAuthProxyListener, nemoAuthProxyAdminPort)
+
+	// An absent listeners list keeps the peer on the public listener, so existing
+	// custom resources render the policy they render today.
+	instance.Spec.NetworkPolicy.AdditionalIngress[0].Listeners = nil
+	desired, err = buildNemoGuardrailsNetworkPolicy(instance, testNemoInfraNamespace)
+	if err != nil {
+		t.Fatalf("buildNemoGuardrailsNetworkPolicy() error = %v", err)
+	}
+	assertNemoNetworkPolicyPorts(t, nemoIngressRuleForNamespace(t, desired.Policy, "ui-namespace"), testNemoAuthProxyListener)
+}
+
 func TestBuildNemoGuardrailsNetworkPolicyRequiresPersistedIdentity(t *testing.T) {
 	if _, err := buildNemoGuardrailsNetworkPolicy(nil, testNemoInfraNamespace); err == nil {
 		t.Fatal("buildNemoGuardrailsNetworkPolicy(nil) succeeded")
@@ -689,6 +761,22 @@ func assertNemoCallerPodSelector(t *testing.T, selector *metav1.LabelSelector) {
 			t.Fatalf("caller pod selector values = %v, want %q", expression.Values, required)
 		}
 	}
+}
+
+// nemoIngressRuleForNamespace returns the single ingress rule whose namespace
+// selector names namespace, which keeps assertions independent of rule order.
+func nemoIngressRuleForNamespace(t *testing.T, policy *networkingv1.NetworkPolicy, namespace string) networkingv1.NetworkPolicyIngressRule {
+	t.Helper()
+	for _, rule := range policy.Spec.Ingress {
+		for _, peer := range rule.From {
+			if peer.NamespaceSelector != nil &&
+				peer.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] == namespace {
+				return rule
+			}
+		}
+	}
+	t.Fatalf("no ingress rule selects namespace %q", namespace)
+	return networkingv1.NetworkPolicyIngressRule{}
 }
 
 func assertNemoNetworkPolicyPorts(t *testing.T, rule networkingv1.NetworkPolicyIngressRule, want ...int32) {

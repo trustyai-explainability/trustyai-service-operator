@@ -102,11 +102,14 @@ type NemoGuardrailsSpec struct {
 // NemoNetworkPolicy extends the built-in MaaS payload-processing, gateway and
 // Route ingress rules of the operand NetworkPolicy.
 type NemoNetworkPolicy struct {
-	// AdditionalIngress permits callers on the public Service listener only.
+	// AdditionalIngress permits callers that are not one of the built-in peers.
 	// Namespace and Pod selectors are ANDed, and both must positively identify
-	// callers: empty and exclusion-only selectors are rejected.
-	// This does not authorize consumer attachments or bypass authentication,
-	// and it never grants the authenticated admin listener.
+	// callers: empty and exclusion-only selectors are rejected. A peer reaches the
+	// public Service listener and, when it names the admin listener, the
+	// authenticated admin listener too; that requires the custom resource to
+	// request authentication, without which the Service publishes no admin listener.
+	// This does not authorize consumer attachments and does not bypass
+	// authentication: the admin listener still requires an authorized token.
 	// +optional
 	// +kubebuilder:validation:MaxItems=32
 	AdditionalIngress []NemoIngressPeer `json:"additionalIngress,omitempty"`
@@ -129,6 +132,34 @@ type NemoIngressPeer struct {
 	NamespaceSelector NemoLabelSelector `json:"namespaceSelector"`
 	// PodSelector selects the caller Pods inside the selected namespaces.
 	PodSelector NemoLabelSelector `json:"podSelector"`
+	// Listeners selects which Service listeners admit this peer. It defaults to
+	// the public listener. Admin adds the authenticated admin listener, the same
+	// handler in-cluster callers use to enumerate a server's guardrails, and is
+	// accepted only when the custom resource requests authentication.
+	// +optional
+	// +kubebuilder:validation:MaxItems=2
+	// +kubebuilder:default={Public}
+	Listeners []NemoListener `json:"listeners,omitempty"`
+}
+
+// NemoListener is one Service listener a configured peer is admitted on.
+// +kubebuilder:validation:Enum=Public;Admin
+type NemoListener string
+
+const (
+	// NemoListenerPublic is the listener the Service publishes for guardrail
+	// callouts: TCP 8000 without authentication, TCP 8443 with kube-rbac-proxy.
+	NemoListenerPublic NemoListener = "Public"
+	// NemoListenerAdmin is the authenticated admin listener, published as Service
+	// port 444 to Pod port 8444. It exists only when authentication is enabled.
+	NemoListenerAdmin NemoListener = "Admin"
+)
+
+// WantsAdminListener reports whether the peer must be admitted on the
+// authenticated admin listener. Absent or empty Listeners keeps the public
+// listener only, which is also the CRD default.
+func (p NemoIngressPeer) WantsAdminListener() bool {
+	return slices.Contains(p.Listeners, NemoListenerAdmin)
 }
 
 // NemoLabelSelector is metav1.LabelSelector with bounded collections. These
