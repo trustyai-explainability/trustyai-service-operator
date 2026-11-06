@@ -2,6 +2,7 @@ package nemo_guardrails
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	nemoguardrailsv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/nemo_guardrails/v1alpha1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -714,4 +716,54 @@ func TestDeleteOwnedInNamespaceLeavesOtherObjects(t *testing.T) {
 	require.Error(t, c.Get(context.Background(), client.ObjectKeyFromObject(legacy), &appsv1.Deployment{}))
 	require.Error(t, c.Get(context.Background(), client.ObjectKeyFromObject(labeled), &corev1.ConfigMap{}))
 	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(other), &appsv1.Deployment{}))
+}
+
+func TestCreateDeploymentProxyTLSValidationGatedOnAuthProxy(t *testing.T) {
+	// An invalid proxy TLS profile must only block workloads that render
+	// the kube-rbac-proxy sidecars; proxy-free workloads reconcile.
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, nemoguardrailsv1alpha1.AddToScheme(scheme))
+
+	newCR := func(authAnnotation bool) *nemoguardrailsv1alpha1.NemoGuardrails {
+		cr := &nemoguardrailsv1alpha1.NemoGuardrails{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "nemo-guardrails",
+				Namespace: "test-ns",
+				UID:       "cr-uid",
+			},
+			Spec: nemoguardrailsv1alpha1.NemoGuardrailsSpec{
+				NemoConfigs: []nemoguardrailsv1alpha1.NemoConfig{{
+					Name:       "nemo-config",
+					ConfigMaps: []string{"nemo-config"},
+				}},
+			},
+		}
+		if authAnnotation {
+			cr.Annotations = map[string]string{constants.AuthAnnotationKey: "true"}
+		}
+		return cr
+	}
+	operatorConfig := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: constants.ConfigMap, Namespace: "operator-ns"},
+		Data:       map[string]string{nemoGuardrailsImageKey: "quay.io/trustyai/nemo-guardrails:test"},
+	}
+	userConfig := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "nemo-config", Namespace: "test-ns"},
+		Data:       map[string]string{"config.yaml": "models: []"},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(operatorConfig, userConfig).Build()
+	reconciler := &NemoGuardrailsReconciler{Client: c, Scheme: scheme, Namespace: "operator-ns"}
+
+	previous, previousErr := pkgtls.CurrentProxyTLSArguments(), pkgtls.CurrentProxyTLSArgumentsError()
+	t.Cleanup(func() { pkgtls.SetProxyTLSArguments(previous, previousErr) })
+	pkgtls.SetProxyTLSArguments(pkgtls.ProxyTLSArguments{}, errors.New("cannot serve HTTP/2"))
+
+	deployment, err := reconciler.createDeployment(context.Background(), newCR(false), utils.CABundleInitContainerConfig{}, nil)
+	require.NoError(t, err, "proxy-free workload must not be blocked by the proxy TLS error")
+	require.NotEmpty(t, deployment.Name)
+
+	_, err = reconciler.createDeployment(context.Background(), newCR(true), utils.CABundleInitContainerConfig{}, nil)
+	require.ErrorContains(t, err, "cannot be applied to the kube-rbac-proxy sidecars")
 }

@@ -142,7 +142,13 @@ func run() int {
 		setupLog.Error(err, "unable to resolve TLS configuration")
 		return 1
 	}
-	pkgtls.SetProxyTLSArguments(tlsResult.ProxyArgs)
+	pkgtls.SetProxyTLSArguments(tlsResult.ProxyArgs, tlsResult.ProxyArgsErr)
+	if tlsResult.ProxyArgsErr != nil {
+		// Workload concern: the operator keeps running and the reconcilers
+		// fail the affected resources with a condition until the cluster TLS
+		// profile is fixed.
+		setupLog.Error(tlsResult.ProxyArgsErr, "cluster TLS profile cannot be served by the kube-rbac-proxy sidecars; reconciliation of managed workloads will fail until the profile is fixed")
+	}
 
 	metricsOpts := server.Options{
 		BindAddress:   metricsAddr,

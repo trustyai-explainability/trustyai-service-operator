@@ -22,6 +22,9 @@ const (
 	TLSAdherenceNoOpinion                    = ""
 	TLSAdherenceLegacyAdheringComponentsOnly = "LegacyAdheringComponentsOnly"
 	TLSAdherenceStrictAllComponents          = "StrictAllComponents"
+
+	http2RequiredECDHERSAAES128GCM   = "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+	http2RequiredECDHEECDSAAES128GCM = "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
 )
 
 // ProxyTLSArguments is the complete TLS argument set for kube-rbac-proxy.
@@ -83,12 +86,28 @@ func ResolveProxyTLSArguments(profile *configv1.TLSSecurityProfile, adherence st
 		if len(spec.Ciphers) > 0 && len(result.CipherSuites) == 0 {
 			return ProxyTLSArguments{}, fmt.Errorf("TLS profile has no supported cipher suites for TLS %s", minVersion)
 		}
+		if len(result.CipherSuites) > 0 && !hasHTTP2RequiredCipherSuite(result.CipherSuites) {
+			profileName := "default Intermediate"
+			if selected != nil {
+				profileName = string(selected.Type)
+			}
+			return ProxyTLSArguments{}, fmt.Errorf("proxy TLS profile %q cannot serve HTTP/2 with the selected TLS %s cipher list: missing an ECDHE RSA or ECDSA AES-128-GCM cipher suite", profileName, minVersion)
+		}
 		if len(result.CipherSuites) > 0 {
 			result.Args = append(result.Args, "--tls-cipher-suites="+strings.Join(result.CipherSuites, ","))
 		}
 	}
 
 	return result, nil
+}
+
+func hasHTTP2RequiredCipherSuite(suites []string) bool {
+	for _, suite := range suites {
+		if suite == http2RequiredECDHERSAAES128GCM || suite == http2RequiredECDHEECDSAAES128GCM {
+			return true
+		}
+	}
+	return false
 }
 
 func tlsVersion(version string) (uint16, error) {

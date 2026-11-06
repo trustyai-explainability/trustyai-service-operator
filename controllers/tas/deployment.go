@@ -52,6 +52,9 @@ type DeploymentConfig struct {
 
 // createDeploymentObject returns a Deployment for the TrustyAI Service instance
 func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, serviceImage string, caBunble CustomCertificatesBundle) (*appsv1.Deployment, error) {
+	if err := pkgtls.CurrentProxyTLSArgumentsError(); err != nil {
+		return nil, fmt.Errorf("cluster TLS profile cannot be applied to the kube-rbac-proxy sidecars: %w", err)
+	}
 	var batchSize int
 	// If no batch size is provided, assume the default one
 	if instance.Spec.Metrics.BatchSize == nil {

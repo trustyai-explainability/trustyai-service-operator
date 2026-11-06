@@ -259,8 +259,8 @@ func TestReconcile_TransientFailurePreservesPolicyUntilRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	SetProxyTLSArguments(args)
-	defer SetProxyTLSArguments(previous)
+	SetProxyTLSArguments(args, nil)
+	defer SetProxyTLSArguments(previous, nil)
 
 	restarts := 0
 	w := NewProfileWatcherWithAdherence(nil, initial, TLSAdherenceStrictAllComponents, func() { restarts++ })

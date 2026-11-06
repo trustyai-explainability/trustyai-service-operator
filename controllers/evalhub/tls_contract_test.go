@@ -2,6 +2,7 @@ package evalhub
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -134,7 +135,7 @@ func assertManagedHTTP(t *testing.T, spec appsv1.DeploymentSpec, appName, cert, 
 
 func TestManagedTLSProfilesAndHTTPConfig(t *testing.T) {
 	previous := pkgtls.CurrentProxyTLSArguments()
-	t.Cleanup(func() { pkgtls.SetProxyTLSArguments(previous) })
+	t.Cleanup(func() { pkgtls.SetProxyTLSArguments(previous, nil) })
 	for _, tt := range []struct {
 		name, adherence string
 		profile         *configv1.TLSSecurityProfile
@@ -148,7 +149,7 @@ func TestManagedTLSProfilesAndHTTPConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			expected, err := pkgtls.ResolveProxyTLSArguments(tt.profile, tt.adherence, tt.groups, false)
 			require.NoError(t, err)
-			pkgtls.SetProxyTLSArguments(expected)
+			pkgtls.SetProxyTLSArguments(expected, nil)
 			r, instance := managedTLSFixture(t)
 			instance.Spec.Env = []corev1.EnvVar{{Name: "EVAL_HUB_CONFIG_DIR", Value: "/unsupported/config"}, {Name: "CUSTOM_SETTING", Value: "kept"}}
 			api, err := r.buildDeploymentSpec(context.Background(), instance, nil, nil, nil, nil)
@@ -185,11 +186,11 @@ func TestManagedTLSProfilesAndHTTPConfig(t *testing.T) {
 
 func TestManagedTLSPolicyChangesRefreshExistingDeployments(t *testing.T) {
 	previous := pkgtls.CurrentProxyTLSArguments()
-	t.Cleanup(func() { pkgtls.SetProxyTLSArguments(previous) })
+	t.Cleanup(func() { pkgtls.SetProxyTLSArguments(previous, nil) })
 	r, instance := managedTLSFixture(t)
 	ctx := context.Background()
-	custom := func(cipher string) *configv1.TLSSecurityProfile {
-		return &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType, Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{MinTLSVersion: configv1.VersionTLS12, Ciphers: []string{cipher}}}}
+	custom := func(ciphers ...string) *configv1.TLSSecurityProfile {
+		return &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType, Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{MinTLSVersion: configv1.VersionTLS12, Ciphers: ciphers}}}
 	}
 	modern := &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}
 	policies := []struct {
@@ -202,15 +203,18 @@ func TestManagedTLSPolicyChangesRefreshExistingDeployments(t *testing.T) {
 		{modern, pkgtls.TLSAdherenceLegacyAdheringComponentsOnly, nil, false},
 		{modern, pkgtls.TLSAdherenceStrictAllComponents, nil, true},
 		{custom("ECDHE-RSA-AES128-GCM-SHA256"), pkgtls.TLSAdherenceStrictAllComponents, []string{"secp256r1"}, true},
-		{custom("ECDHE-RSA-AES256-GCM-SHA384"), pkgtls.TLSAdherenceStrictAllComponents, []string{"secp256r1"}, true},
-		{custom("ECDHE-RSA-AES256-GCM-SHA384"), pkgtls.TLSAdherenceStrictAllComponents, []string{"secp384r1"}, true},
-		{custom("ECDHE-RSA-AES256-GCM-SHA384"), "future-strict", []string{"secp384r1"}, false},
+		// AES-256-only lists cannot serve HTTP/2 and are rejected by the proxy
+		// argument resolver, so the refresh cases use distinct lists that keep
+		// an HTTP/2-compatible AES-128-GCM suite.
+		{custom("ECDHE-RSA-AES128-GCM-SHA256", "ECDHE-RSA-AES256-GCM-SHA384"), pkgtls.TLSAdherenceStrictAllComponents, []string{"secp256r1"}, true},
+		{custom("ECDHE-ECDSA-AES128-GCM-SHA256", "ECDHE-RSA-AES256-GCM-SHA384"), pkgtls.TLSAdherenceStrictAllComponents, []string{"secp384r1"}, true},
+		{custom("ECDHE-ECDSA-AES128-GCM-SHA256", "ECDHE-RSA-AES256-GCM-SHA384"), "future-strict", []string{"secp384r1"}, false},
 	}
 	old := map[string]corev1.PodTemplateSpec{}
 	for index, policy := range policies {
 		args, err := pkgtls.ResolveProxyTLSArguments(policy.profile, policy.adherence, policy.groups, false)
 		require.NoError(t, err)
-		pkgtls.SetProxyTLSArguments(args)
+		pkgtls.SetProxyTLSArguments(args, nil)
 		require.NoError(t, r.reconcileDeployment(ctx, instance, nil, nil, nil, nil))
 		require.NoError(t, r.reconcileMCPDeployment(ctx, instance))
 		for _, name := range []string{instance.Name, mcpDeploymentName(instance)} {
@@ -233,4 +237,18 @@ func TestManagedTLSPolicyChangesRefreshExistingDeployments(t *testing.T) {
 		require.NoError(t, r.Get(ctx, client.ObjectKey{Name: name, Namespace: instance.Namespace}, deployment))
 		require.Equal(t, template, deployment.Spec.Template, "unchanged policy must not change Pod template")
 	}
+}
+
+func TestReconcileFailsWhenProxyProfileCannotBeServed(t *testing.T) {
+	// An operator-startup resolution of a profile the kube-rbac-proxy sidecars
+	// cannot serve defers the failure: the operator keeps running and the
+	// reconcilers fail the affected resource instead.
+	r, instance := managedTLSFixture(t)
+	ctx := context.Background()
+
+	previous, previousErr := pkgtls.CurrentProxyTLSArguments(), pkgtls.CurrentProxyTLSArgumentsError()
+	t.Cleanup(func() { pkgtls.SetProxyTLSArguments(previous, previousErr) })
+	pkgtls.SetProxyTLSArguments(pkgtls.ProxyTLSArguments{}, errors.New("cannot serve HTTP/2 with TLS minimum version \"VersionTLS12\""))
+
+	require.ErrorContains(t, r.reconcileDeployment(ctx, instance, nil, nil, nil, nil), "cannot be applied to the kube-rbac-proxy sidecars")
 }
