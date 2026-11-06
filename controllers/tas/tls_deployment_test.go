@@ -24,7 +24,7 @@ func TestTASTLSDeploymentUpgradeAndPolicyRefresh(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(owner, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage)).Build()
 	r := &TrustyAIServiceReconciler{Client: c, Scheme: scheme, Namespace: operatorNamespace, EventRecorder: record.NewFakeRecorder(100)}
 	previous := pkgtls.CurrentProxyTLSArguments()
-	defer pkgtls.SetProxyTLSArguments(previous)
+	defer pkgtls.SetProxyTLSArguments(previous, nil)
 	legacy, err := r.createDeploymentObject(ctx, owner, testTrustAIServiceImage, CustomCertificatesBundle{})
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +54,7 @@ func TestTASTLSDeploymentUpgradeAndPolicyRefresh(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			pkgtls.SetProxyTLSArguments(args)
+			pkgtls.SetProxyTLSArguments(args, nil)
 			if err := r.ensureDeployment(ctx, owner, CustomCertificatesBundle{}, false); err != nil {
 				t.Fatal(err)
 			}

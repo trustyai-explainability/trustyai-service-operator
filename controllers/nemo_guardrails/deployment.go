@@ -236,6 +236,9 @@ func (r *NemoGuardrailsReconciler) mountNemoConfigs(ctx context.Context, nemoGua
 }
 
 func (r *NemoGuardrailsReconciler) createDeployment(ctx context.Context, nemoGuardrails *nemoguardrailsv1alpha1.NemoGuardrails, caBundleInitContainerConfig utils.CABundleInitContainerConfig, configMapsToMount []corev1.ConfigMap) (*appsv1.Deployment, error) {
+	if err := pkgtls.CurrentProxyTLSArgumentsError(); err != nil {
+		return nil, fmt.Errorf("cluster TLS profile cannot be applied to the kube-rbac-proxy sidecars: %w", err)
+	}
 	var containerImages ContainerImages
 
 	// ==== get nemo guardrails image from env var or configmap ===========================================================
