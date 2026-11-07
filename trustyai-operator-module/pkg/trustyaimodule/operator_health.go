@@ -23,7 +23,9 @@ func NewOperatorHealthChecker(c client.Client, namespace string) *OperatorHealth
 	return &OperatorHealthChecker{client: c, namespace: namespace}
 }
 
-func (r *OperatorHealthChecker) Name() string { return "TrustyAI operator" }
+func (r *OperatorHealthChecker) Name() string { return "trustyai-service-operator" }
+
+func (r *OperatorHealthChecker) Scope() HealthScope { return HealthScopeOperator }
 
 func (r *OperatorHealthChecker) Check(ctx context.Context) ServiceHealthResult {
 	deployment := &appsv1.Deployment{}
