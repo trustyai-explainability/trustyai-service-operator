@@ -25,8 +25,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/metrics"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
@@ -101,27 +99,47 @@ var (
 	}
 
 	errNoCAData = errors.New("no CA bundle data found")
+
+	// errPodTerminating means the job's previous pod is still being deleted.
+	// Scheduling on top of it would hand checkScheduledPod a pod that is about
+	// to disappear, so the caller waits instead.
+	errPodTerminating = errors.New("existing execution pod is still terminating")
+
+	// errPodLookupFailed means the pod lookup itself failed. That is a transient
+	// read problem, not a reason to fail the job.
+	errPodLookupFailed = errors.New("failed to read the job pod")
 )
 
-// maintain a list of key-time pair data.
-// provide a function to add the key and update the time
-// atomically and return a reconcile requeue event
-// if needed.
-type syncedMap4Reconciler struct {
-	data  map[string]time.Time
-	mutex sync.Mutex
+// pollResult schedules the next pod-status poll.
+//
+// It always returns a concrete RequeueAfter instead of relying on a later
+// watch event to wake the reconcile: pod events are deliberately filtered
+// (see lmevalPodIdentityPredicate) and LMEvalJob update events can be dropped
+// by cache staleness, so a poll that is not explicitly requeued is a poll that
+// may never happen again. controller-runtime deduplicates identical work-queue
+// keys, so returning a timer on every poll cannot hot-loop.
+//
+// A non-positive interval is treated as unset: RequeueAfter <= 0 means "do not
+// requeue" to controller-runtime, which would strand any job in Scheduled or
+// Running, so a misconfigured lmes-pod-checking-interval must not be able to
+// switch polling off.
+func pollResult() reconcile.Result {
+	interval := Options.PodCheckingInterval
+	if interval <= 0 {
+		interval = DefaultPodCheckingInterval
+	}
+	return reconcile.Result{RequeueAfter: interval}
 }
 
 // LMEvalJobReconciler reconciles a LMEvalJob object
 type LMEvalJobReconciler struct {
 	client.Client
-	Scheme      *runtime.Scheme
-	Recorder    record.EventRecorder
-	ConfigMap   string
-	Namespace   string
-	restConfig  *rest.Config
-	restClient  rest.Interface
-	pullingJobs *syncedMap4Reconciler
+	Scheme     *runtime.Scheme
+	Recorder   record.EventRecorder
+	ConfigMap  string
+	Namespace  string
+	restConfig *rest.Config
+	restClient rest.Interface
 }
 
 // The registered function to set up LMES controller
@@ -132,42 +150,14 @@ func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.
 	}
 
 	return (&LMEvalJobReconciler{
-		ConfigMap:   configmap,
-		Namespace:   ns,
-		Client:      mgr.GetClient(),
-		Scheme:      mgr.GetScheme(),
-		Recorder:    mgr.GetEventRecorderFor("lm-eval-service-controller"),
-		restConfig:  mgr.GetConfig(),
-		restClient:  clientset.CoreV1().RESTClient(),
-		pullingJobs: newSyncedMap4Reconciler(),
+		ConfigMap:  configmap,
+		Namespace:  ns,
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Recorder:   mgr.GetEventRecorderFor("lm-eval-service-controller"),
+		restConfig: mgr.GetConfig(),
+		restClient: clientset.CoreV1().RESTClient(),
 	}).SetupWithManager(mgr)
-}
-
-func newSyncedMap4Reconciler() *syncedMap4Reconciler {
-	return &syncedMap4Reconciler{data: make(map[string]time.Time)}
-}
-
-// check if the paired time of the key is passed. if yes, update the time and
-// return a requeue result. otherwise an empty result
-func (q *syncedMap4Reconciler) addOrUpdate(key string, after time.Duration) reconcile.Result {
-	q.mutex.Lock()
-	defer q.mutex.Unlock()
-
-	v, ok := q.data[key]
-	if ok && time.Now().Before(v) {
-		// no need to requeue since there is an existing one
-		return reconcile.Result{}
-	}
-	value := time.Now().Add(after)
-	q.data[key] = value
-	return reconcile.Result{Requeue: true, RequeueAfter: after}
-}
-
-// remove the key from the list
-func (q *syncedMap4Reconciler) remove(key string) {
-	q.mutex.Lock()
-	defer q.mutex.Unlock()
-	delete(q.data, key)
 }
 
 // +kubebuilder:rbac:groups=trustyai.opendatahub.io,resources=lmevaljobs,verbs=get;list;watch;create;update;patch;delete
@@ -453,8 +443,6 @@ func (r *LMEvalJobReconciler) remoteCommand(ctx context.Context, job *lmesv1alph
 }
 
 func (r *LMEvalJobReconciler) handleDeletion(ctx context.Context, job *lmesv1alpha1.LMEvalJob, log logr.Logger) (reconcile.Result, error) {
-	defer r.pullingJobs.remove(string(job.GetUID()))
-
 	if controllerutil.ContainsFinalizer(job, lmesv1alpha1.FinalizerName) {
 		// delete the corresponding pod if needed
 		// remove our finalizer from the list and update it.
@@ -591,25 +579,43 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.Create(ctx, pod, &client.CreateOptions{}); err != nil {
+	created, err := r.ensureExecutionPod(ctx, job, pod, log)
+	if err != nil {
+		switch {
+		case errors.Is(err, errPodTerminating):
+			// The previous pod is still being deleted. Nothing is wrong with the
+			// job: keep it schedulable and look again on the next poll.
+			log.Info("previous pod is still terminating, deferring LMEvalJob scheduling", "name", job.Name)
+			return pollResult(), nil
+		case errors.Is(err, errPodLookupFailed):
+			// A transient read failure says nothing about the job itself, so it
+			// must not be recorded as a scheduling failure.
+			log.Error(err, "unable to read the pod for the LMEvalJob, will retry", "name", job.Name)
+			return ctrl.Result{}, err
+		}
 		// Failed to create the pod. Mark the status as complete with failed
 		job.Status.State = lmesv1alpha1.CompleteJobState
 		job.Status.Reason = lmesv1alpha1.FailedReason
 		job.Status.Message = err.Error()
-		if err := r.Status().Update(ctx, job); err != nil {
-			log.Error(err, "unable to update LMEvalJob status for pod creation failure")
+		if statusErr := r.Status().Update(ctx, job); statusErr != nil {
+			log.Error(statusErr, "unable to update LMEvalJob status for pod creation failure")
 		}
 		log.Error(err, "Failed to create pod for the LMEvalJob", "name", job.Name)
 		return ctrl.Result{}, err
 	}
 
-	// Create metrics
-	createJobCreationMetrics(log, job)
+	if created {
+		// Create metrics
+		createJobCreationMetrics(log, job)
+	}
 
-	// Create the pod successfully. Wait for the driver to update the status
+	// The pod exists (created now or by an earlier attempt). Wait for the
+	// driver to update the status
 	job.Status.State = lmesv1alpha1.ScheduledJobState
 	job.Status.PodName = job.GetPodName()
-	job.Status.LastScheduleTime = &currentTime
+	if job.Status.LastScheduleTime == nil {
+		job.Status.LastScheduleTime = &currentTime
+	}
 	if err := r.Status().Update(ctx, job); err != nil {
 		log.Error(err, "unable to update LMEvalJob status (pod creation done)")
 		return ctrl.Result{}, err
@@ -620,7 +626,7 @@ func (r *LMEvalJobReconciler) handleNewCR(ctx context.Context, log logr.Logger, 
 			job.Namespace))
 	log.Info("Successfully create a Pod for the Job")
 	// Check the pod after the config interval
-	return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
+	return pollResult(), nil
 }
 
 func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
@@ -645,7 +651,7 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 
 	if mainIdx := getContainerByName(&pod.Status, "main"); mainIdx == -1 {
 		// waiting for the main container to be up
-		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
+		return pollResult(), nil
 	} else if podFailed, msg := isContainerFailed(&pod.Status.ContainerStatuses[mainIdx]); podFailed {
 		job.Status.State = lmesv1alpha1.CompleteJobState
 		job.Status.Reason = lmesv1alpha1.FailedReason
@@ -659,7 +665,7 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 		// Pod is not running yet, don't accept completion status from driver
 		// This prevents the driver from marking the job as complete during pod initialisation
 		log.Info("pod not running yet, skipping status update from driver", "podName", job.GetPodName())
-		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
+		return pollResult(), nil
 	}
 
 	// pull status from the driver
@@ -669,14 +675,89 @@ func (r *LMEvalJobReconciler) checkScheduledPod(ctx context.Context, log logr.Lo
 		if handleErr != nil {
 			log.Error(handleErr, "failed to handle job completion, will retry")
 			// If handleComplete fails, we should retry after the polling interval
-			return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), handleErr
+			return pollResult(), handleErr
 		}
 		return result, nil
 	}
 	if err != nil {
 		log.Error(err, "unable to retrieve the status from the job's pod. retry after the pulling interval")
 	}
-	return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
+	return pollResult(), nil
+}
+
+// ensureExecutionPod creates the job's pod if it does not exist yet and reports
+// whether this call created it.
+//
+// Scheduling must converge on "the pod exists", not on "this particular call
+// created the pod". Writing the last-scheduled-generation annotation produces an
+// extra LMEvalJob reconcile while the status transition to Scheduled is still in
+// flight; that reconcile can read a cached copy that looks like a brand-new job
+// and re-enter handleNewCR. Treating the resulting AlreadyExists as a failure
+// (a) marks a perfectly healthy job as Complete/Failed and (b) returns an error
+// that displaces the pending status poll, which is how a job ends up stuck in
+// Scheduled with its pod still running.
+func (r *LMEvalJobReconciler) ensureExecutionPod(ctx context.Context, job *lmesv1alpha1.LMEvalJob, pod *corev1.Pod, log logr.Logger) (bool, error) {
+	// The lookup is done directly rather than through getPod() so that a read
+	// failure (retryable) stays distinct from a same-named pod owned by someone
+	// else (a collision that must fail the job).
+	existing, err := r.existingExecutionPod(ctx, job)
+	switch {
+	case err != nil && !apierrors.IsNotFound(err):
+		return false, fmt.Errorf("%w: %w", errPodLookupFailed, err)
+	case err == nil:
+		if !controlledByLMEvalJob(existing, job) {
+			return false, fmt.Errorf("pod %s already exists but is not controlled by this LMEvalJob", pod.Name)
+		}
+		if existing.DeletionTimestamp != nil {
+			// A re-run or resume can race the previous pod's deletion. Handing
+			// its name back to scheduling would only make checkScheduledPod
+			// report a missing pod once deletion completes.
+			log.Info("existing pod is terminating, waiting before scheduling the LMEvalJob",
+				"podName", existing.Name)
+			return false, errPodTerminating
+		}
+		log.Info("pod already exists for the LMEvalJob, resuming scheduling instead of creating it",
+			"podName", existing.Name, "phase", existing.Status.Phase)
+		return false, nil
+	}
+
+	if err := r.Create(ctx, pod, &client.CreateOptions{}); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return false, err
+		}
+		// Lost the race against a concurrent create. Accept the pod only if it
+		// really belongs to this job, otherwise the name is a collision.
+		existing, getErr := r.existingExecutionPod(ctx, job)
+		if getErr != nil {
+			// Even NotFound is retryable here: the pod may have disappeared
+			// since Create or may not yet be visible to this reader. A failed
+			// lookup cannot establish an ownership collision.
+			return false, fmt.Errorf("%w: %w", errPodLookupFailed, getErr)
+		}
+		if !controlledByLMEvalJob(existing, job) {
+			return false, fmt.Errorf("pod %s already exists but is not controlled by this LMEvalJob", pod.Name)
+		}
+		if existing.DeletionTimestamp != nil {
+			// The pod is on its way out: scheduling against it would leave the
+			// job Scheduled with a pod that checkScheduledPod will never find.
+			log.Info("pod is terminating, waiting before scheduling the LMEvalJob",
+				"podName", existing.Name)
+			return false, errPodTerminating
+		}
+		log.Info("pod was created concurrently for the LMEvalJob", "podName", pod.Name)
+		return false, nil
+	}
+	return true, nil
+}
+
+// existingExecutionPod returns the job's current pod, or a NotFound error when
+// there is none. Ownership is checked by the caller.
+func (r *LMEvalJobReconciler) existingExecutionPod(ctx context.Context, job *lmesv1alpha1.LMEvalJob) (*corev1.Pod, error) {
+	var pod = corev1.Pod{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: job.Namespace, Name: job.GetPodName()}, &pod); err != nil {
+		return nil, err
+	}
+	return &pod, nil
 }
 
 func (r *LMEvalJobReconciler) getPod(ctx context.Context, job *lmesv1alpha1.LMEvalJob) (*corev1.Pod, error) {
@@ -715,7 +796,7 @@ func (r *LMEvalJobReconciler) handleComplete(ctx context.Context, log logr.Logge
 					// send shutdown command if the main container is running
 					if err := r.shutdownDriver(ctx, job); err != nil {
 						log.Error(err, "failed to shutdown the job pod. retry after the pulling interval")
-						return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
+						return pollResult(), nil
 					}
 				}
 			} else {
@@ -737,8 +818,6 @@ func (r *LMEvalJobReconciler) handleComplete(ctx context.Context, log logr.Logge
 		}
 	}
 
-	// make sure to clean up the pullingJobs
-	r.pullingJobs.remove(string(job.GetUID()))
 	return ctrl.Result{}, nil
 }
 
@@ -755,7 +834,7 @@ func (r *LMEvalJobReconciler) handleCancel(ctx context.Context, log logr.Logger,
 		if err := r.deleteJobPod(ctx, job); err != nil {
 			// leave the state as is and retry again
 			log.Error(err, "failed to delete pod. scheduled a retry", "interval", Options.PodCheckingInterval.String())
-			return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), err
+			return pollResult(), err
 		}
 	}
 
@@ -767,17 +846,15 @@ func (r *LMEvalJobReconciler) handleCancel(ctx context.Context, log logr.Logger,
 		fmt.Sprintf("The LMEvalJob %s in namespace %s has cancelled and changed its state to Complete",
 			job.Name,
 			job.Namespace))
-	r.pullingJobs.remove(string(job.GetUID()))
 	return ctrl.Result{}, err
 }
 
 func (r *LMEvalJobReconciler) handleSuspend(ctx context.Context, log logr.Logger, job *lmesv1alpha1.LMEvalJob) (ctrl.Result, error) {
-	defer r.pullingJobs.remove(string(job.GetUID()))
 	if job.Status.State != lmesv1alpha1.NewJobState {
 		log.Info("Suspend job")
 		if err := r.deleteJobPod(ctx, job); err != nil && client.IgnoreNotFound(err) != nil {
 			log.Error(err, "failed to delete pod for suspended job")
-			return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
+			return pollResult(), nil
 		}
 	} else {
 		log.Info("Create job in suspend state.")
@@ -803,7 +880,7 @@ func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger,
 	permConfig, err := ReadEffectivePermissions(ctx, r.Client, r.Namespace, r.ConfigMap, &log)
 	if err != nil {
 		log.Error(err, "Failed to read effective permissions for LMEvalJob resume", "name", job.Name)
-		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), err
+		return pollResult(), err
 	}
 
 	caBundle, caBundleKey, err := r.resolveCABundle(ctx, log, job)
@@ -818,9 +895,13 @@ func (r *LMEvalJobReconciler) handleResume(ctx context.Context, log logr.Logger,
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if createErr := r.Create(ctx, pod); createErr != nil {
+	if _, createErr := r.ensureExecutionPod(ctx, job, pod, log); createErr != nil {
+		if errors.Is(createErr, errPodTerminating) {
+			log.Info("previous pod is still terminating, deferring resume", "name", job.Name)
+			return pollResult(), nil
+		}
 		log.Error(createErr, "failed to create pod to resume job")
-		return r.pullingJobs.addOrUpdate(string(job.GetUID()), Options.PodCheckingInterval), nil
+		return pollResult(), createErr
 	}
 	job.Status.State = lmesv1alpha1.ScheduledJobState
 	err = r.Status().Update(ctx, job)

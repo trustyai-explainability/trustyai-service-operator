@@ -39,7 +39,7 @@ func policyTestClient(t *testing.T, objects ...client.Object) (*LMEvalJobReconci
 	require.NoError(t, networkingv1.AddToScheme(scheme))
 	require.NoError(t, lmesv1alpha1.AddToScheme(scheme))
 	c := &policyCountingClient{Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&lmesv1alpha1.LMEvalJob{}).WithObjects(objects...).Build()}
-	r := &LMEvalJobReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(100), pullingJobs: newSyncedMap4Reconciler()}
+	r := &LMEvalJobReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 	for _, obj := range objects {
 		require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(obj), obj))
 	}
