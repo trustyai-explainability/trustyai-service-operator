@@ -5,6 +5,7 @@ resources:
   - ../../base
 
 components:
+  - ../../components/webhook
   - ../../components/evalhub
 
 patches:
