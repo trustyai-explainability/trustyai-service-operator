@@ -220,12 +220,13 @@ func createSecret(namespace string, secretName string, data map[string]string) *
 
 func createDatabaseConfiguration(namespace string, name string, dbKind string, databaseName string) *corev1.Secret {
 	return createSecret(namespace, name, map[string]string{
-		"databaseKind":     dbKind,
-		"databaseUsername": "foo",
-		"databasePassword": "bar",
-		"databaseService":  "mariadb-service",
-		"databasePort":     "3306",
-		"databaseName":     databaseName,
+		"databaseKind":       dbKind,
+		"databaseUsername":   "foo",
+		"databasePassword":   "bar",
+		"databaseService":    "mariadb-service",
+		"databasePort":       "3306",
+		"databaseName":       databaseName,
+		"databaseGeneration": "update",
 	})
 }
 
