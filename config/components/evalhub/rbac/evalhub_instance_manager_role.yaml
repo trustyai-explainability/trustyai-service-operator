@@ -1,0 +1,16 @@
+# Copyright 2026 The TrustyAI Authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Project editors manage instances within their namespace. The accompanying
+# admission policy restricts multi-tenancy to explicitly authorized identities.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: evalhub-instance-manager
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+rules:
+  - apiGroups: [trustyai.opendatahub.io]
+    resources: [evalhubs]
+    verbs: [get, list, watch, create, update, patch, delete]

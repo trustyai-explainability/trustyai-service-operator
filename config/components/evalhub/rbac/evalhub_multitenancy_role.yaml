@@ -1,0 +1,10 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: evalhub-multitenancy-manager
+rules:
+  # Virtual permission checked by admission; not a Kubernetes API endpoint.
+  # Intentionally cluster-scoped and not aggregated into project roles.
+  - apiGroups: [trustyai.opendatahub.io]
+    resources: [evalhubmultitenancy]
+    verbs: [use]

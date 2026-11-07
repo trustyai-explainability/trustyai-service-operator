@@ -1,4 +1,12 @@
 nameReference:
+  - kind: ValidatingAdmissionPolicy
+    version: v1
+    group: admissionregistration.k8s.io
+    fieldSpecs:
+      - kind: ValidatingAdmissionPolicyBinding
+        version: v1
+        group: admissionregistration.k8s.io
+        path: spec/policyName
   - kind: Service
     version: v1
     fieldSpecs:
