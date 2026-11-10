@@ -9,6 +9,7 @@ package evalhub
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -50,6 +51,23 @@ func noopEvalHubServer(t *testing.T) *httptest.Server {
 	return srv
 }
 
+// capturingEvalHubServer records EvalHub status event requests and returns 204.
+func capturingEvalHubServer(t *testing.T) (*httptest.Server, <-chan statusEventPayload) {
+	t.Helper()
+	requests := make(chan statusEventPayload, 10)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload statusEventPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		requests <- payload
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, requests
+}
+
 // readyEvalHubCR returns a minimal EvalHub CR that IsReady() and points at the given URL.
 func readyEvalHubCR(name, ns, url string) *evalhubv1.EvalHub {
 	return &evalhubv1.EvalHub{
@@ -69,17 +87,18 @@ func evalHubEvaluationJob(name, ns string, extra map[string]string) *batchv1.Job
 		evalHubComponentLabel:   evalHubComponentValue,
 		evalHubJobIDLabel:       "jid-" + name,
 		evalHubProviderIDLabel:  "provider-1",
-		evalHubBenchmarkIDLabel: "bench-1",
+		evalHubBenchmarkIDLabel: "inspect-docvqa",
 	}
 	for k, v := range extra {
 		labels[k] = v
 	}
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: ns,
-			UID:       types.UID("uid-" + name),
-			Labels:    labels,
+			Name:        name,
+			Namespace:   ns,
+			UID:         types.UID("uid-" + name),
+			Labels:      labels,
+			Annotations: map[string]string{evalHubBenchmarkIDAnnotation: "inspect/docvqa"},
 		},
 		Status: batchv1.JobStatus{
 			Conditions: []batchv1.JobCondition{{
@@ -210,7 +229,7 @@ func TestJobFailureReconciler_FailureAlreadyReported_RetainsJob(t *testing.T) {
 // TestJobFailureReconciler_OOMKill_EmitsEventAndPatchesJob verifies the full lifecycle for an OOM-killed
 // adapter container: the reconciler emits an EvaluationFailed event and stamps evaluation-phase=Failed.
 func TestJobFailureReconciler_OOMKill_EmitsEventAndPatchesJob(t *testing.T) {
-	srv := noopEvalHubServer(t)
+	srv, requests := capturingEvalHubServer(t)
 	sc := jobFailureLifecycleScheme(t)
 	ns := "tenant-ns"
 
@@ -246,6 +265,14 @@ func TestJobFailureReconciler_OOMKill_EmitsEventAndPatchesJob(t *testing.T) {
 	require.NoError(t, err)
 
 	select {
+	case payload := <-requests:
+		require.NotNil(t, payload.BenchmarkStatusEvent)
+		assert.Equal(t, "inspect/docvqa", payload.BenchmarkStatusEvent.ID)
+	default:
+		t.Fatal("expected EvalHub status event POST but none was captured")
+	}
+
+	select {
 	case ev := <-rec.Events:
 		assert.Contains(t, ev, corev1.EventTypeWarning)
 		assert.Contains(t, ev, eventReasonEvaluationFailed)
@@ -261,6 +288,48 @@ func TestJobFailureReconciler_OOMKill_EmitsEventAndPatchesJob(t *testing.T) {
 	// Retain the Job so pod logs remain available until ttlSecondsAfterFinished expires.
 	err = fc.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: job.Name}, &batchv1.Job{})
 	assert.NoError(t, err, "job should be retained after successful failure sync")
+}
+
+// TestJobFailureReconciler_MissingBenchmarkAnnotation_SkipsPost verifies that the operator does not
+// fall back to the sanitized benchmark_id label when the original EvalHub benchmark ID annotation is missing.
+func TestJobFailureReconciler_MissingBenchmarkAnnotation_SkipsPost(t *testing.T) {
+	srv, requests := capturingEvalHubServer(t)
+	sc := jobFailureLifecycleScheme(t)
+	ns := "tenant-ns"
+
+	job := evalHubEvaluationJob("eval-job-missing-benchmark-annotation", ns, map[string]string{
+		evalHubInstanceNameLabel:      "evalhub-1",
+		evalHubInstanceNamespaceLabel: "control-ns",
+	})
+	job.Annotations = nil
+	pod := oomKilledAdapterPod(job.Name, ns, job.UID)
+	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+
+	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(eh, job, pod).Build()
+	r, rec := buildJobFailureReconciler(fc, ns)
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: ns, Name: job.Name},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, ctrl.Result{}, result)
+
+	select {
+	case payload := <-requests:
+		t.Fatalf("expected no EvalHub status event POST without benchmark annotation, got: %#v", payload)
+	default:
+	}
+
+	select {
+	case ev := <-rec.Events:
+		t.Fatalf("expected no Kubernetes event without benchmark annotation, got: %s", ev)
+	default:
+	}
+
+	var persisted batchv1.Job
+	require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: job.Name}, &persisted))
+	assert.Empty(t, persisted.Labels[labelEvaluationPhase])
+	assert.Empty(t, persisted.Annotations[annotationFailureReported])
 }
 
 // TestJobFailureReconciler_ImagePullError_EmitsEventAndPatchesJob verifies the full lifecycle for an init

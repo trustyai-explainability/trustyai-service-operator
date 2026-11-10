@@ -47,14 +47,15 @@ import (
 // Labels and annotations aligned with EvalHub Kubernetes runtime
 // (see eval-hub internal/eval_hub/runtimes/k8s/job_builders.go).
 const (
-	evalHubAppLabel            = "app"
-	evalHubAppValue            = "evalhub"
-	evalHubComponentLabel      = "component"
-	evalHubComponentValue      = "evaluation-job"
-	evalHubJobIDLabel          = "job_id"
-	evalHubProviderIDLabel     = "provider_id"
-	evalHubBenchmarkIDLabel    = "benchmark_id"
-	evalHubBenchmarkIndexLabel = "benchmark_index"
+	evalHubAppLabel              = "app"
+	evalHubAppValue              = "evalhub"
+	evalHubComponentLabel        = "component"
+	evalHubComponentValue        = "evaluation-job"
+	evalHubJobIDLabel            = "job_id"
+	evalHubProviderIDLabel       = "provider_id"
+	evalHubBenchmarkIDLabel      = "benchmark_id"
+	evalHubBenchmarkIndexLabel   = "benchmark_index"
+	evalHubBenchmarkIDAnnotation = "eval-hub.github.io/benchmark_id"
 	// EvalHub CR identity for evalHubBaseURLFromJob (set by eval-hub job_builders; must match eval-hub).
 	evalHubInstanceNameLabel      = "evalhub_instance_name"
 	evalHubInstanceNamespaceLabel = "evalhub_instance_namespace"
@@ -428,9 +429,9 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 	}
 
 	providerID := job.Labels[evalHubProviderIDLabel]
-	benchmarkID := job.Labels[evalHubBenchmarkIDLabel]
+	benchmarkID := strings.TrimSpace(job.Annotations[evalHubBenchmarkIDAnnotation])
 	if providerID == "" || benchmarkID == "" {
-		log.Info("skip EvalHub POST: missing provider_id or benchmark_id label",
+		log.Info("skip EvalHub POST: missing provider_id label or benchmark_id metadata",
 			append(failureWatcherLogFields(), "action", "skip_missing_label", "job", job.Name, "namespace", job.Namespace)...)
 		setJobFailureAction("skip")
 		return ctrl.Result{}, nil

@@ -81,7 +81,7 @@ func buildKueueReconciler(fc client.Client, tenantNamespace string) (*EvalHubEva
 // admission failure: the reconciler POSTs to EvalHub, emits an EvaluationFailed warning event on the Job,
 // stamps evaluation-phase=Failed on the Job, and annotates the Workload as reported.
 func TestKueueReconciler_Eviction_EmitsEventAndPatchesJobAndWorkload(t *testing.T) {
-	srv := noopEvalHubServer(t)
+	srv, requests := capturingEvalHubServer(t)
 	sc := kueueLifecycleScheme(t)
 	ns := "tenant-ns"
 
@@ -121,6 +121,14 @@ func TestKueueReconciler_Eviction_EmitsEventAndPatchesJobAndWorkload(t *testing.
 		NamespacedName: types.NamespacedName{Namespace: ns, Name: wl.Name},
 	})
 	require.NoError(t, err)
+
+	select {
+	case payload := <-requests:
+		require.NotNil(t, payload.BenchmarkStatusEvent)
+		assert.Equal(t, "inspect/docvqa", payload.BenchmarkStatusEvent.ID)
+	default:
+		t.Fatal("expected EvalHub status event POST but none was captured")
+	}
 
 	select {
 	case ev := <-rec.Events:
