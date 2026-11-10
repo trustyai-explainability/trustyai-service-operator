@@ -64,7 +64,11 @@ The patch removes native serving-key mounts and stale native-policy inputs, sets
 reserved backend TLS/port environment variables, updates external proxy arguments
 and creates/refreshes the internal proxy. It preserves the immutable selector,
 user rollout annotations, unrelated application environment, storage settings and
-application image. Sidecar defaulted probes do not cause repeat updates. Unowned
+application image. The one exception is a Deployment still running the legacy Java
+TrustyAI service image (matched by repository against
+`RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_IMAGE`): on upgrade the operator re-renders the whole
+Deployment so the Python service image, proxy image and TLS topology change together.
+Custom service images are never replaced. Sidecar defaulted probes do not cause repeat updates. Unowned
 Deployments are rejected. Migration paths render the same topology directly.
 
 The kube-rbac-proxy ConfigMap now contains only authorization. Previously inert

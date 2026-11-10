@@ -6,8 +6,10 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
+	"os"
 	"reflect"
 	"strconv"
+	"strings"
 
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
@@ -268,18 +270,62 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 			return r.updateDeployment(ctx, instance, image, caBundle)
 		}
 	}
-	// A manager restart must refresh TLS on existing workloads, not only new ones.
-	// Patch only TLS-owned fields so manual rollout annotations and storage/image
-	// settings are not overwritten by a routine profile change.
 	desired, err := r.createDeploymentObject(ctx, instance, image, caBundle)
 	if err != nil {
 		return err
 	}
+	// Upgrading from the Java to the Python TrustyAI service changes the pod
+	// topology, env and proxy flags together with the image, so re-render the whole
+	// Deployment rather than patching the image in place, which would leave the old
+	// and new halves mixed. Custom service images are left alone.
+	if deploymentRunsLegacyJavaService(deploy, image) {
+		log.FromContext(ctx).Info("Deployment runs the legacy Java TrustyAI service image. Migrating to the Python service.", "image", image)
+		if err := r.updateDeployment(ctx, instance, image, caBundle); err != nil {
+			return err
+		}
+		// Refresh so the TLS and identity steps below see the updated object.
+		deploy = &appsv1.Deployment{}
+		if err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deploy); err != nil {
+			return err
+		}
+	}
+	// A manager restart must refresh TLS on existing workloads, not only new ones.
+	// Patch only TLS-owned fields so manual rollout annotations and storage
+	// settings are not overwritten by a routine profile change.
 	if err := r.ensureTASTLSDeployment(ctx, instance, deploy, desired); err != nil {
 		return err
 	}
 	// The caller reconciles the policy before legacy workloads enter its selector.
 	return r.ensureTASDeploymentIdentity(ctx, instance, deploy)
+}
+
+// legacyJavaServiceImageEnvVar carries the pre-3.6 Java TrustyAI service image,
+// which the operator still receives alongside the Python one.
+const legacyJavaServiceImageEnvVar = "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_IMAGE"
+
+// imageRepository strips the tag and digest from an image reference so that the
+// same image can be recognised across version bumps.
+func imageRepository(image string) string {
+	if at := strings.Index(image, "@"); at >= 0 {
+		image = image[:at]
+	}
+	if colon := strings.LastIndex(image, ":"); colon > strings.LastIndex(image, "/") {
+		image = image[:colon]
+	}
+	return image
+}
+
+// deploymentRunsLegacyJavaService reports whether the existing Deployment still
+// runs the Java TrustyAI service image although the operator now deploys another
+// one (the Python service). Only the known Java repository is matched, so a user
+// supplied custom service image is never replaced.
+func deploymentRunsLegacyJavaService(current *appsv1.Deployment, desiredImage string) bool {
+	javaImage := os.Getenv(legacyJavaServiceImageEnvVar)
+	if javaImage == "" || imageRepository(javaImage) == imageRepository(desiredImage) {
+		return false
+	}
+	app := serviceContainer(current)
+	return app != nil && imageRepository(app.Image) == imageRepository(javaImage)
 }
 
 // deploymentHasMigration reports whether the Deployment carries migration-only settings.

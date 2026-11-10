@@ -6,6 +6,7 @@ import (
 	"fmt"
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
+	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -822,6 +823,99 @@ var _ = Describe("TrustyAI operator", func() {
 			Expect(deployment.Spec.Selector.MatchLabels["app"]).To(Equal(instance.Name), "selector should match the current desired value, not the stale one")
 			Expect(deploymentDeleted).To(BeTrue(), "stale Deployment should have been deleted")
 			Expect(deploymentUpdated).To(BeFalse(), "Deployment should not be updated in place when the selector changed")
+		})
+	})
+
+	Context("When an existing Deployment runs images from a previous operator version", func() {
+		// The Deployment was created by the previous release with an older digest of
+		// the same Java repository the new operator still receives via the env var.
+		const legacyServiceImage = "registry.example.com/odh-trustyai-service-rhel9@sha256:java35"
+		const currentJavaImage = "registry.example.com/odh-trustyai-service-rhel9@sha256:java36"
+		const legacyProxyImage = "registry.example.com/odh-kube-rbac-proxy-rhel9@sha256:legacyproxy"
+
+		BeforeEach(func() {
+			previous, had := os.LookupEnv(legacyJavaServiceImageEnvVar)
+			Expect(os.Setenv(legacyJavaServiceImageEnvVar, currentJavaImage)).To(Succeed())
+			DeferCleanup(func() {
+				if had {
+					_ = os.Setenv(legacyJavaServiceImageEnvVar, previous)
+				} else {
+					_ = os.Unsetenv(legacyJavaServiceImageEnvVar)
+				}
+			})
+		})
+
+		setup := func(namespace string, serviceImage, proxyImage string) (*trustyaiopendatahubiov1.TrustyAIService, CustomCertificatesBundle, *int) {
+			instance := createDefaultPVCCustomResource(namespace)
+			deploymentUpdates := 0
+			trackingClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+				Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+					if _, ok := obj.(*appsv1.Deployment); ok {
+						deploymentUpdates++
+					}
+					return c.Update(ctx, obj, opts...)
+				},
+			}).Build()
+			k8sClient = trackingClient
+			reconciler = &TrustyAIServiceReconciler{
+				Client:        trackingClient,
+				Scheme:        scheme.Scheme,
+				EventRecorder: recorder,
+				Namespace:     operatorNamespace,
+			}
+
+			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
+			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
+			Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
+			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
+
+			existing, err := reconciler.createDeploymentObject(ctx, instance, serviceImage, caBundle)
+			Expect(err).ToNot(HaveOccurred())
+			for i := range existing.Spec.Template.Spec.Containers {
+				if existing.Spec.Template.Spec.Containers[i].Name == KubeRBACProxyName {
+					existing.Spec.Template.Spec.Containers[i].Image = proxyImage
+				}
+			}
+			Expect(ctrl.SetControllerReference(instance, existing, reconciler.Scheme)).To(Succeed())
+			Expect(k8sClient.Create(ctx, existing)).To(Succeed())
+			return instance, caBundle, &deploymentUpdates
+		}
+
+		It("migrates the legacy Java service to the Python image on a plain reconcile, without the migration annotation", func() {
+			instance, caBundle, updates := setup("trusty-ns-a-6-image-upgrade", legacyServiceImage, legacyProxyImage)
+
+			Expect(reconciler.ensureDeployment(ctx, instance, caBundle, false)).To(Succeed())
+
+			deployment := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deployment)).To(Succeed())
+			images := map[string]string{}
+			for _, c := range deployment.Spec.Template.Spec.Containers {
+				images[c.Name] = c.Image
+			}
+			Expect(images["trustyai-service"]).To(Equal(testTrustAIServiceImage))
+			Expect(images[KubeRBACProxyName]).To(Equal(testKubeRBACProxyImage))
+			Expect(*updates).To(BeNumerically(">=", 1))
+		})
+
+		It("does not update the Deployment when the images already match", func() {
+			instance, caBundle, updates := setup("trusty-ns-a-6-image-current", testTrustAIServiceImage, testKubeRBACProxyImage)
+
+			Expect(reconciler.ensureDeployment(ctx, instance, caBundle, false)).To(Succeed())
+
+			Expect(*updates).To(BeZero(), "matching images must not trigger a full Deployment update")
+		})
+
+		It("leaves a custom service image untouched", func() {
+			const custom = "registry.example.com/my-fork/trustyai-service:keep"
+			instance, caBundle, updates := setup("trusty-ns-a-6-image-custom", custom, testKubeRBACProxyImage)
+
+			Expect(reconciler.ensureDeployment(ctx, instance, caBundle, false)).To(Succeed())
+
+			deployment := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deployment)).To(Succeed())
+			Expect(serviceContainer(deployment).Image).To(Equal(custom))
+			Expect(*updates).To(BeZero())
 		})
 	})
 
