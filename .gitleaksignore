@@ -3,3 +3,18 @@
 # Format: commit:file:rule-id:line or file:rule-id:line
 #
 # For path-based exclusions, use .gitleaks.toml allowlist instead.
+
+# Reviewed false positives, pinned by commit/file/rule/start-line rather than by
+# path, so any other finding in these files stays detectable. NOTE: keep this
+# block when re-syncing this file from security-config; it is repository-local
+# and the synced template carries no entries.
+
+# generic-api-key on the TLS mount helper (commit f7cb3c7e). The match is a Go
+# variable holding a Kubernetes Secret name, not a secret value. The file was
+# deleted with the FMS Guardrails removal (#902), so only history carries it.
+f7cb3c7ec00372121ab8c4d46a7424634f29d3b4:controllers/gorch/tls.go:generic-api-key:13
+
+# kubernetes-secret-yaml on a Semgrep rule description (commit 50bb4563). The
+# match is the literal placeholder `password: <base64-encoded-value>` in the
+# message of the k8s-secret-in-configmap rule, not a secret.
+50bb456302b505a45028908b3d7e22c376c0712d:semgrep.yaml:kubernetes-secret-yaml:515
