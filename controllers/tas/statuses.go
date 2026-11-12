@@ -21,11 +21,10 @@ func (rs *AvailabilityStatus) IsAllReady(mode string) bool {
 
 // AvailabilityStatus has the readiness status of various resources.
 type AvailabilityStatus struct {
-	PVCReady              bool
-	DeploymentReady       bool
-	RouteReady            bool
-	InferenceServiceReady bool
-	DBReady               bool
+	PVCReady        bool
+	DeploymentReady bool
+	RouteReady      bool
+	DBReady         bool
 }
 
 func (r *TrustyAIServiceReconciler) updateStatus(ctx context.Context, original *trustyaiopendatahubiov1.TrustyAIService, update func(saved *trustyaiopendatahubiov1.TrustyAIService),
@@ -72,18 +71,19 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 	// Check for route readiness
 	status.RouteReady, err = utils.CheckRouteReady(ctx, r.Client, instance.Name, instance.Namespace)
 
-	// Check if InferenceServices present
-	status.InferenceServiceReady, err = r.checkInferenceServicesPresent(ctx, instance.Namespace)
+	// Read the serving state once: an API failure is transient and requeues, an
+	// absent or unsupported serving API is a state reported through the
+	// condition and never an error.
+	serving, err := r.inferenceServicesReport(ctx, instance.Namespace)
+	if err != nil {
+		return RequeueWithError(err)
+	}
 
 	// All checks passed, resources are ready
 	if status.IsAllReady(instance.Spec.Storage.Format) {
 		_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1.TrustyAIService) {
 
-			if status.InferenceServiceReady {
-				UpdateInferenceServicePresent(saved)
-			} else {
-				UpdateInferenceServiceNotPresent(saved)
-			}
+			UpdateInferenceServicesCondition(saved, serving)
 
 			if instance.Spec.Storage.IsStoragePVC() || instance.IsMigration() {
 				UpdatePVCAvailable(saved)
@@ -121,11 +121,7 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 	} else {
 		_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1.TrustyAIService) {
 
-			if status.InferenceServiceReady {
-				UpdateInferenceServicePresent(saved)
-			} else {
-				UpdateInferenceServiceNotPresent(saved)
-			}
+			UpdateInferenceServicesCondition(saved, serving)
 
 			if instance.Spec.Storage.IsStoragePVC() || instance.IsMigration() {
 				if status.PVCReady {
@@ -168,14 +164,16 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 	return ctrl.Result{}, nil
 }
 
-func UpdateInferenceServiceNotPresent(saved *trustyaiopendatahubiov1.TrustyAIService) {
-	saved.SetStatus(StatusTypeInferenceServicesPresent, StatusReasonInferenceServicesNotFound, "InferenceServices not found", v1.ConditionFalse)
-	saved.Status.Ready = v1.ConditionFalse
-
-}
-
-func UpdateInferenceServicePresent(saved *trustyaiopendatahubiov1.TrustyAIService) {
-	saved.SetStatus(StatusTypeInferenceServicesPresent, StatusReasonInferenceServicesFound, "InferenceServices found", v1.ConditionTrue)
+// UpdateInferenceServicesCondition reports the serving state. Absence of the
+// serving CRD, an unsupported served version and an empty namespace are all
+// reported but are not degradations, so this never touches Ready: IsAllReady has
+// no serving term and the caller owns readiness.
+func UpdateInferenceServicesCondition(saved *trustyaiopendatahubiov1.TrustyAIService, report inferenceServicesReport) {
+	condition := v1.ConditionFalse
+	if report.present {
+		condition = v1.ConditionTrue
+	}
+	saved.SetStatus(StatusTypeInferenceServicesPresent, report.reason(), report.message(), condition)
 }
 
 func UpdatePVCNotAvailable(saved *trustyaiopendatahubiov1.TrustyAIService) {
