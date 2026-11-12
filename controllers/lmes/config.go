@@ -93,6 +93,11 @@ func constructOptionsFromConfigMap(log *logr.Logger, configmap *corev1.ConfigMap
 			case "Duration":
 				var d time.Duration
 				d, err = time.ParseDuration(v)
+				if err == nil && d <= 0 {
+					// A zero or negative interval would disable the pod-status
+					// poll entirely, leaving running jobs unreconciled.
+					err = fmt.Errorf("duration must be positive")
+				}
 				if err == nil {
 					frv.Set(reflect.ValueOf(d))
 				}
