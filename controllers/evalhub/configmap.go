@@ -254,9 +254,9 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		}
 	}
 
-	if instance.Spec.Service != nil && instance.Spec.Service.Init != nil && instance.Spec.Service.Init.TestDataTimeout != "" {
+	if instance.Spec.Init != nil && instance.Spec.Init.TestDataTimeout != "" {
 		config.Service.Init = &ServiceInitConfig{
-			TestDataTimeout: instance.Spec.Service.Init.TestDataTimeout,
+			TestDataTimeout: instance.Spec.Init.TestDataTimeout,
 		}
 	}
 

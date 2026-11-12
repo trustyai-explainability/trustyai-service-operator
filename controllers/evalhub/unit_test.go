@@ -298,7 +298,7 @@ func TestGenerateConfigData(t *testing.T) {
 
 	})
 
-	t.Run("should render service init timeout only when configured", func(t *testing.T) {
+	t.Run("should render init timeout only when configured", func(t *testing.T) {
 		configData, err := reconciler.generateConfigData(context.Background(), evalHub)
 		require.NoError(t, err)
 
@@ -307,10 +307,8 @@ func TestGenerateConfigData(t *testing.T) {
 		require.NoError(t, err)
 		assert.Nil(t, defaultConfig.Service.Init)
 
-		evalHub.Spec.Service = &evalhubv1.EvalHubServiceSpec{
-			Init: &evalhubv1.EvalHubServiceInitSpec{
-				TestDataTimeout: "30m",
-			},
+		evalHub.Spec.Init = &evalhubv1.EvalHubInitSpec{
+			TestDataTimeout: "30m",
 		}
 
 		configData, err = reconciler.generateConfigData(context.Background(), evalHub)
