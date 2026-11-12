@@ -11,10 +11,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// ServiceHealthResult describes the state of all operand instances for one
-// enabled service. An enabled service with no operand instances is healthy:
-// operand instances are optional user resources, and their absence does not
-// indicate a module failure.
+// HealthScope classifies what a ServiceHealthChecker evaluates so module status
+// reasons can distinguish the service-operator control plane from user operands.
+type HealthScope string
+
+const (
+	HealthScopeOperator HealthScope = "operator"
+	HealthScopeOperand  HealthScope = "operand"
+)
+
+// ServiceHealthResult describes the outcome of one health checker. For operand
+// checkers, an enabled service with no instances is healthy: operand instances
+// are optional user resources, and their absence does not indicate a module
+// failure.
 type ServiceHealthResult struct {
 	Healthy  bool
 	Degraded bool
@@ -25,6 +34,7 @@ type ServiceHealthResult struct {
 // ServiceHealthChecker defines the interface for service-level health checks.
 type ServiceHealthChecker interface {
 	Name() string
+	Scope() HealthScope
 	Check(ctx context.Context) ServiceHealthResult
 }
 
@@ -54,6 +64,8 @@ func NewOperandHealthChecker(name string, c client.Client) *OperandHealthChecker
 }
 
 func (r *OperandHealthChecker) Name() string { return r.definition.serviceName }
+
+func (r *OperandHealthChecker) Scope() HealthScope { return HealthScopeOperand }
 
 func (r *OperandHealthChecker) Check(ctx context.Context) ServiceHealthResult {
 	operands := &unstructured.UnstructuredList{}
