@@ -71,6 +71,7 @@ var _ = Describe("Status and condition tests", func() {
 			ObjectMeta: metav1.ObjectMeta{Name: inferenceServiceCRDName},
 		}
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).WithStatusSubresource(
+			&appsv1.Deployment{},
 			&routev1.Route{},
 			&trustyaiopendatahubiov1.TrustyAIService{},
 		).WithObjects(operatorCM, inferenceServiceCRD).Build()
@@ -97,6 +98,11 @@ var _ = Describe("Status and condition tests", func() {
 		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
 		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
 		Expect(deployment.ResourceVersion).To(Equal(originalVersion))
+
+		// Removing migration settings restarts the pod, so it waits for the current
+		// rollout to finish. Model a completed rollout.
+		deployment.Status = appsv1.DeploymentStatus{UpdatedReplicas: 1, ReadyReplicas: 1, AvailableReplicas: 1}
+		Expect(k8sClient.Status().Update(ctx, deployment)).To(Succeed())
 
 		if clearFolder {
 			instance.Spec.Storage.Folder = ""

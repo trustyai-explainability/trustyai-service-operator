@@ -6,10 +6,8 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
-	"os"
 	"reflect"
 	"strconv"
-	"strings"
 
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
@@ -124,7 +122,21 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, instance, identity, utils.SameNamespaceOwnership); err != nil {
 		return nil, fmt.Errorf("stamping NetworkPolicy identity on TAS Deployment: %w", err)
 	}
+	// Record the images this render was built from, so a later reconcile can tell
+	// whether the Deployment still reflects the images the operator resolves.
+	if deployment.Annotations == nil {
+		deployment.Annotations = map[string]string{}
+	}
+	deployment.Annotations[renderedImagesAnnotation] = renderedImages(serviceImage, kubeRBACProxyImage)
 	return deployment, nil
+}
+
+// renderedImagesAnnotation is owned by the operator. It stores the service and
+// proxy images a Deployment was last rendered with ("<service>|<proxy>").
+const renderedImagesAnnotation = "trustyai.opendatahub.io/rendered-images"
+
+func renderedImages(serviceImage, proxyImage string) string {
+	return serviceImage + "|" + proxyImage
 }
 
 // reconcileDeployment returns a Deployment object with the same name/namespace as the cr
@@ -232,9 +244,9 @@ func (r *TrustyAIServiceReconciler) updateDeployment(ctx context.Context, cr *tr
 
 func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, caBundle CustomCertificatesBundle, migration bool) error {
 
-	// Get image from env var or ConfigMap
-	// If there's a ConfigMap with custom images, it is only applied when the operator is first deployed
-	// Changing (or creating) the ConfigMap after the operator is deployed will not have any effect
+	// Get image from env var or ConfigMap. Existing Deployments are converged to the
+	// resolved images below, so changing them (RELATED_IMAGE_* or the ConfigMap)
+	// rolls every TrustyAIService Deployment.
 	image, err := images.ResolveImage(ctx, r.Client, configMapServiceImageKey, constants.ConfigMap, r.Namespace, "")
 	if err != nil {
 		return fmt.Errorf("resolving TrustyAI Service image: %w", err)
@@ -258,37 +270,48 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 		return r.updateDeployment(ctx, instance, image, caBundle)
 	}
 
-	// Keep migration settings and the ConfigMap tuning reference in sync with the
-	// CR, in both directions. ConfigMap data updates are intentionally left for a
-	// manual Deployment restart.
-	if instance.IsMigration() || deploymentHasMigration(deploy) || instance.Spec.Storage.IsDatabaseTuningSet() || deploymentHasDatabaseTuning(deploy) {
-		desired, err := r.createDeploymentObject(ctx, instance, image, caBundle)
-		if err != nil {
-			return err
-		}
-		if deploymentMigrationChanged(deploy, desired) || databaseTuningDeploymentChanged(deploy, desired) {
-			return r.updateDeployment(ctx, instance, image, caBundle)
-		}
-	}
 	desired, err := r.createDeploymentObject(ctx, instance, image, caBundle)
 	if err != nil {
 		return err
 	}
-	// Upgrading from the Java to the Python TrustyAI service changes the pod
-	// topology, env and proxy flags together with the image, so re-render the whole
-	// Deployment rather than patching the image in place, which would leave the old
-	// and new halves mixed. Custom service images are left alone.
-	if deploymentRunsLegacyJavaService(deploy, image) {
-		log.FromContext(ctx).Info("Deployment runs the legacy Java TrustyAI service image. Migrating to the Python service.", "image", image)
+
+	// The resolved service and proxy images are desired state. When the Deployment
+	// was rendered from different images, or by an operator that did not record them
+	// (every Deployment from before this annotation existed), re-render the whole
+	// Deployment. A new image comes with a different pod topology, env and proxy
+	// flags, so patching the image in place would leave the old and new halves
+	// mixed, which is what crash-looped upgraded Deployments. This runs before the
+	// migration gate below: a Deployment on a stale image cannot be mid-migration.
+	if deploy.Annotations[renderedImagesAnnotation] != desired.Annotations[renderedImagesAnnotation] {
+		log.FromContext(ctx).Info("Operator-managed images changed. Re-rendering Deployment.",
+			"rendered", deploy.Annotations[renderedImagesAnnotation], "desired", desired.Annotations[renderedImagesAnnotation])
 		if err := r.updateDeployment(ctx, instance, image, caBundle); err != nil {
 			return err
 		}
-		// Refresh so the TLS and identity steps below see the updated object.
+		// Refresh so the steps below see the updated object.
 		deploy = &appsv1.Deployment{}
 		if err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deploy); err != nil {
 			return err
 		}
 	}
+
+	// Keep migration settings and the ConfigMap tuning reference in sync with the
+	// CR, in both directions. ConfigMap data updates are intentionally left for a
+	// manual Deployment restart.
+	if instance.IsMigration() || deploymentHasMigration(deploy) || instance.Spec.Storage.IsDatabaseTuningSet() || deploymentHasDatabaseTuning(deploy) {
+		if deploymentMigrationChanged(deploy, desired) || databaseTuningDeploymentChanged(deploy, desired) {
+			// Removing the migration settings restarts the pod. Wait until the current
+			// rollout is ready so a migration that is still copying data is not killed.
+			// No requeue is needed: the controller owns the Deployment, so its status
+			// change triggers the next reconcile.
+			if deploymentHasMigration(deploy) && !instance.IsMigration() && !deploymentRolloutComplete(deploy) {
+				log.FromContext(ctx).Info("Deployment is still rolling out. Deferring removal of migration settings.", "deployment", deploy.Name)
+			} else {
+				return r.updateDeployment(ctx, instance, image, caBundle)
+			}
+		}
+	}
+
 	// A manager restart must refresh TLS on existing workloads, not only new ones.
 	// Patch only TLS-owned fields so manual rollout annotations and storage
 	// settings are not overwritten by a routine profile change.
@@ -299,33 +322,17 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 	return r.ensureTASDeploymentIdentity(ctx, instance, deploy)
 }
 
-// legacyJavaServiceImageEnvVar carries the pre-3.6 Java TrustyAI service image,
-// which the operator still receives alongside the Python one.
-const legacyJavaServiceImageEnvVar = "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_IMAGE"
-
-// imageRepository strips the tag and digest from an image reference so that the
-// same image can be recognised across version bumps.
-func imageRepository(image string) string {
-	if at := strings.Index(image, "@"); at >= 0 {
-		image = image[:at]
+// deploymentRolloutComplete reports whether the Deployment controller has
+// finished rolling out the current spec and all replicas are ready.
+func deploymentRolloutComplete(d *appsv1.Deployment) bool {
+	replicas := int32(1)
+	if d.Spec.Replicas != nil {
+		replicas = *d.Spec.Replicas
 	}
-	if colon := strings.LastIndex(image, ":"); colon > strings.LastIndex(image, "/") {
-		image = image[:colon]
-	}
-	return image
-}
-
-// deploymentRunsLegacyJavaService reports whether the existing Deployment still
-// runs the Java TrustyAI service image although the operator now deploys another
-// one (the Python service). Only the known Java repository is matched, so a user
-// supplied custom service image is never replaced.
-func deploymentRunsLegacyJavaService(current *appsv1.Deployment, desiredImage string) bool {
-	javaImage := os.Getenv(legacyJavaServiceImageEnvVar)
-	if javaImage == "" || imageRepository(javaImage) == imageRepository(desiredImage) {
-		return false
-	}
-	app := serviceContainer(current)
-	return app != nil && imageRepository(app.Image) == imageRepository(javaImage)
+	return d.Status.ObservedGeneration >= d.Generation &&
+		d.Status.UpdatedReplicas == replicas &&
+		d.Status.ReadyReplicas == replicas &&
+		d.Status.AvailableReplicas == replicas
 }
 
 // deploymentHasMigration reports whether the Deployment carries migration-only settings.
