@@ -23,7 +23,6 @@ import (
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	"time"
 
-	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
@@ -364,6 +363,13 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 }
 
 // SetupWithManager sets up the controller with the Manager.
+//
+// No source is registered for serving.kserve.io on purpose. The reconciler
+// requeues on defaultRequeueDelay and each pass re-derives serving state from
+// the CRD, so a serving event would only shorten adaptation below that interval
+// while making the operator refuse to start on a cluster with no serving CRD:
+// source.Kind.Start retries GetInformer and the controller then misses its
+// cache-sync deadline. See the architecture decision recorded on RHAI-22332.
 func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Reconcile v1 (hub version); conversion webhook handles v1alpha1->v1
 	return ctrl.NewControllerManagedBy(mgr).
@@ -380,6 +386,5 @@ func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			UpdateFunc:  func(e event.UpdateEvent) bool { return tasPodLabelsChanged(e.ObjectOld, e.ObjectNew) },
 			GenericFunc: func(e event.GenericEvent) bool { return hasTASPodIdentityHint(e.Object) },
 		})).
-		Watches(&kservev1beta1.InferenceService{}, &handler.EnqueueRequestForObject{}).
 		Complete(r)
 }
