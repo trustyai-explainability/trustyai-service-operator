@@ -1,0 +1,28 @@
+# Requires Kubernetes 1.30+ (admissionregistration.k8s.io/v1).
+# This policy must ship with the aggregated instance-manager role.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: evalhub-single-tenant-self-service
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [trustyai.opendatahub.io]
+        apiVersions: ['*']
+        operations: [CREATE, UPDATE]
+        resources: [evalhubs]
+  validations:
+    - expression: >-
+        (has(object.spec.tenancy) && object.spec.tenancy == 'single') ||
+        authorizer.group('trustyai.opendatahub.io').resource('evalhubmultitenancy').check('use').allowed()
+      message: 'Self-service EvalHub instances must explicitly set spec.tenancy to single; multi-tenancy requires platform authorization.'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: evalhub-single-tenant-self-service
+spec:
+  policyName: evalhub-single-tenant-self-service
+  validationActions: [Deny]
