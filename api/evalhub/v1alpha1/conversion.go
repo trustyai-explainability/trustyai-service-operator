@@ -134,6 +134,8 @@ func (dst *EvalHub) ConvertFrom(srcRaw conversion.Hub) error {
 				TestDataTimeout: src.Spec.Service.Init.TestDataTimeout,
 			}
 		}
+	} else {
+		dst.Spec.Service = nil
 	}
 
 	if src.Spec.MCP != nil {

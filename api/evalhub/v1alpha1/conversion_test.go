@@ -207,6 +207,29 @@ func TestConvertNilPointerFields(t *testing.T) {
 	}
 }
 
+func TestConvertFromClearsServiceWhenSourceOmitsIt(t *testing.T) {
+	src := &v1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{Name: "minimal"},
+		Spec: v1.EvalHubSpec{
+			Replicas: int32Ptr(1),
+		},
+	}
+	dst := &EvalHub{
+		Spec: EvalHubSpec{
+			Service: &EvalHubServiceSpec{
+				Init: &EvalHubServiceInitSpec{TestDataTimeout: "30m"},
+			},
+		},
+	}
+
+	if err := dst.ConvertFrom(src); err != nil {
+		t.Fatalf("ConvertFrom failed: %v", err)
+	}
+	if dst.Spec.Service != nil {
+		t.Fatalf("Service should be nil when source omits it, got %#v", dst.Spec.Service)
+	}
+}
+
 func TestConvertToPreservesV1OnlyOTELFields(t *testing.T) {
 	hub := &v1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-evalhub"},
