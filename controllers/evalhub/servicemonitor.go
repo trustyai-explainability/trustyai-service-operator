@@ -34,15 +34,18 @@ func (r *EvalHubReconciler) isServiceMonitorSupported() bool {
 func serviceMonitorName(instance *evalhubv1.EvalHub) string {
 	return instance.Name + "-metrics"
 }
+func serviceMonitorMetadataLabels(instance *evalhubv1.EvalHub) map[string]string {
+	labels := metricsServiceLabels(instance)
+	labels["openshift.io/user-monitoring"] = "true"
+	return labels
+}
 
 func (r *EvalHubReconciler) buildServiceMonitor(instance *evalhubv1.EvalHub) *monitoringv1.ServiceMonitor {
-	labels := metricsServiceLabels(instance)
-
 	return &monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceMonitorName(instance),
 			Namespace: instance.Namespace,
-			Labels:    labels,
+			Labels:    serviceMonitorMetadataLabels(instance),
 		},
 		Spec: monitoringv1.ServiceMonitorSpec{
 			Endpoints: []monitoringv1.Endpoint{
@@ -55,7 +58,7 @@ func (r *EvalHubReconciler) buildServiceMonitor(instance *evalhubv1.EvalHub) *mo
 				},
 			},
 			Selector: metav1.LabelSelector{
-				MatchLabels: labels,
+				MatchLabels: metricsServiceLabels(instance),
 			},
 			NamespaceSelector: monitoringv1.NamespaceSelector{
 				MatchNames: []string{instance.Namespace},
@@ -64,10 +67,6 @@ func (r *EvalHubReconciler) buildServiceMonitor(instance *evalhubv1.EvalHub) *mo
 	}
 }
 
-// reconcileServiceMonitor ensures a ServiceMonitor exists for the EvalHub instance.
-// The ServiceMonitor spec is fully derived from immutable CR fields (name, namespace),
-// so it is created once and never updated in place. If the CR is deleted, the
-// ServiceMonitor is garbage-collected via its owner reference.
 func (r *EvalHubReconciler) reconcileServiceMonitor(ctx context.Context, instance *evalhubv1.EvalHub) error {
 	log := log.FromContext(ctx)
 	log.Info("Reconciling ServiceMonitor", "name", serviceMonitorName(instance))
@@ -85,6 +84,21 @@ func (r *EvalHubReconciler) reconcileServiceMonitor(ctx context.Context, instanc
 			return r.Create(ctx, desired)
 		}
 		return err
+	}
+	needsUpdate := false
+	if found.Labels == nil {
+		found.Labels = map[string]string{}
+	}
+	for key, value := range serviceMonitorMetadataLabels(instance) {
+		if found.Labels[key] != value {
+			found.Labels[key] = value
+			needsUpdate = true
+		}
+	}
+
+	if needsUpdate {
+		log.Info("Updating ServiceMonitor labels", "name", found.Name)
+		return r.Update(ctx, found)
 	}
 
 	return nil
