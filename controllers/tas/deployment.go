@@ -122,7 +122,21 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 	if err := utils.LabelOwnedNetworkPolicyDeployment(deployment, r.Scheme, instance, identity, utils.SameNamespaceOwnership); err != nil {
 		return nil, fmt.Errorf("stamping NetworkPolicy identity on TAS Deployment: %w", err)
 	}
+	// Record the images this render was built from, so a later reconcile can tell
+	// whether the Deployment still reflects the images the operator resolves.
+	if deployment.Annotations == nil {
+		deployment.Annotations = map[string]string{}
+	}
+	deployment.Annotations[renderedImagesAnnotation] = renderedImages(serviceImage, kubeRBACProxyImage)
 	return deployment, nil
+}
+
+// renderedImagesAnnotation is owned by the operator. It stores the service and
+// proxy images a Deployment was last rendered with ("<service>|<proxy>").
+const renderedImagesAnnotation = "trustyai.opendatahub.io/rendered-images"
+
+func renderedImages(serviceImage, proxyImage string) string {
+	return serviceImage + "|" + proxyImage
 }
 
 // reconcileDeployment returns a Deployment object with the same name/namespace as the cr
@@ -230,9 +244,9 @@ func (r *TrustyAIServiceReconciler) updateDeployment(ctx context.Context, cr *tr
 
 func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, caBundle CustomCertificatesBundle, migration bool) error {
 
-	// Get image from env var or ConfigMap
-	// If there's a ConfigMap with custom images, it is only applied when the operator is first deployed
-	// Changing (or creating) the ConfigMap after the operator is deployed will not have any effect
+	// Get image from env var or ConfigMap. Existing Deployments are converged to the
+	// resolved images below, so changing them (RELATED_IMAGE_* or the ConfigMap)
+	// rolls every TrustyAIService Deployment.
 	image, err := images.ResolveImage(ctx, r.Client, configMapServiceImageKey, constants.ConfigMap, r.Namespace, "")
 	if err != nil {
 		return fmt.Errorf("resolving TrustyAI Service image: %w", err)
@@ -256,30 +270,69 @@ func (r *TrustyAIServiceReconciler) ensureDeployment(ctx context.Context, instan
 		return r.updateDeployment(ctx, instance, image, caBundle)
 	}
 
-	// Keep migration settings and the ConfigMap tuning reference in sync with the
-	// CR, in both directions. ConfigMap data updates are intentionally left for a
-	// manual Deployment restart.
-	if instance.IsMigration() || deploymentHasMigration(deploy) || instance.Spec.Storage.IsDatabaseTuningSet() || deploymentHasDatabaseTuning(deploy) {
-		desired, err := r.createDeploymentObject(ctx, instance, image, caBundle)
-		if err != nil {
-			return err
-		}
-		if deploymentMigrationChanged(deploy, desired) || databaseTuningDeploymentChanged(deploy, desired) {
-			return r.updateDeployment(ctx, instance, image, caBundle)
-		}
-	}
-	// A manager restart must refresh TLS on existing workloads, not only new ones.
-	// Patch only TLS-owned fields so manual rollout annotations and storage/image
-	// settings are not overwritten by a routine profile change.
 	desired, err := r.createDeploymentObject(ctx, instance, image, caBundle)
 	if err != nil {
 		return err
 	}
+
+	// The resolved service and proxy images are desired state. When the Deployment
+	// was rendered from different images, or by an operator that did not record them
+	// (every Deployment from before this annotation existed), re-render the whole
+	// Deployment. A new image comes with a different pod topology, env and proxy
+	// flags, so patching the image in place would leave the old and new halves
+	// mixed, which is what crash-looped upgraded Deployments. This runs before the
+	// migration gate below: a Deployment on a stale image cannot be mid-migration.
+	if deploy.Annotations[renderedImagesAnnotation] != desired.Annotations[renderedImagesAnnotation] {
+		log.FromContext(ctx).Info("Operator-managed images changed. Re-rendering Deployment.",
+			"rendered", deploy.Annotations[renderedImagesAnnotation], "desired", desired.Annotations[renderedImagesAnnotation])
+		if err := r.updateDeployment(ctx, instance, image, caBundle); err != nil {
+			return err
+		}
+		// Refresh so the steps below see the updated object.
+		deploy = &appsv1.Deployment{}
+		if err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deploy); err != nil {
+			return err
+		}
+	}
+
+	// Keep migration settings and the ConfigMap tuning reference in sync with the
+	// CR, in both directions. ConfigMap data updates are intentionally left for a
+	// manual Deployment restart.
+	if instance.IsMigration() || deploymentHasMigration(deploy) || instance.Spec.Storage.IsDatabaseTuningSet() || deploymentHasDatabaseTuning(deploy) {
+		if deploymentMigrationChanged(deploy, desired) || databaseTuningDeploymentChanged(deploy, desired) {
+			// Removing the migration settings restarts the pod. Wait until the current
+			// rollout is ready so a migration that is still copying data is not killed.
+			// No requeue is needed: the controller owns the Deployment, so its status
+			// change triggers the next reconcile.
+			if deploymentHasMigration(deploy) && !instance.IsMigration() && !deploymentRolloutComplete(deploy) {
+				log.FromContext(ctx).Info("Deployment is still rolling out. Deferring removal of migration settings.", "deployment", deploy.Name)
+			} else {
+				return r.updateDeployment(ctx, instance, image, caBundle)
+			}
+		}
+	}
+
+	// A manager restart must refresh TLS on existing workloads, not only new ones.
+	// Patch only TLS-owned fields so manual rollout annotations and storage
+	// settings are not overwritten by a routine profile change.
 	if err := r.ensureTASTLSDeployment(ctx, instance, deploy, desired); err != nil {
 		return err
 	}
 	// The caller reconciles the policy before legacy workloads enter its selector.
 	return r.ensureTASDeploymentIdentity(ctx, instance, deploy)
+}
+
+// deploymentRolloutComplete reports whether the Deployment controller has
+// finished rolling out the current spec and all replicas are ready.
+func deploymentRolloutComplete(d *appsv1.Deployment) bool {
+	replicas := int32(1)
+	if d.Spec.Replicas != nil {
+		replicas = *d.Spec.Replicas
+	}
+	return d.Status.ObservedGeneration >= d.Generation &&
+		d.Status.UpdatedReplicas == replicas &&
+		d.Status.ReadyReplicas == replicas &&
+		d.Status.AvailableReplicas == replicas
 }
 
 // deploymentHasMigration reports whether the Deployment carries migration-only settings.

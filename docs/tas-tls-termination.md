@@ -64,7 +64,18 @@ The patch removes native serving-key mounts and stale native-policy inputs, sets
 reserved backend TLS/port environment variables, updates external proxy arguments
 and creates/refreshes the internal proxy. It preserves the immutable selector,
 user rollout annotations, unrelated application environment, storage settings and
-application image. Sidecar defaulted probes do not cause repeat updates. Unowned
+application image. The exception is an image change: the operator records the service and proxy images
+a Deployment was rendered from in the `trustyai.opendatahub.io/rendered-images`
+annotation. When that annotation is missing (every Deployment written by an older
+operator, for example the Java service from before 3.6) or differs from the images the
+operator resolves, the whole Deployment is re-rendered so the service image, proxy image
+and TLS topology change together. Patching only the TLS fields on top of old images
+leaves old images with new-style flags, mounts and env, which crash-loops. A re-render
+resets user-added environment, pod-template annotations and resources on the Deployment.
+Editing a Deployment's image by hand is not supported and is not detected: the
+annotation, not the live image, drives the re-render.
+
+Sidecar defaulted probes do not cause repeat updates. Unowned
 Deployments are rejected. Migration paths render the same topology directly.
 
 The kube-rbac-proxy ConfigMap now contains only authorization. Previously inert
