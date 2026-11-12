@@ -3,3 +3,6 @@ kind: Component
 
 resources:
   - webhook-service.yaml
+
+patches:
+  - path: patches/manager_webhook_config.yaml
