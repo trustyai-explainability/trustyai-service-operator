@@ -673,6 +673,21 @@ spec:
                 format: int32
                 minimum: 1
                 type: integer
+              service:
+                description: Service configures EvalHub service behavior.
+                properties:
+                  init:
+                    description: Init configures eval-runtime-init containers launched
+                      by EvalHub.
+                    properties:
+                      testDataTimeout:
+                        description: |-
+                          TestDataTimeout configures the timeout for eval-runtime-init test-data downloads.
+                          Omit to use the EvalHub default.
+                        pattern: ^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$
+                        type: string
+                    type: object
+                type: object
               tenancy:
                 default: multi
                 description: |-
@@ -1376,6 +1391,21 @@ spec:
                 format: int32
                 minimum: 1
                 type: integer
+              service:
+                description: Service configures EvalHub service behavior.
+                properties:
+                  init:
+                    description: Init configures eval-runtime-init containers launched
+                      by EvalHub.
+                    properties:
+                      testDataTimeout:
+                        description: |-
+                          TestDataTimeout configures the timeout for eval-runtime-init test-data downloads.
+                          Omit to use the EvalHub default.
+                        pattern: ^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$
+                        type: string
+                    type: object
+                type: object
             type: object
           status:
             description: EvalHubStatus defines the observed state of EvalHub

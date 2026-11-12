@@ -26,13 +26,19 @@ import (
 
 // ServiceConfig represents the service section in config.yaml
 type ServiceConfig struct {
-	Port            int    `json:"port"`
-	Host            string `json:"host,omitempty"`
-	DisableAuth     bool   `json:"disable_auth,omitempty"`
-	TerminationFile string `json:"termination_file"`
-	EvalInitImage   string `json:"eval_init_image,omitempty"`
-	TLSCertFile     string `json:"tls_cert_file"`
-	TLSKeyFile      string `json:"tls_key_file"`
+	Port            int                `json:"port"`
+	Host            string             `json:"host,omitempty"`
+	DisableAuth     bool               `json:"disable_auth,omitempty"`
+	TerminationFile string             `json:"termination_file"`
+	EvalInitImage   string             `json:"eval_init_image,omitempty"`
+	TLSCertFile     string             `json:"tls_cert_file"`
+	TLSKeyFile      string             `json:"tls_key_file"`
+	Init            *ServiceInitConfig `json:"init,omitempty"`
+}
+
+// ServiceInitConfig represents the service.init section in config.yaml.
+type ServiceInitConfig struct {
+	TestDataTimeout string `json:"test_data_timeout,omitempty"`
 }
 
 // DatabaseConfig represents the database configuration in config.yaml
@@ -245,6 +251,12 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		config.Secrets = &SecretsMapping{
 			Dir:      dbSecretMountPath,
 			Mappings: map[string]string{dbSecretKey: "database.url"},
+		}
+	}
+
+	if instance.Spec.Service != nil && instance.Spec.Service.Init != nil && instance.Spec.Service.Init.TestDataTimeout != "" {
+		config.Service.Init = &ServiceInitConfig{
+			TestDataTimeout: instance.Spec.Service.Init.TestDataTimeout,
 		}
 	}
 

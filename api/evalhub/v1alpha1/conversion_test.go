@@ -40,6 +40,9 @@ func fullEvalHubV1Alpha1() *EvalHub {
 				EnableMetrics:    true,
 				EnableLogs:       false,
 			},
+			Service: &EvalHubServiceSpec{
+				Init: &EvalHubServiceInitSpec{TestDataTimeout: "30m"},
+			},
 			MCP: &EvalHubMCPSpec{
 				Enabled:          boolPtr(true),
 				Replicas:         int32Ptr(2),
@@ -111,6 +114,9 @@ func TestConvertTo(t *testing.T) {
 	if dst.Spec.Otel == nil || dst.Spec.Otel.ExporterEndpoint != "otel-collector:4317" {
 		t.Error("Otel not converted")
 	}
+	if dst.Spec.Service == nil || dst.Spec.Service.Init == nil || dst.Spec.Service.Init.TestDataTimeout != "30m" {
+		t.Error("Service init config not converted")
+	}
 	if dst.Spec.MCP == nil || !*dst.Spec.MCP.Enabled {
 		t.Error("MCP not converted")
 	}
@@ -150,6 +156,9 @@ func TestConvertFrom(t *testing.T) {
 	if roundTripped.Spec.Otel.SamplingRatio != src.Spec.Otel.SamplingRatio {
 		t.Errorf("Otel.SamplingRatio = %q, want %q", roundTripped.Spec.Otel.SamplingRatio, src.Spec.Otel.SamplingRatio)
 	}
+	if roundTripped.Spec.Service.Init.TestDataTimeout != src.Spec.Service.Init.TestDataTimeout {
+		t.Errorf("Service.Init.TestDataTimeout = %q, want %q", roundTripped.Spec.Service.Init.TestDataTimeout, src.Spec.Service.Init.TestDataTimeout)
+	}
 	if roundTripped.Spec.MCP.AuthSecret != src.Spec.MCP.AuthSecret {
 		t.Errorf("MCP.AuthSecret = %q, want %q", roundTripped.Spec.MCP.AuthSecret, src.Spec.MCP.AuthSecret)
 	}
@@ -178,6 +187,9 @@ func TestConvertNilPointerFields(t *testing.T) {
 	}
 	if dst.Spec.MCP != nil {
 		t.Error("MCP should be nil")
+	}
+	if dst.Spec.Service != nil {
+		t.Error("Service should be nil")
 	}
 	if dst.Status.MCP != nil {
 		t.Error("Status.MCP should be nil")
@@ -286,6 +298,7 @@ func TestConvertDeepCopyIsolation(t *testing.T) {
 	// Mutate the source after conversion
 	src.Spec.Database.Secret = "MUTATED"
 	src.Spec.Otel.ExporterEndpoint = "MUTATED"
+	src.Spec.Service.Init.TestDataTimeout = "MUTATED"
 	src.Spec.MCP.Image = "MUTATED"
 
 	if dst.Spec.Database.Secret == "MUTATED" {
@@ -293,6 +306,9 @@ func TestConvertDeepCopyIsolation(t *testing.T) {
 	}
 	if dst.Spec.Otel.ExporterEndpoint == "MUTATED" {
 		t.Error("Otel was not deep-copied — mutation leaked")
+	}
+	if dst.Spec.Service.Init.TestDataTimeout == "MUTATED" {
+		t.Error("Service was not deep-copied — mutation leaked")
 	}
 	if dst.Spec.MCP.Image == "MUTATED" {
 		t.Error("MCP was not deep-copied — mutation leaked")

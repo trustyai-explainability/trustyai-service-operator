@@ -38,6 +38,17 @@ func (src *EvalHub) ConvertTo(dstRaw conversion.Hub) error {
 		dst.Spec.Otel = nil
 	}
 
+	if src.Spec.Service != nil {
+		dst.Spec.Service = &v1.EvalHubServiceSpec{}
+		if src.Spec.Service.Init != nil {
+			dst.Spec.Service.Init = &v1.EvalHubServiceInitSpec{
+				TestDataTimeout: src.Spec.Service.Init.TestDataTimeout,
+			}
+		}
+	} else {
+		dst.Spec.Service = nil
+	}
+
 	if src.Spec.MCP != nil {
 		dst.Spec.MCP = &v1.EvalHubMCPSpec{
 			Enabled:          copyBoolPtr(src.Spec.MCP.Enabled),
@@ -114,6 +125,15 @@ func (dst *EvalHub) ConvertFrom(srcRaw conversion.Hub) error {
 
 	if src.Spec.Otel != nil {
 		dst.Spec.Otel = copyOTELSpecFromV1(src.Spec.Otel)
+	}
+
+	if src.Spec.Service != nil {
+		dst.Spec.Service = &EvalHubServiceSpec{}
+		if src.Spec.Service.Init != nil {
+			dst.Spec.Service.Init = &EvalHubServiceInitSpec{
+				TestDataTimeout: src.Spec.Service.Init.TestDataTimeout,
+			}
+		}
 	}
 
 	if src.Spec.MCP != nil {
