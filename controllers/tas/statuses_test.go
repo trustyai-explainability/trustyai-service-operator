@@ -11,7 +11,10 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -67,6 +70,13 @@ var _ = Describe("Status and condition tests", func() {
 	BeforeEach(func() {
 		operatorCM := createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage)
 		inferenceServiceCRD := servingCRDFixture()
+		// Serving is read on the dynamic client on the GVR the CRD declares, so
+		// the fake world needs one too; a spec that seeds an InferenceService
+		// seeds both clients.
+		servingFake = dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(),
+			map[schema.GroupVersionResource]string{
+				{Group: "serving.kserve.io", Version: "v1beta1", Resource: "inferenceservices"}: "InferenceServiceList",
+			})
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).WithStatusSubresource(
 			&routev1.Route{},
 			&trustyaiopendatahubiov1.TrustyAIService{},
@@ -75,6 +85,7 @@ var _ = Describe("Status and condition tests", func() {
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
 			Scheme:        scheme.Scheme,
+			Dynamic:       servingFake,
 			EventRecorder: recorder,
 			Namespace:     operatorNamespace,
 		}
@@ -461,8 +472,7 @@ var _ = Describe("Status and condition tests", func() {
 			WaitFor(func() error {
 				return k8sClient.Create(ctx, inferenceService)
 			}, "failed to create InferenceService")
-
-			Expect(reconciler.patchKServe(ctx, instance, *inferenceService, namespace, instance.Name, false, false)).ToNot(HaveOccurred())
+			Expect(servingFake.Tracker().Add(servingObjectForTest(inferenceService))).To(Succeed())
 
 			WaitFor(func() error {
 				return k8sClient.Create(ctx, instance)

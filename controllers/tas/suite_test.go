@@ -40,7 +40,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
@@ -58,13 +63,15 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var (
-	cfg        *rest.Config
-	k8sClient  client.Client
-	testEnv    *envtest.Environment
-	ctx        context.Context
-	cancel     context.CancelFunc
-	reconciler *TrustyAIServiceReconciler
-	recorder   *record.FakeRecorder
+	cfg            *rest.Config
+	servingDynamic dynamic.Interface
+	servingFake    *dynamicfake.FakeDynamicClient
+	k8sClient      client.Client
+	testEnv        *envtest.Environment
+	ctx            context.Context
+	cancel         context.CancelFunc
+	reconciler     *TrustyAIServiceReconciler
+	recorder       *record.FakeRecorder
 )
 
 const (
@@ -313,7 +320,6 @@ func createTestPVC(ctx context.Context, k8sClient client.Client, instance *trust
 	return nil
 }
 
-// createInferenceService Function to create the InferenceService
 // servingCRDFixture is the serving CRD as the operator reads it: one served
 // version whose schema declares the predictor logger. Version adoption is a
 // schema decision, so a fixture that only carries a name is reported as
@@ -347,6 +353,22 @@ func servingCRDFixture() *apiextensionsv1.CustomResourceDefinition {
 	}
 }
 
+// servingObjectForTest converts the typed fixture into the unstructured object the
+// operator reads and writes on the dynamic client, so a spec that seeds a fake
+// typed client can seed the fake dynamic client that stands in for serving.
+func servingObjectForTest(infService *kservev1beta1.InferenceService) *unstructured.Unstructured {
+	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(infService)
+	Expect(err).NotTo(HaveOccurred())
+	converted := &unstructured.Unstructured{Object: object}
+	converted.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "serving.kserve.io",
+		Version: "v1beta1",
+		Kind:    "InferenceService",
+	})
+	return converted
+}
+
+// createInferenceService creates the typed fixture the environment has a CRD for.
 func createInferenceService(name string, namespace string) *kservev1beta1.InferenceService {
 	return &kservev1beta1.InferenceService{
 		ObjectMeta: metav1.ObjectMeta{
@@ -563,6 +585,11 @@ var _ = BeforeSuite(func() {
 
 	//+kubebuilder:scaffold:scheme
 
+	// The operator reaches serving through one dynamic client on the GVR the CRD
+	// declares; the reconcilers below use the same client against envtest.
+	servingDynamic, err = dynamic.NewForConfig(cfg)
+	Expect(err).NotTo(HaveOccurred())
+
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
@@ -584,6 +611,7 @@ var _ = BeforeSuite(func() {
 	err = (&TrustyAIServiceReconciler{
 		Client:        k8sManager.GetClient(),
 		APIReader:     k8sManager.GetAPIReader(),
+		Dynamic:       servingDynamic,
 		Scheme:        k8sManager.GetScheme(),
 		EventRecorder: recorder,
 		Namespace:     operatorNamespace,
