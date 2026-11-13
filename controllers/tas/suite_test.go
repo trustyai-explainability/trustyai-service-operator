@@ -26,8 +26,6 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 
 	"github.com/google/uuid"
-	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
-	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
@@ -41,8 +39,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
@@ -353,38 +349,26 @@ func servingCRDFixture() *apiextensionsv1.CustomResourceDefinition {
 	}
 }
 
-// servingObjectForTest converts the typed fixture into the unstructured object the
-// operator reads and writes on the dynamic client, so a spec that seeds a fake
-// typed client can seed the fake dynamic client that stands in for serving.
-func servingObjectForTest(infService *kservev1beta1.InferenceService) *unstructured.Unstructured {
-	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(infService)
-	Expect(err).NotTo(HaveOccurred())
-	converted := &unstructured.Unstructured{Object: object}
-	converted.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "serving.kserve.io",
-		Version: "v1beta1",
-		Kind:    "InferenceService",
-	})
-	return converted
-}
-
-// createInferenceService creates the typed fixture the environment has a CRD for.
-func createInferenceService(name string, namespace string) *kservev1beta1.InferenceService {
-	return &kservev1beta1.InferenceService{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+// createInferenceService builds the InferenceService the environment has a CRD
+// for, as the unstructured object the operator reads and writes. Nothing in the
+// test tree needs the serving module: the resource, its version and its fields
+// are what the CRD declares.
+func createInferenceService(name, namespace string) *unstructured.Unstructured {
+	return &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "serving.kserve.io/v1beta1",
+		"kind":       "InferenceService",
+		"metadata": map[string]interface{}{
+			"name":      name,
+			"namespace": namespace,
 		},
-		Spec: kservev1beta1.InferenceServiceSpec{
-			Predictor: kservev1beta1.PredictorSpec{
-				Model: &kservev1beta1.ModelSpec{
-					ModelFormat: kservev1beta1.ModelFormat{
-						Name: "sklearn",
-					},
+		"spec": map[string]interface{}{
+			"predictor": map[string]interface{}{
+				"model": map[string]interface{}{
+					"modelFormat": map[string]interface{}{"name": "sklearn"},
 				},
 			},
 		},
-	}
+	}}
 }
 
 func makePVCReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1.TrustyAIService) error {
@@ -566,13 +550,6 @@ var _ = BeforeSuite(func() {
 
 	// Add Monitoring
 	err = monitoringv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Add InferenceServices
-	err = kservev1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = kservev1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// Add Routes
