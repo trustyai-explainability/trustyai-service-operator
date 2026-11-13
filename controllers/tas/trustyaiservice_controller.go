@@ -31,6 +31,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -59,9 +60,19 @@ func (r *TrustyAIServiceReconciler) uncachedReader() client.Reader {
 }
 
 func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) error {
+	// One dynamic client for every serving read and write. It is built from the
+	// manager's REST config and never wrapped by the cache, so it creates no
+	// informer; the resource it talks to comes from the CRD, not from a
+	// RESTMapper lookup, so it triggers no discovery either.
+	servingClient, err := dynamic.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		return fmt.Errorf("creating the dynamic client for serving resources: %w", err)
+	}
+
 	return (&TrustyAIServiceReconciler{
 		Client:        mgr.GetClient(),
 		APIReader:     mgr.GetAPIReader(),
+		Dynamic:       servingClient,
 		Scheme:        mgr.GetScheme(),
 		Namespace:     ns,
 		EventRecorder: recorder,
@@ -75,7 +86,11 @@ type TrustyAIServiceReconciler struct {
 	// CRD presence) that must not be affected by the manager cache's informer-sync race
 	// on first access to a not-yet-watched GVK. Falls back to Client if unset (e.g. in
 	// tests that don't wire it up).
-	APIReader     client.Reader
+	APIReader client.Reader
+	// Dynamic is the unstructured client for serving resources. Its resource is
+	// derived from the InferenceService CRD on every pass, so a served version
+	// change needs no release and no scheme entry.
+	Dynamic       dynamic.Interface
 	Scheme        *runtime.Scheme
 	Namespace     string
 	EventRecorder record.EventRecorder
