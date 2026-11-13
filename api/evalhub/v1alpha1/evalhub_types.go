@@ -61,15 +61,6 @@ type OTELSpec struct {
 	EnableLogs bool `json:"enableLogs,omitempty"`
 }
 
-// EvalHubInitSpec configures eval-runtime-init behavior.
-type EvalHubInitSpec struct {
-	// TestDataTimeout configures the timeout for eval-runtime-init test-data downloads.
-	// Omit to use the EvalHub default.
-	// +kubebuilder:validation:Pattern=`^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$`
-	// +optional
-	TestDataTimeout string `json:"testDataTimeout,omitempty"`
-}
-
 // EvalHubMCPSpec defines the optional MCP server deployment configuration.
 type EvalHubMCPSpec struct {
 	// Enabled controls whether the MCP server is deployed. Defaults to false.
@@ -166,10 +157,6 @@ type EvalHubSpec struct {
 	// When omitted, the service uses its defaults (OTEL disabled).
 	// +optional
 	Otel *OTELSpec `json:"otel,omitempty"`
-
-	// Init configures eval-runtime-init containers launched by EvalHub.
-	// +optional
-	Init *EvalHubInitSpec `json:"init,omitempty"`
 
 	// MCP optionally enables an MCP server deployment connected to this EvalHub instance.
 	// +optional

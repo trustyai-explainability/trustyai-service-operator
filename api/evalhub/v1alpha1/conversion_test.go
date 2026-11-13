@@ -40,7 +40,6 @@ func fullEvalHubV1Alpha1() *EvalHub {
 				EnableMetrics:    true,
 				EnableLogs:       false,
 			},
-			Init: &EvalHubInitSpec{TestDataTimeout: "30m"},
 			MCP: &EvalHubMCPSpec{
 				Enabled:          boolPtr(true),
 				Replicas:         int32Ptr(2),
@@ -112,8 +111,8 @@ func TestConvertTo(t *testing.T) {
 	if dst.Spec.Otel == nil || dst.Spec.Otel.ExporterEndpoint != "otel-collector:4317" {
 		t.Error("Otel not converted")
 	}
-	if dst.Spec.Init == nil || dst.Spec.Init.TestDataTimeout != "30m" {
-		t.Error("Init config not converted")
+	if dst.Spec.Init != nil {
+		t.Error("Init should remain nil because it is v1-only")
 	}
 	if dst.Spec.MCP == nil || !*dst.Spec.MCP.Enabled {
 		t.Error("MCP not converted")
@@ -153,9 +152,6 @@ func TestConvertFrom(t *testing.T) {
 	}
 	if roundTripped.Spec.Otel.SamplingRatio != src.Spec.Otel.SamplingRatio {
 		t.Errorf("Otel.SamplingRatio = %q, want %q", roundTripped.Spec.Otel.SamplingRatio, src.Spec.Otel.SamplingRatio)
-	}
-	if roundTripped.Spec.Init.TestDataTimeout != src.Spec.Init.TestDataTimeout {
-		t.Errorf("Init.TestDataTimeout = %q, want %q", roundTripped.Spec.Init.TestDataTimeout, src.Spec.Init.TestDataTimeout)
 	}
 	if roundTripped.Spec.MCP.AuthSecret != src.Spec.MCP.AuthSecret {
 		t.Errorf("MCP.AuthSecret = %q, want %q", roundTripped.Spec.MCP.AuthSecret, src.Spec.MCP.AuthSecret)
@@ -205,24 +201,18 @@ func TestConvertNilPointerFields(t *testing.T) {
 	}
 }
 
-func TestConvertFromClearsInitWhenSourceOmitsIt(t *testing.T) {
+func TestConvertFromDropsV1OnlyInit(t *testing.T) {
 	src := &v1.EvalHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "minimal"},
 		Spec: v1.EvalHubSpec{
 			Replicas: int32Ptr(1),
+			Init:     &v1.EvalHubInitSpec{TestDataTimeout: "30m"},
 		},
 	}
-	dst := &EvalHub{
-		Spec: EvalHubSpec{
-			Init: &EvalHubInitSpec{TestDataTimeout: "30m"},
-		},
-	}
+	dst := &EvalHub{}
 
 	if err := dst.ConvertFrom(src); err != nil {
 		t.Fatalf("ConvertFrom failed: %v", err)
-	}
-	if dst.Spec.Init != nil {
-		t.Fatalf("Init should be nil when source omits it, got %#v", dst.Spec.Init)
 	}
 }
 
@@ -317,7 +307,6 @@ func TestConvertDeepCopyIsolation(t *testing.T) {
 	// Mutate the source after conversion
 	src.Spec.Database.Secret = "MUTATED"
 	src.Spec.Otel.ExporterEndpoint = "MUTATED"
-	src.Spec.Init.TestDataTimeout = "MUTATED"
 	src.Spec.MCP.Image = "MUTATED"
 
 	if dst.Spec.Database.Secret == "MUTATED" {
@@ -325,9 +314,6 @@ func TestConvertDeepCopyIsolation(t *testing.T) {
 	}
 	if dst.Spec.Otel.ExporterEndpoint == "MUTATED" {
 		t.Error("Otel was not deep-copied — mutation leaked")
-	}
-	if dst.Spec.Init.TestDataTimeout == "MUTATED" {
-		t.Error("Init was not deep-copied — mutation leaked")
 	}
 	if dst.Spec.MCP.Image == "MUTATED" {
 		t.Error("MCP was not deep-copied — mutation leaked")

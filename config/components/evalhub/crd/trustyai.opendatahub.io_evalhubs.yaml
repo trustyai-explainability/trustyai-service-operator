@@ -1078,17 +1078,6 @@ spec:
                   - name
                   type: object
                 type: array
-              init:
-                description: Init configures eval-runtime-init containers launched
-                  by EvalHub.
-                properties:
-                  testDataTimeout:
-                    description: |-
-                      TestDataTimeout configures the timeout for eval-runtime-init test-data downloads.
-                      Omit to use the EvalHub default.
-                    pattern: ^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$
-                    type: string
-                type: object
               mcp:
                 description: MCP optionally enables an MCP server deployment connected
                   to this EvalHub instance.
