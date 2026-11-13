@@ -27,8 +27,8 @@ package trustyaimodule
 // +kubebuilder:rbac:groups="",resources=persistentvolumes,verbs=list;get;watch
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=list;get;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=list;watch;get;create;update;patch;delete
-// +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=list;watch;get;update;patch
-// +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices/finalizers,verbs=list;watch;get;update;patch;delete
+// +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=list;get;update;patch
+// +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices/finalizers,verbs=list;get;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;list;patch;update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;delete
