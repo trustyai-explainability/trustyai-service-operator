@@ -27,25 +27,10 @@ const (
 	DEPLOYMENT_MODE_SERVERLESS = "Serverless"
 	DEPLOYMENT_MODE_KNATIVE    = "Knative"
 
-	// deploymentModeAnnotation is KServe's own record of how an
-	// InferenceService is deployed, and it selects which sink URL and which
-	// write path the operator uses. It is only ever read.
-	deploymentModeAnnotation = "serving.kserve.io/deploymentMode"
-	// istioInjectAnnotation asks for the service-mesh objects; it is only read.
-	istioInjectAnnotation = "sidecar.istio.io/inject"
-	// loggerModeAll captures request and response payloads.
-	loggerModeAll = "all"
+	// The annotations that select a write path, the deployment-mode values and
+	// the logger mode are declared in serving_fields.go with the rest of the
+	// serving API surface.
 )
-
-// servingLoggerAnnotationKeys are the annotations KServe writes alongside the
-// logger. Payload capture only ever deletes them, and deleting a key that is not
-// there is a no-op, so a change of naming on the serving side degrades to nothing
-// rather than to a failure.
-var servingLoggerAnnotationKeys = []string{
-	"internal.serving.kserve.io/logger",
-	"internal.serving.kserve.io/logger-mode",
-	"internal.serving.kserve.io/logger-sink-url",
-}
 
 // GetDeploymentsByLabel returns a list of Deployments that match a label key-value pair
 func (r *TrustyAIServiceReconciler) GetDeploymentsByLabel(ctx context.Context, namespace string, labelKey string, labelValue string) ([]appsv1.Deployment, error) {
@@ -269,8 +254,8 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 		switch deploymentMode {
 		case DEPLOYMENT_MODE_MODELMESH:
 			// ModelMesh carries the sink in an environment variable on its own
-			// Deployment rather than in a logger field, so that branch stays on
-			// the typed client.
+			// Deployment rather than in a logger field, so this branch patches
+			// Deployments and never touches the InferenceService.
 			var shouldContinue bool
 			shouldContinue, err = r.patchEnvVarsByLabelForDeployments(ctx, instance, namespace, labelKey, labelValue, envVarName, crName, remove)
 			if err != nil {
