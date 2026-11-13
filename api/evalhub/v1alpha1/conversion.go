@@ -38,6 +38,8 @@ func (src *EvalHub) ConvertTo(dstRaw conversion.Hub) error {
 		dst.Spec.Otel = nil
 	}
 
+	// Init is v1-only. Do not expose new EvalHub fields through v1alpha1;
+	// clients that need test-data init timeout must use the v1 API.
 	dst.Spec.Init = nil
 
 	if src.Spec.MCP != nil {
