@@ -11,9 +11,10 @@
 # RouteReady, and a Kind cluster has no OpenShift router, so the operand can
 # never report ready here whatever serving does. The claim that serving's
 # absence does not affect readiness is what matters, and it is asserted by
-# requiring the Ready value to survive both legs unchanged. Ready=True with no
-# serving CRD is asserted in the controller suite, where route, PVC and
-# deployment readiness are driven directly.
+# requiring the Ready value to survive every leg unchanged. Ready=True with no
+# serving CRD is asserted in the controller suite instead
+# (controllers/tas/serving_ready_test.go), which drives route, PVC and
+# deployment readiness directly.
 #
 # test_smoke.sh creates and deletes its own namespace in the same run, so these
 # legs bring their own rather than depend on another script's leftovers.
@@ -115,3 +116,34 @@ case "$(condition InferenceServicesPresent message)" in
     *) fail "the condition message does not name the adopted version: '$(condition InferenceServicesPresent message)'" ;;
 esac
 echo "✅ adopted serving without a restart: $(condition InferenceServicesPresent message)"
+
+# --- leg 3: serving is removed under the running operator ---------------------
+# The CRD can also go away from under a live operator, which is what the RFE
+# asks about. Nothing watches serving, so the verdict can only change on the
+# next requeue, and the bound is a minute.
+echo "removing the serving CRD under the running operator"
+kubectl delete crd inferenceservices.serving.kserve.io
+await_reason ServingCRDNotFound 60 \
+    || fail "removing serving did not take effect; reason is '$(condition InferenceServicesPresent reason)'"
+[ "$before" = "$(restarts)" ] \
+    || fail "the workload operator restarted when serving was removed: $before -> $(restarts)"
+[ "$ready_before" = "$(condition Ready status)" ] \
+    || fail "Ready changed (${ready_before} -> $(condition Ready status)) when serving was removed"
+case "$(condition InferenceServicesPresent message)" in
+    *inferenceservices.serving.kserve.io*) ;;
+    *) fail "the condition message does not name the missing CRD: '$(condition InferenceServicesPresent message)'" ;;
+esac
+echo "✅ survived serving removal: $(condition InferenceServicesPresent message)"
+
+# Re-adding it takes effect on the next pass too, so adoption above is not a
+# one-shot: an administrator can install, remove and reinstall serving without a
+# restart or a redeploy of AI Safety.
+echo "reinstalling the serving CRD"
+kubectl apply -f "$SERVING_CRD"
+await_reason NoInferenceServices 60 \
+    || fail "re-adoption did not take effect; reason is '$(condition InferenceServicesPresent reason)'"
+[ "$before" = "$(restarts)" ] \
+    || fail "the workload operator restarted when serving came back: $before -> $(restarts)"
+[ "$ready_before" = "$(condition Ready status)" ] \
+    || fail "Ready changed (${ready_before} -> $(condition Ready status)) when serving came back"
+echo "✅ re-adopted serving without a restart: $(condition InferenceServicesPresent message)"
