@@ -331,7 +331,6 @@ rules:
   - list
   - patch
   - update
-  - watch
 - apiGroups:
   - serving.kserve.io
   resources:
@@ -342,7 +341,6 @@ rules:
   - list
   - patch
   - update
-  - watch
 - apiGroups:
   - serving.kserve.io
   resources:
