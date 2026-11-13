@@ -6,13 +6,13 @@ import (
 	"sync"
 	"time"
 
-	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
@@ -81,9 +81,13 @@ var _ = Describe("TrustyAIService controller sources", func() {
 		Expect(appsv1.AddToScheme(s)).To(Succeed())
 		Expect(networkingv1.AddToScheme(s)).To(Succeed())
 		Expect(trustyaiopendatahubiov1.AddToScheme(s)).To(Succeed())
-		// Registered deliberately: the assertion is about what the controller
-		// asks the cache for, not about what the scheme can resolve.
-		Expect(kservev1beta1.AddToScheme(s)).To(Succeed())
+		// A stand-in is registered under the serving kind's GVK deliberately: the
+		// assertion is about what the controller asks the cache for, not about
+		// what the scheme can resolve, and the operator must not need the serving
+		// module to compile either.
+		servingKind := schema.GroupVersionKind{Group: "serving.kserve.io", Version: "v1beta1", Kind: "InferenceService"}
+		s.AddKnownTypeWithName(servingKind, &unstructured.Unstructured{})
+		s.AddKnownTypeWithName(servingKind.GroupVersion().WithKind("InferenceServiceList"), &unstructured.UnstructuredList{})
 		return s
 	}
 

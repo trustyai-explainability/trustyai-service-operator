@@ -469,10 +469,7 @@ var _ = Describe("Status and condition tests", func() {
 			}, "failed to make deployment ready")
 
 			inferenceService := createInferenceService("my-model", namespace)
-			WaitFor(func() error {
-				return k8sClient.Create(ctx, inferenceService)
-			}, "failed to create InferenceService")
-			Expect(servingFake.Tracker().Add(servingObjectForTest(inferenceService))).To(Succeed())
+			Expect(servingFake.Tracker().Add(inferenceService)).To(Succeed())
 
 			WaitFor(func() error {
 				return k8sClient.Create(ctx, instance)
