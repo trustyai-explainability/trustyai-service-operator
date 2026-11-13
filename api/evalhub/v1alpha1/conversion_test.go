@@ -111,6 +111,9 @@ func TestConvertTo(t *testing.T) {
 	if dst.Spec.Otel == nil || dst.Spec.Otel.ExporterEndpoint != "otel-collector:4317" {
 		t.Error("Otel not converted")
 	}
+	if dst.Spec.Init != nil {
+		t.Error("Init should remain nil because it is v1-only")
+	}
 	if dst.Spec.MCP == nil || !*dst.Spec.MCP.Enabled {
 		t.Error("MCP not converted")
 	}
@@ -179,6 +182,9 @@ func TestConvertNilPointerFields(t *testing.T) {
 	if dst.Spec.MCP != nil {
 		t.Error("MCP should be nil")
 	}
+	if dst.Spec.Init != nil {
+		t.Error("Init should be nil")
+	}
 	if dst.Status.MCP != nil {
 		t.Error("Status.MCP should be nil")
 	}
@@ -192,6 +198,21 @@ func TestConvertNilPointerFields(t *testing.T) {
 	}
 	if roundTripped.Spec.Database != nil {
 		t.Error("Round-tripped Database should be nil")
+	}
+}
+
+func TestConvertFromDropsV1OnlyInit(t *testing.T) {
+	src := &v1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{Name: "minimal"},
+		Spec: v1.EvalHubSpec{
+			Replicas: int32Ptr(1),
+			Init:     &v1.EvalHubInitSpec{TestDataTimeout: "30m"},
+		},
+	}
+	dst := &EvalHub{}
+
+	if err := dst.ConvertFrom(src); err != nil {
+		t.Fatalf("ConvertFrom failed: %v", err)
 	}
 }
 
