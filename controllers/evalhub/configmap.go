@@ -137,6 +137,14 @@ func evalHubConfigMapName(instance *evalhubv1.EvalHub) string {
 
 // reconcileConfigMap creates or updates the ConfigMap for EvalHub configuration
 func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *evalhubv1.EvalHub) error {
+	configData, err := r.generateConfigData(ctx, instance)
+	if err != nil {
+		return fmt.Errorf("failed to generate config data: %w", err)
+	}
+	return r.reconcileConfigMapWithData(ctx, instance, configData)
+}
+
+func (r *EvalHubReconciler) reconcileConfigMapWithData(ctx context.Context, instance *evalhubv1.EvalHub, configData map[string]string) error {
 	log := log.FromContext(ctx)
 	log.Info("Reconciling ConfigMap", "name", instance.Name)
 
@@ -151,12 +159,6 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 	getErr := r.Get(ctx, client.ObjectKeyFromObject(configMap), configMap)
 	if getErr != nil && !errors.IsNotFound(getErr) {
 		return getErr
-	}
-
-	// Generate configuration data
-	configData, err := r.generateConfigData(ctx, instance)
-	if err != nil {
-		return fmt.Errorf("failed to generate config data: %w", err)
 	}
 
 	if errors.IsNotFound(getErr) {
