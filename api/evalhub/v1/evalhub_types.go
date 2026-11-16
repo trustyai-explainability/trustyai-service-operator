@@ -105,10 +105,11 @@ type OTELSpec struct {
 	MetricExportInterval string `json:"metricExportInterval,omitempty"`
 }
 
-// EvalHubInitSpec configures eval-runtime-init behavior.
+// EvalHubInitSpec configures eval-runtime-init containers launched by EvalHub.
 type EvalHubInitSpec struct {
 	// TestDataTimeout configures the timeout for eval-runtime-init test-data downloads.
-	// Omit to use the EvalHub default.
+	// Omit to use the EvalHub default (10m).
+	// +kubebuilder:validation:MaxLength=64
 	// +kubebuilder:validation:Pattern=`^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$`
 	// +optional
 	TestDataTimeout string `json:"testDataTimeout,omitempty"`
@@ -249,7 +250,7 @@ type EvalHubSpec struct {
 	// +optional
 	Otel *OTELSpec `json:"otel,omitempty"`
 
-	// Init configures eval-runtime-init containers launched by EvalHub.
+	// Init configures eval-runtime-init containers launched by EvalHub, not EvalHub startup.
 	// +optional
 	Init *EvalHubInitSpec `json:"init,omitempty"`
 

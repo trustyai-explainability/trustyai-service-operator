@@ -111,9 +111,6 @@ func TestConvertTo(t *testing.T) {
 	if dst.Spec.Otel == nil || dst.Spec.Otel.ExporterEndpoint != "otel-collector:4317" {
 		t.Error("Otel not converted")
 	}
-	if dst.Spec.Init != nil {
-		t.Error("Init should remain nil because it is v1-only")
-	}
 	if dst.Spec.MCP == nil || !*dst.Spec.MCP.Enabled {
 		t.Error("MCP not converted")
 	}
@@ -182,9 +179,6 @@ func TestConvertNilPointerFields(t *testing.T) {
 	if dst.Spec.MCP != nil {
 		t.Error("MCP should be nil")
 	}
-	if dst.Spec.Init != nil {
-		t.Error("Init should be nil")
-	}
 	if dst.Status.MCP != nil {
 		t.Error("Status.MCP should be nil")
 	}
@@ -213,6 +207,41 @@ func TestConvertFromDropsV1OnlyInit(t *testing.T) {
 
 	if err := dst.ConvertFrom(src); err != nil {
 		t.Fatalf("ConvertFrom failed: %v", err)
+	}
+	if *dst.Spec.Replicas != 1 {
+		t.Errorf("Replicas = %d, want 1", *dst.Spec.Replicas)
+	}
+
+	roundTrip := &v1.EvalHub{}
+	if err := dst.ConvertTo(roundTrip); err != nil {
+		t.Fatalf("ConvertTo failed: %v", err)
+	}
+	if roundTrip.Spec.Init != nil {
+		t.Errorf("spec.init survived a v1alpha1 round trip; expected it to be dropped")
+	}
+}
+
+func TestConvertToPreservesPrePopulatedV1OnlyInit(t *testing.T) {
+	hub := &v1.EvalHub{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-evalhub"},
+		Spec: v1.EvalHubSpec{
+			Replicas: int32Ptr(1),
+			Init:     &v1.EvalHubInitSpec{TestDataTimeout: "30m"},
+		},
+	}
+
+	spoke := &EvalHub{
+		Spec: EvalHubSpec{
+			Replicas: int32Ptr(1),
+		},
+	}
+
+	if err := spoke.ConvertTo(hub); err != nil {
+		t.Fatalf("ConvertTo failed: %v", err)
+	}
+
+	if hub.Spec.Init == nil || hub.Spec.Init.TestDataTimeout != "30m" {
+		t.Errorf("spec.init was cleared during v1alpha1 ConvertTo, got %#v", hub.Spec.Init)
 	}
 }
 

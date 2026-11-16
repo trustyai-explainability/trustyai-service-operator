@@ -459,11 +459,17 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	// Pod template with EvalHub + kube-rbac-proxy and required volumes
 	// Hash auth.yaml so authorization changes trigger a rollout and existing proxy pods use the new policy.
 	authConfigHash := fmt.Sprintf("%x", sha256.Sum256([]byte(generateAuthConfigData())))
+	configData, err := r.generateConfigData(ctx, instance)
+	if err != nil {
+		return appsv1.DeploymentSpec{}, fmt.Errorf("generating EvalHub config hash: %w", err)
+	}
+	configDataHash := evalHubConfigDataHash(configData)
 	podTemplate := corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: labels,
 			Annotations: map[string]string{
 				evalHubAuthConfigHashAnnotation: authConfigHash,
+				evalHubConfigHashAnnotation:     configDataHash,
 			},
 		},
 		Spec: corev1.PodSpec{

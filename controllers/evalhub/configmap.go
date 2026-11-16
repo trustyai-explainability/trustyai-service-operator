@@ -254,11 +254,11 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		}
 	}
 
-	if instance.Spec.Init != nil && instance.Spec.Init.TestDataTimeout != "" {
-		config.Service.Init = &ServiceInitConfig{
-			TestDataTimeout: instance.Spec.Init.TestDataTimeout,
-		}
+	initCfg, err := buildServiceInitConfig(instance.Spec.Init)
+	if err != nil {
+		return nil, err
 	}
+	config.Service.Init = initCfg
 
 	// Override OTEL configuration when explicitly configured
 	if instance.Spec.IsOTELConfigured() {
@@ -279,6 +279,16 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		"config.yaml": string(configYAML),
 		"auth.yaml":   generateAuthConfigData(),
 	}, nil
+}
+
+func buildServiceInitConfig(spec *evalhubv1.EvalHubInitSpec) (*ServiceInitConfig, error) {
+	if spec == nil || spec.TestDataTimeout == "" {
+		return nil, nil
+	}
+	if err := validatePositiveDuration("init.testDataTimeout", spec.TestDataTimeout); err != nil {
+		return nil, err
+	}
+	return &ServiceInitConfig{TestDataTimeout: spec.TestDataTimeout}, nil
 }
 
 func buildOTELConfig(spec *evalhubv1.OTELSpec) (*OTELConfig, error) {
@@ -343,6 +353,34 @@ func validateOTELDuration(fieldName, value string) error {
 		return fmt.Errorf("invalid %s %q: duration must be greater than, or equal, to zero", fieldName, value)
 	}
 	return nil
+}
+
+func validatePositiveDuration(fieldName, value string) error {
+	d, err := time.ParseDuration(value)
+	if err != nil {
+		return fmt.Errorf("invalid %s %q: %w", fieldName, value, err)
+	}
+	if d <= 0 {
+		return fmt.Errorf("invalid %s %q: duration must be greater than zero", fieldName, value)
+	}
+	return nil
+}
+
+func evalHubConfigDataHash(configData map[string]string) string {
+	keys := make([]string, 0, len(configData))
+	for key := range configData {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	h := sha256.New()
+	for _, key := range keys {
+		_, _ = h.Write([]byte(key))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(configData[key]))
+		_, _ = h.Write([]byte{0})
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 // generateAuthConfigData returns the authorization configuration for the ConfigMap.

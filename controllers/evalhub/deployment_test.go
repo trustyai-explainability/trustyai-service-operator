@@ -109,6 +109,11 @@ var _ = Describe("EvalHub Deployment", func() {
 			By("checking the proxy authorization config hash is attached to the pod template")
 			expectedAuthConfigHash := fmt.Sprintf("%x", sha256.Sum256([]byte(generateAuthConfigData())))
 			Expect(deployment.Spec.Template.Annotations[evalHubAuthConfigHashAnnotation]).To(Equal(expectedAuthConfigHash))
+
+			By("checking the evalhub config hash is attached to the pod template")
+			configData, err := reconciler.generateConfigData(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(deployment.Spec.Template.Annotations[evalHubConfigHashAnnotation]).To(Equal(evalHubConfigDataHash(configData)))
 		})
 
 		It("should configure evalhub container correctly", func() {
