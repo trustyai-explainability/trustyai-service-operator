@@ -41,7 +41,7 @@ func (r *TrustyAIServiceReconciler) getDatabaseTuningConfigMap(ctx context.Conte
 
 	name := instance.Spec.Storage.DatabaseTuning
 	configMap := &corev1.ConfigMap{}
-	if err := r.crdReader().Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: name}, configMap); err != nil {
+	if err := r.uncachedReader().Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: name}, configMap); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, fmt.Errorf("storage.databaseTuning references ConfigMap %q in namespace %q, but it does not exist", name, instance.Namespace)
 		}

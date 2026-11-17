@@ -10,6 +10,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -499,6 +500,7 @@ func tasNetworkPolicyFixture(t *testing.T) (*runtime.Scheme, *trustyaiopendatahu
 		appsv1.AddToScheme,
 		networkingv1.AddToScheme,
 		trustyaiopendatahubiov1.AddToScheme,
+		apiextensionsv1.AddToScheme,
 	} {
 		if err := addToScheme(scheme); err != nil {
 			t.Fatalf("register test API types: %v", err)

@@ -10,10 +10,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -24,26 +21,7 @@ const (
 	DEPLOYMENT_MODE_STANDARD   = "Standard"
 	DEPLOYMENT_MODE_SERVERLESS = "Serverless"
 	DEPLOYMENT_MODE_KNATIVE    = "Knative"
-
-	inferenceServiceCRDName = "inferenceservices.serving.kserve.io"
 )
-
-// isInferenceServiceCRDPresent returns true if the KServe InferenceService CRD is present, false otherwise
-func (r *TrustyAIServiceReconciler) isInferenceServiceCRDPresent(ctx context.Context) (bool, error) {
-	crd := &apiextensionsv1.CustomResourceDefinition{}
-
-	err := r.crdReader().Get(ctx, types.NamespacedName{Name: inferenceServiceCRDName}, crd)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return false, fmt.Errorf("error getting "+inferenceServiceCRDName+" CRD: %v", err)
-		}
-		// Not found
-		return false, nil
-	}
-
-	// Found
-	return true, nil
-}
 
 // GetDeploymentsByLabel returns a list of Deployments that match a label key-value pair
 func (r *TrustyAIServiceReconciler) GetDeploymentsByLabel(ctx context.Context, namespace string, labelKey string, labelValue string) ([]appsv1.Deployment, error) {
@@ -236,19 +214,20 @@ func generateEnvVarValue(currentValue, newValue string, remove bool) string {
 }
 
 func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, namespace string, labelKey, labelValue, envVarName, crName string, remove bool) (bool, error) {
-	crdPresent, err := r.isInferenceServiceCRDPresent(ctx)
+	contract, err := r.servingContractOf(ctx)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "Error verifying InferenceService CRD is present")
+		log.FromContext(ctx).Error(err, "Error reading the InferenceService CRD")
 		return false, err
 	}
-	if !crdPresent {
-		log.FromContext(ctx).Info("InferenceService CRD not found, skipping InferenceService handling. Will retry on next reconcile.")
+	if contract.state != servingStateUsable {
+		log.FromContext(ctx).Info("Serving API not usable, skipping InferenceService handling. Will retry on next reconcile.",
+			"state", contract.state, "reason", contract.servingReason(), "message", contract.unusableMessage())
 		return true, nil
 	}
 
 	var inferenceServices kservev1beta1.InferenceServiceList
 
-	if err := r.List(ctx, &inferenceServices, client.InNamespace(namespace)); err != nil {
+	if err := r.uncachedReader().List(ctx, &inferenceServices, client.InNamespace(namespace)); err != nil {
 		log.FromContext(ctx).Error(err, "Could not list InferenceService objects.")
 		return false, err
 	}
@@ -398,19 +377,64 @@ func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *t
 	return nil
 }
 
-func (r *TrustyAIServiceReconciler) checkInferenceServicesPresent(ctx context.Context, namespace string) (bool, error) {
-	crdPresent, err := r.isInferenceServiceCRDPresent(ctx)
-	if err != nil {
-		return false, err
+// inferenceServicesReport is the serving state as reported through the
+// InferenceServicesPresent condition, with the reason that distinguishes the
+// three ways serving can be unusable.
+type inferenceServicesReport struct {
+	contract  servingContract
+	namespace string
+	// present is true only when the serving API is usable and the namespace
+	// holds at least one InferenceService.
+	present bool
+}
+
+// reason is the condition reason for this state. Serving usable but idle has its
+// own reason, so "no InferenceService yet" is distinguishable from "no serving".
+func (rep inferenceServicesReport) reason() string {
+	if rep.contract.state != servingStateUsable {
+		return rep.contract.servingReason()
 	}
-	if !crdPresent {
-		return false, nil
+	if rep.present {
+		return StatusReasonInferenceServicesFound
+	}
+	return StatusReasonNoInferenceServices
+}
+
+// message names the group and version that was adopted whenever one was, which
+// is what makes version adoption observable from outside the process.
+func (rep inferenceServicesReport) message() string {
+	if rep.contract.state != servingStateUsable {
+		return rep.contract.unusableMessage()
+	}
+	if rep.present {
+		return fmt.Sprintf("InferenceServices found (serving API %s)", rep.contract.groupVersion())
+	}
+	return fmt.Sprintf("no InferenceService in namespace %s (serving API %s); payload capture activates when one is created",
+		rep.namespace, rep.contract.groupVersion())
+}
+
+// inferenceServicesReport resolves the serving contract and, when serving is
+// usable, whether the namespace holds an InferenceService.
+//
+// A CRD read failure or a list failure while the CRD is present is transient and
+// returned as an error so the reconcile requeues; both are distinct from an
+// absent API, which is a state.
+func (r *TrustyAIServiceReconciler) inferenceServicesReport(ctx context.Context, namespace string) (inferenceServicesReport, error) {
+	contract, err := r.servingContractOf(ctx)
+	if err != nil {
+		return inferenceServicesReport{}, err
+	}
+
+	report := inferenceServicesReport{contract: contract, namespace: namespace}
+	if contract.state != servingStateUsable {
+		return report, nil
 	}
 
 	infServiceList := &kservev1beta1.InferenceServiceList{}
-	if err := r.List(ctx, infServiceList, client.InNamespace(namespace)); err != nil {
-		return false, err
+	if err := r.uncachedReader().List(ctx, infServiceList, client.InNamespace(namespace)); err != nil {
+		return inferenceServicesReport{}, fmt.Errorf("could not list InferenceService objects: %w", err)
 	}
 
-	return len(infServiceList.Items) > 0, nil
+	report.present = len(infServiceList.Items) > 0
+	return report, nil
 }

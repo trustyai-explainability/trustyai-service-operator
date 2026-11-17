@@ -44,10 +44,14 @@ import (
 
 var ErrPVCNotReady = goerrors.New("PVC is not ready")
 
-// crdReader returns an uncached reader for one-off CRD-existence checks, avoiding
-// the manager cache's informer-sync race on first access to a not-yet-watched GVK.
+// uncachedReader returns a reader that never touches the manager cache. It is
+// used for the optional-CRD existence checks and for the serving reads, because
+// neither may depend on an informer: the CRD checks run before anything is
+// watched, and serving.kserve.io is deliberately not watched, so a cached List
+// would either build a cluster-wide informer on first use or answer empty while
+// that informer syncs.
 // Falls back to Client if APIReader is unset (e.g. unit tests using a fake client).
-func (r *TrustyAIServiceReconciler) crdReader() client.Reader {
+func (r *TrustyAIServiceReconciler) uncachedReader() client.Reader {
 	if r.APIReader != nil {
 		return r.APIReader
 	}
