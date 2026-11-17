@@ -75,6 +75,13 @@ func (c *recordingCache) requestedGroups() []string {
 // informer may be requested for serving.kserve.io.
 var _ = Describe("TrustyAIService controller sources", func() {
 
+	// The second manager's cache is scoped to a namespace no other spec uses. A
+	// cluster-wide cache made this manager reconcile whatever TrustyAIService an
+	// earlier spec had left behind, so two controllers wrote the same status and
+	// Deployment concurrently and the single window below was the only chance to
+	// notice a dropped update.
+	const sourcesTestNamespace = "serving-sources-ns"
+
 	newScheme := func() *runtime.Scheme {
 		s := runtime.NewScheme()
 		Expect(corev1.AddToScheme(s)).To(Succeed())
@@ -98,6 +105,7 @@ var _ = Describe("TrustyAIService controller sources", func() {
 		mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 			Scheme:  scheme,
 			Metrics: metricsserver.Options{BindAddress: "0"},
+			Cache:   cache.Options{DefaultNamespaces: map[string]cache.Config{sourcesTestNamespace: {}}},
 			// The suite's own manager already owns the trustyaiservice
 			// controller name; a second registration in the same process is not
 			// a duplicate metric source.

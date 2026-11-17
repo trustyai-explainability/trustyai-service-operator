@@ -122,19 +122,26 @@ func TestPatchServingLoggerIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	infService := testServingObject("my-model", nil)
 	reconciler, dynamicClient := newServingWriteReconciler(t, infService)
+	// The fake dynamic client does not bump resourceVersion, so "did it write"
+	// is answered by counting the update the reconciler actually issues. The
+	// resourceVersion comparison this test used before was true of every object
+	// in this suite and asserted nothing.
+	updates := 0
+	dynamicClient.PrependReactor("update", "inferenceservices", func(k8stesting.Action) (bool, runtime.Object, error) {
+		updates++
+		return false, nil, nil
+	})
 
 	if err := reconciler.patchServingLogger(ctx, testServingInstance(), testServingContract(), infService, "trustyai-service", false, true); err != nil {
 		t.Fatalf("first patch: %v", err)
 	}
-	afterFirst := fetchServingObject(t, dynamicClient, "my-model").GetResourceVersion()
 
 	if err := reconciler.patchServingLogger(ctx, testServingInstance(), testServingContract(), infService, "trustyai-service", false, true); err != nil {
 		t.Fatalf("second patch: %v", err)
 	}
-	afterSecond := fetchServingObject(t, dynamicClient, "my-model").GetResourceVersion()
 
-	if afterFirst != afterSecond {
-		t.Fatalf("an unchanged logger was written again: resourceVersion %q then %q", afterFirst, afterSecond)
+	if updates != 1 {
+		t.Fatalf("the reconciler issued %d updates for an unchanged logger, want 1", updates)
 	}
 }
 
@@ -173,19 +180,123 @@ func TestPatchServingLoggerRemovesTheFieldAndTheAnnotations(t *testing.T) {
 	}
 }
 
+// The desired state is a sink *and* a mode. Comparing only the sink let an object
+// with the right URL and a different mode persist, so the operator reported the
+// state it wrote while the object held another.
+func TestPatchServingLoggerCorrectsAModeThatDrifted(t *testing.T) {
+	ctx := context.Background()
+	wantURL := utils.GenerateHTTPSKServeLoggerURL("trustyai-service", servingWriteTestNamespace)
+
+	drifted := testServingObject("my-model", nil)
+	if err := unstructured.SetNestedMap(drifted.Object, map[string]interface{}{
+		"mode": "request", "url": wantURL,
+	}, predictorLoggerFieldPathParts...); err != nil {
+		t.Fatalf("seed the logger: %v", err)
+	}
+
+	reconciler, dynamicClient := newServingWriteReconciler(t, drifted)
+
+	if err := reconciler.patchServingLogger(ctx, testServingInstance(), testServingContract(), drifted, "trustyai-service", false, true); err != nil {
+		t.Fatalf("patch payload capture: %v", err)
+	}
+
+	patched := fetchServingObject(t, dynamicClient, "my-model")
+	logger, _, err := unstructured.NestedMap(patched.Object, predictorLoggerFieldPathParts...)
+	if err != nil {
+		t.Fatalf("read the logger: %v", err)
+	}
+	mode, _, err := unstructured.NestedString(logger, "mode")
+	if err != nil || mode != loggerModeAll {
+		t.Fatalf("logger mode = %q (%v), want %q", mode, err, loggerModeAll)
+	}
+	if got := servingLoggerURLOf(logger); got != wantURL {
+		t.Fatalf("logger url = %q, want %q", got, wantURL)
+	}
+}
+
+// The annotations record this operator's sink, so they are stale as soon as
+// payload capture is off, whoever cleared the logger. Gating their deletion on a
+// matching logger URL left them behind whenever the field had already gone.
+func TestPatchServingLoggerRemovesAnnotationsWhenTheLoggerIsAlreadyGone(t *testing.T) {
+	ctx := context.Background()
+	wantURL := utils.GenerateKServeLoggerURL("trustyai-service", servingWriteTestNamespace)
+
+	configured := testServingObject("my-model", map[string]string{
+		"internal.serving.kserve.io/logger":          "true",
+		"internal.serving.kserve.io/logger-mode":     "all",
+		"internal.serving.kserve.io/logger-sink-url": wantURL,
+		"unrelated": "kept",
+	})
+
+	reconciler, dynamicClient := newServingWriteReconciler(t, configured)
+	if err := reconciler.patchServingLogger(ctx, testServingInstance(), testServingContract(), configured, "trustyai-service", true, false); err != nil {
+		t.Fatalf("remove payload capture: %v", err)
+	}
+
+	removed := fetchServingObject(t, dynamicClient, "my-model")
+	for _, key := range servingLoggerAnnotationKeys {
+		if _, present := removed.GetAnnotations()[key]; present {
+			t.Fatalf("annotation %q survived removal with the logger already gone", key)
+		}
+	}
+	if removed.GetAnnotations()["unrelated"] != "kept" {
+		t.Fatalf("removal dropped an annotation this operator does not own: %v", removed.GetAnnotations())
+	}
+}
+
+// A logger pointing at another sink is not this operator's to reconfigure, but
+// the annotations on it are, and they still describe a sink that is gone.
+func TestPatchServingLoggerLeavesAForeignSinkOnRemoval(t *testing.T) {
+	ctx := context.Background()
+	foreignURL := "https://another-sink.example/consumer/kserve/v2"
+
+	configured := testServingObject("my-model", map[string]string{
+		"internal.serving.kserve.io/logger-sink-url": utils.GenerateKServeLoggerURL("trustyai-service", servingWriteTestNamespace),
+	})
+	if err := unstructured.SetNestedMap(configured.Object, map[string]interface{}{
+		"mode": "all", "url": foreignURL,
+	}, predictorLoggerFieldPathParts...); err != nil {
+		t.Fatalf("seed the logger: %v", err)
+	}
+
+	reconciler, dynamicClient := newServingWriteReconciler(t, configured)
+	if err := reconciler.patchServingLogger(ctx, testServingInstance(), testServingContract(), configured, "trustyai-service", true, false); err != nil {
+		t.Fatalf("remove payload capture: %v", err)
+	}
+
+	removed := fetchServingObject(t, dynamicClient, "my-model")
+	logger, found, err := unstructured.NestedMap(removed.Object, predictorLoggerFieldPathParts...)
+	if err != nil || !found {
+		t.Fatalf("a foreign logger must be left alone: found=%v err=%v", found, err)
+	}
+	if got := servingLoggerURLOf(logger); got != foreignURL {
+		t.Fatalf("logger url = %q, want the foreign %q", got, foreignURL)
+	}
+	if _, present := removed.GetAnnotations()[servingLoggerSinkURLAnnotation]; present {
+		t.Fatal("the stale sink annotation survived removal")
+	}
+}
+
 func TestPatchServingLoggerDoesNotWriteWhenRemovalHasNothingToRemove(t *testing.T) {
 	ctx := context.Background()
 	infService := testServingObject("my-model", nil)
 	reconciler, dynamicClient := newServingWriteReconciler(t, infService)
 
-	before := fetchServingObject(t, dynamicClient, "my-model").GetResourceVersion()
+	// Counted, not compared through resourceVersion: this suite's fake dynamic
+	// client leaves resourceVersion empty, so the comparison this test used before
+	// held whether or not anything was written.
+	updates := 0
+	dynamicClient.PrependReactor("update", "inferenceservices", func(k8stesting.Action) (bool, runtime.Object, error) {
+		updates++
+		return false, nil, nil
+	})
+
 	if err := reconciler.patchServingLogger(ctx, testServingInstance(), testServingContract(), infService, "trustyai-service", true, false); err != nil {
 		t.Fatalf("removal on an unconfigured object: %v", err)
 	}
-	after := fetchServingObject(t, dynamicClient, "my-model").GetResourceVersion()
 
-	if before != after {
-		t.Fatalf("removal wrote an object it had nothing to remove from: %q then %q", before, after)
+	if updates != 0 {
+		t.Fatalf("removal wrote an object it had nothing to remove from: %d updates", updates)
 	}
 }
 

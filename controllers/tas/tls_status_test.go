@@ -71,7 +71,7 @@ func TestReconcileDeploymentReportsProxyTLSFailureAndRecovers(t *testing.T) {
 	if err := r.reconcileDeployment(ctx, owner, CustomCertificatesBundle{}, false); err != nil {
 		t.Fatalf("usable profile must render the Deployment: %v", err)
 	}
-	if _, err := r.reconcileStatuses(ctx, current); err != nil {
+	if _, err := r.reconcileStatuses(ctx, current, r.inferenceServicesReport(ctx, current.Namespace)); err != nil {
 		t.Fatalf("status reconciliation failed: %v", err)
 	}
 	if err := c.Get(ctx, client.ObjectKeyFromObject(owner), current); err != nil {
