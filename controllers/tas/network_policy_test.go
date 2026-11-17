@@ -2,7 +2,9 @@ package tas
 
 import (
 	"context"
+	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
@@ -10,12 +12,16 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func TestBuildTASNetworkPolicy(t *testing.T) {
@@ -573,3 +579,75 @@ func tasNetworkPolicyWorkloadFixture(owner *trustyaiopendatahubiov1.TrustyAIServ
 }
 
 func boolPointer(value bool) *bool { return &value }
+
+func podUpdateFailingClient(scheme *runtime.Scheme, failure error, objects ...client.Object) client.Client {
+	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Update: func(ctx context.Context, c client.WithWatch, object client.Object, options ...client.UpdateOption) error {
+				if _, isPod := object.(*corev1.Pod); isPod {
+					return failure
+				}
+				return c.Update(ctx, object, options...)
+			},
+		}).Build()
+}
+
+// A webhook that appends imagePullSecrets makes the live Pod update invalid.
+// That must not stop reconciliation: ensureDeployment runs afterwards and its
+// rollout replaces the Pod.
+func TestReconcileTASNetworkPolicyToleratesRejectedPodIdentityUpdate(t *testing.T) {
+	for name, failure := range map[string]error{
+		"invalid":   apierrors.NewInvalid(schema.GroupKind{Kind: "Pod"}, "tas", nil),
+		"forbidden": apierrors.NewForbidden(schema.GroupResource{Resource: "pods"}, "tas", errors.New("denied")),
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			scheme, owner := tasNetworkPolicyFixture(t)
+			deployment, replicaSet, pod := tasNetworkPolicyWorkloadFixture(owner)
+			c := podUpdateFailingClient(scheme, failure, owner, deployment, replicaSet, pod)
+			recorder := record.NewFakeRecorder(4)
+			reconciler := &TrustyAIServiceReconciler{Client: c, Scheme: scheme, Namespace: operatorNamespace, EventRecorder: recorder}
+
+			if err := reconciler.reconcileNetworkPolicy(ctx, owner); err != nil {
+				t.Fatalf("rejected live Pod update blocked reconciliation: %v", err)
+			}
+			policies := &networkingv1.NetworkPolicyList{}
+			if err := c.List(ctx, policies, client.InNamespace(owner.Namespace)); err != nil {
+				t.Fatal(err)
+			}
+			if len(policies.Items) != 1 {
+				t.Fatalf("NetworkPolicy was not reconciled: %#v", policies.Items)
+			}
+			select {
+			case event := <-recorder.Events:
+				if !strings.Contains(event, "PodIdentityLabelRejected") {
+					t.Fatalf("unexpected event %q", event)
+				}
+			default:
+				t.Fatal("no PodIdentityLabelRejected event was recorded")
+			}
+		})
+	}
+}
+
+// Rejections are tolerated, but transient API failures still fail the
+// reconcile so they are retried with backoff.
+func TestReconcileTASNetworkPolicyReturnsTransientPodUpdateErrors(t *testing.T) {
+	for name, failure := range map[string]error{
+		"conflict":     apierrors.NewConflict(schema.GroupResource{Resource: "pods"}, "tas", errors.New("stale")),
+		"server error": apierrors.NewInternalError(errors.New("boom")),
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			scheme, owner := tasNetworkPolicyFixture(t)
+			deployment, replicaSet, pod := tasNetworkPolicyWorkloadFixture(owner)
+			c := podUpdateFailingClient(scheme, failure, owner, deployment, replicaSet, pod)
+			reconciler := &TrustyAIServiceReconciler{Client: c, Scheme: scheme, Namespace: operatorNamespace}
+
+			err := reconciler.reconcileNetworkPolicy(ctx, owner)
+			if err == nil || !strings.Contains(err.Error(), "add reserved TAS identity to Pod") {
+				t.Fatalf("expected the Pod update error to be returned, got %v", err)
+			}
+		})
+	}
+}
