@@ -122,13 +122,19 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 					}
 				}
 
-				if !valueExists {
+				if remove || !valueExists {
+					// Removal is the case this short-circuit used to skip: when the
+					// sink was present, generateEnvVarValue was never called, so the
+					// finalizer wrote the Deployment back with the sink still in it.
 					envVar.Value = generateEnvVarValue(envVar.Value, url, remove)
 				}
 			}
 
-			// Only update the deployment if the var value has to change, or we are removing it
-			if originalValue != envVar.Value || remove {
+			// Only update the deployment if the var value has to change, or we are
+			// removing it. A container that never carried the var has nothing to
+			// remove: without the nil guard, reading envVar.Value on the removal
+			// path dereferenced nil and panicked the reconciler.
+			if envVar != nil && (originalValue != envVar.Value || remove) {
 				// Update the Deployment
 				if err := r.Update(ctx, &deployment); err != nil {
 					log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
@@ -222,12 +228,18 @@ func generateEnvVarValue(currentValue, newValue string, remove bool) string {
 	return currentValue
 }
 
-func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, namespace string, labelKey, labelValue, envVarName, crName string, remove bool) (bool, error) {
-	contract, err := r.servingContractOf(ctx)
-	if err != nil {
-		log.FromContext(ctx).Error(err, "Error reading the InferenceService CRD")
-		return false, err
+func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, report inferenceServicesReport, namespace string, labelKey, labelValue, envVarName, crName string, remove bool) (bool, error) {
+	// The report is derived once per pass by the caller and shared with the status
+	// pass, so the writer and the condition cannot disagree inside one reconcile.
+	if report.err != nil {
+		// Serving is an optional dependency: a failed read must not stop the
+		// required work. The error is carried rather than dropped, so the status
+		// pass still returns it and the reconcile is retried.
+		log.FromContext(ctx).Error(report.err, "Could not read the serving state, skipping InferenceService handling")
+		return true, nil
 	}
+
+	contract := report.contract
 	if contract.state != servingStateUsable {
 		log.FromContext(ctx).Info("Serving API not usable, skipping InferenceService handling. Will retry on next reconcile.",
 			"state", contract.state, "reason", contract.servingReason(), "message", contract.unusableMessage())
@@ -414,7 +426,13 @@ func (r *TrustyAIServiceReconciler) patchServingLogger(ctx context.Context, inst
 
 		updated := current.DeepCopy()
 		if remove {
-			unstructured.RemoveNestedField(updated.Object, predictorLoggerFieldPathParts...)
+			// Only the logger this operator wrote is removed: an object pointing at
+			// another sink is not ours to reconfigure. The three annotations are
+			// deleted whenever they are present, because they record our sink and
+			// are stale as soon as payload capture is off, whoever cleared it.
+			if logger, found, loggerErr := unstructured.NestedMap(updated.Object, predictorLoggerFieldPathParts...); loggerErr == nil && found && servingLoggerIsOurs(logger, url) {
+				unstructured.RemoveNestedField(updated.Object, predictorLoggerFieldPathParts...)
+			}
 			annotations := updated.GetAnnotations()
 			for _, key := range servingLoggerAnnotationKeys {
 				delete(annotations, key)
@@ -449,8 +467,48 @@ func (r *TrustyAIServiceReconciler) patchServingLogger(ctx context.Context, inst
 	return nil
 }
 
-// servingLoggerNeedsUpdate reports whether the object's logger differs from the
-// desired state. Absent-on-removal and equal-url-on-set are both "nothing to do".
+// servingLoggerIsOurs reports whether the logger points at the sink this
+// operator writes, and so is the operator's to remove. A logger with no sink at
+// all points nowhere else and is cleared too.
+func servingLoggerIsOurs(logger map[string]interface{}, url string) bool {
+	if logger == nil {
+		return false
+	}
+	if len(logger) == 0 {
+		return true
+	}
+	return servingLoggerURLOf(logger) == url
+}
+
+// servingLoggerIsDesired reports whether the logger already carries the whole
+// desired state. The mode is compared as well as the sink: comparing only the
+// URL let an object with the right URL and a different mode persist, so the
+// operator reported the state it wrote while the object held another.
+func servingLoggerIsDesired(logger map[string]interface{}, url string) bool {
+	if logger == nil {
+		return false
+	}
+	mode, _, err := unstructured.NestedString(logger, "mode")
+	if err != nil || mode != loggerModeAll {
+		return false
+	}
+	return servingLoggerURLOf(logger) == url
+}
+
+// servingHasLoggerAnnotations reports whether the annotations this operator's
+// writes leave behind are still present.
+func servingHasLoggerAnnotations(infService *unstructured.Unstructured) bool {
+	annotations := infService.GetAnnotations()
+	for _, key := range servingLoggerAnnotationKeys {
+		if _, present := annotations[key]; present {
+			return true
+		}
+	}
+	return false
+}
+
+// servingLoggerNeedsUpdate reports whether the object differs from the desired
+// state. Absent-on-removal and already-desired-on-set are both "nothing to do".
 func servingLoggerNeedsUpdate(infService *unstructured.Unstructured, url string, remove bool) bool {
 	logger, _, err := unstructured.NestedMap(infService.Object, predictorLoggerFieldPathParts...)
 	if err != nil {
@@ -459,9 +517,13 @@ func servingLoggerNeedsUpdate(infService *unstructured.Unstructured, url string,
 		return true
 	}
 	if remove {
-		return logger != nil && servingLoggerURLOf(logger) == url
+		// Removal has two independent pieces of state to clear: the logger, when it
+		// is ours, and the annotations, whenever they are present. Gating both on
+		// the URL left the annotations behind whenever the logger had already been
+		// cleared or pointed at another sink.
+		return servingLoggerIsOurs(logger, url) || servingHasLoggerAnnotations(infService)
 	}
-	return servingLoggerURLOf(logger) != url
+	return !servingLoggerIsDesired(logger, url)
 }
 
 // ensureServingMeshObjects keeps the original branch: only an object that asks
@@ -511,6 +573,11 @@ type inferenceServicesReport struct {
 	// present is true only when the serving API is usable and the namespace
 	// holds at least one InferenceService.
 	present bool
+	// err is a transient failure to read the serving state on this pass. It is
+	// carried rather than returned so the status of the required components is
+	// still written: serving is informational, and a CRD in Terminating or an API
+	// blip must not freeze Ready at its previous value.
+	err error
 }
 
 // reason is the condition reason for this state. Serving usable but idle has its
@@ -542,24 +609,29 @@ func (rep inferenceServicesReport) message() string {
 // usable, whether the namespace holds an InferenceService.
 //
 // A CRD read failure or a list failure while the CRD is present is transient and
-// returned as an error so the reconcile requeues; both are distinct from an
+// carried in the report for the caller to requeue on; both are distinct from an
 // absent API, which is a state.
-func (r *TrustyAIServiceReconciler) inferenceServicesReport(ctx context.Context, namespace string) (inferenceServicesReport, error) {
+func (r *TrustyAIServiceReconciler) inferenceServicesReport(ctx context.Context, namespace string) inferenceServicesReport {
+	report := inferenceServicesReport{namespace: namespace}
+
 	contract, err := r.servingContractOf(ctx)
 	if err != nil {
-		return inferenceServicesReport{}, err
+		report.err = err
+		return report
 	}
-
-	report := inferenceServicesReport{contract: contract, namespace: namespace}
+	report.contract = contract
 	if contract.state != servingStateUsable {
-		return report, nil
+		return report
 	}
 
 	infServices, err := r.listServing(ctx, contract, namespace)
 	if err != nil {
-		return inferenceServicesReport{}, fmt.Errorf("could not list InferenceService objects: %w", err)
+		// Keep the contract: what was read is still what this pass adopted, and
+		// the condition is left untouched rather than reported as absent.
+		report.err = fmt.Errorf("could not list InferenceService objects: %w", err)
+		return report
 	}
 
 	report.present = len(infServices.Items) > 0
-	return report, nil
+	return report
 }

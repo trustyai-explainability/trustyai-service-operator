@@ -221,9 +221,15 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return RequeueWithError(err)
 	}
 
+	// Serving is an optional dependency and its state is read once here, then
+	// shared with the status pass at the end of the reconcile: deriving it twice
+	// costs two cluster-scoped CRD gets and two namespace lists per pass, and lets
+	// the write path and the condition disagree when serving changes between them.
+	serving := r.inferenceServicesReport(ctx, instance.Namespace)
+
 	// CR found, add or update the URL
 	// Call the function to patch environment variables for Deployments that match the label
-	shouldContinue, err := r.handleInferenceServices(ctx, instance, req.Namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, req.Name, false)
+	shouldContinue, err := r.handleInferenceServices(ctx, instance, serving, req.Namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, req.Name, false)
 	if err != nil {
 		return RequeueWithErrorMessage(ctx, err, "Could not patch environment variables for Deployments.")
 	}
@@ -372,7 +378,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Reconcile statuses
-	result, err := r.reconcileStatuses(ctx, instance)
+	result, err := r.reconcileStatuses(ctx, instance, serving)
 	if err != nil {
 		return result, err
 	}
