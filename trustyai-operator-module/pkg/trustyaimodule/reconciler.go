@@ -140,13 +140,20 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			logger.Info("Blocking deployment due to missing dependencies")
 			return ctrl.Result{RequeueAfter: time.Duration(DefaultRequeueInterval) * time.Second}, nil
 		}
+
+		// The optional serving API is reported after the required preconditions, so
+		// a stopped reconcile (Prometheus missing) does not overwrite its last value
+		// with a guess.
+		reportServingAPI(ctx, r.Client, module, condMgr)
 	} else {
 		condMgr.MarkTrue(ConditionTypeDependenciesAvailable,
 			conditions.WithReason("ChecksSkipped"),
 			conditions.WithMessage("Dependency checks skipped (test mode)"),
 			conditions.WithObservedGeneration(module.Generation),
 		)
-		condMgr.MarkTrue(ConditionTypeKServeAvailable,
+		// Unknown rather than True: the API was not read, so calling it available
+		// would be a claim the run did not make.
+		condMgr.MarkUnknown(ConditionTypeKServeAvailable,
 			conditions.WithReason("ChecksSkipped"),
 			conditions.WithMessage("Dependency checks skipped (test mode)"),
 			conditions.WithObservedGeneration(module.Generation),
