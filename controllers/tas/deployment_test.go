@@ -300,8 +300,6 @@ func setupAndTestDeploymentInferenceService(instance *trustyaiopendatahubiov1.Tr
 		return k8sClient.Create(ctx, inferenceService)
 	}, "failed to create deployment")
 
-	Expect(reconciler.patchKServe(ctx, instance, *inferenceService, namespace, instance.Name, false, false)).ToNot(HaveOccurred())
-
 	deployment := &appsv1.Deployment{}
 	WaitFor(func() error {
 		// Define defaultServiceName for the deployment created by the operator
@@ -349,6 +347,7 @@ var _ = Describe("TrustyAI operator", func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
+			Dynamic:       servingDynamic,
 			Scheme:        scheme.Scheme,
 			EventRecorder: recorder,
 			Namespace:     operatorNamespace,
@@ -791,6 +790,7 @@ var _ = Describe("TrustyAI operator", func() {
 			k8sClient = trackingClient
 			reconciler = &TrustyAIServiceReconciler{
 				Client:        trackingClient,
+				Dynamic:       servingDynamic,
 				Scheme:        scheme.Scheme,
 				EventRecorder: recorder,
 				Namespace:     operatorNamespace,
@@ -849,6 +849,7 @@ var _ = Describe("TrustyAI operator", func() {
 			k8sClient = trackingClient
 			reconciler = &TrustyAIServiceReconciler{
 				Client:        trackingClient,
+				Dynamic:       servingDynamic,
 				Scheme:        scheme.Scheme,
 				EventRecorder: recorder,
 				Namespace:     operatorNamespace,
@@ -962,6 +963,7 @@ var _ = Describe("TrustyAI operator", func() {
 		recorder = record.NewFakeRecorder(10)
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
+			Dynamic:       servingDynamic,
 			Scheme:        scheme.Scheme,
 			EventRecorder: recorder,
 			Namespace:     operatorNamespace,
@@ -1003,6 +1005,7 @@ var _ = Describe("TrustyAI operator", func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
+			Dynamic:       servingDynamic,
 			Scheme:        scheme.Scheme,
 			EventRecorder: recorder,
 			Namespace:     operatorNamespace,
