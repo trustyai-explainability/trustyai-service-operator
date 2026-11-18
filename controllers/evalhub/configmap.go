@@ -433,6 +433,30 @@ func generateAuthConfigData() string {
                 apiGroup: trustyai.opendatahub.io
                 resource: collections
                 verb: get
+    - path: /api/v1/evaluations/collections/generation
+      mappings:
+        - methods: [post]
+          resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: evaluations
+                verb: create
+    - path: /api/v1/evaluations/collections/generation/*
+      mappings:
+        - methods: [get, delete]
+          resources:
+            - rewrites:
+                byHttpHeader:
+                  name: X-Tenant
+              resourceAttributes:
+                namespace: "{{.FromHeader}}"
+                apiGroup: trustyai.opendatahub.io
+                resource: evaluations
+                verb: "{{.FromMethod}}"
     - path: /api/v1/evaluations/collections/*
       mappings:
         - methods: [get, delete, put, patch]

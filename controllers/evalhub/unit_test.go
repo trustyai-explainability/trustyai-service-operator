@@ -2,6 +2,7 @@ package evalhub
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -3492,6 +3493,61 @@ func TestGenerateAuthConfigData_MethodsPresent(t *testing.T) {
 		assert.ElementsMatch(t, []string{"create", "get"}, verbs)
 	}
 	assert.Equal(t, 1, cloneEndpoints, "collection clone endpoint must be declared exactly once")
+
+	const (
+		generationCreatePath   = "/api/v1/evaluations/collections/generation"
+		generationResourcePath = "/api/v1/evaluations/collections/generation/*"
+		collectionsPath        = "/api/v1/evaluations/collections/*"
+	)
+	endpointIndexes := make(map[string]int, len(parsed.Authorization.Endpoints))
+	for i, endpoint := range parsed.Authorization.Endpoints {
+		endpointIndexes[endpoint.Path] = i
+	}
+
+	createIndex, ok := endpointIndexes[generationCreatePath]
+	require.True(t, ok, "generation POST endpoint must be declared")
+	resourceIndex, ok := endpointIndexes[generationResourcePath]
+	require.True(t, ok, "generation resource endpoint must be declared")
+	collectionsIndex, ok := endpointIndexes[collectionsPath]
+	require.True(t, ok, "generic collections endpoint must be declared")
+	assert.Less(t, createIndex, collectionsIndex, "specific generation POST mapping must precede the generic collection mapping")
+	assert.Less(t, resourceIndex, collectionsIndex, "specific generation resource mapping must precede the generic collection mapping")
+	assert.NotContains(t, endpointIndexes, "/api/v1/evaluations/collections/generation/models", "generation model discovery is not part of the API contract")
+
+	for _, test := range []struct {
+		path    string
+		methods []string
+		verb    string
+	}{
+		{path: generationCreatePath, methods: []string{"post"}, verb: "create"},
+		{path: generationResourcePath, methods: []string{"get", "delete"}, verb: "{{.FromMethod}}"},
+	} {
+		endpoint := parsed.Authorization.Endpoints[endpointIndexes[test.path]]
+		require.Len(t, endpoint.Mappings, 1, "endpoint %s should have one mapping", test.path)
+		mapping := endpoint.Mappings[0]
+		assert.Equal(t, test.methods, mapping.Methods, "endpoint %s methods", test.path)
+		require.Len(t, mapping.Resources, 1, "endpoint %s should perform one tenant-scoped SAR", test.path)
+		resource := mapping.Resources[0]
+		assert.Equal(t, "X-Tenant", resource.Rewrites.ByHTTPHeader.Name)
+		assert.Equal(t, "{{.FromHeader}}", resource.ResourceAttributes.Namespace)
+		assert.Equal(t, "trustyai.opendatahub.io", resource.ResourceAttributes.APIGroup)
+		assert.Equal(t, "evaluations", resource.ResourceAttributes.Resource)
+		assert.Equal(t, test.verb, resource.ResourceAttributes.Verb)
+	}
+}
+
+func TestTenantUserRulesAllowCollectionGenerationLifecycle(t *testing.T) {
+	rules := tenantUserRules(&evalhubv1.EvalHub{})
+	var evaluationVerbs []string
+	for _, rule := range rules {
+		if slices.Contains(rule.APIGroups, "trustyai.opendatahub.io") && slices.Contains(rule.Resources, "evaluations") {
+			evaluationVerbs = rule.Verbs
+		}
+		if slices.Contains(rule.APIGroups, "trustyai.opendatahub.io") && slices.Contains(rule.Resources, "collections") {
+			assert.NotContains(t, rule.Verbs, "create", "generation authorization must not grant collection writes")
+		}
+	}
+	assert.Subset(t, evaluationVerbs, []string{"get", "create", "delete"})
 }
 
 func TestGenerateMCPAuthConfigData_MethodsPresent(t *testing.T) {
