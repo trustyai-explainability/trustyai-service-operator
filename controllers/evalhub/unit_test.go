@@ -330,6 +330,19 @@ func TestGenerateConfigData(t *testing.T) {
 		require.NotNil(t, configured.Service.Init)
 		assert.Equal(t, "30m", configured.Service.Init.TestDataTimeout)
 		assert.Contains(t, configData["config.yaml"], "test_data_timeout: 30m")
+
+		instance.Spec.Init = &evalhubv1.EvalHubInitSpec{
+			TestDataTimeout: "0s",
+		}
+
+		configData, err = reconciler.generateConfigData(context.Background(), instance)
+		require.NoError(t, err)
+
+		var zeroConfig EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &zeroConfig)
+		require.NoError(t, err)
+		assert.Nil(t, zeroConfig.Service.Init)
+		assert.NotContains(t, configData["config.yaml"], "test_data_timeout")
 	})
 
 	t.Run("should reject invalid init timeout", func(t *testing.T) {
@@ -338,7 +351,6 @@ func TestGenerateConfigData(t *testing.T) {
 			value string
 		}{
 			{name: "unparseable", value: "not-a-duration"},
-			{name: "zero", value: "0s"},
 			{name: "negative", value: "-5s"},
 		} {
 			t.Run(tc.name, func(t *testing.T) {

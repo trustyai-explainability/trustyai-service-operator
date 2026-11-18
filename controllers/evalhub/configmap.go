@@ -287,8 +287,15 @@ func buildServiceInitConfig(spec *evalhubv1.EvalHubInitSpec) (*ServiceInitConfig
 	if spec == nil || spec.TestDataTimeout == "" {
 		return nil, nil
 	}
-	if err := validatePositiveDuration("init.testDataTimeout", spec.TestDataTimeout); err != nil {
-		return nil, err
+	d, err := time.ParseDuration(spec.TestDataTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("invalid init.testDataTimeout %q: %w", spec.TestDataTimeout, err)
+	}
+	if d < 0 {
+		return nil, fmt.Errorf("invalid init.testDataTimeout %q: duration must be greater than, or equal, to zero", spec.TestDataTimeout)
+	}
+	if d == 0 {
+		return nil, nil
 	}
 	return &ServiceInitConfig{TestDataTimeout: spec.TestDataTimeout}, nil
 }
@@ -353,17 +360,6 @@ func validateOTELDuration(fieldName, value string) error {
 	}
 	if d < 0 {
 		return fmt.Errorf("invalid %s %q: duration must be greater than, or equal, to zero", fieldName, value)
-	}
-	return nil
-}
-
-func validatePositiveDuration(fieldName, value string) error {
-	d, err := time.ParseDuration(value)
-	if err != nil {
-		return fmt.Errorf("invalid %s %q: %w", fieldName, value, err)
-	}
-	if d <= 0 {
-		return fmt.Errorf("invalid %s %q: duration must be greater than zero", fieldName, value)
 	}
 	return nil
 }
