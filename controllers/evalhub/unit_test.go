@@ -298,6 +298,84 @@ func TestGenerateConfigData(t *testing.T) {
 		require.NoError(t, err)
 
 	})
+
+	t.Run("should render init timeout only when configured", func(t *testing.T) {
+		instance := evalHub.DeepCopy()
+		configData, err := reconciler.generateConfigData(context.Background(), instance)
+		require.NoError(t, err)
+
+		var defaultConfig EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &defaultConfig)
+		require.NoError(t, err)
+		assert.Nil(t, defaultConfig.Service.Init)
+
+		instance.Spec.Init = &evalhubv1.EvalHubInitSpec{}
+		configData, err = reconciler.generateConfigData(context.Background(), instance)
+		require.NoError(t, err)
+
+		var emptyInitConfig EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &emptyInitConfig)
+		require.NoError(t, err)
+		assert.Nil(t, emptyInitConfig.Service.Init)
+
+		instance.Spec.Init = &evalhubv1.EvalHubInitSpec{
+			TestDataTimeout: "30m",
+		}
+
+		configData, err = reconciler.generateConfigData(context.Background(), instance)
+		require.NoError(t, err)
+
+		var configured EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &configured)
+		require.NoError(t, err)
+		require.NotNil(t, configured.Service.Init)
+		assert.Equal(t, "30m", configured.Service.Init.TestDataTimeout)
+		assert.Contains(t, configData["config.yaml"], "test_data_timeout: 30m")
+
+		instance.Spec.Init = &evalhubv1.EvalHubInitSpec{
+			TestDataTimeout: "0s",
+		}
+
+		configData, err = reconciler.generateConfigData(context.Background(), instance)
+		require.NoError(t, err)
+
+		var zeroConfig EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &zeroConfig)
+		require.NoError(t, err)
+		assert.Nil(t, zeroConfig.Service.Init)
+		assert.NotContains(t, configData["config.yaml"], "test_data_timeout")
+	})
+
+	t.Run("should reject invalid init timeout", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			value string
+		}{
+			{name: "unparseable", value: "not-a-duration"},
+			{name: "negative", value: "-5s"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				instance := evalHub.DeepCopy()
+				instance.Spec.Init = &evalhubv1.EvalHubInitSpec{TestDataTimeout: tc.value}
+
+				_, err := reconciler.generateConfigData(context.Background(), instance)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "init.testDataTimeout")
+			})
+		}
+	})
+
+	t.Run("should change config hash when init timeout changes", func(t *testing.T) {
+		defaultData, err := reconciler.generateConfigData(context.Background(), evalHub.DeepCopy())
+		require.NoError(t, err)
+
+		instance := evalHub.DeepCopy()
+		instance.Spec.Init = &evalhubv1.EvalHubInitSpec{TestDataTimeout: "30m"}
+		configuredData, err := reconciler.generateConfigData(context.Background(), instance)
+		require.NoError(t, err)
+
+		assert.NotEqual(t, evalHubConfigDataHash(defaultData), evalHubConfigDataHash(configuredData))
+	})
 }
 
 func TestEvalHubHelperMethods(t *testing.T) {

@@ -291,6 +291,18 @@ spec:
                   - name
                   type: object
                 type: array
+              init:
+                description: Init configures eval-runtime-init containers launched
+                  by EvalHub, not EvalHub startup.
+                properties:
+                  testDataTimeout:
+                    description: |-
+                      TestDataTimeout configures the timeout for eval-runtime-init test-data downloads.
+                      Omit to use the EvalHub default (10m).
+                    maxLength: 64
+                    pattern: ^((\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$
+                    type: string
+                type: object
               mcp:
                 description: MCP optionally enables an MCP server deployment connected
                   to this EvalHub instance.
@@ -841,6 +853,8 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
+    deprecated: true
+    deprecationWarning: v1alpha1 does not expose new v1 fields; use v1
     name: v1alpha1
     schema:
       openAPIV3Schema:

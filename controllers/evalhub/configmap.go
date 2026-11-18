@@ -26,13 +26,19 @@ import (
 
 // ServiceConfig represents the service section in config.yaml
 type ServiceConfig struct {
-	Port            int    `json:"port"`
-	Host            string `json:"host,omitempty"`
-	DisableAuth     bool   `json:"disable_auth,omitempty"`
-	TerminationFile string `json:"termination_file"`
-	EvalInitImage   string `json:"eval_init_image,omitempty"`
-	TLSCertFile     string `json:"tls_cert_file"`
-	TLSKeyFile      string `json:"tls_key_file"`
+	Port            int                `json:"port"`
+	Host            string             `json:"host,omitempty"`
+	DisableAuth     bool               `json:"disable_auth,omitempty"`
+	TerminationFile string             `json:"termination_file"`
+	EvalInitImage   string             `json:"eval_init_image,omitempty"`
+	TLSCertFile     string             `json:"tls_cert_file"`
+	TLSKeyFile      string             `json:"tls_key_file"`
+	Init            *ServiceInitConfig `json:"init,omitempty"`
+}
+
+// ServiceInitConfig represents the service.init section in config.yaml.
+type ServiceInitConfig struct {
+	TestDataTimeout string `json:"test_data_timeout,omitempty"`
 }
 
 // DatabaseConfig represents the database configuration in config.yaml
@@ -131,6 +137,14 @@ func evalHubConfigMapName(instance *evalhubv1.EvalHub) string {
 
 // reconcileConfigMap creates or updates the ConfigMap for EvalHub configuration
 func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *evalhubv1.EvalHub) error {
+	configData, err := r.generateConfigData(ctx, instance)
+	if err != nil {
+		return fmt.Errorf("failed to generate config data: %w", err)
+	}
+	return r.reconcileConfigMapWithData(ctx, instance, configData)
+}
+
+func (r *EvalHubReconciler) reconcileConfigMapWithData(ctx context.Context, instance *evalhubv1.EvalHub, configData map[string]string) error {
 	log := log.FromContext(ctx)
 	log.Info("Reconciling ConfigMap", "name", instance.Name)
 
@@ -145,12 +159,6 @@ func (r *EvalHubReconciler) reconcileConfigMap(ctx context.Context, instance *ev
 	getErr := r.Get(ctx, client.ObjectKeyFromObject(configMap), configMap)
 	if getErr != nil && !errors.IsNotFound(getErr) {
 		return getErr
-	}
-
-	// Generate configuration data
-	configData, err := r.generateConfigData(ctx, instance)
-	if err != nil {
-		return fmt.Errorf("failed to generate config data: %w", err)
 	}
 
 	if errors.IsNotFound(getErr) {
@@ -248,6 +256,12 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		}
 	}
 
+	initCfg, err := buildServiceInitConfig(instance.Spec.Init)
+	if err != nil {
+		return nil, err
+	}
+	config.Service.Init = initCfg
+
 	// Override OTEL configuration when explicitly configured
 	if instance.Spec.IsOTELConfigured() {
 		otelCfg, err := buildOTELConfig(instance.Spec.Otel)
@@ -267,6 +281,23 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		"config.yaml": string(configYAML),
 		"auth.yaml":   generateAuthConfigData(),
 	}, nil
+}
+
+func buildServiceInitConfig(spec *evalhubv1.EvalHubInitSpec) (*ServiceInitConfig, error) {
+	if spec == nil || spec.TestDataTimeout == "" {
+		return nil, nil
+	}
+	d, err := time.ParseDuration(spec.TestDataTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("invalid init.testDataTimeout %q: %w", spec.TestDataTimeout, err)
+	}
+	if d < 0 {
+		return nil, fmt.Errorf("invalid init.testDataTimeout %q: duration must be greater than, or equal, to zero", spec.TestDataTimeout)
+	}
+	if d == 0 {
+		return nil, nil
+	}
+	return &ServiceInitConfig{TestDataTimeout: spec.TestDataTimeout}, nil
 }
 
 func buildOTELConfig(spec *evalhubv1.OTELSpec) (*OTELConfig, error) {
@@ -331,6 +362,23 @@ func validateOTELDuration(fieldName, value string) error {
 		return fmt.Errorf("invalid %s %q: duration must be greater than, or equal, to zero", fieldName, value)
 	}
 	return nil
+}
+
+func evalHubConfigDataHash(configData map[string]string) string {
+	keys := make([]string, 0, len(configData))
+	for key := range configData {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	h := sha256.New()
+	for _, key := range keys {
+		_, _ = h.Write([]byte(key))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(configData[key]))
+		_, _ = h.Write([]byte{0})
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 // generateAuthConfigData returns the authorization configuration for the ConfigMap.
