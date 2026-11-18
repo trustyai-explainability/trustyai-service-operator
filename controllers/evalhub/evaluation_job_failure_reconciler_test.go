@@ -49,7 +49,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 			Expect(ok).To(BeTrue(), "expected operator-only failure for adapter OOMKilled")
 		})
 
-		It("reports init ErrImagePull", func() {
+		It("does not report transient init ErrImagePull", func() {
 			pod := &corev1.Pod{
 				Status: corev1.PodStatus{
 					InitContainerStatuses: []corev1.ContainerStatus{{
@@ -61,7 +61,114 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 				},
 			}
 			_, ok := podOperatorOnlyFailureMessage(pod)
-			Expect(ok).To(BeTrue(), "expected operator-only failure for init ErrImagePull")
+			Expect(ok).To(BeFalse(), "ErrImagePull is retriable and should not fail the evaluation immediately")
+		})
+
+		It("does not report adapter ImagePullBackOff within grace period", func() {
+			now := time.Now()
+			observedAt := now.Add(-30 * time.Second)
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.NewTime(time.Now().Add(-30 * time.Minute)),
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(time.Now().Add(-30 * time.Minute)),
+					}},
+					ContainerStatuses: []corev1.ContainerStatus{{
+						Name: adapterContainerName,
+						State: corev1.ContainerState{
+							Waiting: &corev1.ContainerStateWaiting{Reason: "ImagePullBackOff", Message: "back-off pulling image"},
+						},
+					}},
+				},
+			}
+			_, ok := podOperatorOnlyFailureMessage(pod)
+			Expect(ok).To(BeFalse(), "ImagePullBackOff should wait for the grace period")
+			Expect(imagePullGracePeriodRemaining(pod, observedAt, now)).To(BeNumerically(">", 0))
+		})
+
+		It("does not report adapter ImagePullBackOff without event lookup", func() {
+			now := time.Now()
+			startedAt := now.Add(-11 * time.Minute)
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.NewTime(time.Now().Add(-30 * time.Second)),
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{{
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(time.Now().Add(-30 * time.Second)),
+					}},
+					ContainerStatuses: []corev1.ContainerStatus{{
+						Name: adapterContainerName,
+						State: corev1.ContainerState{
+							Waiting: &corev1.ContainerStateWaiting{Reason: "ImagePullBackOff", Message: "back-off pulling image"},
+						},
+					}},
+				},
+			}
+			_, ok := podOperatorOnlyFailureMessage(pod)
+			Expect(ok).To(BeFalse(), "ImagePullBackOff grace is checked from pod event timestamps")
+			Expect(imagePullGracePeriodRemaining(pod, startedAt, now)).To(Equal(time.Duration(0)))
+		})
+
+		It("does not report init ImagePullBackOff within grace period", func() {
+			now := time.Now()
+			observedAt := now.Add(-30 * time.Second)
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					InitContainerStatuses: []corev1.ContainerStatus{{
+						Name: initContainerName,
+						State: corev1.ContainerState{
+							Waiting: &corev1.ContainerStateWaiting{Reason: "ImagePullBackOff", Message: "back-off pulling image"},
+						},
+					}},
+				},
+			}
+			_, ok := podOperatorOnlyFailureMessage(pod)
+			Expect(ok).To(BeFalse(), "init ImagePullBackOff should wait for the grace period")
+			Expect(podHasImagePullBackOff(pod)).To(BeTrue())
+			Expect(imagePullGracePeriodRemaining(pod, observedAt, now)).To(BeNumerically(">", 0))
+		})
+
+		It("treats the exact grace boundary as expired in both checks", func() {
+			now := time.Now()
+			startedAt := now.Add(-imagePullBackOffGracePeriod)
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{{
+						Name: adapterContainerName,
+						State: corev1.ContainerState{
+							Waiting: &corev1.ContainerStateWaiting{Reason: "ImagePullBackOff", Message: "back-off pulling image"},
+						},
+					}},
+				},
+			}
+			Expect(imagePullBackOffPastGrace(pod, startedAt, now)).To(BeTrue(),
+				"exactly the grace period must count as past grace so the failure boundary matches the requeue boundary")
+			Expect(imagePullGracePeriodRemaining(pod, startedAt, now)).To(Equal(time.Duration(0)))
+		})
+
+		It("reports invalid image name immediately", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{{
+						Name: adapterContainerName,
+						State: corev1.ContainerState{
+							Waiting: &corev1.ContainerStateWaiting{Reason: "InvalidImageName", Message: "invalid image"},
+						},
+					}},
+				},
+			}
+			_, ok := podOperatorOnlyFailureMessage(pod)
+			Expect(ok).To(BeTrue(), "InvalidImageName is not a retriable pull backoff")
 		})
 
 		It("does not report adapter exit 0 completed", func() {
