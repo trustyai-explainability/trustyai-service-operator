@@ -1854,13 +1854,26 @@ func TestPendingGraceRequeueAfter_TransientPullReasonKeepsRequeue(t *testing.T) 
 		"a transient pull reason must keep a bounded recheck from the recorded observation")
 }
 
+// recordedEvalHubRequest captures one request the fake EvalHub received.
+type recordedEvalHubRequest struct {
+	Method string
+	Path   string
+	Tenant string
+}
+
 // evalHubJobStateServer answers the failure POST with 409 and the given conflict
 // body, and GET /api/v1/evaluations/jobs/{id} with this benchmark's state. An
-// empty state makes the GET fail so reconciliation exercises the
-// unknown-conflict path.
-func evalHubJobStateServer(t *testing.T, conflictBody, benchmarkState string) *httptest.Server {
+// empty state makes the GET fail and "notfound" makes it answer 404. Every
+// request is recorded so tests can assert the exact EvalHub interaction.
+func evalHubJobStateServer(t *testing.T, conflictBody, benchmarkState string) (*httptest.Server, <-chan recordedEvalHubRequest) {
 	t.Helper()
+	requests := make(chan recordedEvalHubRequest, 10)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- recordedEvalHubRequest{
+			Method: r.Method,
+			Path:   r.URL.Path,
+			Tenant: r.Header.Get(httpHeaderTenant),
+		}
 		if r.Method == http.MethodGet {
 			if benchmarkState == "" {
 				http.Error(w, "state lookup injected failure", http.StatusInternalServerError)
@@ -1880,14 +1893,14 @@ func evalHubJobStateServer(t *testing.T, conflictBody, benchmarkState string) *h
 		_, _ = w.Write([]byte(conflictBody))
 	}))
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, requests
 }
 
 // TestJobFailureReconciler_PostPartiallyFailed_BenchmarkCompleted_DoesNotPromote
 // verifies an aggregate partially_failed conflict whose own benchmark completed
 // is treated as superseded: no promotion, no requeue, no event.
 func TestJobFailureReconciler_PostPartiallyFailed_BenchmarkCompleted_DoesNotPromote(t *testing.T) {
-	srv := evalHubJobStateServer(t, `{"message":"The job can not be failed because it is 'partially_failed'."}`, "completed")
+	srv, _ := evalHubJobStateServer(t, `{"message":"The job can not be failed because it is 'partially_failed'."}`, "completed")
 	sc := jobFailureLifecycleScheme(t)
 	ns := "tenant-ns"
 
@@ -1925,7 +1938,7 @@ func TestJobFailureReconciler_PostPartiallyFailed_BenchmarkCompleted_DoesNotProm
 // benchmark as failed, the failure was already recorded, so the Job is promoted
 // without another POST.
 func TestJobFailureReconciler_PostPartiallyFailed_BenchmarkFailed_Promotes(t *testing.T) {
-	srv := evalHubJobStateServer(t, `{"message":"The job can not be failed because it is 'partially_failed'."}`, "failed")
+	srv, _ := evalHubJobStateServer(t, `{"message":"The job can not be failed because it is 'partially_failed'."}`, "failed")
 	sc := jobFailureLifecycleScheme(t)
 	ns := "tenant-ns"
 
@@ -1963,7 +1976,7 @@ func TestJobFailureReconciler_PostPartiallyFailed_BenchmarkFailed_Promotes(t *te
 // an unavailable per-benchmark state keeps the report eligible for recovery
 // instead of selecting the superseded path blindly.
 func TestJobFailureReconciler_PostPartiallyFailed_StateLookupFails_Requeues(t *testing.T) {
-	srv := evalHubJobStateServer(t, `{"message":"The job can not be failed because it is 'partially_failed'."}`, "")
+	srv, requests := evalHubJobStateServer(t, `{"message":"The job can not be failed because it is 'partially_failed'."}`, "")
 	sc := jobFailureLifecycleScheme(t)
 	ns := "tenant-ns"
 
@@ -1983,6 +1996,33 @@ func TestJobFailureReconciler_PostPartiallyFailed_StateLookupFails_Requeues(t *t
 	require.NoError(t, err)
 	assert.Equal(t, 30*time.Second, result.RequeueAfter, "an unavailable benchmark state must be retried")
 
+	// Exactly one POST and one GET: the lookup must target this job with the
+	// tenant header so kube-rbac-proxy authorizes the request.
+	var seen []recordedEvalHubRequest
+	for len(seen) < 2 {
+		select {
+		case req := <-requests:
+			seen = append(seen, req)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("expected a POST and one GET, got %+v", seen)
+		}
+	}
+	getCount := 0
+	for _, req := range seen {
+		if req.Method != http.MethodGet {
+			continue
+		}
+		getCount++
+		assert.Equal(t, "/api/v1/evaluations/jobs/"+job.Labels[evalHubJobIDLabel], req.Path)
+		assert.Equal(t, ns, req.Tenant)
+	}
+	assert.Equal(t, 1, getCount, "exactly one benchmark-state GET must be issued")
+	select {
+	case req := <-requests:
+		t.Fatalf("unexpected extra EvalHub request: %+v", req)
+	default:
+	}
+
 	select {
 	case ev := <-rec.Events:
 		t.Fatalf("expected no EvaluationFailed event when the benchmark state is unavailable, got: %s", ev)
@@ -1999,7 +2039,7 @@ func TestJobFailureReconciler_PostPartiallyFailed_StateLookupFails_Requeues(t *t
 // verifies a deleted EvalHub job settles as superseded instead of retrying a
 // conflict that can never resolve.
 func TestJobFailureReconciler_PostPartiallyFailed_JobNotFound_DoesNotPromote(t *testing.T) {
-	srv := evalHubJobStateServer(t, `{"message":"The job can not be failed because it is 'partially_failed'."}`, "notfound")
+	srv, _ := evalHubJobStateServer(t, `{"message":"The job can not be failed because it is 'partially_failed'."}`, "notfound")
 	sc := jobFailureLifecycleScheme(t)
 	ns := "tenant-ns"
 
@@ -2029,6 +2069,59 @@ func TestJobFailureReconciler_PostPartiallyFailed_JobNotFound_DoesNotPromote(t *
 	require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: job.Name}, &persisted))
 	assert.NotContains(t, persisted.Annotations, annotationFailureReported)
 	assert.NotContains(t, persisted.Annotations, annotationFailurePending)
+}
+
+// TestFetchEvalHubBenchmarkState_IndexMatching verifies the lookup prefers an
+// exact index match, accepts a single unindexed (legacy) record, and refuses to
+// attribute an ambiguous or explicit-mismatch record to the requested benchmark.
+func TestFetchEvalHubBenchmarkState_IndexMatching(t *testing.T) {
+	cases := []struct {
+		name      string
+		body      string
+		want      string
+		wantError bool
+	}{
+		{
+			name: "explicit index match",
+			body: `{"status":{"benchmarks":[{"provider_id":"p","id":"b","benchmark_index":1,"status":"failed"}]}}`,
+			want: "failed",
+		},
+		{
+			name: "single unindexed record",
+			body: `{"status":{"benchmarks":[{"provider_id":"p","id":"b","status":"completed"}]}}`,
+			want: "completed",
+		},
+		{
+			name:      "explicit other index",
+			body:      `{"status":{"benchmarks":[{"provider_id":"p","id":"b","benchmark_index":0,"status":"failed"}]}}`,
+			wantError: true,
+		},
+		{
+			name:      "ambiguous unindexed records",
+			body:      `{"status":{"benchmarks":[{"provider_id":"p","id":"b","status":"failed"},{"provider_id":"p","id":"b","status":"completed"}]}}`,
+			wantError: true,
+		},
+		{
+			name:      "no matching record",
+			body:      `{"status":{"benchmarks":[{"provider_id":"other","id":"b","benchmark_index":1,"status":"failed"}]}}`,
+			wantError: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			t.Cleanup(srv.Close)
+			state, err := fetchEvalHubBenchmarkState(context.Background(), &rest.Config{}, srv.URL, "tenant-ns", "job-1", "p", "b", 1)
+			if tc.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, state)
+		})
+	}
 }
 
 // TestJobFailureReconciler_PostUnknownConflict_Requeues verifies an

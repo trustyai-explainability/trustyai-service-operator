@@ -18,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -272,11 +273,19 @@ func jobUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 			return jobStatusIndicatesTerminalFailure(newJob)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			newJob, ok := e.ObjectNew.(*batchv1.Job)
-			if !ok || !r.tenantNS.IsTenant(newJob.Namespace) {
+			newJob, okNew := e.ObjectNew.(*batchv1.Job)
+			oldJob, okOld := e.ObjectOld.(*batchv1.Job)
+			if !okNew || !okOld || !r.tenantNS.IsTenant(newJob.Namespace) {
 				return false
 			}
 			if !isEvalHubEvaluationJob(newJob) || failureAlreadyReported(newJob) {
+				return false
+			}
+			// This reconciler writes annotationFailurePending itself. An update
+			// whose only change is that marker must not re-enqueue the Job: it
+			// would immediately re-run detection and repeat the POST/GET cycle
+			// while the pod still shows the same failure.
+			if onlyFailurePendingAnnotationChanged(oldJob, newJob) {
 				return false
 			}
 			// Resume accepted-but-unpromoted reports on any Job update.
@@ -290,6 +299,26 @@ func jobUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 		DeleteFunc:  func(event.DeleteEvent) bool { return false },
 		GenericFunc: func(event.GenericEvent) bool { return false },
 	}
+}
+
+// onlyFailurePendingAnnotationChanged reports whether the only difference between
+// the two Job versions is the in-flight failure-pending marker written by this
+// reconciler. Such self-writes must not re-enqueue the Job: every enqueue re-runs
+// detection and repeats the EvalHub POST while the pod still shows the failure.
+func onlyFailurePendingAnnotationChanged(oldJob, newJob *batchv1.Job) bool {
+	oldValue, oldHad := oldJob.Annotations[annotationFailurePending]
+	newValue, newHad := newJob.Annotations[annotationFailurePending]
+	if oldHad == newHad && oldValue == newValue {
+		return false
+	}
+	oldCopy := oldJob.DeepCopy()
+	newCopy := newJob.DeepCopy()
+	delete(oldCopy.Annotations, annotationFailurePending)
+	delete(newCopy.Annotations, annotationFailurePending)
+	// These fields change on every write and must not count as a difference.
+	oldCopy.ResourceVersion, newCopy.ResourceVersion = "", ""
+	oldCopy.ManagedFields, newCopy.ManagedFields = nil, nil
+	return reflect.DeepEqual(oldCopy, newCopy)
 }
 
 func podUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Predicate {
@@ -1900,10 +1929,12 @@ func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseU
 
 // evalHubJobBenchmarkState is the per-benchmark status returned by
 // GET /api/v1/evaluations/jobs/{id} (eval-hub pkg/api.BenchmarkStatus).
+// BenchmarkIndex is optional: legacy EvalHub responses omit it, which must be
+// distinguishable from an explicit zero.
 type evalHubJobBenchmarkState struct {
 	ProviderID     string `json:"provider_id"`
 	ID             string `json:"id"`
-	BenchmarkIndex int    `json:"benchmark_index"`
+	BenchmarkIndex *int   `json:"benchmark_index"`
 	Status         string `json:"status"`
 }
 
@@ -1950,24 +1981,39 @@ func fetchEvalHubBenchmarkState(ctx context.Context, restCfg *rest.Config, baseU
 	if err := json.Unmarshal(body, &resource); err != nil {
 		return "", fmt.Errorf("decode EvalHub job %s: %w", jobID, err)
 	}
-	var fallback string
+	// Match the requested index exactly. An unindexed record (legacy EvalHub
+	// response) can stand in only when it is the single match: attributing one of
+	// several unindexed records to this benchmark could take another entry's
+	// state, and an explicit different index means the record is another run.
+	var unindexed []string
+	explicitOtherIndex := 0
 	for i := range resource.Status.Benchmarks {
 		b := &resource.Status.Benchmarks[i]
 		if b.ProviderID != providerID || b.ID != benchmarkID {
 			continue
 		}
 		state := strings.ToLower(strings.TrimSpace(b.Status))
-		if b.BenchmarkIndex == benchmarkIndex {
+		if b.BenchmarkIndex == nil {
+			unindexed = append(unindexed, state)
+			continue
+		}
+		if *b.BenchmarkIndex == benchmarkIndex {
 			return state, nil
 		}
-		if fallback == "" {
-			fallback = state
-		}
+		explicitOtherIndex++
 	}
-	if fallback != "" {
-		return fallback, nil
+	switch {
+	case len(unindexed) == 1:
+		return unindexed[0], nil
+	case len(unindexed) > 1:
+		return "", fmt.Errorf("benchmark %s/%s for index %d is ambiguous: %d unindexed records match in EvalHub job %s",
+			providerID, benchmarkID, benchmarkIndex, len(unindexed), jobID)
+	case explicitOtherIndex > 0:
+		return "", fmt.Errorf("benchmark %s/%s for index %d not found in EvalHub job %s: %d record(s) carry a different explicit index",
+			providerID, benchmarkID, benchmarkIndex, jobID, explicitOtherIndex)
+	default:
+		return "", fmt.Errorf("benchmark %s/%s (index %d) not found in EvalHub job %s", providerID, benchmarkID, benchmarkIndex, jobID)
 	}
-	return "", fmt.Errorf("benchmark %s/%s (index %d) not found in EvalHub job %s", providerID, benchmarkID, benchmarkIndex, jobID)
 }
 
 // errEvalHubJobNotFound is returned when EvalHub no longer holds the evaluation
