@@ -1,6 +1,6 @@
 module github.com/trustyai-explainability/trustyai-service-operator
 
-go 1.26.0
+go 1.26.10
 
 require (
 	github.com/kserve/kserve v0.19.0
