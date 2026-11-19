@@ -68,6 +68,7 @@ const (
 	annotationImagePullBackOffObservations = "trustyai.opendatahub.io/evalhub-imagepullbackoff-observations"
 	httpHeaderTenant                       = "X-Tenant"
 	eventsPathFmt                          = "%s/api/v1/evaluations/jobs/%s/events"
+	evalHubJobPathFmt                      = "%s/api/v1/evaluations/jobs/%s"
 	messageCodeRuntimeFailure              = "RUNTIME_FAILURE"
 	// messageCodeQueueError is used when reporting EvalHub benchmark failure from a Kueue Workload
 	// with QuotaReserved=False and Reason=Inadmissible (see evaluation_failed_kueue_workloads_reconciler.go).
@@ -421,6 +422,15 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 			if err := r.clearImagePullBackOffObservation(ctx, &job); err != nil {
 				return ctrl.Result{}, fmt.Errorf("clear image pull backoff observation: %w", err)
 			}
+			// A superseded-report cleanup that failed left the in-flight marker
+			// behind. The failure signal is gone now, so no later POST will retry
+			// the cleanup: clear the stale marker here or it stays on the Job
+			// forever.
+			if job.Annotations[annotationFailurePending] == "true" {
+				if err := r.clearFailurePendingAnnotation(ctx, &job, "failed to clear stale failure-pending annotation"); err != nil {
+					return ctrl.Result{}, err
+				}
+			}
 			return ctrl.Result{}, nil
 		}
 		msg = detectedMsg
@@ -510,8 +520,9 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 				setJobFailureAction("skip")
 				if err2 := r.clearFailurePendingAnnotation(ctx, &job, "failed to revert failure-pending annotation after superseded report; requeuing cleanup"); err2 != nil {
 					// A quiet Job would otherwise keep the in-flight marker
-					// indefinitely. Retry only the cleanup: the report is confirmed
-					// superseded, so this path never promotes or re-posts.
+					// indefinitely. Retry the reconcile rather than persisting a
+					// cleanup state: the failed patch already proves the object may
+					// be stale, and a duplicated POST answers the same 409.
 					return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 				}
 				return ctrl.Result{}, nil
@@ -1854,6 +1865,30 @@ func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseU
 				return fmt.Errorf("%w: EvalHub events returned %s", errEvalHubReportAlreadyTerminal, resp.Status)
 			case isEvalHubNonFailureTerminalState(body):
 				return fmt.Errorf("%w: EvalHub events returned %s: %s", errEvalHubReportSuperseded, resp.Status, body)
+			case isEvalHubAggregateFailureState(body):
+				// partially_failed is an aggregate state: only this benchmark's own
+				// status proves whether its failure was recorded. A previous POST
+				// may have been accepted with the accepted marker lost, so the
+				// aggregate state must never select the superseded path unchecked.
+				state, stateErr := fetchEvalHubBenchmarkState(ctx, restCfg, baseURL, tenant, jobID, providerID, benchmarkID, benchmarkIndex)
+				if errors.Is(stateErr, errEvalHubJobNotFound) {
+					// EvalHub no longer holds the job: no failure report can be
+					// recorded or recovered, and retrying can never succeed.
+					return fmt.Errorf("%w: EvalHub events returned %s: %v", errEvalHubReportSuperseded, resp.Status, stateErr)
+				}
+				if stateErr != nil {
+					return fmt.Errorf("%w: EvalHub events returned %s: benchmark state unavailable: %v",
+						errEvalHubReportConflictUnknown, resp.Status, stateErr)
+				}
+				switch state {
+				case "failed":
+					return fmt.Errorf("%w: EvalHub events returned %s (benchmark state failed)", errEvalHubReportAlreadyTerminal, resp.Status)
+				case "completed", "cancelled", "canceled":
+					return fmt.Errorf("%w: EvalHub events returned %s (benchmark state %s)", errEvalHubReportSuperseded, resp.Status, state)
+				default:
+					return fmt.Errorf("%w: EvalHub events returned %s: benchmark state %q is not terminal",
+						errEvalHubReportConflictUnknown, resp.Status, state)
+				}
 			default:
 				return fmt.Errorf("%w: EvalHub events returned %s: %s", errEvalHubReportConflictUnknown, resp.Status, body)
 			}
@@ -1863,11 +1898,88 @@ func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseU
 	return nil
 }
 
+// evalHubJobBenchmarkState is the per-benchmark status returned by
+// GET /api/v1/evaluations/jobs/{id} (eval-hub pkg/api.BenchmarkStatus).
+type evalHubJobBenchmarkState struct {
+	ProviderID     string `json:"provider_id"`
+	ID             string `json:"id"`
+	BenchmarkIndex int    `json:"benchmark_index"`
+	Status         string `json:"status"`
+}
+
+// evalHubJobResourceStatus carries the status section of the job resource.
+type evalHubJobResourceStatus struct {
+	Status struct {
+		Benchmarks []evalHubJobBenchmarkState `json:"benchmarks"`
+	} `json:"status"`
+}
+
+// fetchEvalHubBenchmarkState reads this benchmark's own state from EvalHub. The
+// 409 body only names the aggregate job state, so a partially_failed conflict
+// cannot prove whether this benchmark's failure was recorded. Matching prefers
+// the benchmark index but falls back to provider+ID so older EvalHub images that
+// omit benchmark_index still resolve.
+func fetchEvalHubBenchmarkState(ctx context.Context, restCfg *rest.Config, baseURL, tenant, jobID, providerID, benchmarkID string, benchmarkIndex int) (string, error) {
+	httpClient, err := newEvalHubHTTPClient(restCfg)
+	if err != nil {
+		return "", err
+	}
+	url := fmt.Sprintf(evalHubJobPathFmt, baseURL, jobID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set(httpHeaderTenant, tenant)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read EvalHub job %s: %w", jobID, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			return "", fmt.Errorf("%w: EvalHub job %s no longer exists", errEvalHubJobNotFound, jobID)
+		}
+		return "", fmt.Errorf("EvalHub job %s returned %s: %s", jobID, resp.Status, body)
+	}
+	var resource evalHubJobResourceStatus
+	if err := json.Unmarshal(body, &resource); err != nil {
+		return "", fmt.Errorf("decode EvalHub job %s: %w", jobID, err)
+	}
+	var fallback string
+	for i := range resource.Status.Benchmarks {
+		b := &resource.Status.Benchmarks[i]
+		if b.ProviderID != providerID || b.ID != benchmarkID {
+			continue
+		}
+		state := strings.ToLower(strings.TrimSpace(b.Status))
+		if b.BenchmarkIndex == benchmarkIndex {
+			return state, nil
+		}
+		if fallback == "" {
+			fallback = state
+		}
+	}
+	if fallback != "" {
+		return fallback, nil
+	}
+	return "", fmt.Errorf("benchmark %s/%s (index %d) not found in EvalHub job %s", providerID, benchmarkID, benchmarkIndex, jobID)
+}
+
+// errEvalHubJobNotFound is returned when EvalHub no longer holds the evaluation
+// job (404): no failure report can be recorded or recovered.
+var errEvalHubJobNotFound = errors.New("evalhub job not found")
+
 // errEvalHubReportSuperseded is returned when EvalHub answers the failure POST
-// with 409 Conflict because the job is already in a non-failure terminal state
-// (cancelled or completed) or only an aggregate partially_failed state that does
-// not identify this benchmark: no failure report for this benchmark was or will
-// be delivered, and the Job must not be promoted to Failed.
+// with 409 Conflict because the job (and this benchmark) is already in a
+// non-failure terminal state (cancelled or completed): no failure report for
+// this benchmark was or will be delivered, and the Job must not be promoted to
+// Failed. The aggregate partially_failed state is never classified here: it is
+// resolved from this benchmark's own status instead.
 var errEvalHubReportSuperseded = errors.New("evalhub job already in a non-failure terminal state")
 
 // errEvalHubReportConflictUnknown is returned when EvalHub answers the failure
@@ -1889,12 +2001,18 @@ func isEvalHubFailureTerminalState(body []byte) bool {
 
 // isEvalHubNonFailureTerminalState reports whether a 409 response body proves
 // the job is terminal without recording this benchmark's failure: cancelled or
-// completed, or the aggregate partially_failed state (which cannot be attributed
-// to a benchmark from the response alone).
+// completed. The aggregate partially_failed state is deliberately excluded:
+// only this benchmark's own status can prove whether its failure was recorded.
 func isEvalHubNonFailureTerminalState(body []byte) bool {
 	text := strings.ToLower(string(body))
 	return strings.Contains(text, "'cancelled'") ||
 		strings.Contains(text, "'canceled'") ||
-		strings.Contains(text, "'completed'") ||
-		strings.Contains(text, "'partially_failed'")
+		strings.Contains(text, "'completed'")
+}
+
+// isEvalHubAggregateFailureState reports whether the 409 response body names the
+// aggregate partially_failed job state, which does not identify which benchmark
+// failed and therefore needs a per-benchmark status lookup.
+func isEvalHubAggregateFailureState(body []byte) bool {
+	return strings.Contains(strings.ToLower(string(body)), "'partially_failed'")
 }
