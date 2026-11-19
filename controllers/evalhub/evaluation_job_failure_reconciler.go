@@ -499,37 +499,41 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 				log.Info("EvalHub already holds a terminal status for the job; promoting without re-posting",
 					append(failureWatcherLogFields(), "action", "post_events_already_terminal", "job", job.Name, "evalJobID", jobID)...)
 			} else if errors.Is(err, errEvalHubReportSuperseded) {
-				// The job ended in a non-failure terminal state (cancelled or
-				// completed): no failure report was or will be delivered. Do not
-				// promote to Failed and do not requeue; clear the pending marker
-				// so the state is clean if a later reconcile re-detects.
+				// The job ended in a non-failure terminal state (cancelled,
+				// completed, or an aggregate partially_failed state that does not
+				// identify this benchmark): no failure report for this benchmark
+				// was or will be delivered. Do not promote to Failed and do not
+				// re-post; clear the pending marker so the state is clean if a
+				// later reconcile re-detects.
 				log.Info("EvalHub job already in a non-failure terminal state; not reporting failure",
 					append(failureWatcherLogFields(), "action", "post_events_superseded", "job", job.Name, "evalJobID", jobID)...)
 				setJobFailureAction("skip")
-				revert := client.MergeFrom(job.DeepCopy())
-				delete(job.Annotations, annotationFailurePending)
-				if len(job.Annotations) == 0 {
-					job.Annotations = nil
-				}
-				if err2 := r.Patch(ctx, &job, revert); err2 != nil {
-					log.Error(err2, "failed to revert failure-pending annotation after superseded report",
-						append(failureWatcherLogFields(), "action", "revert_pending_failed", "job", job.Name)...)
+				if err2 := r.clearFailurePendingAnnotation(ctx, &job, "failed to revert failure-pending annotation after superseded report; requeuing cleanup"); err2 != nil {
+					// A quiet Job would otherwise keep the in-flight marker
+					// indefinitely. Retry only the cleanup: the report is confirmed
+					// superseded, so this path never promotes or re-posts.
+					return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 				}
 				return ctrl.Result{}, nil
+			} else if errors.Is(err, errEvalHubReportConflictUnknown) {
+				// The 409 could not be classified (unreadable or unrecognised
+				// body): EvalHub may have accepted a previous report, so keep the
+				// report eligible for recovery instead of treating it as a
+				// confirmed non-failure state.
+				log.Error(err, "EvalHub returned an unclassifiable 409 conflict; requeuing",
+					append(failureWatcherLogFields(), "action", "post_events_conflict_unknown", "job", job.Name, "evalJobID", jobID)...)
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+				// The 30s requeue below also retries the cleanup if this patch failed.
+				_ = r.clearFailurePendingAnnotation(ctx, &job, "failed to revert failure-pending annotation after unknown conflict")
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 			} else {
 				log.Error(err, "failed to post EvalHub benchmark failure event",
 					append(failureWatcherLogFields(), "action", "post_events_failed", "job", job.Name, "evalJobID", jobID)...)
 				span.RecordError(err)
 				span.SetStatus(codes.Error, err.Error())
-				revert := client.MergeFrom(job.DeepCopy())
-				delete(job.Annotations, annotationFailurePending)
-				if len(job.Annotations) == 0 {
-					job.Annotations = nil
-				}
-				if err2 := r.Patch(ctx, &job, revert); err2 != nil {
-					log.Error(err2, "failed to revert failure-pending annotation after POST failure",
-						append(failureWatcherLogFields(), "action", "revert_pending_failed", "job", job.Name)...)
-				}
+				// The 30s requeue below also retries the cleanup if this patch failed.
+				_ = r.clearFailurePendingAnnotation(ctx, &job, "failed to revert failure-pending annotation after POST failure")
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 			}
 		}
@@ -883,10 +887,22 @@ func containerStatusStarted(cs *corev1.ContainerStatus) bool {
 // container ran; ContainerCreating is deliberately excluded so genuine mount
 // failures remain eligible for the volume-mount check.
 func waitingReasonProvesVolumeSetup(reason string) bool {
-	if reason == waitingReasonErrImagePull || reason == waitingReasonImagePullBackOff {
+	if isImagePullRetryWaitingReason(reason) {
 		return true
 	}
 	return isFatalContainerWaitingReason(reason)
+}
+
+// isImagePullRetryWaitingReason reports whether reason belongs to the same
+// pull-retry reason set used by the image-pull grace clock.
+func isImagePullRetryWaitingReason(reason string) bool {
+	reason = strings.TrimSpace(reason)
+	for _, r := range imagePullRetryWaitingReasons {
+		if r == reason {
+			return true
+		}
+	}
+	return false
 }
 
 // volumeMountScheduledAt returns when the pod became scheduled (PodScheduled=True LastTransitionTime),
@@ -937,6 +953,9 @@ type imagePullBackOffContainer struct {
 	image     string
 	message   string
 	fieldPath string
+	// reason is the container's current image-pull waiting reason; it lets the
+	// requeue loop skip clocks already covered by the ImagePullBackOff check.
+	reason string
 	// lastRunStart is the start time of the container's last completed run
 	// (LastTerminationState), zero when it never ran. A backoff clock that
 	// predates it belongs to a previous pull episode and must be discarded.
@@ -963,6 +982,7 @@ func imagePullWaitingContainers(pod *corev1.Pod, reason string) []imagePullBackO
 				image:        strings.TrimSpace(cs.Image),
 				message:      cs.State.Waiting.Message,
 				fieldPath:    fmt.Sprintf("spec.containers{%s}", cs.Name),
+				reason:       reason,
 				lastRunStart: lastContainerRunStart(&cs),
 			})
 		}
@@ -974,9 +994,33 @@ func imagePullWaitingContainers(pod *corev1.Pod, reason string) []imagePullBackO
 				image:        strings.TrimSpace(cs.Image),
 				message:      cs.State.Waiting.Message,
 				fieldPath:    fmt.Sprintf("spec.initContainers{%s}", cs.Name),
+				reason:       reason,
 				lastRunStart: lastContainerRunStart(&cs),
 			})
 		}
+	}
+	return containers
+}
+
+// imagePullRetryWaitingReasons are the transient image-pull waiting reasons that
+// belong to the same pull episode. Kubelet can alternate between them between
+// attempts (e.g. ErrImagePull -> RegistryUnavailable -> ImagePullBackOff), so the
+// grace clock must survive all of them: observations must not be pruned while any
+// of them is active. Terminal failure reporting stays gated on ImagePullBackOff.
+var imagePullRetryWaitingReasons = []string{
+	waitingReasonImagePullBackOff,
+	waitingReasonErrImagePull,
+	waitingReasonRegistryUnavailable,
+	waitingReasonSignatureValidationFailed,
+}
+
+// imagePullRetryContainers returns every container currently waiting in any
+// image-pull retry reason. A container has exactly one waiting reason at a time,
+// so the result contains no duplicates.
+func imagePullRetryContainers(pod *corev1.Pod) []imagePullBackOffContainer {
+	var containers []imagePullBackOffContainer
+	for _, reason := range imagePullRetryWaitingReasons {
+		containers = append(containers, imagePullWaitingContainers(pod, reason)...)
 	}
 	return containers
 }
@@ -1117,11 +1161,10 @@ func (r *EvalHubEvaluationJobFailureReconciler) imagePullBackOffStartedAt(ctx co
 			append(failureWatcherLogFields(), "pod", pod.Name, "namespace", pod.Namespace, "error", err.Error())...)
 		list = &corev1.EventList{}
 		if err2 := reader.List(ctx, list, client.InNamespace(pod.Namespace)); err2 != nil {
-			// A previously recorded observation still provides a usable grace clock
-			// when Events cannot be listed; a failed lookup is not proof that grace
-			// elapsed, and it must not block a container with a recorded start.
-			// Observations older than the container's last completed run are stale
-			// (previous pull episode) and must start a new window instead.
+			// A recorded observation still provides a usable grace clock when
+			// Events cannot be listed; a failed lookup is not proof that grace
+			// elapsed. An observation older than the container's last completed
+			// run is stale (previous pull episode) and must not be reused.
 			if observedAt, ok := imagePullBackOffObservations(job)[imagePullBackOffObservationKey(pod, c)]; ok && !c.ranSince(observedAt) {
 				return observedAt, true, nil
 			}
@@ -1157,20 +1200,24 @@ func (r *EvalHubEvaluationJobFailureReconciler) imagePullBackOffStartedAt(ctx co
 			startedAt = t
 		}
 	}
+	key := imagePullBackOffObservationKey(pod, c)
 	if !startedAt.IsZero() && !c.ranSince(startedAt) {
-		// A clock older than the container's last completed run belongs to a
-		// previous pull episode; fall through so a fresh window can start.
-		// Persist the Event-derived start so the grace clock survives the
-		// Event disappearing later in the same episode; the stored observation
-		// is reused instead of granting a fresh window.
+		// The Event-derived start belongs to the current pull episode. A stored
+		// observation can be older (the episode may start before kubelet emits
+		// the first BackOff Event): use the earlier of the two so a later Event
+		// cannot extend an uninterrupted pull failure. rememberImagePullBackOffStart
+		// persists the earliest valid start, so the clock also survives the Event
+		// disappearing later in the same episode.
+		if observedAt, ok := imagePullBackOffObservations(job)[key]; ok && !c.ranSince(observedAt) && observedAt.Before(startedAt) {
+			return observedAt, true, nil
+		}
 		r.rememberImagePullBackOffStart(ctx, job, pod, c, startedAt)
 		return startedAt, true, nil
 	}
-	key := imagePullBackOffObservationKey(pod, c)
-	// An observation older than the container's last completed run belongs to a
-	// previous pull episode: discard it and record a fresh one below so the
-	// second episode gets a full grace window. ErrImagePull retries never start
-	// the container, so their observations stay valid.
+	// A valid recorded observation keeps the clock across Event disappearance and
+	// ErrImagePull retries. An observation older than the container's last
+	// completed run is stale (previous pull episode): fall through and record a
+	// fresh start so the second episode gets a full grace window.
 	if observedAt, ok := imagePullBackOffObservations(job)[key]; ok && !c.ranSince(observedAt) {
 		return observedAt, true, nil
 	}
@@ -1193,12 +1240,14 @@ func (r *EvalHubEvaluationJobFailureReconciler) imagePullBackOffStartedAt(ctx co
 
 func (r *EvalHubEvaluationJobFailureReconciler) podImagePullBackOffFailureMessage(ctx context.Context, job *batchv1.Job, pod *corev1.Pod, now time.Time) (string, bool, error) {
 	containers := imagePullBackOffContainers(pod)
-	errImagePullContainers := imagePullWaitingContainers(pod, waitingReasonErrImagePull)
-	activeKeys := make(map[string]struct{}, len(containers)+len(errImagePullContainers))
-	for _, c := range containers {
-		activeKeys[imagePullBackOffObservationKey(pod, c)] = struct{}{}
-	}
-	for _, c := range errImagePullContainers {
+	// Observations must survive every transient pull-retry reason, not just
+	// ErrImagePull: kubelet can publish RegistryUnavailable or
+	// SignatureValidationFailed between attempts and then return to
+	// ImagePullBackOff. Pruning on those reasons would restart the grace clock
+	// even though the pull never recovered.
+	retryContainers := imagePullRetryContainers(pod)
+	activeKeys := make(map[string]struct{}, len(retryContainers))
+	for _, c := range retryContainers {
 		activeKeys[imagePullBackOffObservationKey(pod, c)] = struct{}{}
 	}
 	pruneErr := r.pruneImagePullBackOffObservations(ctx, job, pod, activeKeys)
@@ -1226,12 +1275,18 @@ func (r *EvalHubEvaluationJobFailureReconciler) podImagePullBackOffFailureMessag
 // rememberImagePullBackOffStart persists an Event-derived episode start as an
 // observation so the grace clock survives the Event disappearing later in the
 // same episode. It is best-effort: a failed patch logs and continues, since the
-// Event-derived start is still returned to the caller. An earlier stored
-// observation wins (the episode may have started before the Event was emitted).
+// Event-derived start is still returned to the caller. A stored start that still
+// belongs to the current episode and is earlier wins (the episode may have
+// started before the Event was emitted); a stale stored start is replaced.
 func (r *EvalHubEvaluationJobFailureReconciler) rememberImagePullBackOffStart(ctx context.Context, job *batchv1.Job, pod *corev1.Pod, c imagePullBackOffContainer, startedAt time.Time) {
 	key := imagePullBackOffObservationKey(pod, c)
 	observations := imagePullBackOffObservations(job)
-	if existing, ok := observations[key]; ok && !existing.After(startedAt) {
+	// Keep an earlier stored start only when it still belongs to the current pull
+	// episode. A stored start that predates the container's last completed run is
+	// from a previous episode and must not block recording this episode's Event
+	// time: the fallback would otherwise reject the stale value and restart the
+	// full grace window.
+	if existing, ok := observations[key]; ok && !c.ranSince(existing) && !existing.After(startedAt) {
 		return
 	}
 	patch := client.MergeFrom(job.DeepCopy())
@@ -1430,21 +1485,30 @@ func (r *EvalHubEvaluationJobFailureReconciler) pendingGraceRequeueAfter(ctx con
 				}
 				continue
 			}
-			if remaining := imagePullGracePeriodRemaining(pod, startedAt, now); remaining > 0 &&
-				(imagePullRemaining == 0 || remaining < imagePullRemaining) {
+			remaining := imagePullGracePeriodRemaining(pod, startedAt, now)
+			if remaining <= 0 {
+				// This container's clock is already past grace, yet detection did
+				// not report it this reconcile (the two Event lookups can disagree
+				// when the deadline expires between them). Schedule the short
+				// recheck before taking the minimum: an unexpired sibling with a
+				// long window must not suppress it, or the confirmed problem could
+				// go unchecked for the rest of that window.
+				if imagePullRemaining == 0 || 30*time.Second < imagePullRemaining {
+					imagePullRemaining = 30 * time.Second
+				}
+				continue
+			}
+			if imagePullRemaining == 0 || remaining < imagePullRemaining {
 				imagePullRemaining = remaining
 			}
 		}
-		// Detection did not report a failure this reconcile, so a backoff clock
-		// that is already past grace here means the two Event lookups disagreed
-		// (the deadline expired between them). Schedule a short recheck so
-		// detection runs again instead of parking the Job with no requeue and
-		// no pod transition to wake it.
-		if len(backoffContainers) > 0 && imagePullRemaining == 0 {
-			imagePullRemaining = 30 * time.Second
-		}
 		observations := imagePullBackOffObservations(job)
-		for _, c := range imagePullWaitingContainers(pod, waitingReasonErrImagePull) {
+		for _, c := range imagePullRetryContainers(pod) {
+			if c.reason == waitingReasonImagePullBackOff {
+				// ImagePullBackOff clocks are handled by the loop above; a
+				// recorded observation here would repeat the same requeue.
+				continue
+			}
 			startedAt, ok := observations[imagePullBackOffObservationKey(pod, c)]
 			if !ok {
 				continue
@@ -1502,6 +1566,8 @@ func terminatedInitOrSidecarNeedsOperatorReport(t *corev1.ContainerStateTerminat
 const (
 	waitingReasonImagePullBackOff           = "ImagePullBackOff"
 	waitingReasonErrImagePull               = "ErrImagePull"
+	waitingReasonRegistryUnavailable        = "RegistryUnavailable"
+	waitingReasonSignatureValidationFailed  = "SignatureValidationFailed"
 	waitingReasonCrashLoopBackOff           = "CrashLoopBackOff"
 	waitingReasonCreateContainerConfigError = "CreateContainerConfigError"
 	waitingReasonCreateContainerError       = "CreateContainerError"
@@ -1641,6 +1707,23 @@ func acceptedFailureMessage(job *batchv1.Job) string {
 	return strings.TrimSpace(job.Annotations[annotationFailureMessage])
 }
 
+// clearFailurePendingAnnotation removes the in-flight marker and logs when the
+// cleanup patch fails. It never promotes the Job and never re-posts: callers own
+// the requeue decision (an unknown 409 or a generic POST failure retries it).
+func (r *EvalHubEvaluationJobFailureReconciler) clearFailurePendingAnnotation(ctx context.Context, job *batchv1.Job, failureLogMessage string) error {
+	revert := client.MergeFrom(job.DeepCopy())
+	delete(job.Annotations, annotationFailurePending)
+	if len(job.Annotations) == 0 {
+		job.Annotations = nil
+	}
+	if err := r.Patch(ctx, job, revert); err != nil {
+		log.FromContext(ctx).Error(err, failureLogMessage,
+			append(failureWatcherLogFields(), "action", "revert_pending_failed", "job", job.Name)...)
+		return err
+	}
+	return nil
+}
+
 // JSON body compatible with EvalHub pkg/api StatusEvent.
 type benchmarkStatusEventPayload struct {
 	ProviderID     string       `json:"provider_id"`
@@ -1753,17 +1836,27 @@ func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseU
 		if resp.StatusCode == http.StatusConflict {
 			body, readErr := io.ReadAll(resp.Body)
 			if readErr != nil {
-				body = nil
+				// An unreadable 409 body cannot prove the job is in a non-failure
+				// state: EvalHub may have accepted this report in a previous POST
+				// and only the accepted marker was lost. Surface it as an unknown
+				// conflict so the caller retries instead of dropping the report.
+				return fmt.Errorf("%w: EvalHub events returned %s: body unreadable: %v",
+					errEvalHubReportConflictUnknown, resp.Status, readErr)
 			}
 			// EvalHub's JobCanNotBeUpdated message names the current state:
 			// "The job ... can not be failed because it is '<state>'."
-			// Only a failure terminal state proves our report was delivered;
-			// cancelled and completed jobs also answer 409 without any
-			// failure having been delivered.
-			if isEvalHubFailureTerminalState(body) {
+			// Only a precise failure terminal state proves our report was
+			// delivered; cancelled and completed jobs also answer 409 without any
+			// failure having been delivered, and the aggregate partially_failed
+			// state does not identify which benchmark failed.
+			switch {
+			case isEvalHubFailureTerminalState(body):
 				return fmt.Errorf("%w: EvalHub events returned %s", errEvalHubReportAlreadyTerminal, resp.Status)
+			case isEvalHubNonFailureTerminalState(body):
+				return fmt.Errorf("%w: EvalHub events returned %s: %s", errEvalHubReportSuperseded, resp.Status, body)
+			default:
+				return fmt.Errorf("%w: EvalHub events returned %s: %s", errEvalHubReportConflictUnknown, resp.Status, body)
 			}
-			return fmt.Errorf("%w: EvalHub events returned %s: %s", errEvalHubReportSuperseded, resp.Status, body)
 		}
 		return fmt.Errorf("EvalHub events returned %s", resp.Status)
 	}
@@ -1772,15 +1865,36 @@ func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseU
 
 // errEvalHubReportSuperseded is returned when EvalHub answers the failure POST
 // with 409 Conflict because the job is already in a non-failure terminal state
-// (cancelled or completed): no failure report was or will be delivered, and the
-// Job must not be promoted to Failed.
+// (cancelled or completed) or only an aggregate partially_failed state that does
+// not identify this benchmark: no failure report for this benchmark was or will
+// be delivered, and the Job must not be promoted to Failed.
 var errEvalHubReportSuperseded = errors.New("evalhub job already in a non-failure terminal state")
+
+// errEvalHubReportConflictUnknown is returned when EvalHub answers the failure
+// POST with 409 Conflict but the response body cannot be classified: it is
+// unreadable, empty, or does not name a recognisable job state. The report may
+// or may not have been delivered, so the POST must stay eligible for retry
+// rather than being treated as a confirmed non-failure terminal state.
+var errEvalHubReportConflictUnknown = errors.New("evalhub job conflict state unknown")
 
 // isEvalHubFailureTerminalState reports whether a 409 response body proves the
 // job ended in a failure state. EvalHub's JobCanNotBeUpdated message names the
-// current state: "... can not be failed because it is 'failed'." Cancelled and
-// completed jobs also answer 409 without any failure delivered.
+// current state: "... can not be failed because it is 'failed'." Only the
+// precise per-job "failed" state proves this benchmark's failure was recorded:
+// "partially_failed" is an aggregate state that does not identify which
+// benchmark failed, so it must never select the promotion path.
 func isEvalHubFailureTerminalState(body []byte) bool {
+	return strings.Contains(strings.ToLower(string(body)), "'failed'")
+}
+
+// isEvalHubNonFailureTerminalState reports whether a 409 response body proves
+// the job is terminal without recording this benchmark's failure: cancelled or
+// completed, or the aggregate partially_failed state (which cannot be attributed
+// to a benchmark from the response alone).
+func isEvalHubNonFailureTerminalState(body []byte) bool {
 	text := strings.ToLower(string(body))
-	return strings.Contains(text, "'failed'") || strings.Contains(text, "'partially_failed'")
+	return strings.Contains(text, "'cancelled'") ||
+		strings.Contains(text, "'canceled'") ||
+		strings.Contains(text, "'completed'") ||
+		strings.Contains(text, "'partially_failed'")
 }

@@ -1636,3 +1636,316 @@ func TestJobFailureReconciler_StaleFailedMount_DoesNotFail(t *testing.T) {
 	default:
 	}
 }
+
+// conflictEvalHubServer starts a local HTTP server that answers every request with
+// 409 Conflict and the given body, mimicking EvalHub's JobCanNotBeUpdated response.
+func conflictEvalHubServer(t *testing.T, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestEvalHubConflictClassification verifies that only the precise per-job
+// 'failed' state proves a report was delivered, that aggregate
+// 'partially_failed' is never treated as proof, and that unrecognised or empty
+// bodies stay unclassified so the caller retries.
+func TestEvalHubConflictClassification(t *testing.T) {
+	cases := []struct {
+		name       string
+		body       string
+		failure    bool
+		nonFailure bool
+	}{
+		{name: "failed", body: `{"message":"The job can not be failed because it is 'failed'."}`, failure: true},
+		{name: "partially_failed", body: `{"message":"The job can not be failed because it is 'partially_failed'."}`, nonFailure: true},
+		{name: "cancelled", body: `{"message":"The job can not be failed because it is 'cancelled'."}`, nonFailure: true},
+		{name: "canceled", body: `{"message":"The job can not be failed because it is 'canceled'."}`, nonFailure: true},
+		{name: "completed", body: `{"message":"The job can not be failed because it is 'completed'."}`, nonFailure: true},
+		{name: "unrecognised", body: `{"message":"conflict"}`},
+		{name: "empty", body: ``},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.failure, isEvalHubFailureTerminalState([]byte(tc.body)))
+			assert.Equal(t, tc.nonFailure, isEvalHubNonFailureTerminalState([]byte(tc.body)))
+		})
+	}
+}
+
+// TestRememberImagePullBackOffStart_ReplacesStaleObservation verifies a stored
+// observation that predates the container's last completed run is replaced by
+// the current episode's Event time instead of blocking the write.
+func TestRememberImagePullBackOffStart_ReplacesStaleObservation(t *testing.T) {
+	sc := jobFailureLifecycleScheme(t)
+	ns := "tenant-ns"
+
+	job := evalHubEvaluationJob("eval-job-remember-stale", ns, nil)
+	pod := imagePullBackOffAdapterPod(job.Name, ns, job.UID)
+	container := imagePullBackOffContainers(pod)[0]
+	// The adapter completed a run five minutes ago: an older observation belongs
+	// to a previous pull episode.
+	container.lastRunStart = time.Now().Add(-5 * time.Minute)
+	observations := map[string]time.Time{
+		imagePullBackOffObservationKey(pod, container): time.Now().Add(-20 * time.Minute),
+	}
+	raw, err := marshalImagePullBackOffObservations(observations)
+	require.NoError(t, err)
+	job.Annotations[annotationImagePullBackOffObservations] = raw
+
+	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(job, pod).Build()
+	r, _ := buildJobFailureReconciler(fc, ns)
+
+	eventStart := time.Now().Add(-8 * time.Minute)
+	r.rememberImagePullBackOffStart(context.Background(), job, pod, container, eventStart)
+
+	var persisted batchv1.Job
+	require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: job.Name}, &persisted))
+	stored := imagePullBackOffObservations(&persisted)[imagePullBackOffObservationKey(pod, container)]
+	assert.WithinDuration(t, eventStart, stored, time.Second,
+		"a stale observation must be replaced by the current episode's Event time")
+}
+
+// TestImagePullBackOffStartedAt_UsesEarlierStoredObservation verifies that a
+// later BackOff Event cannot extend an uninterrupted pull failure: the earlier
+// valid stored observation wins.
+func TestImagePullBackOffStartedAt_UsesEarlierStoredObservation(t *testing.T) {
+	sc := jobFailureLifecycleScheme(t)
+	ns := "tenant-ns"
+
+	job := evalHubEvaluationJob("eval-job-earlier-start", ns, nil)
+	pod := imagePullBackOffAdapterPod(job.Name, ns, job.UID)
+	container := imagePullBackOffContainers(pod)[0]
+	stored := time.Now().Add(-11 * time.Minute)
+	observations := map[string]time.Time{
+		imagePullBackOffObservationKey(pod, container): stored,
+	}
+	raw, err := marshalImagePullBackOffObservations(observations)
+	require.NoError(t, err)
+	job.Annotations[annotationImagePullBackOffObservations] = raw
+	recentEvent := imagePullBackOffEvent(pod, time.Minute)
+
+	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(job, pod, recentEvent).Build()
+	r, _ := buildJobFailureReconciler(fc, ns)
+
+	startedAt, found, err := r.imagePullBackOffStartedAt(context.Background(), job, pod, container, time.Now())
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.WithinDuration(t, stored, startedAt, time.Second,
+		"a later Event must not replace the earlier valid episode start")
+}
+
+// TestPodImagePullBackOffFailureMessage_KeepsObservationAcrossTransientPullReasons
+// verifies the grace clock survives RegistryUnavailable and
+// SignatureValidationFailed, which kubelet can publish between pull attempts.
+func TestPodImagePullBackOffFailureMessage_KeepsObservationAcrossTransientPullReasons(t *testing.T) {
+	for _, reason := range []string{waitingReasonRegistryUnavailable, waitingReasonSignatureValidationFailed} {
+		t.Run(reason, func(t *testing.T) {
+			sc := jobFailureLifecycleScheme(t)
+			ns := "tenant-ns"
+
+			job := evalHubEvaluationJob("eval-job-"+strings.ToLower(reason), ns, nil)
+			pod := imagePullBackOffAdapterPod(job.Name, ns, job.UID)
+			container := imagePullBackOffContainers(pod)[0]
+			observations := map[string]time.Time{
+				imagePullBackOffObservationKey(pod, container): time.Now().Add(-2 * time.Minute),
+			}
+			raw, err := marshalImagePullBackOffObservations(observations)
+			require.NoError(t, err)
+			job.Annotations[annotationImagePullBackOffObservations] = raw
+			pod.Status.ContainerStatuses[0].State = corev1.ContainerState{
+				Waiting: &corev1.ContainerStateWaiting{Reason: reason, Message: "pull retry"},
+			}
+
+			fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(job, pod).Build()
+			r, _ := buildJobFailureReconciler(fc, ns)
+
+			msg, fatal, err := r.podImagePullBackOffFailureMessage(context.Background(), job, pod, time.Now())
+			require.NoError(t, err)
+			assert.False(t, fatal, "transient pull reasons must not report a terminal failure")
+			assert.Empty(t, msg)
+
+			var persisted batchv1.Job
+			require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: job.Name}, &persisted))
+			assert.Contains(t, imagePullBackOffObservations(&persisted), imagePullBackOffObservationKey(pod, container),
+				"the grace clock must survive %s", reason)
+		})
+	}
+}
+
+// TestPendingGraceRequeueAfter_ExpiredBackOffNotSuppressedBySibling verifies an
+// expired container schedules the short recheck even when a sibling still has a
+// long grace window left.
+func TestPendingGraceRequeueAfter_ExpiredBackOffNotSuppressedBySibling(t *testing.T) {
+	sc := jobFailureLifecycleScheme(t)
+	ns := "tenant-ns"
+
+	job := evalHubEvaluationJob("eval-job-expired-sibling", ns, nil)
+	pod := imagePullBackOffAdapterAndSidecarPod(job.Name, ns, job.UID)
+	adapter := imagePullBackOffContainer{name: adapterContainerName, image: "registry.example.com/evalhub/adapter:latest"}
+	sidecar := imagePullBackOffContainer{name: sidecarContainerName, image: "registry.example.com/evalhub/sidecar:latest"}
+	observations := map[string]time.Time{
+		imagePullBackOffObservationKey(pod, adapter): time.Now().Add(-11 * time.Minute), // past grace
+		imagePullBackOffObservationKey(pod, sidecar): time.Now().Add(-time.Minute),     // in grace
+	}
+	raw, err := marshalImagePullBackOffObservations(observations)
+	require.NoError(t, err)
+	job.Annotations[annotationImagePullBackOffObservations] = raw
+
+	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(job, pod).Build()
+	r, _ := buildJobFailureReconciler(fc, ns)
+
+	requeue := r.pendingGraceRequeueAfter(context.Background(), job, time.Now())
+	assert.Equal(t, 30*time.Second, requeue,
+		"an expired container must schedule the short recheck even when a sibling still has grace left")
+}
+
+// TestPendingGraceRequeueAfter_TransientPullReasonKeepsRequeue verifies a
+// container waiting in a transient pull reason still requeues from its recorded
+// observation instead of parking the Job without a recheck.
+func TestPendingGraceRequeueAfter_TransientPullReasonKeepsRequeue(t *testing.T) {
+	sc := jobFailureLifecycleScheme(t)
+	ns := "tenant-ns"
+
+	job := evalHubEvaluationJob("eval-job-registry-unavailable", ns, nil)
+	pod := imagePullBackOffAdapterPod(job.Name, ns, job.UID)
+	container := imagePullBackOffContainers(pod)[0]
+	observations := map[string]time.Time{
+		imagePullBackOffObservationKey(pod, container): time.Now().Add(-2 * time.Minute),
+	}
+	raw, err := marshalImagePullBackOffObservations(observations)
+	require.NoError(t, err)
+	job.Annotations[annotationImagePullBackOffObservations] = raw
+	pod.Status.ContainerStatuses[0].State = corev1.ContainerState{
+		Waiting: &corev1.ContainerStateWaiting{Reason: waitingReasonRegistryUnavailable, Message: "pull retry"},
+	}
+
+	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(job, pod).Build()
+	r, _ := buildJobFailureReconciler(fc, ns)
+
+	requeue := r.pendingGraceRequeueAfter(context.Background(), job, time.Now())
+	assert.Greater(t, requeue, time.Duration(0),
+		"a transient pull reason must keep a bounded recheck from the recorded observation")
+}
+
+// TestJobFailureReconciler_PostPartiallyFailed_DoesNotPromote verifies an
+// aggregate partially_failed conflict never promotes this benchmark's Job: the
+// response does not prove EvalHub recorded a failure for it.
+func TestJobFailureReconciler_PostPartiallyFailed_DoesNotPromote(t *testing.T) {
+	srv := conflictEvalHubServer(t, `{"message":"The job can not be failed because it is 'partially_failed'."}`)
+	sc := jobFailureLifecycleScheme(t)
+	ns := "tenant-ns"
+
+	job := evalHubEvaluationJob("eval-job-post-partially-failed", ns, map[string]string{
+		evalHubInstanceNameLabel:      "evalhub-1",
+		evalHubInstanceNamespaceLabel: "control-ns",
+	})
+	pod := oomKilledAdapterPod(job.Name, ns, job.UID)
+	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+
+	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(eh, job, pod).Build()
+	r, rec := buildJobFailureReconciler(fc, ns)
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: ns, Name: job.Name},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, ctrl.Result{}, result, "an aggregate partially_failed conflict must not promote or requeue")
+
+	select {
+	case ev := <-rec.Events:
+		t.Fatalf("expected no EvaluationFailed event for partially_failed conflict, got: %s", ev)
+	default:
+	}
+
+	var persisted batchv1.Job
+	require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: job.Name}, &persisted))
+	assert.NotContains(t, persisted.Annotations, annotationFailureReported)
+	assert.NotContains(t, persisted.Annotations, annotationFailurePending)
+	assert.NotEqual(t, labelEvaluationPhaseFailed, persisted.Labels[labelEvaluationPhase])
+}
+
+// TestJobFailureReconciler_PostUnknownConflict_Requeues verifies an
+// unclassifiable 409 body stays eligible for recovery instead of being treated
+// as a confirmed non-failure state.
+func TestJobFailureReconciler_PostUnknownConflict_Requeues(t *testing.T) {
+	srv := conflictEvalHubServer(t, `{"message":"conflict"}`)
+	sc := jobFailureLifecycleScheme(t)
+	ns := "tenant-ns"
+
+	job := evalHubEvaluationJob("eval-job-post-unknown-conflict", ns, map[string]string{
+		evalHubInstanceNameLabel:      "evalhub-1",
+		evalHubInstanceNamespaceLabel: "control-ns",
+	})
+	pod := oomKilledAdapterPod(job.Name, ns, job.UID)
+	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+
+	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(eh, job, pod).Build()
+	r, rec := buildJobFailureReconciler(fc, ns)
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: ns, Name: job.Name},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 30*time.Second, result.RequeueAfter, "an unclassifiable 409 must be retried")
+
+	select {
+	case ev := <-rec.Events:
+		t.Fatalf("expected no EvaluationFailed event for unknown conflict, got: %s", ev)
+	default:
+	}
+
+	var persisted batchv1.Job
+	require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: job.Name}, &persisted))
+	assert.NotContains(t, persisted.Annotations, annotationFailureReported)
+	assert.NotContains(t, persisted.Annotations, annotationFailurePending)
+}
+
+// TestJobFailureReconciler_SupersededCleanupPatchFailure_Requeues verifies a
+// failed cleanup patch after a confirmed non-failure terminal state requeues the
+// cleanup instead of leaving the in-flight marker on a quiet Job.
+func TestJobFailureReconciler_SupersededCleanupPatchFailure_Requeues(t *testing.T) {
+	srv := conflictEvalHubServer(t, `{"message":"The job can not be failed because it is 'cancelled'."}`)
+	sc := jobFailureLifecycleScheme(t)
+	ns := "tenant-ns"
+
+	job := evalHubEvaluationJob("eval-job-superseded-patch-fail", ns, map[string]string{
+		evalHubInstanceNameLabel:      "evalhub-1",
+		evalHubInstanceNamespaceLabel: "control-ns",
+	})
+	pod := oomKilledAdapterPod(job.Name, ns, job.UID)
+	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+
+	var failedRevert bool
+	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(eh, job, pod).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+				if j, ok := obj.(*batchv1.Job); ok &&
+					j.Annotations[annotationFailurePending] == "" &&
+					j.Annotations[annotationFailureReported] == "" &&
+					j.Labels[labelEvaluationPhase] != labelEvaluationPhaseFailed {
+					failedRevert = true
+					return fmt.Errorf("inject superseded cleanup patch failure")
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+	r, rec := buildJobFailureReconciler(fc, ns)
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: ns, Name: job.Name},
+	})
+	require.NoError(t, err)
+	require.True(t, failedRevert, "expected the superseded cleanup patch to fail")
+	assert.Equal(t, 10*time.Second, result.RequeueAfter, "a failed superseded cleanup must requeue")
+
+	select {
+	case ev := <-rec.Events:
+		t.Fatalf("expected no EvaluationFailed event for superseded report, got: %s", ev)
+	default:
+	}
+}
