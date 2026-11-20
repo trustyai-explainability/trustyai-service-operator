@@ -562,7 +562,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 			if err != nil {
 				return ctrl.Result{}, err
 			}
-			pendingPatch := client.MergeFrom(job.DeepCopy())
+			pendingPatch := client.MergeFromWithOptions(job.DeepCopy(), client.MergeFromWithOptimisticLock{})
 			if job.Annotations == nil {
 				job.Annotations = map[string]string{}
 			}
@@ -1378,6 +1378,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) rememberImagePullBackOffStart(ct
 		return err
 	}
 	job.Annotations = updated.Annotations
+	job.ResourceVersion = updated.ResourceVersion
 	return nil
 }
 

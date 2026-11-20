@@ -212,8 +212,11 @@ func imagePullBackOffEventForImageAndContainer(pod *corev1.Pod, ago time.Duratio
 	t := metav1.NewTime(time.Now().Add(-ago))
 	safeImage := strings.NewReplacer("/", "-", ":", "-", ".", "-").Replace(image)
 	fieldPath := fmt.Sprintf("spec.containers{%s}", container)
-	if container != adapterContainerName {
-		fieldPath = fmt.Sprintf("spec.initContainers{%s}", container)
+	for _, cs := range pod.Status.InitContainerStatuses {
+		if cs.Name == container {
+			fieldPath = fmt.Sprintf("spec.initContainers{%s}", container)
+			break
+		}
 	}
 	return &corev1.Event{
 		ObjectMeta: metav1.ObjectMeta{
@@ -2597,6 +2600,11 @@ func TestJobFailureReconciler_PendingRequestChecksRemoteState(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, ctrl.Result{}, result)
 			}
+			expectedRequests := 1
+			if state == "running" {
+				expectedRequests = 2
+			}
+			require.Len(t, calls, expectedRequests, "recovery must read the remote state before settling or retrying")
 			first := <-calls
 			assert.Equal(t, http.MethodGet, first.Method)
 			assert.Equal(t, "/api/v1/evaluations/jobs/saved-job", first.Path)
@@ -2631,8 +2639,12 @@ func TestJobFailureReconciler_AssessmentUsesOneSnapshot(t *testing.T) {
 			pod := imagePullBackOffAdapterAndSidecarPod(job.Name, job.Namespace, job.UID)
 			events := []client.Object{job, pod}
 			for _, cs := range append(pod.Status.ContainerStatuses, pod.Status.InitContainerStatuses...) {
-				ev := imagePullBackOffEventForImageAndContainer(pod, age, cs.Image, cs.Name)
-				ev.FirstTimestamp = metav1.NewTime(now.Add(-age))
+				containerAge := 2 * time.Minute
+				if cs.Name == sidecarContainerName {
+					containerAge = age
+				}
+				ev := imagePullBackOffEventForImageAndContainer(pod, containerAge, cs.Image, cs.Name)
+				ev.FirstTimestamp = metav1.NewTime(now.Add(-containerAge))
 				events = append(events, ev)
 			}
 			podLists, eventLists := 0, 0
@@ -2660,6 +2672,7 @@ func TestJobFailureReconciler_AssessmentUsesOneSnapshot(t *testing.T) {
 				assert.Equal(t, imagePullBackOffGracePeriod-age, assessment.requeueAfter)
 			} else {
 				assert.True(t, assessment.failed, "the exact grace deadline must report directly")
+				assert.Equal(t, fmt.Sprintf("pod %s: sidecar: waiting reason=ImagePullBackOff message=back-off pulling image", pod.Name), assessment.message)
 			}
 		})
 	}
@@ -2681,4 +2694,59 @@ func TestJobFailureReconciler_RequestUpdatesDoNotLoop(t *testing.T) {
 	changed := pending.DeepCopy()
 	changed.Status.Conditions = nil
 	assert.True(t, pred.Update(event.UpdateEvent{ObjectOld: pending, ObjectNew: changed}), "a request must remain recoverable after Job status changes")
+}
+
+func TestJobFailureReconciler_StaleJobCannotReplaceSavedRequest(t *testing.T) {
+	ctx := context.Background()
+	srv, requests := evalHubJobStateServer(t, "", "failed")
+	job := evalHubEvaluationJob("eval-job-stale-request", "tenant-ns", map[string]string{
+		evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
+	})
+	pod := oomKilledAdapterPod(job.Name, job.Namespace, job.UID)
+	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+	var stale batchv1.Job
+	injectStale := false
+	fc := fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).WithObjects(job, pod, eh).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if j, ok := obj.(*batchv1.Job); ok && injectStale && key == client.ObjectKeyFromObject(job) {
+					injectStale = false
+					stale.DeepCopyInto(j)
+					return nil
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+		}).Build()
+	require.NoError(t, fc.Get(ctx, client.ObjectKeyFromObject(job), &stale))
+	saved := stale.DeepCopy()
+	raw, err := json.Marshal(evalHubFailureRequest{
+		JobID: job.Labels[evalHubJobIDLabel], ProviderID: "provider-1", BenchmarkID: "inspect/docvqa", Message: "original accepted failure",
+	})
+	require.NoError(t, err)
+	saved.Annotations[annotationFailurePending] = "true"
+	saved.Annotations[annotationFailureRequest] = string(raw)
+	require.NoError(t, fc.Update(ctx, saved))
+	require.NotEqual(t, stale.ResourceVersion, saved.ResourceVersion)
+	r, rec := buildJobFailureReconciler(fc, job.Namespace)
+	req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(job)}
+	injectStale = true
+	result, err := r.Reconcile(ctx, req)
+	require.NoError(t, err)
+	assert.Equal(t, 10*time.Second, result.RequeueAfter, "a stale request write must conflict and requeue")
+	assert.Empty(t, requests, "a conflicting write must not send a replacement failure")
+	assert.Empty(t, rec.Events)
+	var persisted batchv1.Job
+	require.NoError(t, fc.Get(ctx, req.NamespacedName, &persisted))
+	assert.Equal(t, string(raw), persisted.Annotations[annotationFailureRequest])
+	assert.NotEqual(t, labelEvaluationPhaseFailed, persisted.Labels[labelEvaluationPhase])
+	// The next fresh read resolves the saved request instead of posting the new message.
+	result, err = r.Reconcile(ctx, req)
+	require.NoError(t, err)
+	assert.Equal(t, ctrl.Result{}, result)
+	require.Len(t, requests, 1)
+	assert.Equal(t, http.MethodGet, (<-requests).Method)
+	require.NoError(t, fc.Get(ctx, req.NamespacedName, &persisted))
+	assert.Equal(t, "original accepted failure", persisted.Annotations[annotationEvaluationStatus])
+	require.Len(t, rec.Events, 1)
+	assert.Contains(t, <-rec.Events, "original accepted failure")
 }
