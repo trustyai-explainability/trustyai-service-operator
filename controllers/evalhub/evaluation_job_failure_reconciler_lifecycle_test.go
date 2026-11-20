@@ -2290,3 +2290,61 @@ func TestJobFailureReconciler_PostCancelled_ChecksBenchmarkState(t *testing.T) {
 		}
 	}
 }
+
+func TestJobFailureReconciler_ImagePullIgnoresUnrelatedContainers(t *testing.T) {
+	for _, name := range []string{"telemetry", initContainerName, adapterContainerName, sidecarContainerName} {
+		for _, initStatus := range []bool{false, true} {
+			for _, reason := range imagePullRetryWaitingReasons {
+				t.Run(fmt.Sprintf("%s/init=%t/%s", name, initStatus, reason), func(t *testing.T) {
+					srv, requests := capturingEvalHubServer(t)
+					job := evalHubEvaluationJob("eval-job-container-filter", "tenant-ns", map[string]string{
+						evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
+					})
+					pod := imagePullBackOffAdapterPod(job.Name, job.Namespace, job.UID)
+					waiting := pod.Status.ContainerStatuses[0]
+					waiting.Name = name
+					waiting.State.Waiting.Reason = reason
+					pod.Status.ContainerStatuses = nil
+					if initStatus {
+						pod.Status.InitContainerStatuses = []corev1.ContainerStatus{waiting}
+					} else {
+						pod.Status.ContainerStatuses = []corev1.ContainerStatus{waiting}
+					}
+					if name != adapterContainerName {
+						pod.Status.ContainerStatuses = append(pod.Status.ContainerStatuses, corev1.ContainerStatus{
+							Name: adapterContainerName, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+						})
+					}
+					// Seed an expired observation to cover both BackOff detection and the
+					// transient-retry requeue path, including clocks from older operators.
+					raw, err := marshalImagePullBackOffObservations(map[string]time.Time{
+						imagePullBackOffObservationKey(pod, imagePullBackOffContainer{name: name, image: waiting.Image}): time.Now().Add(-11 * time.Minute),
+					})
+					require.NoError(t, err)
+					job.Annotations[annotationImagePullBackOffObservations] = raw
+					eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+					fc := fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).WithObjects(eh, job, pod).Build()
+					r, rec := buildJobFailureReconciler(fc, job.Namespace)
+					requeue := r.pendingGraceRequeueAfter(context.Background(), job, time.Now())
+					result, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(job)})
+					require.NoError(t, err)
+					var persisted batchv1.Job
+					require.NoError(t, fc.Get(context.Background(), client.ObjectKeyFromObject(job), &persisted))
+					if name == "telemetry" {
+						assert.Zero(t, requeue)
+						assert.Equal(t, ctrl.Result{}, result)
+						assert.Empty(t, requests, "unrelated image pulls must never fail the benchmark")
+						assert.Empty(t, rec.Events)
+						assert.NotEqual(t, labelEvaluationPhaseFailed, persisted.Labels[labelEvaluationPhase])
+					} else if reason == waitingReasonImagePullBackOff {
+						assert.Len(t, requests, 1, "an expired workload container must still report")
+						assert.Equal(t, labelEvaluationPhaseFailed, persisted.Labels[labelEvaluationPhase])
+					} else {
+						assert.Positive(t, requeue, "workload pull retries must keep requeueing")
+						assert.Empty(t, requests)
+					}
+				})
+			}
+		}
+	}
+}

@@ -1013,10 +1013,16 @@ func imagePullBackOffContainers(pod *corev1.Pod) []imagePullBackOffContainer {
 	return imagePullWaitingContainers(pod, waitingReasonImagePullBackOff)
 }
 
+// isEvalHubWorkloadContainer limits failure detection to containers responsible
+// for executing the benchmark and reporting its result to EvalHub.
+func isEvalHubWorkloadContainer(name string) bool {
+	return name == initContainerName || name == adapterContainerName || name == sidecarContainerName
+}
+
 func imagePullWaitingContainers(pod *corev1.Pod, reason string) []imagePullBackOffContainer {
 	var containers []imagePullBackOffContainer
 	for _, cs := range pod.Status.ContainerStatuses {
-		if containerStatusWaitingReason(&cs) == reason {
+		if isEvalHubWorkloadContainer(cs.Name) && containerStatusWaitingReason(&cs) == reason {
 			containers = append(containers, imagePullBackOffContainer{
 				name:         cs.Name,
 				image:        strings.TrimSpace(cs.Image),
@@ -1028,7 +1034,7 @@ func imagePullWaitingContainers(pod *corev1.Pod, reason string) []imagePullBackO
 		}
 	}
 	for _, cs := range pod.Status.InitContainerStatuses {
-		if containerStatusWaitingReason(&cs) == reason {
+		if isEvalHubWorkloadContainer(cs.Name) && containerStatusWaitingReason(&cs) == reason {
 			containers = append(containers, imagePullBackOffContainer{
 				name:         cs.Name,
 				image:        strings.TrimSpace(cs.Image),
