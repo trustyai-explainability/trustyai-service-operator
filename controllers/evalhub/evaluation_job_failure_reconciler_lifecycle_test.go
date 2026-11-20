@@ -2401,3 +2401,50 @@ func TestJobFailureReconciler_InjectedInitImagePullBlocksAdapter(t *testing.T) {
 		}
 	}
 }
+
+func TestJobFailureReconciler_StartedNativeSidecarDoesNotBlockAdapterPull(t *testing.T) {
+	for _, reason := range imagePullRetryWaitingReasons {
+		t.Run(reason, func(t *testing.T) {
+			now := time.Now()
+			srv, requests := capturingEvalHubServer(t)
+			job := evalHubEvaluationJob("eval-job-native-sidecar-retry", "tenant-ns", map[string]string{
+				evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
+			})
+			pod := imagePullBackOffAdapterPod(job.Name, job.Namespace, job.UID)
+			telemetry := pod.Status.ContainerStatuses[0]
+			telemetry.Name = "telemetry"
+			telemetry.LastTerminationState.Terminated = &corev1.ContainerStateTerminated{
+				StartedAt:  metav1.NewTime(now.Add(-20 * time.Minute)),
+				FinishedAt: metav1.NewTime(now.Add(-15 * time.Minute)),
+			}
+			pod.Status.InitContainerStatuses = []corev1.ContainerStatus{telemetry}
+			policy := corev1.ContainerRestartPolicyAlways
+			pod.Spec.InitContainers = []corev1.Container{{Name: telemetry.Name, Image: telemetry.Image, RestartPolicy: &policy}}
+			pod.Status.ContainerStatuses[0].State.Waiting.Reason = reason
+			telemetryKey := imagePullBackOffObservationKey(pod, imagePullBackOffContainer{name: telemetry.Name, image: telemetry.Image})
+			adapterKey := imagePullBackOffObservationKey(pod, imagePullBackOffContainer{name: adapterContainerName, image: pod.Status.ContainerStatuses[0].Image})
+			raw, err := marshalImagePullBackOffObservations(map[string]time.Time{
+				telemetryKey: now.Add(-11 * time.Minute), adapterKey: now.Add(-2 * time.Minute),
+			})
+			require.NoError(t, err)
+			job.Annotations[annotationImagePullBackOffObservations] = raw
+			event := imagePullBackOffEventForImageAndContainer(pod, 11*time.Minute, telemetry.Image, telemetry.Name)
+			eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+			fc := fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).WithObjects(eh, job, pod, event).Build()
+			r, rec := buildJobFailureReconciler(fc, job.Namespace)
+			// The unrelated sidecar must not shorten the adapter's own grace requeue.
+			assert.Equal(t, 8*time.Minute, r.pendingGraceRequeueAfter(context.Background(), job, now))
+			result, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(job)})
+			require.NoError(t, err)
+			assert.Greater(t, result.RequeueAfter, 7*time.Minute)
+			assert.LessOrEqual(t, result.RequeueAfter, 8*time.Minute)
+			assert.Empty(t, requests, "a previously started native sidecar must not cause a failure POST")
+			assert.Empty(t, rec.Events)
+			var persisted batchv1.Job
+			require.NoError(t, fc.Get(context.Background(), client.ObjectKeyFromObject(job), &persisted))
+			assert.NotEqual(t, labelEvaluationPhaseFailed, persisted.Labels[labelEvaluationPhase])
+			assert.NotContains(t, imagePullBackOffObservations(&persisted), telemetryKey)
+			assert.Contains(t, imagePullBackOffObservations(&persisted), adapterKey)
+		})
+	}
+}
