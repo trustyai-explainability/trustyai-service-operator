@@ -2164,7 +2164,7 @@ func TestJobFailureReconciler_PostUnknownConflict_Requeues(t *testing.T) {
 // failed cleanup patch after a confirmed non-failure terminal state requeues the
 // cleanup instead of leaving the in-flight marker on a quiet Job.
 func TestJobFailureReconciler_SupersededCleanupPatchFailure_Requeues(t *testing.T) {
-	srv := conflictEvalHubServer(t, `{"message":"The job can not be failed because it is 'cancelled'."}`)
+	srv, _ := evalHubJobStateServer(t, `{"message":"The job can not be failed because it is 'cancelled'."}`, "cancelled")
 	sc := jobFailureLifecycleScheme(t)
 	ns := "tenant-ns"
 
@@ -2203,5 +2203,90 @@ func TestJobFailureReconciler_SupersededCleanupPatchFailure_Requeues(t *testing.
 	case ev := <-rec.Events:
 		t.Fatalf("expected no EvaluationFailed event for superseded report, got: %s", ev)
 	default:
+	}
+}
+
+func TestImagePullBackOffStartedAt_RetriesFailedObservationPatch(t *testing.T) {
+	ctx := context.Background()
+	job := evalHubEvaluationJob("eval-job-observation-retry", "tenant-ns", nil)
+	pod := imagePullBackOffAdapterPod(job.Name, job.Namespace, job.UID)
+	event := imagePullBackOffEvent(pod, 8*time.Minute)
+	container := imagePullBackOffContainers(pod)[0]
+	patches := 0
+	fc := fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).WithObjects(job, pod, event).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+				patches++
+				if patches == 1 {
+					return fmt.Errorf("inject observation patch failure")
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+		}).Build()
+	r, _ := buildJobFailureReconciler(fc, job.Namespace)
+	start, found, err := r.imagePullBackOffStartedAt(ctx, job, pod, container, time.Now())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.WithinDuration(t, event.FirstTimestamp.Time, start, time.Second)
+	require.NotContains(t, job.Annotations, annotationImagePullBackOffObservations)
+	// Reuse the same working Job, as the requeue calculation does.
+	_, found, err = r.imagePullBackOffStartedAt(ctx, job, pod, container, time.Now())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, 2, patches)
+	require.NoError(t, fc.Delete(ctx, event))
+	var persisted batchv1.Job
+	require.NoError(t, fc.Get(ctx, client.ObjectKeyFromObject(job), &persisted))
+	recovered, found, err := r.imagePullBackOffStartedAt(ctx, &persisted, pod, container, time.Now())
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, start.Equal(recovered), "the saved clock must survive Event disappearance")
+}
+
+func TestJobFailureReconciler_PostCancelled_ChecksBenchmarkState(t *testing.T) {
+	for _, aggregate := range []string{"cancelled", "canceled", "completed"} {
+		for _, state := range []string{"failed", "cancelled", "completed", "", "running", "notfound"} {
+			t.Run(aggregate+"/"+state, func(t *testing.T) {
+				srv, requests := evalHubJobStateServer(t, fmt.Sprintf(`{"message":"The job can not be failed because it is '%s'."}`, aggregate), state)
+				job := evalHubEvaluationJob("eval-job-cancelled", "tenant-ns", map[string]string{
+					evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
+				})
+				pod := oomKilledAdapterPod(job.Name, job.Namespace, job.UID)
+				eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+				fc := fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).WithObjects(eh, job, pod).Build()
+				r, rec := buildJobFailureReconciler(fc, job.Namespace)
+				result, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(job)})
+				require.NoError(t, err)
+				if state == "" || state == "running" {
+					assert.Positive(t, result.RequeueAfter)
+				} else {
+					assert.Equal(t, ctrl.Result{}, result)
+				}
+				require.Len(t, requests, 2)
+				assert.Equal(t, http.MethodPost, (<-requests).Method)
+				assert.Equal(t, http.MethodGet, (<-requests).Method)
+				var persisted batchv1.Job
+				require.NoError(t, fc.Get(context.Background(), client.ObjectKeyFromObject(job), &persisted))
+				assert.NotContains(t, persisted.Annotations, annotationFailurePending)
+				if state == "failed" {
+					assert.Equal(t, "true", persisted.Annotations[annotationFailureReported])
+					assert.Equal(t, labelEvaluationPhaseFailed, persisted.Labels[labelEvaluationPhase])
+					select {
+					case ev := <-rec.Events:
+						assert.Contains(t, ev, eventReasonEvaluationFailed)
+					default:
+						t.Fatal("expected failure event")
+					}
+				} else {
+					assert.NotContains(t, persisted.Annotations, annotationFailureReported)
+					assert.NotEqual(t, labelEvaluationPhaseFailed, persisted.Labels[labelEvaluationPhase])
+					select {
+					case ev := <-rec.Events:
+						t.Fatalf("unexpected failure event: %s", ev)
+					default:
+					}
+				}
+			})
+		}
 	}
 }

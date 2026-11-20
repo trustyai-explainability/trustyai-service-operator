@@ -1337,14 +1337,17 @@ func (r *EvalHubEvaluationJobFailureReconciler) rememberImagePullBackOffStart(ct
 			append(failureWatcherLogFields(), "job", job.Name, "pod", pod.Name, "container", c.name)...)
 		return
 	}
-	if job.Annotations == nil {
-		job.Annotations = map[string]string{}
+	updated := job.DeepCopy()
+	if updated.Annotations == nil {
+		updated.Annotations = map[string]string{}
 	}
-	job.Annotations[annotationImagePullBackOffObservations] = raw
-	if err := r.Patch(ctx, job, patch); err != nil {
+	updated.Annotations[annotationImagePullBackOffObservations] = raw
+	if err := r.Patch(ctx, updated, patch); err != nil {
 		log.FromContext(ctx).Error(err, "remember image pull backoff start: patch failed",
 			append(failureWatcherLogFields(), "job", job.Name, "pod", pod.Name, "container", c.name)...)
+		return
 	}
+	job.Annotations = updated.Annotations
 }
 
 func (r *EvalHubEvaluationJobFailureReconciler) pruneImagePullBackOffObservations(ctx context.Context, job *batchv1.Job, pod *corev1.Pod, activeKeys map[string]struct{}) error {
@@ -1892,13 +1895,10 @@ func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseU
 			switch {
 			case isEvalHubFailureTerminalState(body):
 				return fmt.Errorf("%w: EvalHub events returned %s", errEvalHubReportAlreadyTerminal, resp.Status)
-			case isEvalHubNonFailureTerminalState(body):
-				return fmt.Errorf("%w: EvalHub events returned %s: %s", errEvalHubReportSuperseded, resp.Status, body)
-			case isEvalHubAggregateFailureState(body):
-				// partially_failed is an aggregate state: only this benchmark's own
-				// status proves whether its failure was recorded. A previous POST
-				// may have been accepted with the accepted marker lost, so the
-				// aggregate state must never select the superseded path unchecked.
+			case isEvalHubNonFailureTerminalState(body), isEvalHubAggregateFailureState(body):
+				// Aggregate states do not prove this benchmark's outcome. In
+				// particular, cancellation preserves previously failed benchmarks.
+				// Recover a lost failure marker only after checking its own state.
 				state, stateErr := fetchEvalHubBenchmarkState(ctx, restCfg, baseURL, tenant, jobID, providerID, benchmarkID, benchmarkIndex)
 				if errors.Is(stateErr, errEvalHubJobNotFound) {
 					// EvalHub no longer holds the job: no failure report can be
@@ -1946,7 +1946,7 @@ type evalHubJobResourceStatus struct {
 }
 
 // fetchEvalHubBenchmarkState reads this benchmark's own state from EvalHub. The
-// 409 body only names the aggregate job state, so a partially_failed conflict
+// 409 body only names the aggregate job state, so a conflict alone
 // cannot prove whether this benchmark's failure was recorded. Matching prefers
 // the benchmark index but falls back to provider+ID so older EvalHub images that
 // omit benchmark_index still resolve.

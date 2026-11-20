@@ -338,7 +338,7 @@ func (r *EvalHubEvaluationFailedKueueWorkloadsReconciler) Reconcile(ctx context.
 
 	failureMsg, failureCode := classifyKueueAdmissionFailure(&job, cond)
 
-	if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, jobID, providerID, benchmarkID, benchmarkIndex, failureMsg, failureCode); err != nil {
+	if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, jobID, providerID, benchmarkID, benchmarkIndex, failureMsg, failureCode); err != nil && !errors.Is(err, errEvalHubReportAlreadyTerminal) {
 		log.Error(err, "failed to post EvalHub benchmark failure event for Kueue workload",
 			append(evaluationFailedKueueWorkloadsLogFields(), "action", "post_events_failed",
 				"workload", wl.Name, "workloadNamespace", wl.Namespace, "queue", wl.Spec.QueueName,
