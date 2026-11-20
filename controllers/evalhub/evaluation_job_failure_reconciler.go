@@ -1019,6 +1019,17 @@ func isEvalHubWorkloadContainer(name string) bool {
 	return name == initContainerName || name == adapterContainerName || name == sidecarContainerName
 }
 
+// adapterHasStarted distinguishes initialization blockers from unrelated native
+// sidecars that may fail to pull again after the adapter is already executing.
+func adapterHasStarted(pod *corev1.Pod) bool {
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Name == adapterContainerName {
+			return cs.State.Running != nil || cs.State.Terminated != nil || (cs.Started != nil && *cs.Started)
+		}
+	}
+	return false
+}
+
 func imagePullWaitingContainers(pod *corev1.Pod, reason string) []imagePullBackOffContainer {
 	var containers []imagePullBackOffContainer
 	for _, cs := range pod.Status.ContainerStatuses {
@@ -1033,8 +1044,12 @@ func imagePullWaitingContainers(pod *corev1.Pod, reason string) []imagePullBackO
 			})
 		}
 	}
+	// Every init container must start before the adapter can start, regardless
+	// of its name. Once the adapter is executing, only EvalHub's own containers
+	// can establish that benchmark reporting is blocked.
+	adapterStarted := adapterHasStarted(pod)
 	for _, cs := range pod.Status.InitContainerStatuses {
-		if isEvalHubWorkloadContainer(cs.Name) && containerStatusWaitingReason(&cs) == reason {
+		if (isEvalHubWorkloadContainer(cs.Name) || !adapterStarted) && containerStatusWaitingReason(&cs) == reason {
 			containers = append(containers, imagePullBackOffContainer{
 				name:         cs.Name,
 				image:        strings.TrimSpace(cs.Image),

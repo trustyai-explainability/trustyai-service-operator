@@ -2348,3 +2348,56 @@ func TestJobFailureReconciler_ImagePullIgnoresUnrelatedContainers(t *testing.T) 
 		}
 	}
 }
+
+func TestJobFailureReconciler_InjectedInitImagePullBlocksAdapter(t *testing.T) {
+	for _, restartable := range []bool{false, true} {
+		for _, age := range []time.Duration{2 * time.Minute, 11 * time.Minute} {
+			t.Run(fmt.Sprintf("restartable=%t/age=%s", restartable, age), func(t *testing.T) {
+				srv, requests := capturingEvalHubServer(t)
+				job := evalHubEvaluationJob("eval-job-blocking-init", "tenant-ns", map[string]string{
+					evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
+				})
+				pod := imagePullBackOffAdapterPod(job.Name, job.Namespace, job.UID)
+				waiting := pod.Status.ContainerStatuses[0]
+				waiting.Name = "telemetry"
+				pod.Status.InitContainerStatuses = []corev1.ContainerStatus{waiting}
+				pod.Spec.InitContainers = []corev1.Container{{Name: "telemetry", Image: waiting.Image}}
+				if restartable {
+					policy := corev1.ContainerRestartPolicyAlways
+					pod.Spec.InitContainers[0].RestartPolicy = &policy
+				}
+				pod.Status.ContainerStatuses[0].State = corev1.ContainerState{
+					Waiting: &corev1.ContainerStateWaiting{Reason: "PodInitializing"},
+				}
+				event := imagePullBackOffEventForImageAndContainer(pod, age, waiting.Image, waiting.Name)
+				eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+				fc := fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).WithObjects(eh, job, pod, event).Build()
+				r, rec := buildJobFailureReconciler(fc, job.Namespace)
+				result, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(job)})
+				require.NoError(t, err)
+				var persisted batchv1.Job
+				require.NoError(t, fc.Get(context.Background(), client.ObjectKeyFromObject(job), &persisted))
+				if age < imagePullBackOffGracePeriod {
+					assert.Positive(t, result.RequeueAfter)
+					assert.LessOrEqual(t, result.RequeueAfter, imagePullBackOffGracePeriod-age+time.Second)
+					assert.Empty(t, requests)
+					assert.Empty(t, rec.Events)
+					assert.NotEqual(t, labelEvaluationPhaseFailed, persisted.Labels[labelEvaluationPhase])
+				} else {
+					assert.Equal(t, ctrl.Result{}, result)
+					require.Len(t, requests, 1)
+					payload := <-requests
+					require.NotNil(t, payload.BenchmarkStatusEvent)
+					assert.Equal(t, "failed", payload.BenchmarkStatusEvent.Status)
+					assert.Equal(t, labelEvaluationPhaseFailed, persisted.Labels[labelEvaluationPhase])
+					select {
+					case ev := <-rec.Events:
+						assert.Contains(t, ev, eventReasonEvaluationFailed)
+					default:
+						t.Fatal("expected failure event for blocking init")
+					}
+				}
+			})
+		}
+	}
+}
