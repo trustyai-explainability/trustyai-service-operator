@@ -15,8 +15,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -59,12 +61,17 @@ const (
 	// EvalHub CR identity for evalHubBaseURLFromJob (set by eval-hub job_builders; must match eval-hub).
 	evalHubInstanceNameLabel      = "evalhub_instance_name"
 	evalHubInstanceNamespaceLabel = "evalhub_instance_namespace"
-	// annotationFailurePending: in-flight until POST succeeds and we set annotationFailureReported.
-	annotationFailurePending  = "trustyai.opendatahub.io/evalhub-failure-pending"
-	annotationFailureReported = "trustyai.opendatahub.io/evalhub-failure-reported"
-	httpHeaderTenant          = "X-Tenant"
-	eventsPathFmt             = "%s/api/v1/evaluations/jobs/%s/events"
-	messageCodeRuntimeFailure = "RUNTIME_FAILURE"
+	// annotationFailurePending: in-flight until the remote outcome is resolved.
+	annotationFailureRequest               = "trustyai.opendatahub.io/evalhub-failure-request"
+	annotationFailurePending               = "trustyai.opendatahub.io/evalhub-failure-pending"
+	annotationFailureAccepted              = "trustyai.opendatahub.io/evalhub-failure-accepted"
+	annotationFailureMessage               = "trustyai.opendatahub.io/evalhub-failure-message"
+	annotationFailureReported              = "trustyai.opendatahub.io/evalhub-failure-reported"
+	annotationImagePullBackOffObservations = "trustyai.opendatahub.io/evalhub-imagepullbackoff-observations"
+	httpHeaderTenant                       = "X-Tenant"
+	eventsPathFmt                          = "%s/api/v1/evaluations/jobs/%s/events"
+	evalHubJobPathFmt                      = "%s/api/v1/evaluations/jobs/%s"
+	messageCodeRuntimeFailure              = "RUNTIME_FAILURE"
 	// messageCodeQueueError is used when reporting EvalHub benchmark failure from a Kueue Workload
 	// with QuotaReserved=False and Reason=Inadmissible (see evaluation_failed_kueue_workloads_reconciler.go).
 	messageCodeQueueError = "queue_error"
@@ -111,8 +118,9 @@ func failureWatcherLogFields() []any {
 // EvalHubEvaluationJobFailureReconciler POSTs a failed benchmark event to EvalHub when init, adapter,
 // or sidecar on the evaluation Job is in a state that usually means EvalHub was not notified yet.
 //
-// Adapter: only OOMKilled (terminated) or fatal Waiting reasons (e.g. ImagePullBackOff) trigger the operator;
-// terminated Reason=Error / non-zero exit is ignored because the adapter often calls EvalHub with failed status after a normal run.
+// Adapter: only OOMKilled (terminated), sustained ImagePullBackOff, or other fatal Waiting reasons
+// trigger the operator; terminated Reason=Error / non-zero exit is ignored because the adapter often
+// calls EvalHub with failed status after a normal run.
 //
 // Init and sidecar use broader terminated/Waiting rules. A Job that is “failed” in Kubernetes without those container signals is skipped.
 //
@@ -256,25 +264,65 @@ func jobUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 			if !isEvalHubEvaluationJob(newJob) || failureAlreadyReported(newJob) {
 				return false
 			}
+			// Resume accepted-but-unpromoted reports after operator restart:
+			// saved requests first resolve their remote outcome; accepted reports
+			// can finish promotion without another POST.
+			if failureAcceptedReport(newJob) || newJob.Annotations[annotationFailureRequest] != "" {
+				return true
+			}
 			// Informer list/watch replays existing objects as Create; catch Jobs already terminal
 			// before this controller started (CreateFunc previously returned false and missed them).
 			return jobStatusIndicatesTerminalFailure(newJob)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			newJob, ok := e.ObjectNew.(*batchv1.Job)
-			if !ok || !r.tenantNS.IsTenant(newJob.Namespace) {
+			newJob, okNew := e.ObjectNew.(*batchv1.Job)
+			oldJob, okOld := e.ObjectOld.(*batchv1.Job)
+			if !okNew || !okOld || !r.tenantNS.IsTenant(newJob.Namespace) {
 				return false
 			}
 			if !isEvalHubEvaluationJob(newJob) || failureAlreadyReported(newJob) {
 				return false
 			}
-			// Job updates often lag pod/container status; reconcile runs detectFailure which only
+			// This reconciler writes annotationFailurePending itself. An update
+			// whose only change is that marker must not re-enqueue the Job: it
+			// would immediately re-run detection and repeat the POST/GET cycle
+			// while the pod still shows the same failure.
+			if onlyFailurePendingAnnotationChanged(oldJob, newJob) {
+				return false
+			}
+			// Resume accepted or unresolved reports on meaningful Job updates.
+			if failureAcceptedReport(newJob) || newJob.Annotations[annotationFailureRequest] != "" {
+				return true
+			}
+			// Job updates often lag pod/container status; the assessment only
 			// posts when init/adapter/sidecar show operator-only failure reasons.
 			return jobStatusIndicatesTerminalFailure(newJob)
 		},
 		DeleteFunc:  func(event.DeleteEvent) bool { return false },
 		GenericFunc: func(event.GenericEvent) bool { return false },
 	}
+}
+
+// onlyFailurePendingAnnotationChanged reports whether the only difference between
+// the two Job versions is the in-flight failure marker or request written by this
+// reconciler. Such self-writes must not re-enqueue the Job: every enqueue re-runs
+// detection and repeats the EvalHub POST while the pod still shows the failure.
+func onlyFailurePendingAnnotationChanged(oldJob, newJob *batchv1.Job) bool {
+	oldValue, oldHad := oldJob.Annotations[annotationFailurePending]
+	newValue, newHad := newJob.Annotations[annotationFailurePending]
+	if oldHad == newHad && oldValue == newValue && oldJob.Annotations[annotationFailureRequest] == newJob.Annotations[annotationFailureRequest] {
+		return false
+	}
+	oldCopy := oldJob.DeepCopy()
+	newCopy := newJob.DeepCopy()
+	delete(oldCopy.Annotations, annotationFailurePending)
+	delete(oldCopy.Annotations, annotationFailureRequest)
+	delete(newCopy.Annotations, annotationFailurePending)
+	delete(newCopy.Annotations, annotationFailureRequest)
+	// These fields change on every write and must not count as a difference.
+	oldCopy.ResourceVersion, newCopy.ResourceVersion = "", ""
+	oldCopy.ManagedFields, newCopy.ManagedFields = nil, nil
+	return reflect.DeepEqual(oldCopy, newCopy)
 }
 
 func podUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Predicate {
@@ -285,8 +333,11 @@ func podUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 				return false
 			}
 			// Replay and rare creates where status already shows operator-only failure.
-			// Also pass through Unschedulable / volume-mount-stuck pods so the reconciler can schedule a requeue.
-			return podIndicatesOperatorOnlyFailure(newPod) || podIsUnschedulable(newPod) || podMayBeVolumeMountStuck(newPod)
+			// Also pass through grace-gated pod states so the reconciler can schedule a requeue.
+			return podIndicatesOperatorOnlyFailure(newPod) ||
+				podIsUnschedulable(newPod) ||
+				podMayBeVolumeMountStuck(newPod) ||
+				podHasImagePullBackOff(newPod)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			oldPod, okOld := e.ObjectOld.(*corev1.Pod)
@@ -295,10 +346,11 @@ func podUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 				return false
 			}
 			// Enqueue when transitioning into an operator-only failure state, or when a pod
-			// first becomes Unschedulable / volume-mount-stuck so the reconciler can schedule a grace-period requeue.
+			// first enters a grace-gated state so the reconciler can schedule a grace-period requeue.
 			return (!podIndicatesOperatorOnlyFailure(oldPod) && podIndicatesOperatorOnlyFailure(newPod)) ||
 				(!podIsUnschedulable(oldPod) && podIsUnschedulable(newPod)) ||
-				(!podMayBeVolumeMountStuck(oldPod) && podMayBeVolumeMountStuck(newPod))
+				(!podMayBeVolumeMountStuck(oldPod) && podMayBeVolumeMountStuck(newPod)) ||
+				(!podHasImagePullBackOff(oldPod) && podHasImagePullBackOff(newPod))
 		},
 		DeleteFunc:  func(event.DeleteEvent) bool { return false },
 		GenericFunc: func(event.GenericEvent) bool { return false },
@@ -374,26 +426,89 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 		return ctrl.Result{}, nil
 	}
 
-	failed, msg, err := r.detectFailure(ctx, &job)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("detect failure: %w", err)
-	}
-	if !failed {
-		log.Info("skip EvalHub POST: no operator-only container failure",
-			append(failureWatcherLogFields(), "action", "skip_no_operator_failure", "job", job.Name, "namespace", job.Namespace)...)
-		setJobFailureAction("skip")
-		if requeue := r.pendingGraceRequeueAfter(ctx, &job); requeue > 0 {
-			log.Info("pod pending — requeuing for scheduling/volume-mount check",
-				append(failureWatcherLogFields(), "action", "requeue_pending_grace", "job", job.Name, "namespace", job.Namespace, "requeueAfter", requeue)...)
-			return ctrl.Result{RequeueAfter: requeue}, nil
+	msg := acceptedFailureMessage(&job)
+	accepted := failureAcceptedReport(&job)
+	var report *evalHubFailureRequest
+	var baseURL string
+	var assessment failureAssessment
+	if raw := job.Annotations[annotationFailureRequest]; raw != "" {
+		report = &evalHubFailureRequest{}
+		if err := json.Unmarshal([]byte(raw), report); err != nil {
+			return ctrl.Result{}, fmt.Errorf("decode pending failure request: %w", err)
 		}
-		return ctrl.Result{}, nil
+		if report.JobID == "" || report.ProviderID == "" || report.BenchmarkID == "" || report.Message == "" || report.BenchmarkIndex < 0 {
+			return ctrl.Result{}, fmt.Errorf("incomplete pending failure request on Job %s/%s", job.Namespace, job.Name)
+		}
+		msg = report.Message
+		if !accepted {
+			resolvedURL, err := evalHubBaseURLFromJob(ctx, r.Client, &job)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("resolve pending failure request URL: %w", err)
+			}
+			baseURL = resolvedURL
+			// Pending is not proof of delivery. Read this benchmark's status before
+			// either promoting a previously accepted report or retrying an unsent one.
+			state, stateErr := fetchEvalHubBenchmarkState(ctx, r.RESTConfig, baseURL, job.Namespace, report.JobID, report.ProviderID, report.BenchmarkID, report.BenchmarkIndex)
+			if errors.Is(stateErr, errEvalHubJobNotFound) || (stateErr == nil && (state == "completed" || state == "cancelled" || state == "canceled")) {
+				if err := r.clearFailurePendingAnnotation(ctx, &job, "clear superseded failure request"); err != nil {
+					return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+				}
+				return ctrl.Result{}, nil
+			}
+			if stateErr != nil {
+				return ctrl.Result{}, fmt.Errorf("recover pending failure request: %w", stateErr)
+			}
+			accepted = state == "failed"
+		}
+	}
+	if accepted && msg == "" {
+		log.Info("accepted failure report is missing stored message; waiting for another reconcile",
+			append(failureWatcherLogFields(), "action", "skip_missing_accepted_message", "job", job.Name, "namespace", job.Namespace)...)
+		setJobFailureAction("skip")
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+	if !accepted && report == nil {
+		assessment = r.assessJobFailure(ctx, &job, reconcileStart)
+		failed, detectedMsg, err := assessment.failed, assessment.message, assessment.err
+		if err != nil && !failed {
+			return ctrl.Result{}, fmt.Errorf("detect failure: %w", err)
+		}
+		if err != nil {
+			log.Error(err, "failure detection incomplete; reporting the confirmed failure",
+				append(failureWatcherLogFields(), "action", "detect_failure_partial_error", "job", job.Name, "namespace", job.Namespace)...)
+		}
+		if !failed {
+			log.Info("skip EvalHub POST: no operator-only container failure",
+				append(failureWatcherLogFields(), "action", "skip_no_operator_failure", "job", job.Name, "namespace", job.Namespace)...)
+			setJobFailureAction("skip")
+			if requeue := assessment.requeueAfter; requeue > 0 {
+				log.Info("pod pending — requeuing for grace-period check",
+					append(failureWatcherLogFields(), "action", "requeue_pending_grace", "job", job.Name, "namespace", job.Namespace, "requeueAfter", requeue)...)
+				return ctrl.Result{RequeueAfter: requeue}, nil
+			}
+			if err := r.clearImagePullBackOffObservation(ctx, &job); err != nil {
+				return ctrl.Result{}, fmt.Errorf("clear image pull backoff observation: %w", err)
+			}
+			// Clean up legacy pending markers that have no saved request.
+			// New unresolved requests are recovered before Pod assessment.
+			if job.Annotations[annotationFailurePending] == "true" {
+				if err := r.clearFailurePendingAnnotation(ctx, &job, "failed to clear stale failure-pending annotation"); err != nil {
+					return ctrl.Result{}, err
+				}
+			}
+			return ctrl.Result{}, nil
+		}
+		msg = detectedMsg
 	}
 
 	span.SetAttributes(
 		attribute.String("evalhub.job.failure_reason", truncateFailureReason(msg)),
 	)
-	if exitCode, ok := r.exitCodeFromJobPods(ctx, &job); ok {
+	exitCode := assessment.exitCode
+	if report != nil {
+		exitCode = report.ExitCode
+	}
+	if exitCode != 0 {
 		span.SetAttributes(attribute.Int("evalhub.job.exit_code", int(exitCode)))
 	}
 
@@ -404,76 +519,108 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 	log.Info("operator-only failure detected",
 		append(failureWatcherLogFields(), "action", "failure_detected", "job", job.Name, "namespace", job.Namespace, "detail", detailForLog)...)
 
-	baseURL, err := evalHubBaseURLFromJob(ctx, r.Client, &job)
-	if err != nil {
-		if errors.Is(err, ErrMissingEvalHubLabels) {
-			log.Info("cannot resolve EvalHub URL from job",
-				append(failureWatcherLogFields(), "action", "skip_no_evalhub_url",
-					"job", job.Name, "namespace", job.Namespace, "error", err.Error())...)
-			setJobFailureAction("skip")
-			return ctrl.Result{}, nil
+	if !accepted {
+		if report == nil {
+			resolvedURL, err := evalHubBaseURLFromJob(ctx, r.Client, &job)
+			if err != nil {
+				if errors.Is(err, ErrMissingEvalHubLabels) {
+					log.Info("cannot resolve EvalHub URL from job",
+						append(failureWatcherLogFields(), "action", "skip_no_evalhub_url",
+							"job", job.Name, "namespace", job.Namespace, "error", err.Error())...)
+					setJobFailureAction("skip")
+					return ctrl.Result{}, nil
+				}
+				log.Info("cannot resolve EvalHub URL from job",
+					append(failureWatcherLogFields(), "action", "skip_no_evalhub_url",
+						"job", job.Name, "namespace", job.Namespace, "error", err.Error())...)
+				setJobFailureAction("skip")
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+
+			jobID := strings.TrimSpace(job.Labels[evalHubJobIDLabel])
+			if jobID == "" {
+				log.Info("skip EvalHub POST: missing job_id label",
+					append(failureWatcherLogFields(), "action", "skip_missing_label", "job", job.Name, "namespace", job.Namespace, "label", evalHubJobIDLabel)...)
+				setJobFailureAction("skip")
+				return ctrl.Result{}, nil
+			}
+
+			providerID := job.Labels[evalHubProviderIDLabel]
+			benchmarkID := strings.TrimSpace(job.Annotations[evalHubBenchmarkIDAnnotation])
+			if providerID == "" || benchmarkID == "" {
+				log.Info("skip EvalHub POST: missing provider_id label or benchmark_id metadata",
+					append(failureWatcherLogFields(), "action", "skip_missing_label", "job", job.Name, "namespace", job.Namespace)...)
+				setJobFailureAction("skip")
+				return ctrl.Result{}, nil
+			}
+
+			benchmarkIndex := benchmarkIndexFromJob(&job)
+
+			baseURL = resolvedURL
+			report = &evalHubFailureRequest{JobID: jobID, ProviderID: providerID, BenchmarkID: benchmarkID, BenchmarkIndex: benchmarkIndex, Message: msg, ExitCode: assessment.exitCode}
+			raw, err := json.Marshal(report)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			pendingPatch := client.MergeFromWithOptions(job.DeepCopy(), client.MergeFromWithOptimisticLock{})
+			if job.Annotations == nil {
+				job.Annotations = map[string]string{}
+			}
+			job.Annotations[annotationFailurePending] = "true"
+			job.Annotations[annotationFailureRequest] = string(raw)
+			if err := r.Patch(ctx, &job, pendingPatch); err != nil {
+				log.Error(err, "failed to annotate job pending EvalHub failure sync",
+					append(failureWatcherLogFields(), "action", "patch_pending_failed", "job", job.Name)...)
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+				return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+			}
 		}
-		log.Info("cannot resolve EvalHub URL from job",
-			append(failureWatcherLogFields(), "action", "skip_no_evalhub_url",
-				"job", job.Name, "namespace", job.Namespace, "error", err.Error())...)
-		setJobFailureAction("skip")
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
+		setJobFailureAction("post")
 
-	jobID := strings.TrimSpace(job.Labels[evalHubJobIDLabel])
-	if jobID == "" {
-		log.Info("skip EvalHub POST: missing job_id label",
-			append(failureWatcherLogFields(), "action", "skip_missing_label", "job", job.Name, "namespace", job.Namespace, "label", evalHubJobIDLabel)...)
-		setJobFailureAction("skip")
-		return ctrl.Result{}, nil
-	}
+		if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, report.JobID, report.ProviderID, report.BenchmarkID, report.BenchmarkIndex, msg, ""); err != nil {
+			if errors.Is(err, errEvalHubReportAlreadyTerminal) {
+				// EvalHub already holds a terminal failure status for this job: a
+				// previous POST was accepted before a restart lost the accepted
+				// marker. Promote instead of re-posting forever.
+				log.Info("EvalHub already holds a terminal status for the job; promoting without re-posting",
+					append(failureWatcherLogFields(), "action", "post_events_already_terminal", "job", job.Name, "evalJobID", report.JobID)...)
+			} else if errors.Is(err, errEvalHubReportSuperseded) {
+				// The benchmark has a confirmed non-failure terminal outcome,
+				// or the evaluation was deleted. Stop without promoting the Job.
+				log.Info("EvalHub job already in a non-failure terminal state; not reporting failure",
+					append(failureWatcherLogFields(), "action", "post_events_superseded", "job", job.Name, "evalJobID", report.JobID)...)
+				setJobFailureAction("skip")
+				if err2 := r.clearFailurePendingAnnotation(ctx, &job, "failed to revert failure-pending annotation after superseded report; requeuing cleanup"); err2 != nil {
+					// Keep the saved request so a retry can recheck the remote
+					// outcome and finish cleanup without another POST.
+					return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+				}
+				return ctrl.Result{}, nil
+			} else {
+				// Preserve the durable request for both unknown conflicts and transport
+				// errors. A later reconcile resolves its outcome even if the Pod recovers.
+				log.Error(err, "failure report outcome unresolved; requeuing", append(failureWatcherLogFields(), "job", job.Name, "evalJobID", report.JobID)...)
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+		}
 
-	providerID := job.Labels[evalHubProviderIDLabel]
-	benchmarkID := strings.TrimSpace(job.Annotations[evalHubBenchmarkIDAnnotation])
-	if providerID == "" || benchmarkID == "" {
-		log.Info("skip EvalHub POST: missing provider_id label or benchmark_id metadata",
-			append(failureWatcherLogFields(), "action", "skip_missing_label", "job", job.Name, "namespace", job.Namespace)...)
-		setJobFailureAction("skip")
-		return ctrl.Result{}, nil
-	}
+		recordJobFailureEvent(msg)
 
-	benchmarkIndex := benchmarkIndexFromJob(&job)
-
-	setJobFailureAction("post")
-
-	// If failure-pending is already set, the POST succeeded in a prior reconcile but the
-	// promote patch failed. Skip the POST and go straight to the promote patch.
-	if !failurePendingReport(&job) {
-		pendingPatch := client.MergeFrom(job.DeepCopy())
+		acceptedPatch := client.MergeFrom(job.DeepCopy())
 		if job.Annotations == nil {
 			job.Annotations = map[string]string{}
 		}
-		job.Annotations[annotationFailurePending] = "true"
-		if err := r.Patch(ctx, &job, pendingPatch); err != nil {
-			log.Error(err, "failed to annotate job pending EvalHub failure sync",
-				append(failureWatcherLogFields(), "action", "patch_pending_failed", "job", job.Name)...)
+		job.Annotations[annotationFailureAccepted] = "true"
+		job.Annotations[annotationFailureMessage] = msg
+		if err := r.Patch(ctx, &job, acceptedPatch); err != nil {
+			log.Error(err, "failed to annotate job after EvalHub accepted failure event",
+				append(failureWatcherLogFields(), "action", "patch_accepted_failed", "job", job.Name)...)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
-
-		if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, jobID, providerID, benchmarkID, benchmarkIndex, msg, ""); err != nil {
-			log.Error(err, "failed to post EvalHub benchmark failure event",
-				append(failureWatcherLogFields(), "action", "post_events_failed", "job", job.Name, "evalJobID", jobID)...)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			revert := client.MergeFrom(job.DeepCopy())
-			delete(job.Annotations, annotationFailurePending)
-			if len(job.Annotations) == 0 {
-				job.Annotations = nil
-			}
-			if err2 := r.Patch(ctx, &job, revert); err2 != nil {
-				log.Error(err2, "failed to revert failure-pending annotation after POST failure",
-					append(failureWatcherLogFields(), "action", "revert_pending_failed", "job", job.Name)...)
-			}
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-		recordJobFailureEvent(msg)
 	}
 
 	promotePatch := client.MergeFrom(job.DeepCopy())
@@ -484,6 +631,10 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 		job.Labels = map[string]string{}
 	}
 	delete(job.Annotations, annotationFailurePending)
+	delete(job.Annotations, annotationFailureRequest)
+	delete(job.Annotations, annotationFailureAccepted)
+	delete(job.Annotations, annotationFailureMessage)
+	delete(job.Annotations, annotationImagePullBackOffObservations)
 	job.Annotations[annotationFailureReported] = "true"
 	job.Annotations[annotationEvaluationStatus] = msg
 	job.Labels[labelEvaluationPhase] = labelEvaluationPhaseFailed
@@ -500,7 +651,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 	// Keep the Job/pod so logs remain available until Kubernetes TTL
 	// (ttlSecondsAfterFinished) expires. Do not delete after failure sync.
 	log.Info("posted EvalHub benchmark failure event",
-		append(failureWatcherLogFields(), "action", "post_events_ok", "evalJobID", jobID, "k8sJob", job.Name, "namespace", job.Namespace)...)
+		append(failureWatcherLogFields(), "action", "post_events_ok", "evalJobID", strings.TrimSpace(job.Labels[evalHubJobIDLabel]), "k8sJob", job.Name, "namespace", job.Namespace)...)
 	return ctrl.Result{}, nil
 }
 
@@ -524,45 +675,6 @@ func jobStatusIndicatesTerminalFailure(job *batchv1.Job) bool {
 		return true
 	}
 	return false
-}
-
-func (r *EvalHubEvaluationJobFailureReconciler) detectFailure(ctx context.Context, job *batchv1.Job) (bool, string, error) {
-	// Do not use generic JobFailed alone: the adapter may already have POSTed failed to EvalHub.
-	// Only synthesize an event when workload containers (init/adapter/sidecar) show pre-callback failures.
-	msg, ok, err := r.operatorOnlyFailureFromPods(ctx, job)
-	if err != nil {
-		return false, "", err
-	}
-	if ok {
-		return true, msg, nil
-	}
-	return false, "", nil
-}
-
-func (r *EvalHubEvaluationJobFailureReconciler) exitCodeFromJobPods(ctx context.Context, job *batchv1.Job) (int32, bool) {
-	list := &corev1.PodList{}
-	if err := r.List(ctx, list, client.InNamespace(job.Namespace), client.MatchingLabels{
-		"batch.kubernetes.io/job-name": job.Name,
-	}); err != nil {
-		return 0, false
-	}
-	for i := range list.Items {
-		pod := &list.Items[i]
-		ownedByJob := false
-		for _, ref := range pod.OwnerReferences {
-			if ref.Kind == "Job" && ref.UID == job.UID {
-				ownedByJob = true
-				break
-			}
-		}
-		if !ownedByJob {
-			continue
-		}
-		if code, ok := exitCodeFromPod(pod); ok {
-			return code, true
-		}
-	}
-	return 0, false
 }
 
 func exitCodeFromPod(pod *corev1.Pod) (int32, bool) {
@@ -595,15 +707,33 @@ func terminatedExitCodeFromContainerStatuses(statuses []corev1.ContainerStatus, 
 	return 0, false
 }
 
-func (r *EvalHubEvaluationJobFailureReconciler) operatorOnlyFailureFromPods(ctx context.Context, job *batchv1.Job) (string, bool, error) {
+type failureAssessment struct {
+	message      string
+	failed       bool
+	requeueAfter time.Duration
+	err          error
+	exitCode     int32
+}
+
+func (a *failureAssessment) waitFor(wait time.Duration) {
+	if wait > 0 && (a.requeueAfter == 0 || wait < a.requeueAfter) {
+		a.requeueAfter = wait
+	}
+}
+
+// assessJobFailure scans owned Pods once, carrying both failure evidence and
+// the earliest remaining grace deadline from the same observations.
+func (r *EvalHubEvaluationJobFailureReconciler) assessJobFailure(ctx context.Context, job *batchv1.Job, now time.Time) failureAssessment {
 	log := log.FromContext(ctx)
 	list := &corev1.PodList{}
 	if err := r.List(ctx, list, client.InNamespace(job.Namespace), client.MatchingLabels{
 		"batch.kubernetes.io/job-name": job.Name,
 	}); err != nil {
-		return "", false, fmt.Errorf("list pods for job %s/%s: %w", job.Namespace, job.Name, err)
+		return failureAssessment{err: fmt.Errorf("list pods for job %s/%s: %w", job.Namespace, job.Name, err)}
 	}
+	var assessment failureAssessment
 	var parts []string
+	var firstErr error
 	matchedOwner := 0
 	for i := range list.Items {
 		pod := &list.Items[i]
@@ -618,15 +748,36 @@ func (r *EvalHubEvaluationJobFailureReconciler) operatorOnlyFailureFromPods(ctx 
 			continue
 		}
 		matchedOwner++
+		if assessment.exitCode == 0 {
+			assessment.exitCode, _ = exitCodeFromPod(pod)
+		}
 		if msg, fatal := podOperatorOnlyFailureMessage(pod); fatal {
 			parts = append(parts, fmt.Sprintf("pod %s: %s", pod.Name, msg))
 			continue
 		}
-		msg, fatal, err := r.podVolumeMountFailureMessage(ctx, pod)
+		pull := r.assessPodImagePull(ctx, job, pod, now)
+		assessment.waitFor(pull.requeueAfter)
+		assessment.waitFor(schedulingGracePeriodRemaining(pod))
+		assessment.waitFor(volumeMountGracePeriodRemaining(pod))
+		msg, fatal, err := pull.message, pull.failed, pull.err
 		if err != nil {
-			return "", false, err
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 		if fatal {
+			parts = append(parts, fmt.Sprintf("pod %s: %s", pod.Name, msg))
+			continue
+		}
+		msg, fatal, err = r.podVolumeMountFailureMessage(ctx, pod)
+		if err != nil {
+			// A mount-lookup failure must not discard failures already confirmed
+			// for other pods; keep scanning and surface the error only when no
+			// terminal failure was found.
+			if firstErr == nil {
+				firstErr = err
+			}
+		} else if fatal {
 			parts = append(parts, fmt.Sprintf("pod %s: %s", pod.Name, msg))
 		}
 	}
@@ -634,10 +785,10 @@ func (r *EvalHubEvaluationJobFailureReconciler) operatorOnlyFailureFromPods(ctx 
 		log.Info("pods match job-name label but none have OwnerReference UID matching Job; cannot read container failure signals",
 			append(failureWatcherLogFields(), "action", "pod_owner_uid_mismatch", "job", job.Name, "namespace", job.Namespace, "jobUID", job.UID, "podCount", len(list.Items))...)
 	}
-	if len(parts) == 0 {
-		return "", false, nil
-	}
-	return strings.Join(parts, "; "), true, nil
+	assessment.message = strings.Join(parts, "; ")
+	assessment.failed = len(parts) > 0
+	assessment.err = firstErr
+	return assessment
 }
 
 func podIndicatesOperatorOnlyFailure(pod *corev1.Pod) bool {
@@ -665,9 +816,14 @@ func podIsUnschedulable(pod *corev1.Pod) bool {
 // schedulingGracePeriod is how long a pod may remain Unschedulable before the operator treats it as
 // a terminal failure. This allows transient conditions (e.g. autoscaler node provisioning) to resolve
 // before EvalHub is notified. Permanent conditions (e.g. missing PVC) still fire after the period.
-// The same window is used for volume-mount detection grace, "recent" FailedMount Events, and the
-// interval between post-grace FailedMount rechecks.
+// The same window is used for volume-mount detection grace, "recent" FailedMount Events,
+// and the interval between post-grace FailedMount rechecks.
 const schedulingGracePeriod = 2 * time.Minute
+
+// imagePullBackOffGracePeriod is how long ImagePullBackOff may persist before
+// the operator treats it as an operator-only failure. ErrImagePull is ignored
+// because kubelet commonly retries and recovers from the first pull error.
+const imagePullBackOffGracePeriod = 10 * time.Minute
 
 // volumeMountWatchMaxAge caps how long after schedule we keep rechecking for FailedMount Events.
 // After the initial grace period, requeues continue on schedulingGracePeriod until this cap so a
@@ -721,6 +877,7 @@ func schedulingGracePeriodRemaining(pod *corev1.Pod) time.Duration {
 const (
 	eventReasonFailedMount        = "FailedMount"
 	eventReasonFailedAttachVolume = "FailedAttachVolume"
+	eventReasonBackOff            = "BackOff"
 )
 
 // podMayBeVolumeMountStuck is true when the pod is Pending, has been scheduled, and no workload
@@ -766,9 +923,36 @@ func containerStatusStarted(cs *corev1.ContainerStatus) bool {
 	if cs.Started != nil && *cs.Started {
 		return true
 	}
-	// Waiting with a fatal reason means kubelet progressed past volume setup.
-	if cs.State.Waiting != nil && isFatalContainerWaitingReason(cs.State.Waiting.Reason) {
+	// Waiting with a fatal reason or an image-pull state means kubelet
+	// progressed past volume setup: image pulls only begin after volumes are
+	// mounted. ContainerCreating stays excluded so genuine mount failures
+	// remain eligible.
+	if cs.State.Waiting != nil && waitingReasonProvesVolumeSetup(cs.State.Waiting.Reason) {
 		return true
+	}
+	return false
+}
+
+// waitingReasonProvesVolumeSetup reports whether a container waiting reason
+// shows kubelet progressed past volume setup. Image-pull states only occur
+// after volumes are mounted, and the fatal post-start reasons imply a
+// container ran; ContainerCreating is deliberately excluded so genuine mount
+// failures remain eligible for the volume-mount check.
+func waitingReasonProvesVolumeSetup(reason string) bool {
+	if isImagePullRetryWaitingReason(reason) {
+		return true
+	}
+	return isFatalContainerWaitingReason(reason)
+}
+
+// isImagePullRetryWaitingReason reports whether reason belongs to the same
+// pull-retry reason set used by the image-pull grace clock.
+func isImagePullRetryWaitingReason(reason string) bool {
+	reason = strings.TrimSpace(reason)
+	for _, r := range imagePullRetryWaitingReasons {
+		if r == reason {
+			return true
+		}
 	}
 	return false
 }
@@ -810,6 +994,443 @@ func volumeMountGracePeriodRemaining(pod *corev1.Pod) time.Duration {
 		return remaining
 	}
 	return schedulingGracePeriod
+}
+
+func podHasImagePullBackOff(pod *corev1.Pod) bool {
+	return len(imagePullBackOffContainers(pod)) > 0
+}
+
+type imagePullBackOffContainer struct {
+	name      string
+	image     string
+	message   string
+	fieldPath string
+	// reason distinguishes grace-gated BackOff from transient pull retries.
+	reason string
+	// lastRunStart is the start time of the container's last completed run
+	// (LastTerminationState), zero when it never ran. A backoff clock that
+	// predates it belongs to a previous pull episode and must be discarded.
+	lastRunStart time.Time
+}
+
+// ranSince reports whether the container started a run after t, proving a
+// pull recovery between backoff episodes. ErrImagePull retries never start
+// the container, so a recorded observation stays valid across them.
+func (c imagePullBackOffContainer) ranSince(t time.Time) bool {
+	return !c.lastRunStart.IsZero() && c.lastRunStart.After(t)
+}
+
+func imagePullBackOffContainers(pod *corev1.Pod) []imagePullBackOffContainer {
+	return imagePullWaitingContainers(pod, waitingReasonImagePullBackOff)
+}
+
+// isEvalHubWorkloadContainer limits failure detection to containers responsible
+// for executing the benchmark and reporting its result to EvalHub.
+func isEvalHubWorkloadContainer(name string) bool {
+	return name == initContainerName || name == adapterContainerName || name == sidecarContainerName
+}
+
+// adapterHasStarted distinguishes initialization blockers from unrelated native
+// sidecars that may fail to pull again after the adapter is already executing.
+func adapterHasStarted(pod *corev1.Pod) bool {
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Name == adapterContainerName {
+			return cs.State.Running != nil || cs.State.Terminated != nil || (cs.Started != nil && *cs.Started)
+		}
+	}
+	return false
+}
+
+func imagePullWaitingContainers(pod *corev1.Pod, reason string) []imagePullBackOffContainer {
+	var containers []imagePullBackOffContainer
+	adapterPulling := false
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Name == adapterContainerName {
+			adapterPulling = isImagePullRetryWaitingReason(containerStatusWaitingReason(&cs))
+		}
+		if isEvalHubWorkloadContainer(cs.Name) && containerStatusWaitingReason(&cs) == reason {
+			containers = append(containers, imagePullBackOffContainer{
+				name:         cs.Name,
+				image:        strings.TrimSpace(cs.Image),
+				message:      cs.State.Waiting.Message,
+				fieldPath:    fmt.Sprintf("spec.containers{%s}", cs.Name),
+				reason:       reason,
+				lastRunStart: lastContainerRunStart(&cs),
+			})
+		}
+	}
+	// Every init container must start before the adapter can start. An adapter
+	// pulling its own image has already progressed past a native sidecar's
+	// initial startup: a later pull retry on that sidecar is not a blocker.
+	adapterStarted := adapterHasStarted(pod)
+	for _, cs := range pod.Status.InitContainerStatuses {
+		blocksStartup := !adapterStarted && (!adapterPulling || lastContainerRunStart(&cs).IsZero())
+		if (isEvalHubWorkloadContainer(cs.Name) || blocksStartup) && containerStatusWaitingReason(&cs) == reason {
+			containers = append(containers, imagePullBackOffContainer{
+				name:         cs.Name,
+				image:        strings.TrimSpace(cs.Image),
+				message:      cs.State.Waiting.Message,
+				fieldPath:    fmt.Sprintf("spec.initContainers{%s}", cs.Name),
+				reason:       reason,
+				lastRunStart: lastContainerRunStart(&cs),
+			})
+		}
+	}
+	return containers
+}
+
+// imagePullRetryWaitingReasons are the transient image-pull waiting reasons that
+// belong to the same pull episode. Kubelet can alternate between them between
+// attempts (e.g. ErrImagePull -> RegistryUnavailable -> ImagePullBackOff), so the
+// grace clock must survive all of them: observations must not be pruned while any
+// of them is active. Terminal failure reporting stays gated on ImagePullBackOff.
+var imagePullRetryWaitingReasons = []string{
+	waitingReasonImagePullBackOff,
+	waitingReasonErrImagePull,
+	waitingReasonRegistryUnavailable,
+	waitingReasonSignatureValidationFailed,
+}
+
+// imagePullRetryContainers returns every container currently waiting in any
+// image-pull retry reason. A container has exactly one waiting reason at a time,
+// so the result contains no duplicates.
+func imagePullRetryContainers(pod *corev1.Pod) []imagePullBackOffContainer {
+	var containers []imagePullBackOffContainer
+	for _, reason := range imagePullRetryWaitingReasons {
+		containers = append(containers, imagePullWaitingContainers(pod, reason)...)
+	}
+	return containers
+}
+
+// lastContainerRunStart returns the start time of the container's last
+// completed run from LastTerminationState; zero when it never ran.
+func lastContainerRunStart(cs *corev1.ContainerStatus) time.Time {
+	if cs.LastTerminationState.Terminated == nil {
+		return time.Time{}
+	}
+	return cs.LastTerminationState.Terminated.StartedAt.Time
+}
+
+func imagePullBackOffObservationKey(pod *corev1.Pod, c imagePullBackOffContainer) string {
+	return fmt.Sprintf("%s|%s|%s", pod.UID, c.name, c.image)
+}
+
+func imagePullBackOffObservations(job *batchv1.Job) map[string]time.Time {
+	observations := map[string]time.Time{}
+	if job.Annotations == nil {
+		return observations
+	}
+	raw := strings.TrimSpace(job.Annotations[annotationImagePullBackOffObservations])
+	if raw == "" {
+		return observations
+	}
+	stored := map[string]string{}
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+		return observations
+	}
+	for key, value := range stored {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		observedAt, err := time.Parse(time.RFC3339Nano, value)
+		if err != nil || observedAt.IsZero() {
+			continue
+		}
+		observations[key] = observedAt
+	}
+	return observations
+}
+
+func marshalImagePullBackOffObservations(observations map[string]time.Time) (string, error) {
+	stored := map[string]string{}
+	for key, observedAt := range observations {
+		key = strings.TrimSpace(key)
+		if key == "" || observedAt.IsZero() {
+			continue
+		}
+		stored[key] = observedAt.UTC().Format(time.RFC3339Nano)
+	}
+	raw, err := json.Marshal(stored)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+func quotedImageFromBackOffMessage(message string) string {
+	start := strings.Index(message, "\"")
+	if start < 0 {
+		return ""
+	}
+	rest := message[start+1:]
+	end := strings.Index(rest, "\"")
+	if end < 0 {
+		return ""
+	}
+	return rest[:end]
+}
+
+func imagePullBackOffEventMatches(c imagePullBackOffContainer, ev *corev1.Event) bool {
+	if ev.Reason != eventReasonBackOff || !strings.Contains(strings.ToLower(ev.Message), "pull") {
+		return false
+	}
+	if fieldPath := strings.TrimSpace(ev.InvolvedObject.FieldPath); fieldPath != "" && fieldPath != c.fieldPath {
+		return false
+	}
+	eventImage := quotedImageFromBackOffMessage(ev.Message)
+	if c.image == "" || eventImage == "" {
+		return true
+	}
+	return eventImage == c.image
+}
+
+func imagePullGracePeriodRemaining(pod *corev1.Pod, backOffStartedAt, now time.Time) time.Duration {
+	if !podHasImagePullBackOff(pod) {
+		return 0
+	}
+	if backOffStartedAt.IsZero() {
+		return 30 * time.Second
+	}
+	elapsed := now.Sub(backOffStartedAt)
+	if elapsed < imagePullBackOffGracePeriod {
+		return imagePullBackOffGracePeriod - elapsed
+	}
+	return 0
+}
+
+func imagePullRetryRequeueAfter(startedAt, now time.Time) time.Duration {
+	if startedAt.IsZero() {
+		return 30 * time.Second
+	}
+	elapsed := now.Sub(startedAt)
+	if elapsed < imagePullBackOffGracePeriod {
+		return imagePullBackOffGracePeriod - elapsed
+	}
+	return 30 * time.Second
+}
+
+func imagePullBackOffPastGrace(pod *corev1.Pod, backOffStartedAt, now time.Time) bool {
+	if !podHasImagePullBackOff(pod) {
+		return false
+	}
+	// >= so the failure boundary matches imagePullGracePeriodRemaining, which
+	// stops requeueing at exactly the grace period: no gap at the boundary where
+	// the job is neither reported nor requeued.
+	return !backOffStartedAt.IsZero() && now.Sub(backOffStartedAt) >= imagePullBackOffGracePeriod
+}
+
+// imagePullBackOffEvents returns one Event snapshot per Pod assessment.
+func (r *EvalHubEvaluationJobFailureReconciler) imagePullBackOffEvents(ctx context.Context, pod *corev1.Pod) ([]corev1.Event, error) {
+	reader := r.APIReader
+	if reader == nil {
+		reader = r.Client
+	}
+	list := &corev1.EventList{}
+	err := reader.List(ctx, list, &client.ListOptions{
+		Namespace:     pod.Namespace,
+		FieldSelector: fields.AndSelectors(fields.OneTermEqualSelector("involvedObject.kind", "Pod"), fields.OneTermEqualSelector("involvedObject.uid", string(pod.UID))),
+	})
+	if err != nil {
+		list = &corev1.EventList{}
+		if fallbackErr := reader.List(ctx, list, client.InNamespace(pod.Namespace)); fallbackErr != nil {
+			return nil, fmt.Errorf("list events for pod %s/%s: %w (field selector: %v)", pod.Namespace, pod.Name, fallbackErr, err)
+		}
+	}
+	return list.Items, nil
+}
+
+func (r *EvalHubEvaluationJobFailureReconciler) imagePullBackOffStartedAtFromEvents(ctx context.Context, job *batchv1.Job, pod *corev1.Pod, c imagePullBackOffContainer, now time.Time, events []corev1.Event, listErr error) (time.Time, bool, error) {
+	if listErr != nil {
+		if observedAt, ok := imagePullBackOffObservations(job)[imagePullBackOffObservationKey(pod, c)]; ok && !c.ranSince(observedAt) {
+			return observedAt, true, nil
+		}
+		return time.Time{}, false, listErr
+	}
+
+	var startedAt time.Time
+	for i := range events {
+		ev := &events[i]
+		if ev.InvolvedObject.UID != pod.UID {
+			continue
+		}
+		if ev.InvolvedObject.Kind != "" && ev.InvolvedObject.Kind != "Pod" {
+			continue
+		}
+		if !imagePullBackOffEventMatches(c, ev) {
+			continue
+		}
+		t := ev.FirstTimestamp.Time
+		if t.IsZero() {
+			t = ev.EventTime.Time
+		}
+		if t.IsZero() {
+			t = ev.CreationTimestamp.Time
+		}
+		if t.IsZero() {
+			t = ev.LastTimestamp.Time
+		}
+		if t.IsZero() || c.ranSince(t) {
+			continue
+		}
+		if startedAt.IsZero() || t.Before(startedAt) {
+			startedAt = t
+		}
+	}
+	key := imagePullBackOffObservationKey(pod, c)
+	if !startedAt.IsZero() {
+		// The Event-derived start belongs to the current pull episode. A stored
+		// observation can be older (the episode may start before kubelet emits
+		// the first BackOff Event): use the earlier of the two so a later Event
+		// cannot extend an uninterrupted pull failure. rememberImagePullBackOffStart
+		// persists the earliest valid start, so the clock also survives the Event
+		// disappearing later in the same episode.
+		if observedAt, ok := imagePullBackOffObservations(job)[key]; ok && !c.ranSince(observedAt) && observedAt.Before(startedAt) {
+			return observedAt, true, nil
+		}
+		return startedAt, true, r.rememberImagePullBackOffStart(ctx, job, pod, c, startedAt)
+	}
+	// A valid recorded observation keeps the clock across Event disappearance and
+	// ErrImagePull retries. An observation older than the container's last
+	// completed run is stale (previous pull episode): fall through and record a
+	// fresh start so the second episode gets a full grace window.
+	if observedAt, ok := imagePullBackOffObservations(job)[key]; ok && !c.ranSince(observedAt) {
+		return observedAt, true, nil
+	}
+	return now, true, r.rememberImagePullBackOffStart(ctx, job, pod, c, now)
+}
+
+// assessPodImagePull evaluates each pull clock once for both failure and requeue.
+func (r *EvalHubEvaluationJobFailureReconciler) assessPodImagePull(ctx context.Context, job *batchv1.Job, pod *corev1.Pod, now time.Time) failureAssessment {
+	containers := imagePullRetryContainers(pod)
+	activeKeys := make(map[string]struct{}, len(containers))
+	for _, c := range containers {
+		activeKeys[imagePullBackOffObservationKey(pod, c)] = struct{}{}
+	}
+	assessment := failureAssessment{err: r.pruneImagePullBackOffObservations(ctx, job, pod, activeKeys)}
+	var events []corev1.Event
+	var listErr error
+	eventsLoaded := false
+	for _, c := range containers {
+		if c.reason != waitingReasonImagePullBackOff {
+			if startedAt, ok := imagePullBackOffObservations(job)[imagePullBackOffObservationKey(pod, c)]; ok && !c.ranSince(startedAt) {
+				assessment.waitFor(imagePullRetryRequeueAfter(startedAt, now))
+			}
+			continue
+		}
+		if !eventsLoaded {
+			events, listErr = r.imagePullBackOffEvents(ctx, pod)
+			eventsLoaded = true
+		}
+		startedAt, found, err := r.imagePullBackOffStartedAtFromEvents(ctx, job, pod, c, now, events, listErr)
+		if err != nil {
+			if assessment.err == nil {
+				assessment.err = err
+			}
+			assessment.waitFor(30 * time.Second)
+			if !found {
+				continue
+			}
+		}
+		if found && imagePullBackOffPastGrace(pod, startedAt, now) {
+			assessment.message = fmt.Sprintf("%s: waiting reason=%s message=%s", c.name, waitingReasonImagePullBackOff, c.message)
+			assessment.failed = true
+			return assessment
+		}
+		assessment.waitFor(imagePullGracePeriodRemaining(pod, startedAt, now))
+	}
+	return assessment
+}
+
+// rememberImagePullBackOffStart persists an Event-derived episode start as an
+// observation so the grace clock survives the Event disappearing later in the
+// same episode. A failed patch schedules a short retry while the Event-derived
+// start remains usable for the current decision. A stored start that still
+// belongs to the current episode and is earlier wins (the episode may have
+// started before the Event was emitted); a stale stored start is replaced.
+func (r *EvalHubEvaluationJobFailureReconciler) rememberImagePullBackOffStart(ctx context.Context, job *batchv1.Job, pod *corev1.Pod, c imagePullBackOffContainer, startedAt time.Time) error {
+	key := imagePullBackOffObservationKey(pod, c)
+	observations := imagePullBackOffObservations(job)
+	// Keep an earlier stored start only when it still belongs to the current pull
+	// episode. A stored start that predates the container's last completed run is
+	// from a previous episode and must not block recording this episode's Event
+	// time: the fallback would otherwise reject the stale value and restart the
+	// full grace window.
+	if existing, ok := observations[key]; ok && !c.ranSince(existing) && !existing.After(startedAt) {
+		return nil
+	}
+	patch := client.MergeFromWithOptions(job.DeepCopy(), client.MergeFromWithOptimisticLock{})
+	observations[key] = startedAt.UTC()
+	raw, err := marshalImagePullBackOffObservations(observations)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "remember image pull backoff start: marshal failed",
+			append(failureWatcherLogFields(), "job", job.Name, "pod", pod.Name, "container", c.name)...)
+		return err
+	}
+	updated := job.DeepCopy()
+	if updated.Annotations == nil {
+		updated.Annotations = map[string]string{}
+	}
+	updated.Annotations[annotationImagePullBackOffObservations] = raw
+	if err := r.Patch(ctx, updated, patch); err != nil {
+		log.FromContext(ctx).Error(err, "remember image pull backoff start: patch failed",
+			append(failureWatcherLogFields(), "job", job.Name, "pod", pod.Name, "container", c.name)...)
+		return err
+	}
+	job.Annotations = updated.Annotations
+	job.ResourceVersion = updated.ResourceVersion
+	return nil
+}
+
+func (r *EvalHubEvaluationJobFailureReconciler) pruneImagePullBackOffObservations(ctx context.Context, job *batchv1.Job, pod *corev1.Pod, activeKeys map[string]struct{}) error {
+	if job.Annotations == nil || strings.TrimSpace(job.Annotations[annotationImagePullBackOffObservations]) == "" {
+		return nil
+	}
+	observations := imagePullBackOffObservations(job)
+	changed := false
+	podKeyPrefix := fmt.Sprintf("%s|", pod.UID)
+	for key := range observations {
+		if !strings.HasPrefix(key, podKeyPrefix) {
+			continue
+		}
+		if _, ok := activeKeys[key]; ok {
+			continue
+		}
+		delete(observations, key)
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	patch := client.MergeFromWithOptions(job.DeepCopy(), client.MergeFromWithOptimisticLock{})
+	if len(observations) == 0 {
+		delete(job.Annotations, annotationImagePullBackOffObservations)
+	} else {
+		raw, err := marshalImagePullBackOffObservations(observations)
+		if err != nil {
+			return err
+		}
+		job.Annotations[annotationImagePullBackOffObservations] = raw
+	}
+	if len(job.Annotations) == 0 {
+		job.Annotations = nil
+	}
+	return r.Patch(ctx, job, patch)
+}
+
+func (r *EvalHubEvaluationJobFailureReconciler) clearImagePullBackOffObservation(ctx context.Context, job *batchv1.Job) error {
+	if job.Annotations == nil {
+		return nil
+	}
+	if job.Annotations[annotationImagePullBackOffObservations] == "" {
+		return nil
+	}
+	patch := client.MergeFromWithOptions(job.DeepCopy(), client.MergeFromWithOptimisticLock{})
+	delete(job.Annotations, annotationImagePullBackOffObservations)
+	if len(job.Annotations) == 0 {
+		job.Annotations = nil
+	}
+	return r.Patch(ctx, job, patch)
 }
 
 // podVolumeMountFailureMessage returns a failure when a scheduled pending pod has not started any
@@ -902,32 +1523,6 @@ func (r *EvalHubEvaluationJobFailureReconciler) failedMountEventMessage(ctx cont
 	return best, true, nil
 }
 
-// pendingGraceRequeueAfter returns the earliest requeue duration needed across all pods of the
-// job that still need a scheduling grace wait or a bounded volume-mount FailedMount recheck.
-func (r *EvalHubEvaluationJobFailureReconciler) pendingGraceRequeueAfter(ctx context.Context, job *batchv1.Job) time.Duration {
-	list := &corev1.PodList{}
-	if err := r.List(ctx, list, client.InNamespace(job.Namespace), client.MatchingLabels{
-		"batch.kubernetes.io/job-name": job.Name,
-	}); err != nil {
-		log.FromContext(ctx).Error(err, "pendingGraceRequeueAfter: failed to list pods",
-			append(failureWatcherLogFields(), "job", job.Name, "namespace", job.Namespace)...)
-		return 0
-	}
-	var earliest time.Duration
-	for i := range list.Items {
-		pod := &list.Items[i]
-		for _, remaining := range []time.Duration{
-			schedulingGracePeriodRemaining(pod),
-			volumeMountGracePeriodRemaining(pod),
-		} {
-			if remaining > 0 && (earliest == 0 || remaining < earliest) {
-				earliest = remaining
-			}
-		}
-	}
-	return earliest
-}
-
 // podOperatorOnlyFailureMessage returns true when the eval-hub init, adapter, or sidecar is in a state
 // that typically means EvalHub was never notified (vs. adapter exiting after reporting failure).
 // Scheduling failures (pod stuck in Pending, e.g. missing PVC) are also detected here.
@@ -963,6 +1558,8 @@ func terminatedInitOrSidecarNeedsOperatorReport(t *corev1.ContainerStateTerminat
 const (
 	waitingReasonImagePullBackOff           = "ImagePullBackOff"
 	waitingReasonErrImagePull               = "ErrImagePull"
+	waitingReasonRegistryUnavailable        = "RegistryUnavailable"
+	waitingReasonSignatureValidationFailed  = "SignatureValidationFailed"
 	waitingReasonCrashLoopBackOff           = "CrashLoopBackOff"
 	waitingReasonCreateContainerConfigError = "CreateContainerConfigError"
 	waitingReasonCreateContainerError       = "CreateContainerError"
@@ -971,8 +1568,6 @@ const (
 )
 
 var fatalContainerWaitingReasons = map[string]struct{}{
-	waitingReasonImagePullBackOff:           {},
-	waitingReasonErrImagePull:               {},
 	waitingReasonCrashLoopBackOff:           {},
 	waitingReasonCreateContainerConfigError: {},
 	waitingReasonCreateContainerError:       {},
@@ -983,6 +1578,24 @@ var fatalContainerWaitingReasons = map[string]struct{}{
 func isFatalContainerWaitingReason(reason string) bool {
 	_, ok := fatalContainerWaitingReasons[strings.TrimSpace(reason)]
 	return ok
+}
+
+func containerStatusWaitingReason(cs *corev1.ContainerStatus) string {
+	if cs.State.Waiting == nil {
+		return ""
+	}
+	return strings.TrimSpace(cs.State.Waiting.Reason)
+}
+
+// waitingContainerFailureMessage lets fatalContainerWaitingReasons be the single
+// source of truth for which waiting reasons are fatal; the image-pull reasons are
+// excluded there and handled by the grace-period path instead.
+func waitingContainerFailureMessage(w *corev1.ContainerStateWaiting) (string, bool) {
+	reason := strings.TrimSpace(w.Reason)
+	if isFatalContainerWaitingReason(reason) {
+		return fmt.Sprintf("waiting reason=%s message=%s", reason, w.Message), true
+	}
+	return "", false
 }
 
 // containerCannotReportToEvalHub detects fatal init/adapter/sidecar states before or without a successful callback.
@@ -1002,9 +1615,8 @@ func containerCannotReportToEvalHub(pod *corev1.Pod, containerName string) (stri
 			}
 		}
 		if cs.State.Waiting != nil {
-			w := cs.State.Waiting
-			if isFatalContainerWaitingReason(w.Reason) {
-				return fmt.Sprintf("waiting reason=%s message=%s", w.Reason, w.Message), true
+			if msg, ok := waitingContainerFailureMessage(cs.State.Waiting); ok {
+				return msg, true
 			}
 		}
 	}
@@ -1021,9 +1633,8 @@ func containerCannotReportToEvalHub(pod *corev1.Pod, containerName string) (stri
 			}
 		}
 		if ics.State.Waiting != nil {
-			w := ics.State.Waiting
-			if isFatalContainerWaitingReason(w.Reason) {
-				return fmt.Sprintf("waiting reason=%s message=%s", w.Reason, w.Message), true
+			if msg, ok := waitingContainerFailureMessage(ics.State.Waiting); ok {
+				return msg, true
 			}
 		}
 	}
@@ -1074,11 +1685,48 @@ func serverAlreadyHandledFailure(job *batchv1.Job) bool {
 	return job.Labels[labelEvaluationPhase] == labelEvaluationPhaseFailed
 }
 
-func failurePendingReport(job *batchv1.Job) bool {
+func failureAcceptedReport(job *batchv1.Job) bool {
 	if job.Annotations == nil {
 		return false
 	}
-	return job.Annotations[annotationFailurePending] == "true"
+	return job.Annotations[annotationFailureAccepted] == "true"
+}
+
+func acceptedFailureMessage(job *batchv1.Job) string {
+	if job.Annotations == nil {
+		return ""
+	}
+	return strings.TrimSpace(job.Annotations[annotationFailureMessage])
+}
+
+// clearFailurePendingAnnotation removes the in-flight marker and logs when the
+// cleanup patch fails. It also removes the saved request after a confirmed
+// superseding result; unresolved requests are retained until their outcome is known.
+func (r *EvalHubEvaluationJobFailureReconciler) clearFailurePendingAnnotation(ctx context.Context, job *batchv1.Job, failureLogMessage string) error {
+	revert := client.MergeFrom(job.DeepCopy())
+	delete(job.Annotations, annotationFailurePending)
+	delete(job.Annotations, annotationFailureRequest)
+	if len(job.Annotations) == 0 {
+		job.Annotations = nil
+	}
+	if err := r.Patch(ctx, job, revert); err != nil {
+		log.FromContext(ctx).Error(err, failureLogMessage,
+			append(failureWatcherLogFields(), "action", "revert_pending_failed", "job", job.Name)...)
+		return err
+	}
+	return nil
+}
+
+// evalHubFailureRequest is persisted before sending so an uncertain POST can
+// be recovered without relying on a transient Pod failure signal. Namespace is
+// supplied by the owning Job; the benchmark identity and message are immutable.
+type evalHubFailureRequest struct {
+	JobID          string `json:"job_id"`
+	ProviderID     string `json:"provider_id"`
+	BenchmarkID    string `json:"benchmark_id"`
+	BenchmarkIndex int    `json:"benchmark_index"`
+	Message        string `json:"message"`
+	ExitCode       int32  `json:"exit_code,omitempty"`
 }
 
 // JSON body compatible with EvalHub pkg/api StatusEvent.
@@ -1145,6 +1793,11 @@ func newEvalHubHTTPClient(restCfg *rest.Config) (*http.Client, error) {
 	return &http.Client{Transport: rt, Timeout: 30 * time.Second}, nil
 }
 
+// errEvalHubReportAlreadyTerminal is returned when EvalHub answers the failure
+// POST with 409 Conflict (JobCanNotBeUpdated): the job already holds a terminal
+// status, so a previous report was delivered and the POST must not be retried.
+var errEvalHubReportAlreadyTerminal = errors.New("evalhub job already in a terminal state")
+
 func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseURL, tenant, jobID, providerID, benchmarkID string, benchmarkIndex int, failureMsg, messageCode string) error {
 	httpClient, err := newEvalHubHTTPClient(restCfg)
 	if err != nil {
@@ -1185,7 +1838,189 @@ func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseU
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusConflict {
+			body, readErr := io.ReadAll(resp.Body)
+			if readErr != nil {
+				// An unreadable 409 body cannot prove the job is in a non-failure
+				// state: EvalHub may have accepted this report in a previous POST
+				// and only the accepted marker was lost. Surface it as an unknown
+				// conflict so the caller retries instead of dropping the report.
+				return fmt.Errorf("%w: EvalHub events returned %s: body unreadable: %v",
+					errEvalHubReportConflictUnknown, resp.Status, readErr)
+			}
+			// EvalHub's JobCanNotBeUpdated message names the current state:
+			// "The job ... can not be failed because it is '<state>'."
+			// Only a precise failure terminal state proves our report was
+			// delivered; cancelled and completed jobs also answer 409 without any
+			// failure having been delivered, and the aggregate partially_failed
+			// state does not identify which benchmark failed.
+			switch {
+			case isEvalHubFailureTerminalState(body):
+				return fmt.Errorf("%w: EvalHub events returned %s", errEvalHubReportAlreadyTerminal, resp.Status)
+			case isEvalHubNonFailureTerminalState(body), isEvalHubAggregateFailureState(body):
+				// Aggregate states do not prove this benchmark's outcome. In
+				// particular, cancellation preserves previously failed benchmarks.
+				// Recover a lost failure marker only after checking its own state.
+				state, stateErr := fetchEvalHubBenchmarkState(ctx, restCfg, baseURL, tenant, jobID, providerID, benchmarkID, benchmarkIndex)
+				if errors.Is(stateErr, errEvalHubJobNotFound) {
+					// EvalHub no longer holds the job: no failure report can be
+					// recorded or recovered, and retrying can never succeed.
+					return fmt.Errorf("%w: EvalHub events returned %s: %v", errEvalHubReportSuperseded, resp.Status, stateErr)
+				}
+				if stateErr != nil {
+					return fmt.Errorf("%w: EvalHub events returned %s: benchmark state unavailable: %v",
+						errEvalHubReportConflictUnknown, resp.Status, stateErr)
+				}
+				switch state {
+				case "failed":
+					return fmt.Errorf("%w: EvalHub events returned %s (benchmark state failed)", errEvalHubReportAlreadyTerminal, resp.Status)
+				case "completed", "cancelled", "canceled":
+					return fmt.Errorf("%w: EvalHub events returned %s (benchmark state %s)", errEvalHubReportSuperseded, resp.Status, state)
+				default:
+					return fmt.Errorf("%w: EvalHub events returned %s: benchmark state %q is not terminal",
+						errEvalHubReportConflictUnknown, resp.Status, state)
+				}
+			default:
+				return fmt.Errorf("%w: EvalHub events returned %s: %s", errEvalHubReportConflictUnknown, resp.Status, body)
+			}
+		}
 		return fmt.Errorf("EvalHub events returned %s", resp.Status)
 	}
 	return nil
+}
+
+// evalHubJobBenchmarkState is the per-benchmark status returned by
+// GET /api/v1/evaluations/jobs/{id} (eval-hub pkg/api.BenchmarkStatus).
+// BenchmarkIndex is optional: legacy EvalHub responses omit it, which must be
+// distinguishable from an explicit zero.
+type evalHubJobBenchmarkState struct {
+	ProviderID     string `json:"provider_id"`
+	ID             string `json:"id"`
+	BenchmarkIndex *int   `json:"benchmark_index"`
+	Status         string `json:"status"`
+}
+
+// evalHubJobResourceStatus carries the status section of the job resource.
+type evalHubJobResourceStatus struct {
+	Status struct {
+		Benchmarks []evalHubJobBenchmarkState `json:"benchmarks"`
+	} `json:"status"`
+}
+
+// fetchEvalHubBenchmarkState reads this benchmark's own state from EvalHub. The
+// 409 body only names the aggregate job state, so a conflict alone
+// cannot prove whether this benchmark's failure was recorded. Matching prefers
+// the benchmark index but falls back to provider+ID so older EvalHub images that
+// omit benchmark_index still resolve.
+func fetchEvalHubBenchmarkState(ctx context.Context, restCfg *rest.Config, baseURL, tenant, jobID, providerID, benchmarkID string, benchmarkIndex int) (string, error) {
+	httpClient, err := newEvalHubHTTPClient(restCfg)
+	if err != nil {
+		return "", err
+	}
+	url := fmt.Sprintf(evalHubJobPathFmt, baseURL, jobID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set(httpHeaderTenant, tenant)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read EvalHub job %s: %w", jobID, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			return "", fmt.Errorf("%w: EvalHub job %s no longer exists", errEvalHubJobNotFound, jobID)
+		}
+		return "", fmt.Errorf("EvalHub job %s returned %s: %s", jobID, resp.Status, body)
+	}
+	var resource evalHubJobResourceStatus
+	if err := json.Unmarshal(body, &resource); err != nil {
+		return "", fmt.Errorf("decode EvalHub job %s: %w", jobID, err)
+	}
+	// Match the requested index exactly. An unindexed record (legacy EvalHub
+	// response) can stand in only when it is the single match: attributing one of
+	// several unindexed records to this benchmark could take another entry's
+	// state, and an explicit different index means the record is another run.
+	var unindexed []string
+	explicitOtherIndex := 0
+	for i := range resource.Status.Benchmarks {
+		b := &resource.Status.Benchmarks[i]
+		if b.ProviderID != providerID || b.ID != benchmarkID {
+			continue
+		}
+		state := strings.ToLower(strings.TrimSpace(b.Status))
+		if b.BenchmarkIndex == nil {
+			unindexed = append(unindexed, state)
+			continue
+		}
+		if *b.BenchmarkIndex == benchmarkIndex {
+			return state, nil
+		}
+		explicitOtherIndex++
+	}
+	switch {
+	case len(unindexed) == 1 && explicitOtherIndex == 0:
+		return unindexed[0], nil
+	case len(unindexed) > 1:
+		return "", fmt.Errorf("benchmark %s/%s for index %d is ambiguous: %d unindexed records match in EvalHub job %s",
+			providerID, benchmarkID, benchmarkIndex, len(unindexed), jobID)
+	case explicitOtherIndex > 0:
+		return "", fmt.Errorf("benchmark %s/%s for index %d not found in EvalHub job %s: %d record(s) carry a different explicit index",
+			providerID, benchmarkID, benchmarkIndex, jobID, explicitOtherIndex)
+	default:
+		return "", fmt.Errorf("benchmark %s/%s (index %d) not found in EvalHub job %s", providerID, benchmarkID, benchmarkIndex, jobID)
+	}
+}
+
+// errEvalHubJobNotFound is returned when EvalHub no longer holds the evaluation
+// job (404): no failure report can be recorded or recovered.
+var errEvalHubJobNotFound = errors.New("evalhub job not found")
+
+// errEvalHubReportSuperseded is returned when EvalHub answers the failure POST
+// with 409 Conflict because the job (and this benchmark) is already in a
+// non-failure terminal state (cancelled or completed): no failure report for
+// this benchmark was or will be delivered, and the Job must not be promoted to
+// Failed. The aggregate partially_failed state is never classified here: it is
+// resolved from this benchmark's own status instead.
+var errEvalHubReportSuperseded = errors.New("evalhub job already in a non-failure terminal state")
+
+// errEvalHubReportConflictUnknown is returned when EvalHub answers the failure
+// POST with 409 Conflict but the response body cannot be classified: it is
+// unreadable, empty, or does not name a recognisable job state. The report may
+// or may not have been delivered, so the POST must stay eligible for retry
+// rather than being treated as a confirmed non-failure terminal state.
+var errEvalHubReportConflictUnknown = errors.New("evalhub job conflict state unknown")
+
+// isEvalHubFailureTerminalState reports whether a 409 response body proves the
+// job ended in a failure state. EvalHub's JobCanNotBeUpdated message names the
+// current state: "... can not be failed because it is 'failed'." Only the
+// precise per-job "failed" state proves this benchmark's failure was recorded:
+// "partially_failed" is an aggregate state that does not identify which
+// benchmark failed, so it must never select the promotion path.
+func isEvalHubFailureTerminalState(body []byte) bool {
+	return strings.Contains(strings.ToLower(string(body)), "'failed'")
+}
+
+// isEvalHubNonFailureTerminalState reports whether a 409 response body proves
+// the job is terminal without recording this benchmark's failure: cancelled or
+// completed. The aggregate partially_failed state is deliberately excluded:
+// only this benchmark's own status can prove whether its failure was recorded.
+func isEvalHubNonFailureTerminalState(body []byte) bool {
+	text := strings.ToLower(string(body))
+	return strings.Contains(text, "'cancelled'") ||
+		strings.Contains(text, "'canceled'") ||
+		strings.Contains(text, "'completed'")
+}
+
+// isEvalHubAggregateFailureState reports whether the 409 response body names the
+// aggregate partially_failed job state, which does not identify which benchmark
+// failed and therefore needs a per-benchmark status lookup.
+func isEvalHubAggregateFailureState(body []byte) bool {
+	return strings.Contains(strings.ToLower(string(body)), "'partially_failed'")
 }
