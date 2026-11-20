@@ -1359,7 +1359,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) rememberImagePullBackOffStart(ct
 	if existing, ok := observations[key]; ok && !c.ranSince(existing) && !existing.After(startedAt) {
 		return nil
 	}
-	patch := client.MergeFrom(job.DeepCopy())
+	patch := client.MergeFromWithOptions(job.DeepCopy(), client.MergeFromWithOptimisticLock{})
 	observations[key] = startedAt.UTC()
 	raw, err := marshalImagePullBackOffObservations(observations)
 	if err != nil {
@@ -1402,7 +1402,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) pruneImagePullBackOffObservation
 	if !changed {
 		return nil
 	}
-	patch := client.MergeFrom(job.DeepCopy())
+	patch := client.MergeFromWithOptions(job.DeepCopy(), client.MergeFromWithOptimisticLock{})
 	if len(observations) == 0 {
 		delete(job.Annotations, annotationImagePullBackOffObservations)
 	} else {
@@ -1425,7 +1425,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) clearImagePullBackOffObservation
 	if job.Annotations[annotationImagePullBackOffObservations] == "" {
 		return nil
 	}
-	patch := client.MergeFrom(job.DeepCopy())
+	patch := client.MergeFromWithOptions(job.DeepCopy(), client.MergeFromWithOptimisticLock{})
 	delete(job.Annotations, annotationImagePullBackOffObservations)
 	if len(job.Annotations) == 0 {
 		job.Annotations = nil

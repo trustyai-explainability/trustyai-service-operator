@@ -2697,56 +2697,78 @@ func TestJobFailureReconciler_RequestUpdatesDoNotLoop(t *testing.T) {
 }
 
 func TestJobFailureReconciler_StaleJobCannotReplaceSavedRequest(t *testing.T) {
-	ctx := context.Background()
-	srv, requests := evalHubJobStateServer(t, "", "failed")
-	job := evalHubEvaluationJob("eval-job-stale-request", "tenant-ns", map[string]string{
-		evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
-	})
-	pod := oomKilledAdapterPod(job.Name, job.Namespace, job.UID)
-	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
-	var stale batchv1.Job
-	injectStale := false
-	fc := fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).WithObjects(job, pod, eh).
-		WithInterceptorFuncs(interceptor.Funcs{
-			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-				if j, ok := obj.(*batchv1.Job); ok && injectStale && key == client.ObjectKeyFromObject(job) {
-					injectStale = false
-					stale.DeepCopyInto(j)
-					return nil
-				}
-				return c.Get(ctx, key, obj, opts...)
-			},
-		}).Build()
-	require.NoError(t, fc.Get(ctx, client.ObjectKeyFromObject(job), &stale))
-	saved := stale.DeepCopy()
-	raw, err := json.Marshal(evalHubFailureRequest{
-		JobID: job.Labels[evalHubJobIDLabel], ProviderID: "provider-1", BenchmarkID: "inspect/docvqa", Message: "original accepted failure",
-	})
-	require.NoError(t, err)
-	saved.Annotations[annotationFailurePending] = "true"
-	saved.Annotations[annotationFailureRequest] = string(raw)
-	require.NoError(t, fc.Update(ctx, saved))
-	require.NotEqual(t, stale.ResourceVersion, saved.ResourceVersion)
-	r, rec := buildJobFailureReconciler(fc, job.Namespace)
-	req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(job)}
-	injectStale = true
-	result, err := r.Reconcile(ctx, req)
-	require.NoError(t, err)
-	assert.Equal(t, 10*time.Second, result.RequeueAfter, "a stale request write must conflict and requeue")
-	assert.Empty(t, requests, "a conflicting write must not send a replacement failure")
-	assert.Empty(t, rec.Events)
-	var persisted batchv1.Job
-	require.NoError(t, fc.Get(ctx, req.NamespacedName, &persisted))
-	assert.Equal(t, string(raw), persisted.Annotations[annotationFailureRequest])
-	assert.NotEqual(t, labelEvaluationPhaseFailed, persisted.Labels[labelEvaluationPhase])
-	// The next fresh read resolves the saved request instead of posting the new message.
-	result, err = r.Reconcile(ctx, req)
-	require.NoError(t, err)
-	assert.Equal(t, ctrl.Result{}, result)
-	require.Len(t, requests, 1)
-	assert.Equal(t, http.MethodGet, (<-requests).Method)
-	require.NoError(t, fc.Get(ctx, req.NamespacedName, &persisted))
-	assert.Equal(t, "original accepted failure", persisted.Annotations[annotationEvaluationStatus])
-	require.Len(t, rec.Events, 1)
-	assert.Contains(t, <-rec.Events, "original accepted failure")
+	for _, observationWrite := range []string{"none", "record", "prune"} {
+		t.Run(observationWrite, func(t *testing.T) {
+			ctx := context.Background()
+			srv, requests := evalHubJobStateServer(t, "", "failed")
+			job := evalHubEvaluationJob("eval-job-stale-request", "tenant-ns", map[string]string{
+				evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
+			})
+			pod := oomKilledAdapterPod(job.Name, job.Namespace, job.UID)
+			var backOffEvent *corev1.Event
+			if observationWrite != "none" {
+				pod = imagePullBackOffAdapterPod(job.Name, job.Namespace, job.UID)
+				backOffEvent = imagePullBackOffEvent(pod, 11*time.Minute)
+			}
+			if observationWrite == "prune" {
+				observations, err := marshalImagePullBackOffObservations(map[string]time.Time{
+					imagePullBackOffObservationKey(pod, imagePullBackOffContainer{name: "removed-container", image: "obsolete"}): time.Now().Add(-12 * time.Minute),
+				})
+				require.NoError(t, err)
+				job.Annotations[annotationImagePullBackOffObservations] = observations
+			}
+			eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+			var stale batchv1.Job
+			injectStale := false
+			objects := []client.Object{job, pod, eh}
+			if backOffEvent != nil {
+				objects = append(objects, backOffEvent)
+			}
+			fc := fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).WithObjects(objects...).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						if j, ok := obj.(*batchv1.Job); ok && injectStale && key == client.ObjectKeyFromObject(job) {
+							injectStale = false
+							stale.DeepCopyInto(j)
+							return nil
+						}
+						return c.Get(ctx, key, obj, opts...)
+					},
+				}).Build()
+			require.NoError(t, fc.Get(ctx, client.ObjectKeyFromObject(job), &stale))
+			saved := stale.DeepCopy()
+			raw, err := json.Marshal(evalHubFailureRequest{
+				JobID: job.Labels[evalHubJobIDLabel], ProviderID: "provider-1", BenchmarkID: "inspect/docvqa", Message: "original accepted failure",
+			})
+			require.NoError(t, err)
+			saved.Annotations[annotationFailurePending] = "true"
+			saved.Annotations[annotationFailureRequest] = string(raw)
+			require.NoError(t, fc.Update(ctx, saved))
+			require.NotEqual(t, stale.ResourceVersion, saved.ResourceVersion)
+			r, rec := buildJobFailureReconciler(fc, job.Namespace)
+			req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(job)}
+			injectStale = true
+			result, err := r.Reconcile(ctx, req)
+			require.NoError(t, err)
+			assert.Equal(t, 10*time.Second, result.RequeueAfter, "a stale request write must conflict and requeue")
+			assert.Empty(t, requests, "a conflicting write must not send a replacement failure")
+			assert.Empty(t, rec.Events)
+			var persisted batchv1.Job
+			require.NoError(t, fc.Get(ctx, req.NamespacedName, &persisted))
+			assert.Equal(t, string(raw), persisted.Annotations[annotationFailureRequest])
+			assert.Equal(t, saved.ResourceVersion, persisted.ResourceVersion, "stale observation writes must not refresh the Job")
+			assert.Equal(t, saved.Annotations[annotationImagePullBackOffObservations], persisted.Annotations[annotationImagePullBackOffObservations])
+			assert.NotEqual(t, labelEvaluationPhaseFailed, persisted.Labels[labelEvaluationPhase])
+			// The next fresh read resolves the saved request instead of posting the new message.
+			result, err = r.Reconcile(ctx, req)
+			require.NoError(t, err)
+			assert.Equal(t, ctrl.Result{}, result)
+			require.Len(t, requests, 1)
+			assert.Equal(t, http.MethodGet, (<-requests).Method)
+			require.NoError(t, fc.Get(ctx, req.NamespacedName, &persisted))
+			assert.Equal(t, "original accepted failure", persisted.Annotations[annotationEvaluationStatus])
+			require.Len(t, rec.Events, 1)
+			assert.Contains(t, <-rec.Events, "original accepted failure")
+		})
+	}
 }
