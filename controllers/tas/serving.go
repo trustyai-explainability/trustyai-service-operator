@@ -21,21 +21,9 @@ import (
 // A change of API *group* is deliberately not followed: a different group is a
 // different resource with a different schema, so it is configuration rather than
 // discovery. It is reported as unsupported too.
-const (
-	inferenceServiceCRDName = "inferenceservices.serving.kserve.io"
-
-	// preferredServingVersion is the version adopted when it is served and its
-	// schema describes the field this operator writes. It is a preference, never
-	// a requirement: any served version that describes the field is adopted.
-	preferredServingVersion = "v1beta1"
-
-	// predictorLoggerFieldPath is the one field payload capture sets on an
-	// InferenceService. Version adoption is decided by whether a served
-	// version's OpenAPI schema still describes it.
-	predictorLoggerFieldPath = "spec.predictor.logger"
-)
-
-var predictorLoggerFieldPathParts = strings.Split(predictorLoggerFieldPath, ".")
+// The resource identity, the field written and the annotations read are
+// declared in serving_fields.go, so that a single file holds every assumption
+// this package makes about the serving API.
 
 // servingState is what the serving API offers on this pass. Absence is a
 // supported configuration, not a degradation: the operator runs, reports the
@@ -142,7 +130,7 @@ func deriveServingContract(crd *apiextensionsv1.CustomResourceDefinition) servin
 	}
 
 	for _, candidate := range servingVersionCandidates(served) {
-		if schemaDescribesField(crdSchemaForVersion(crd, candidate), predictorLoggerFieldPathParts) {
+		if versionDescribesServingFields(crdSchemaForVersion(crd, candidate)) {
 			contract.state = servingStateUsable
 			contract.version = candidate
 			contract.gvr = schema.GroupVersionResource{
@@ -189,6 +177,19 @@ func crdSchemaForVersion(crd *apiextensionsv1.CustomResourceDefinition, version 
 		return crd.Spec.Versions[i].Schema.OpenAPIV3Schema
 	}
 	return nil
+}
+
+// versionDescribesServingFields reports whether a served version's schema
+// describes every field payload capture needs there. Every declared path is
+// required, not just the one currently written, so adding a field to
+// servingSchemaFieldPaths tightens adoption rather than being ignored.
+func versionDescribesServingFields(schema *apiextensionsv1.JSONSchemaProps) bool {
+	for _, declared := range servingSchemaFieldPaths {
+		if !schemaDescribesField(schema, strings.Split(declared, ".")) {
+			return false
+		}
+	}
+	return true
 }
 
 // schemaDescribesField reports whether every step of path is declared as a
