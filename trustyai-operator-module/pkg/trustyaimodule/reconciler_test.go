@@ -14,10 +14,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -480,7 +484,88 @@ var _ = Describe("TrustyAI Module Reconciler", func() {
 			Expect(module.Status.GetPlatformRelease()).To(Equal("3.6.0"))
 		})
 	})
+
+	Context("dependency gate", func() {
+		// The optional serving API is an observation, so a pass that stops on a
+		// required dependency still has to refresh it. It used to be a
+		// precondition, which RunAll evaluated even when another check asked to
+		// stop, so reporting it after the gate left the last value in place for as
+		// long as Prometheus was missing.
+		It("refreshes the optional serving API condition when a required dependency stops the run", func() {
+			module := &platformv1alpha1.TrustyAI{
+				ObjectMeta: metav1.ObjectMeta{Name: trustyAIInstanceName},
+			}
+			Expect(k8sClient.Create(ctx, module)).To(Succeed())
+
+			// A stale observation from an earlier pass, when KServe was installed.
+			module.Status.Conditions = []common.Condition{{
+				Type:               ConditionTypeKServeAvailable,
+				Status:             metav1.ConditionTrue,
+				Reason:             ConditionReasonServingAPIAvailable,
+				Message:            "stale observation from an earlier pass",
+				LastTransitionTime: metav1.Now(),
+			}}
+			Expect(k8sClient.Status().Update(ctx, module)).To(Succeed())
+
+			r := newReconciler()
+			r.SkipDependencyChecks = false
+			r.Client = &dependencyStopClient{
+				Client: k8sClient,
+				// An empty mapper answers NoKindMatchError, the observation of an
+				// install without KServe. The suite's envtest cluster installs the
+				// InferenceService CRD for other fixtures, so the real mapper cannot
+				// produce this case.
+				mapper: meta.NewDefaultRESTMapper([]schema.GroupVersion{}),
+			}
+
+			// The first pass only adds the finalizer and asks for a requeue.
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(k8sClient.Get(ctx, typeNamespacedName, module)).To(Succeed())
+			Expect(module.Status.Phase).To(Equal(common.PhaseNotReady))
+
+			deps := moduleCondition(module, ConditionTypeDependenciesAvailable)
+			Expect(deps).NotTo(BeNil())
+			Expect(deps.Status).To(Equal(metav1.ConditionFalse))
+
+			// A stale True must not survive a pass that observed the API absent.
+			serving := moduleCondition(module, ConditionTypeKServeAvailable)
+			Expect(serving).NotTo(BeNil())
+			Expect(serving.Status).To(Equal(metav1.ConditionFalse))
+			Expect(serving.Reason).To(Equal(ConditionReasonServingAPINotInstalled))
+
+			// The gate still stopped the run: nothing was deployed, so provisioning was
+			// never reported as succeeded.
+			if provisioning := moduleCondition(module, string(common.ConditionTypeProvisioningSucceeded)); provisioning != nil {
+				Expect(provisioning.Status).NotTo(Equal(metav1.ConditionTrue))
+			}
+		})
+	})
 })
+
+// dependencyStopClient makes the required Prometheus check stop the run and
+// answers the optional API mapping from a stub, so a spec can observe both
+// outcomes without depending on what the shared envtest cluster installs.
+type dependencyStopClient struct {
+	client.Client
+	mapper meta.RESTMapper
+}
+
+func (s *dependencyStopClient) RESTMapper() meta.RESTMapper { return s.mapper }
+
+func (s *dependencyStopClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if unstructuredList, ok := list.(*unstructured.UnstructuredList); ok {
+		gvk := unstructuredList.GroupVersionKind()
+		if gvk.Group == "monitoring.coreos.com" && (gvk.Kind == "Prometheus" || gvk.Kind == "PrometheusList") {
+			return errors.NewNotFound(schema.GroupResource{Group: gvk.Group, Resource: "prometheuses"}, "")
+		}
+	}
+
+	return s.Client.List(ctx, list, opts...)
+}
 
 func deploymentEnableServicesArg(dep *appsv1.Deployment) string {
 	for i := range dep.Spec.Template.Spec.Containers {

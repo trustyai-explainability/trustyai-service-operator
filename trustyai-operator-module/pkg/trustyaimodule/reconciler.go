@@ -129,6 +129,14 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			Instance:   module,
 			Conditions: condMgr,
 		}
+		// The optional serving API is reported before the required gate is
+		// consulted, so a stopped reconcile still refreshes the observation:
+		// installing or removing KServe while Prometheus is missing used to leave
+		// whatever the last successful pass wrote. Reporting it is an observation
+		// and nothing more; it never stops, starts or resumes reconciliation, and
+		// only the Prometheus precondition below decides that.
+		reportServingAPI(ctx, r.Client, module, condMgr)
+
 		if stop := precondition.RunAll(ctx, rr, cluster.ClusterType(""), modulePreConditions); stop {
 			module.Status.Phase = common.PhaseNotReady
 			module.Status.ObservedGeneration = module.Generation
@@ -140,11 +148,6 @@ func (r *TrustyAIModuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			logger.Info("Blocking deployment due to missing dependencies")
 			return ctrl.Result{RequeueAfter: time.Duration(DefaultRequeueInterval) * time.Second}, nil
 		}
-
-		// The optional serving API is reported after the required preconditions, so
-		// a stopped reconcile (Prometheus missing) does not overwrite its last value
-		// with a guess.
-		reportServingAPI(ctx, r.Client, module, condMgr)
 	} else {
 		condMgr.MarkTrue(ConditionTypeDependenciesAvailable,
 			conditions.WithReason("ChecksSkipped"),
