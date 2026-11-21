@@ -314,6 +314,39 @@ func createTestPVC(ctx context.Context, k8sClient client.Client, instance *trust
 }
 
 // createInferenceService Function to create the InferenceService
+// servingCRDFixture is the serving CRD as the operator reads it: one served
+// version whose schema declares the predictor logger. Version adoption is a
+// schema decision, so a fixture that only carries a name is reported as
+// unsupported rather than silently treated as usable.
+func servingCRDFixture() *apiextensionsv1.CustomResourceDefinition {
+	return &apiextensionsv1.CustomResourceDefinition{
+		ObjectMeta: metav1.ObjectMeta{Name: inferenceServiceCRDName},
+		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+			Group: "serving.kserve.io",
+			Names: apiextensionsv1.CustomResourceDefinitionNames{
+				Plural: "inferenceservices",
+				Kind:   "InferenceService",
+			},
+			Scope: apiextensionsv1.NamespaceScoped,
+			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{{
+				Name:    "v1beta1",
+				Served:  true,
+				Storage: true,
+				Schema: &apiextensionsv1.CustomResourceValidation{OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+					Type: "object",
+					Properties: map[string]apiextensionsv1.JSONSchemaProps{
+						"spec": {Type: "object", Properties: map[string]apiextensionsv1.JSONSchemaProps{
+							"predictor": {Type: "object", Properties: map[string]apiextensionsv1.JSONSchemaProps{
+								"logger": {Type: "object"},
+							}},
+						}},
+					},
+				}},
+			}},
+		},
+	}
+}
+
 func createInferenceService(name string, namespace string) *kservev1beta1.InferenceService {
 	return &kservev1beta1.InferenceService{
 		ObjectMeta: metav1.ObjectMeta{
