@@ -154,7 +154,6 @@ rules:
   - inferenceservices
   verbs:
   - list
-  - watch
   - get
   - update
   - patch
@@ -164,7 +163,6 @@ rules:
   - inferenceservices/finalizers
   verbs:
   - list
-  - watch
   - get
   - update
   - patch
