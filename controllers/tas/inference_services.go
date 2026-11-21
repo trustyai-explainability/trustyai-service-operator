@@ -64,109 +64,187 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 			return false, nil
 		}
 
-		// If the secret volume doesn't exist, add it
-		volumeExists := false
-		for _, vol := range deployment.Spec.Template.Spec.Volumes {
-			if vol.Name == instance.Name+"-internal" {
-				volumeExists = true
-				break
-			}
+		// Removal runs from the finalizer, as the instance's TLS Secret is about
+		// to disappear with the instance. Publishing the serving-certificate
+		// volume, mount and cert path here pointed ModelMesh Pods at a Secret that
+		// no longer exists, so Pods created after the uninstall could not start.
+		// Removal therefore only takes back the material this operator added.
+		var changed bool
+		if remove {
+			sinkChanged := removePayloadProcessorEnvVar(&deployment.Spec.Template.Spec, envVarName, url)
+			tlsChanged := removeTLSCertMaterial(&deployment.Spec.Template.Spec, instance.Name)
+			changed = sinkChanged || tlsChanged
+		} else {
+			sinkChanged := addPayloadProcessorEnvVar(&deployment.Spec.Template.Spec, envVarName, url)
+			tlsChanged := addTLSCertMaterial(&deployment.Spec.Template.Spec, certVolumes)
+			changed = sinkChanged || tlsChanged
 		}
-		if !volumeExists {
-			deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, certVolumes.volume)
+
+		// One write per Deployment. The sink edit and the TLS material the same
+		// pass adds used to be two updates, so a partially applied pass could
+		// publish the mount without the env var that explains it.
+		if !changed {
+			continue
 		}
-
-		// Loop over all containers in the Deployment's Pod template
-		for i := range deployment.Spec.Template.Spec.Containers {
-			mountExists := false
-			for _, mount := range deployment.Spec.Template.Spec.Containers[i].VolumeMounts {
-				if mount.Name == instance.Name+"-internal" {
-					mountExists = true
-					break
-				}
-			}
-			if !mountExists {
-				deployment.Spec.Template.Spec.Containers[i].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[i].VolumeMounts, certVolumes.volumeMount)
-			}
-
-			// Store the original environment variable list
-			// Get the existing env var
-			var envVar *corev1.EnvVar
-			for j, e := range deployment.Spec.Template.Spec.Containers[i].Env {
-				if e.Name == envVarName {
-					envVar = &deployment.Spec.Template.Spec.Containers[i].Env[j]
-					break
-				}
-			}
-
-			var originalValue string
-			if envVar != nil {
-				originalValue = envVar.Value
-			}
-
-			// If the env var doesn't exist, add it (if we are not removing)
-			if envVar == nil && !remove {
-				envVar = &corev1.EnvVar{
-					Name:  envVarName,
-					Value: url,
-				}
-				deployment.Spec.Template.Spec.Containers[i].Env = append(deployment.Spec.Template.Spec.Containers[i].Env, *envVar)
-			} else if envVar != nil {
-				// If the env var exists and already contains the value, don't do anything
-				existingValues := strings.Split(envVar.Value, " ")
-				valueExists := false
-				for _, v := range existingValues {
-					if v == url {
-						valueExists = true
-						break
-					}
-				}
-
-				if !valueExists {
-					envVar.Value = generateEnvVarValue(envVar.Value, url, remove)
-				}
-			}
-
-			// Only update the deployment if the var value has to change, or we are removing it
-			if originalValue != envVar.Value || remove {
-				// Update the Deployment
-				if err := r.Update(ctx, &deployment); err != nil {
-					log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
-					return false, err
-				}
-				r.eventModelMeshConfigured(instance)
-				log.FromContext(ctx).Info("Updating Deployment " + deployment.Name + ", container spec " + deployment.Spec.Template.Spec.Containers[i].Name + ", env var " + envVarName + " to " + url)
-			}
-
-			// Check TLS environment variable on ModelMesh
-			if deployment.Spec.Template.Spec.Containers[i].Name == mmContainerName {
-				tlsKeyCertPathEnvValue := tlsMountPath + "/tls.crt"
-				tlsKeyCertPathExists := false
-				for _, envVar := range deployment.Spec.Template.Spec.Containers[i].Env {
-					if envVar.Name == tlsKeyCertPathName {
-						tlsKeyCertPathExists = true
-						break
-					}
-				}
-
-				// Doesn't exist, so we can add
-				if !tlsKeyCertPathExists {
-					deployment.Spec.Template.Spec.Containers[i].Env = append(deployment.Spec.Template.Spec.Containers[i].Env, corev1.EnvVar{
-						Name:  tlsKeyCertPathName,
-						Value: tlsKeyCertPathEnvValue,
-					})
-
-					if err := r.Update(ctx, &deployment); err != nil {
-						log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
-						return false, err
-					}
-					log.FromContext(ctx).Info("Added environment variable " + tlsKeyCertPathName + " to deployment " + deployment.Name + " for container " + mmContainerName)
-				}
-			}
+		if err := r.Update(ctx, &deployment); err != nil {
+			log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
+			return false, err
 		}
+		r.eventModelMeshConfigured(instance)
+		log.FromContext(ctx).Info("Updated Deployment " + deployment.Name + ", env var " + envVarName + " to " + url)
 	}
 
 	return true, nil
+}
+
+// envVarIndex returns the position of an environment variable in a container, or
+// -1 when the container does not carry it.
+func envVarIndex(container *corev1.Container, name string) int {
+	for i := range container.Env {
+		if container.Env[i].Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// addPayloadProcessorEnvVar adds this operator's sink to every container that
+// does not carry it, and appends it to a container whose value already lists
+// other sinks. The value is space separated, so a sink this operator does not
+// own is never rewritten.
+func addPayloadProcessorEnvVar(spec *corev1.PodSpec, envVarName, url string) bool {
+	changed := false
+	for i := range spec.Containers {
+		container := &spec.Containers[i]
+		index := envVarIndex(container, envVarName)
+		if index < 0 {
+			container.Env = append(container.Env, corev1.EnvVar{Name: envVarName, Value: url})
+			changed = true
+			continue
+		}
+		current := container.Env[index].Value
+		updated := generateEnvVarValue(current, url, false)
+		if updated == current {
+			continue
+		}
+		container.Env[index].Value = updated
+		changed = true
+	}
+	return changed
+}
+
+// removePayloadProcessorEnvVar takes this operator's sink back out. A container
+// that never carried the variable has nothing to remove, which is the case the
+// old nil dereference panicked on.
+func removePayloadProcessorEnvVar(spec *corev1.PodSpec, envVarName, url string) bool {
+	changed := false
+	for i := range spec.Containers {
+		container := &spec.Containers[i]
+		index := envVarIndex(container, envVarName)
+		if index < 0 {
+			continue
+		}
+		current := container.Env[index].Value
+		updated := generateEnvVarValue(current, url, true)
+		if updated == current {
+			continue
+		}
+		container.Env[index].Value = updated
+		changed = true
+	}
+	return changed
+}
+
+// addTLSCertMaterial mounts the instance's serving Secret on a ModelMesh
+// Deployment and points the ModelMesh certificate path at it.
+func addTLSCertMaterial(spec *corev1.PodSpec, certVolumes TLSCertVolumes) bool {
+	changed := false
+
+	volumeExists := false
+	for _, vol := range spec.Volumes {
+		if vol.Name == certVolumes.volume.Name {
+			volumeExists = true
+			break
+		}
+	}
+	if !volumeExists {
+		spec.Volumes = append(spec.Volumes, certVolumes.volume)
+		changed = true
+	}
+
+	for i := range spec.Containers {
+		container := &spec.Containers[i]
+		mountExists := false
+		for _, mount := range container.VolumeMounts {
+			if mount.Name == certVolumes.volumeMount.Name {
+				mountExists = true
+				break
+			}
+		}
+		if !mountExists {
+			container.VolumeMounts = append(container.VolumeMounts, certVolumes.volumeMount)
+			changed = true
+		}
+
+		if container.Name != mmContainerName {
+			continue
+		}
+		if envVarIndex(container, tlsKeyCertPathName) < 0 {
+			container.Env = append(container.Env, corev1.EnvVar{Name: tlsKeyCertPathName, Value: tlsMountPath + "/tls.crt"})
+			changed = true
+		}
+	}
+
+	return changed
+}
+
+// removeTLSCertMaterial takes back the volume, mounts and certificate path that
+// addTLSCertMaterial adds, so an uninstall does not leave ModelMesh mounting a
+// Secret that is deleted with the instance. Every removal is matched on what
+// this operator wrote (Secret name, mount path, certificate path), so a mount a
+// user happened to name the same way is left alone.
+func removeTLSCertMaterial(spec *corev1.PodSpec, instanceName string) bool {
+	changed := false
+	volumeName := instanceName + "-internal"
+
+	volumes := make([]corev1.Volume, 0, len(spec.Volumes))
+	for _, volume := range spec.Volumes {
+		if volume.Name == volumeName && volume.Secret != nil && volume.Secret.SecretName == volumeName {
+			changed = true
+			continue
+		}
+		volumes = append(volumes, volume)
+	}
+	spec.Volumes = volumes
+
+	for i := range spec.Containers {
+		container := &spec.Containers[i]
+
+		mounts := make([]corev1.VolumeMount, 0, len(container.VolumeMounts))
+		for _, mount := range container.VolumeMounts {
+			if mount.Name == volumeName && mount.MountPath == tlsMountPath {
+				changed = true
+				continue
+			}
+			mounts = append(mounts, mount)
+		}
+		container.VolumeMounts = mounts
+
+		if container.Name != mmContainerName {
+			continue
+		}
+		env := make([]corev1.EnvVar, 0, len(container.Env))
+		for _, variable := range container.Env {
+			if variable.Name == tlsKeyCertPathName && variable.Value == tlsMountPath+"/tls.crt" {
+				changed = true
+				continue
+			}
+			env = append(env, variable)
+		}
+		container.Env = env
+	}
+
+	return changed
 }
 
 func (r *TrustyAIServiceReconciler) patchEnvVarsByLabelForDeployments(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, namespace string, labelKey string, labelValue string, envVarName string, crName string, remove bool) (bool, error) {
@@ -222,12 +300,18 @@ func generateEnvVarValue(currentValue, newValue string, remove bool) string {
 	return currentValue
 }
 
-func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, namespace string, labelKey, labelValue, envVarName, crName string, remove bool) (bool, error) {
-	contract, err := r.servingContractOf(ctx)
-	if err != nil {
-		log.FromContext(ctx).Error(err, "Error reading the InferenceService CRD")
-		return false, err
+func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, report inferenceServicesReport, namespace string, labelKey, labelValue, envVarName, crName string, remove bool) (bool, error) {
+	// The report is derived once per pass by the caller and shared with the status
+	// pass, so the writer and the condition cannot disagree inside one reconcile.
+	if report.err != nil {
+		// Serving is an optional dependency: a failed read must not stop the
+		// required work. The error is carried rather than dropped, so the status
+		// pass still returns it and the reconcile is retried.
+		log.FromContext(ctx).Error(report.err, "Could not read the serving state, skipping InferenceService handling")
+		return true, nil
 	}
+
+	contract := report.contract
 	if contract.state != servingStateUsable {
 		log.FromContext(ctx).Info("Serving API not usable, skipping InferenceService handling. Will retry on next reconcile.",
 			"state", contract.state, "reason", contract.servingReason(), "message", contract.unusableMessage())
@@ -414,7 +498,13 @@ func (r *TrustyAIServiceReconciler) patchServingLogger(ctx context.Context, inst
 
 		updated := current.DeepCopy()
 		if remove {
-			unstructured.RemoveNestedField(updated.Object, predictorLoggerFieldPathParts...)
+			// Only the logger this operator wrote is removed: an object pointing at
+			// another sink is not ours to reconfigure. The three annotations are
+			// deleted whenever they are present, because they record our sink and
+			// are stale as soon as payload capture is off, whoever cleared it.
+			if logger, found, loggerErr := unstructured.NestedMap(updated.Object, predictorLoggerFieldPathParts...); loggerErr == nil && found && servingLoggerIsOurs(logger, url) {
+				unstructured.RemoveNestedField(updated.Object, predictorLoggerFieldPathParts...)
+			}
 			annotations := updated.GetAnnotations()
 			for _, key := range servingLoggerAnnotationKeys {
 				delete(annotations, key)
@@ -449,8 +539,48 @@ func (r *TrustyAIServiceReconciler) patchServingLogger(ctx context.Context, inst
 	return nil
 }
 
-// servingLoggerNeedsUpdate reports whether the object's logger differs from the
-// desired state. Absent-on-removal and equal-url-on-set are both "nothing to do".
+// servingLoggerIsOurs reports whether the logger points at the sink this
+// operator writes, and so is the operator's to remove. A logger with no sink at
+// all points nowhere else and is cleared too.
+func servingLoggerIsOurs(logger map[string]interface{}, url string) bool {
+	if logger == nil {
+		return false
+	}
+	if len(logger) == 0 {
+		return true
+	}
+	return servingLoggerURLOf(logger) == url
+}
+
+// servingLoggerIsDesired reports whether the logger already carries the whole
+// desired state. The mode is compared as well as the sink: comparing only the
+// URL let an object with the right URL and a different mode persist, so the
+// operator reported the state it wrote while the object held another.
+func servingLoggerIsDesired(logger map[string]interface{}, url string) bool {
+	if logger == nil {
+		return false
+	}
+	mode, _, err := unstructured.NestedString(logger, "mode")
+	if err != nil || mode != loggerModeAll {
+		return false
+	}
+	return servingLoggerURLOf(logger) == url
+}
+
+// servingHasLoggerAnnotations reports whether the annotations this operator's
+// writes leave behind are still present.
+func servingHasLoggerAnnotations(infService *unstructured.Unstructured) bool {
+	annotations := infService.GetAnnotations()
+	for _, key := range servingLoggerAnnotationKeys {
+		if _, present := annotations[key]; present {
+			return true
+		}
+	}
+	return false
+}
+
+// servingLoggerNeedsUpdate reports whether the object differs from the desired
+// state. Absent-on-removal and already-desired-on-set are both "nothing to do".
 func servingLoggerNeedsUpdate(infService *unstructured.Unstructured, url string, remove bool) bool {
 	logger, _, err := unstructured.NestedMap(infService.Object, predictorLoggerFieldPathParts...)
 	if err != nil {
@@ -459,9 +589,13 @@ func servingLoggerNeedsUpdate(infService *unstructured.Unstructured, url string,
 		return true
 	}
 	if remove {
-		return logger != nil && servingLoggerURLOf(logger) == url
+		// Removal has two independent pieces of state to clear: the logger, when it
+		// is ours, and the annotations, whenever they are present. Gating both on
+		// the URL left the annotations behind whenever the logger had already been
+		// cleared or pointed at another sink.
+		return servingLoggerIsOurs(logger, url) || servingHasLoggerAnnotations(infService)
 	}
-	return servingLoggerURLOf(logger) != url
+	return !servingLoggerIsDesired(logger, url)
 }
 
 // ensureServingMeshObjects keeps the original branch: only an object that asks
@@ -511,6 +645,11 @@ type inferenceServicesReport struct {
 	// present is true only when the serving API is usable and the namespace
 	// holds at least one InferenceService.
 	present bool
+	// err is a transient failure to read the serving state on this pass. It is
+	// carried rather than returned so the status of the required components is
+	// still written: serving is informational, and a CRD in Terminating or an API
+	// blip must not freeze Ready at its previous value.
+	err error
 }
 
 // reason is the condition reason for this state. Serving usable but idle has its
@@ -542,24 +681,29 @@ func (rep inferenceServicesReport) message() string {
 // usable, whether the namespace holds an InferenceService.
 //
 // A CRD read failure or a list failure while the CRD is present is transient and
-// returned as an error so the reconcile requeues; both are distinct from an
+// carried in the report for the caller to requeue on; both are distinct from an
 // absent API, which is a state.
-func (r *TrustyAIServiceReconciler) inferenceServicesReport(ctx context.Context, namespace string) (inferenceServicesReport, error) {
+func (r *TrustyAIServiceReconciler) inferenceServicesReport(ctx context.Context, namespace string) inferenceServicesReport {
+	report := inferenceServicesReport{namespace: namespace}
+
 	contract, err := r.servingContractOf(ctx)
 	if err != nil {
-		return inferenceServicesReport{}, err
+		report.err = err
+		return report
 	}
-
-	report := inferenceServicesReport{contract: contract, namespace: namespace}
+	report.contract = contract
 	if contract.state != servingStateUsable {
-		return report, nil
+		return report
 	}
 
 	infServices, err := r.listServing(ctx, contract, namespace)
 	if err != nil {
-		return inferenceServicesReport{}, fmt.Errorf("could not list InferenceService objects: %w", err)
+		// Keep the contract: what was read is still what this pass adopted, and
+		// the condition is left untouched rather than reported as absent.
+		report.err = fmt.Errorf("could not list InferenceService objects: %w", err)
+		return report
 	}
 
 	report.present = len(infServices.Items) > 0
-	return report, nil
+	return report
 }

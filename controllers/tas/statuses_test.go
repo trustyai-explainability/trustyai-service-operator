@@ -50,7 +50,7 @@ func setupAndTestStatusNoComponent(instance *trustyaiopendatahubiov1.TrustyAISer
 	}, "failed to create namespace")
 
 	// Call the reconcileStatuses function
-	_, _ = reconciler.reconcileStatuses(ctx, instance)
+	_, _ = reconciler.reconcileStatuses(ctx, instance, reconciler.inferenceServicesReport(ctx, instance.Namespace))
 
 	readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 	Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
@@ -270,7 +270,7 @@ var _ = Describe("Status and condition tests", func() {
 
 			// Call the reconcileStatuses function
 			WaitFor(func() error {
-				_, err := reconciler.reconcileStatuses(ctx, instance)
+				_, err := reconciler.reconcileStatuses(ctx, instance, reconciler.inferenceServicesReport(ctx, instance.Namespace))
 				return err
 			}, "failed to update statuses")
 
@@ -334,7 +334,7 @@ var _ = Describe("Status and condition tests", func() {
 
 			// Call the reconcileStatuses function
 			WaitFor(func() error {
-				_, err := reconciler.reconcileStatuses(ctx, instance)
+				_, err := reconciler.reconcileStatuses(ctx, instance, reconciler.inferenceServicesReport(ctx, instance.Namespace))
 				return err
 			}, "failed to update statuses")
 
@@ -405,7 +405,7 @@ var _ = Describe("Status and condition tests", func() {
 
 			// Call the reconcileStatuses function
 			WaitFor(func() error {
-				_, err := reconciler.reconcileStatuses(ctx, instance)
+				_, err := reconciler.reconcileStatuses(ctx, instance, reconciler.inferenceServicesReport(ctx, instance.Namespace))
 				return err
 			}, "failed to update statuses")
 
@@ -483,7 +483,7 @@ var _ = Describe("Status and condition tests", func() {
 
 			// Call the reconcileStatuses function
 			WaitFor(func() error {
-				_, err := reconciler.reconcileStatuses(ctx, instance)
+				_, err := reconciler.reconcileStatuses(ctx, instance, reconciler.inferenceServicesReport(ctx, instance.Namespace))
 				return err
 			}, "failed to update statuses")
 
