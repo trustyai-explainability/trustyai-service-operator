@@ -64,115 +64,187 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 			return false, nil
 		}
 
-		// If the secret volume doesn't exist, add it
-		volumeExists := false
-		for _, vol := range deployment.Spec.Template.Spec.Volumes {
-			if vol.Name == instance.Name+"-internal" {
-				volumeExists = true
-				break
-			}
+		// Removal runs from the finalizer, as the instance's TLS Secret is about
+		// to disappear with the instance. Publishing the serving-certificate
+		// volume, mount and cert path here pointed ModelMesh Pods at a Secret that
+		// no longer exists, so Pods created after the uninstall could not start.
+		// Removal therefore only takes back the material this operator added.
+		var changed bool
+		if remove {
+			sinkChanged := removePayloadProcessorEnvVar(&deployment.Spec.Template.Spec, envVarName, url)
+			tlsChanged := removeTLSCertMaterial(&deployment.Spec.Template.Spec, instance.Name)
+			changed = sinkChanged || tlsChanged
+		} else {
+			sinkChanged := addPayloadProcessorEnvVar(&deployment.Spec.Template.Spec, envVarName, url)
+			tlsChanged := addTLSCertMaterial(&deployment.Spec.Template.Spec, certVolumes)
+			changed = sinkChanged || tlsChanged
 		}
-		if !volumeExists {
-			deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, certVolumes.volume)
+
+		// One write per Deployment. The sink edit and the TLS material the same
+		// pass adds used to be two updates, so a partially applied pass could
+		// publish the mount without the env var that explains it.
+		if !changed {
+			continue
 		}
-
-		// Loop over all containers in the Deployment's Pod template
-		for i := range deployment.Spec.Template.Spec.Containers {
-			mountExists := false
-			for _, mount := range deployment.Spec.Template.Spec.Containers[i].VolumeMounts {
-				if mount.Name == instance.Name+"-internal" {
-					mountExists = true
-					break
-				}
-			}
-			if !mountExists {
-				deployment.Spec.Template.Spec.Containers[i].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[i].VolumeMounts, certVolumes.volumeMount)
-			}
-
-			// Store the original environment variable list
-			// Get the existing env var
-			var envVar *corev1.EnvVar
-			for j, e := range deployment.Spec.Template.Spec.Containers[i].Env {
-				if e.Name == envVarName {
-					envVar = &deployment.Spec.Template.Spec.Containers[i].Env[j]
-					break
-				}
-			}
-
-			var originalValue string
-			if envVar != nil {
-				originalValue = envVar.Value
-			}
-
-			// If the env var doesn't exist, add it (if we are not removing)
-			if envVar == nil && !remove {
-				envVar = &corev1.EnvVar{
-					Name:  envVarName,
-					Value: url,
-				}
-				deployment.Spec.Template.Spec.Containers[i].Env = append(deployment.Spec.Template.Spec.Containers[i].Env, *envVar)
-			} else if envVar != nil {
-				// If the env var exists and already contains the value, don't do anything
-				existingValues := strings.Split(envVar.Value, " ")
-				valueExists := false
-				for _, v := range existingValues {
-					if v == url {
-						valueExists = true
-						break
-					}
-				}
-
-				if remove || !valueExists {
-					// Removal is the case this short-circuit used to skip: when the
-					// sink was present, generateEnvVarValue was never called, so the
-					// finalizer wrote the Deployment back with the sink still in it.
-					envVar.Value = generateEnvVarValue(envVar.Value, url, remove)
-				}
-			}
-
-			// Only update the deployment if the var value has to change, or we are
-			// removing it. A container that never carried the var has nothing to
-			// remove: without the nil guard, reading envVar.Value on the removal
-			// path dereferenced nil and panicked the reconciler.
-			if envVar != nil && (originalValue != envVar.Value || remove) {
-				// Update the Deployment
-				if err := r.Update(ctx, &deployment); err != nil {
-					log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
-					return false, err
-				}
-				r.eventModelMeshConfigured(instance)
-				log.FromContext(ctx).Info("Updating Deployment " + deployment.Name + ", container spec " + deployment.Spec.Template.Spec.Containers[i].Name + ", env var " + envVarName + " to " + url)
-			}
-
-			// Check TLS environment variable on ModelMesh
-			if deployment.Spec.Template.Spec.Containers[i].Name == mmContainerName {
-				tlsKeyCertPathEnvValue := tlsMountPath + "/tls.crt"
-				tlsKeyCertPathExists := false
-				for _, envVar := range deployment.Spec.Template.Spec.Containers[i].Env {
-					if envVar.Name == tlsKeyCertPathName {
-						tlsKeyCertPathExists = true
-						break
-					}
-				}
-
-				// Doesn't exist, so we can add
-				if !tlsKeyCertPathExists {
-					deployment.Spec.Template.Spec.Containers[i].Env = append(deployment.Spec.Template.Spec.Containers[i].Env, corev1.EnvVar{
-						Name:  tlsKeyCertPathName,
-						Value: tlsKeyCertPathEnvValue,
-					})
-
-					if err := r.Update(ctx, &deployment); err != nil {
-						log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
-						return false, err
-					}
-					log.FromContext(ctx).Info("Added environment variable " + tlsKeyCertPathName + " to deployment " + deployment.Name + " for container " + mmContainerName)
-				}
-			}
+		if err := r.Update(ctx, &deployment); err != nil {
+			log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
+			return false, err
 		}
+		r.eventModelMeshConfigured(instance)
+		log.FromContext(ctx).Info("Updated Deployment " + deployment.Name + ", env var " + envVarName + " to " + url)
 	}
 
 	return true, nil
+}
+
+// envVarIndex returns the position of an environment variable in a container, or
+// -1 when the container does not carry it.
+func envVarIndex(container *corev1.Container, name string) int {
+	for i := range container.Env {
+		if container.Env[i].Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// addPayloadProcessorEnvVar adds this operator's sink to every container that
+// does not carry it, and appends it to a container whose value already lists
+// other sinks. The value is space separated, so a sink this operator does not
+// own is never rewritten.
+func addPayloadProcessorEnvVar(spec *corev1.PodSpec, envVarName, url string) bool {
+	changed := false
+	for i := range spec.Containers {
+		container := &spec.Containers[i]
+		index := envVarIndex(container, envVarName)
+		if index < 0 {
+			container.Env = append(container.Env, corev1.EnvVar{Name: envVarName, Value: url})
+			changed = true
+			continue
+		}
+		current := container.Env[index].Value
+		updated := generateEnvVarValue(current, url, false)
+		if updated == current {
+			continue
+		}
+		container.Env[index].Value = updated
+		changed = true
+	}
+	return changed
+}
+
+// removePayloadProcessorEnvVar takes this operator's sink back out. A container
+// that never carried the variable has nothing to remove, which is the case the
+// old nil dereference panicked on.
+func removePayloadProcessorEnvVar(spec *corev1.PodSpec, envVarName, url string) bool {
+	changed := false
+	for i := range spec.Containers {
+		container := &spec.Containers[i]
+		index := envVarIndex(container, envVarName)
+		if index < 0 {
+			continue
+		}
+		current := container.Env[index].Value
+		updated := generateEnvVarValue(current, url, true)
+		if updated == current {
+			continue
+		}
+		container.Env[index].Value = updated
+		changed = true
+	}
+	return changed
+}
+
+// addTLSCertMaterial mounts the instance's serving Secret on a ModelMesh
+// Deployment and points the ModelMesh certificate path at it.
+func addTLSCertMaterial(spec *corev1.PodSpec, certVolumes TLSCertVolumes) bool {
+	changed := false
+
+	volumeExists := false
+	for _, vol := range spec.Volumes {
+		if vol.Name == certVolumes.volume.Name {
+			volumeExists = true
+			break
+		}
+	}
+	if !volumeExists {
+		spec.Volumes = append(spec.Volumes, certVolumes.volume)
+		changed = true
+	}
+
+	for i := range spec.Containers {
+		container := &spec.Containers[i]
+		mountExists := false
+		for _, mount := range container.VolumeMounts {
+			if mount.Name == certVolumes.volumeMount.Name {
+				mountExists = true
+				break
+			}
+		}
+		if !mountExists {
+			container.VolumeMounts = append(container.VolumeMounts, certVolumes.volumeMount)
+			changed = true
+		}
+
+		if container.Name != mmContainerName {
+			continue
+		}
+		if envVarIndex(container, tlsKeyCertPathName) < 0 {
+			container.Env = append(container.Env, corev1.EnvVar{Name: tlsKeyCertPathName, Value: tlsMountPath + "/tls.crt"})
+			changed = true
+		}
+	}
+
+	return changed
+}
+
+// removeTLSCertMaterial takes back the volume, mounts and certificate path that
+// addTLSCertMaterial adds, so an uninstall does not leave ModelMesh mounting a
+// Secret that is deleted with the instance. Every removal is matched on what
+// this operator wrote (Secret name, mount path, certificate path), so a mount a
+// user happened to name the same way is left alone.
+func removeTLSCertMaterial(spec *corev1.PodSpec, instanceName string) bool {
+	changed := false
+	volumeName := instanceName + "-internal"
+
+	volumes := make([]corev1.Volume, 0, len(spec.Volumes))
+	for _, volume := range spec.Volumes {
+		if volume.Name == volumeName && volume.Secret != nil && volume.Secret.SecretName == volumeName {
+			changed = true
+			continue
+		}
+		volumes = append(volumes, volume)
+	}
+	spec.Volumes = volumes
+
+	for i := range spec.Containers {
+		container := &spec.Containers[i]
+
+		mounts := make([]corev1.VolumeMount, 0, len(container.VolumeMounts))
+		for _, mount := range container.VolumeMounts {
+			if mount.Name == volumeName && mount.MountPath == tlsMountPath {
+				changed = true
+				continue
+			}
+			mounts = append(mounts, mount)
+		}
+		container.VolumeMounts = mounts
+
+		if container.Name != mmContainerName {
+			continue
+		}
+		env := make([]corev1.EnvVar, 0, len(container.Env))
+		for _, variable := range container.Env {
+			if variable.Name == tlsKeyCertPathName && variable.Value == tlsMountPath+"/tls.crt" {
+				changed = true
+				continue
+			}
+			env = append(env, variable)
+		}
+		container.Env = env
+	}
+
+	return changed
 }
 
 func (r *TrustyAIServiceReconciler) patchEnvVarsByLabelForDeployments(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, namespace string, labelKey string, labelValue string, envVarName string, crName string, remove bool) (bool, error) {

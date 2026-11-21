@@ -80,6 +80,104 @@ func TestPatchEnvVarsForDeploymentsOnlyRemovesWhatIsThere(t *testing.T) {
 			if env.Name == payloadProcessorName {
 				t.Fatalf("removal added %s to a Deployment that did not have it: %q", payloadProcessorName, env.Value)
 			}
+			if env.Name == tlsKeyCertPathName {
+				t.Fatalf("removal added %s to a Deployment that did not have it: %q", tlsKeyCertPathName, env.Value)
+			}
+		}
+		if len(saved.Spec.Template.Spec.Volumes) != 0 {
+			t.Fatalf("removal added the serving-certificate volume: %v", saved.Spec.Template.Spec.Volumes)
+		}
+		if len(saved.Spec.Template.Spec.Containers[0].VolumeMounts) != 0 {
+			t.Fatalf("removal added the serving-certificate mount: %v", saved.Spec.Template.Spec.Containers[0].VolumeMounts)
+		}
+	})
+
+	// Removal runs as the instance's TLS Secret is being deleted. Mounting it here
+	// left ModelMesh Pods created after the uninstall unable to start, so removal
+	// must take the material back instead of publishing it.
+	t.Run("removal deletes the serving-certificate material it added", func(t *testing.T) {
+		deployment := deploymentWithEnv(
+			corev1.EnvVar{Name: payloadProcessorName, Value: sinkURL},
+			corev1.EnvVar{Name: tlsKeyCertPathName, Value: tlsMountPath + "/tls.crt"},
+		)
+		deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
+			{Name: instance.Name + "-internal", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: instance.Name + "-internal"}}},
+			{Name: "user-volume", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+		}
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{
+			{Name: instance.Name + "-internal", MountPath: tlsMountPath, ReadOnly: true},
+			{Name: "user-volume", MountPath: "/user"},
+			{Name: "user-same-name", MountPath: tlsMountPath},
+		}
+		reconciler := newReconciler(t, deployment)
+
+		if _, err := reconciler.patchEnvVarsForDeployments(
+			context.Background(), instance, []appsv1.Deployment{*deployment}, payloadProcessorName, sinkURL, true); err != nil {
+			t.Fatalf("removal returned an error: %v", err)
+		}
+
+		saved := &appsv1.Deployment{}
+		if err := reconciler.Client.Get(context.Background(),
+			client.ObjectKeyFromObject(deployment), saved); err != nil {
+			t.Fatalf("get Deployment: %v", err)
+		}
+		for _, volume := range saved.Spec.Template.Spec.Volumes {
+			if volume.Name == instance.Name+"-internal" {
+				t.Fatalf("removal left the serving-certificate volume in place")
+			}
+		}
+		if len(saved.Spec.Template.Spec.Volumes) != 1 || saved.Spec.Template.Spec.Volumes[0].Name != "user-volume" {
+			t.Fatalf("removal dropped a volume this operator does not own: %v", saved.Spec.Template.Spec.Volumes)
+		}
+		for _, mount := range saved.Spec.Template.Spec.Containers[0].VolumeMounts {
+			if mount.Name == instance.Name+"-internal" {
+				t.Fatalf("removal left the serving-certificate mount in place")
+			}
+		}
+		if len(saved.Spec.Template.Spec.Containers[0].VolumeMounts) != 2 {
+			t.Fatalf("removal dropped a mount this operator does not own: %v", saved.Spec.Template.Spec.Containers[0].VolumeMounts)
+		}
+		for _, env := range saved.Spec.Template.Spec.Containers[0].Env {
+			if env.Name == tlsKeyCertPathName {
+				t.Fatalf("removal left %s in place: %q", tlsKeyCertPathName, env.Value)
+			}
+		}
+	})
+
+	t.Run("configuration still mounts the serving certificate", func(t *testing.T) {
+		deployment := deploymentWithEnv(corev1.EnvVar{Name: "OTHER", Value: "kept"})
+		reconciler := newReconciler(t, deployment)
+
+		if _, err := reconciler.patchEnvVarsForDeployments(
+			context.Background(), instance, []appsv1.Deployment{*deployment}, payloadProcessorName, sinkURL, false); err != nil {
+			t.Fatalf("configuration returned an error: %v", err)
+		}
+
+		saved := &appsv1.Deployment{}
+		if err := reconciler.Client.Get(context.Background(),
+			client.ObjectKeyFromObject(deployment), saved); err != nil {
+			t.Fatalf("get Deployment: %v", err)
+		}
+		if len(saved.Spec.Template.Spec.Volumes) != 1 || saved.Spec.Template.Spec.Volumes[0].Name != instance.Name+"-internal" {
+			t.Fatalf("configuration did not mount the serving certificate: %v", saved.Spec.Template.Spec.Volumes)
+		}
+		if len(saved.Spec.Template.Spec.Containers[0].VolumeMounts) != 1 || saved.Spec.Template.Spec.Containers[0].VolumeMounts[0].MountPath != tlsMountPath {
+			t.Fatalf("configuration did not mount the serving certificate on the container: %v", saved.Spec.Template.Spec.Containers[0].VolumeMounts)
+		}
+		var sink, certPath string
+		for _, env := range saved.Spec.Template.Spec.Containers[0].Env {
+			switch env.Name {
+			case payloadProcessorName:
+				sink = env.Value
+			case tlsKeyCertPathName:
+				certPath = env.Value
+			}
+		}
+		if sink != sinkURL {
+			t.Fatalf("%s = %q, want %q", payloadProcessorName, sink, sinkURL)
+		}
+		if certPath != tlsMountPath+"/tls.crt" {
+			t.Fatalf("%s = %q, want %q", tlsKeyCertPathName, certPath, tlsMountPath+"/tls.crt")
 		}
 	})
 
