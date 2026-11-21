@@ -70,12 +70,14 @@ jobs:
           kind load docker-image ${{ env.TRUSTYAI_OPERATOR_IMG }}:${{ env.WORKLOAD_TAG }}
           kind load docker-image ${{ env.TRUSTYAI_MODULE_IMG }}:${{ env.MODULE_TAG }}
 
+      # serving.kserve.io is deliberately not installed here. AI Safety has to
+      # come up on a cluster with no model-serving CRD, and the serving-free leg
+      # below installs it later to prove adoption needs no restart.
       - name: Apply external CRDs required by both operators
         run: |
           kubectl apply -f tests/crds/monitoring.coreos.com_prometheuses.yaml
           kubectl apply -f tests/crds/monitoring.coreos.com_servicemonitors.yaml
           kubectl apply -f tests/crds/route_crd.yaml
-          kubectl apply -f tests/crds/serving.kserve.io_inferenceservices.yaml
 
       - name: Deploy the module operator
         run: |
@@ -149,6 +151,12 @@ jobs:
 
       - name: Run workload operator smoke tests
         run: ./tests/smoke/test_smoke.sh
+
+      # AI Safety has to come up where serving never existed, and adopt it when it
+      # appears later. The legs bring their own namespace because the smoke script
+      # above deletes its own.
+      - name: Assert serving-free operation and adoption
+        run: ./tests/smoke/test_serving_free.sh
 
       - name: Run module operator e2e tests
         run: make test-tom-e2e
