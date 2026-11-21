@@ -2,15 +2,20 @@ package tas
 
 import (
 	"context"
+	goerrors "errors"
 	"fmt"
 	"strings"
 
-	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -21,7 +26,26 @@ const (
 	DEPLOYMENT_MODE_STANDARD   = "Standard"
 	DEPLOYMENT_MODE_SERVERLESS = "Serverless"
 	DEPLOYMENT_MODE_KNATIVE    = "Knative"
+
+	// deploymentModeAnnotation is KServe's own record of how an
+	// InferenceService is deployed, and it selects which sink URL and which
+	// write path the operator uses. It is only ever read.
+	deploymentModeAnnotation = "serving.kserve.io/deploymentMode"
+	// istioInjectAnnotation asks for the service-mesh objects; it is only read.
+	istioInjectAnnotation = "sidecar.istio.io/inject"
+	// loggerModeAll captures request and response payloads.
+	loggerModeAll = "all"
 )
+
+// servingLoggerAnnotationKeys are the annotations KServe writes alongside the
+// logger. Payload capture only ever deletes them, and deleting a key that is not
+// there is a no-op, so a change of naming on the serving side degrades to nothing
+// rather than to a failure.
+var servingLoggerAnnotationKeys = []string{
+	"internal.serving.kserve.io/logger",
+	"internal.serving.kserve.io/logger-mode",
+	"internal.serving.kserve.io/logger-sink-url",
+}
 
 // GetDeploymentsByLabel returns a list of Deployments that match a label key-value pair
 func (r *TrustyAIServiceReconciler) GetDeploymentsByLabel(ctx context.Context, namespace string, labelKey string, labelValue string) ([]appsv1.Deployment, error) {
@@ -225,9 +249,8 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 		return true, nil
 	}
 
-	var inferenceServices kservev1beta1.InferenceServiceList
-
-	if err := r.uncachedReader().List(ctx, &inferenceServices, client.InNamespace(namespace)); err != nil {
+	inferenceServices, err := r.listServing(ctx, contract, namespace)
+	if err != nil {
 		log.FromContext(ctx).Error(err, "Could not list InferenceService objects.")
 		return false, err
 	}
@@ -238,18 +261,18 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 		kServeServerlessEnabled = false
 	}
 
-	if len(inferenceServices.Items) == 0 {
-		return true, nil
-	}
+	for i := range inferenceServices.Items {
+		infService := &inferenceServices.Items[i]
+		deploymentMode := infService.GetAnnotations()[deploymentModeAnnotation]
 
-	for _, infService := range inferenceServices.Items {
-		annotations := infService.GetAnnotations()
-		deploymentMode := annotations["serving.kserve.io/deploymentMode"]
-
+		var patchErr error
 		switch deploymentMode {
 		case DEPLOYMENT_MODE_MODELMESH:
-			// Handle ModelMesh deployments
-			shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, instance, namespace, labelKey, labelValue, envVarName, crName, remove)
+			// ModelMesh carries the sink in an environment variable on its own
+			// Deployment rather than in a logger field, so that branch stays on
+			// the typed client.
+			var shouldContinue bool
+			shouldContinue, err = r.patchEnvVarsByLabelForDeployments(ctx, instance, namespace, labelKey, labelValue, envVarName, crName, remove)
 			if err != nil {
 				log.FromContext(ctx).Error(err, "Could not patch environment variables for ModelMesh deployments")
 				return shouldContinue, err
@@ -257,123 +280,240 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 			continue
 
 		case DEPLOYMENT_MODE_RAW, DEPLOYMENT_MODE_STANDARD:
-			// Handle KServe Raw/Standard deployments (KServe v0.17+ renamed RawDeployment to Standard)
-			err := r.patchKServe(ctx, instance, infService, namespace, crName, remove, true)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "Could not patch InferenceLogger for KServe Raw deployment")
-				return false, err
-			}
-			continue
+			// KServe v0.17+ renamed RawDeployment to Standard.
+			patchErr = r.patchServingLogger(ctx, instance, contract, infService, crName, remove, true)
 
 		case DEPLOYMENT_MODE_SERVERLESS, DEPLOYMENT_MODE_KNATIVE:
-			// Handle KServe Serverless/Knative deployments (KServe v0.17+ renamed Serverless to Knative)
+			// KServe v0.17+ renamed Serverless to Knative, and payload capture is
+			// only configured for these modes when serverless is enabled here.
 			if kServeServerlessEnabled {
-				err := r.patchKServe(ctx, instance, infService, namespace, crName, remove, false)
-				if err != nil {
-					log.FromContext(ctx).Error(err, "Could not patch InferenceLogger for KServe Serverless deployment")
-					return false, err
-				}
+				patchErr = r.patchServingLogger(ctx, instance, contract, infService, crName, remove, false)
 			}
-			continue
 
 		default:
-			log.FromContext(ctx).Info("Unknown deployment mode, skipping InferenceService", "deploymentMode", deploymentMode, "inferenceService", infService.Name)
+			log.FromContext(ctx).Info("Unknown deployment mode, skipping InferenceService",
+				"deploymentMode", deploymentMode, "inferenceService", infService.GetName())
 			continue
 		}
+
+		if patchErr == nil {
+			continue
+		}
+
+		var rejected *servingObjectRejectedError
+		if goerrors.As(patchErr, &rejected) {
+			log.FromContext(ctx).Error(patchErr, "Serving object rejected the payload-capture update; reporting it as state")
+			r.eventServingObjectRejected(instance, rejected)
+			continue
+		}
+		log.FromContext(ctx).Error(patchErr, "Could not configure payload capture on InferenceService", "inferenceService", infService.GetName())
+		return false, patchErr
 	}
 	return true, nil
 }
 
-// patchKServe adds a TrustyAI service as an InferenceLogger to a KServe InferenceService
-func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, infService kservev1beta1.InferenceService, namespace string, crName string, remove bool, useHTTPS bool) error {
-
-	var url string
+// servingLoggerURL is the payload-processor endpoint written into
+// spec.predictor.logger: the HTTPS URL for Raw/Standard deployments, whose
+// predictor sidecar can present the service certificate, and the plain URL for
+// Serverless/Knative, where it does not.
+func servingLoggerURL(crName, namespace string, useHTTPS bool) string {
 	if useHTTPS {
-		url = utils.GenerateHTTPSKServeLoggerURL(crName, namespace)
-	} else {
-		url = utils.GenerateKServeLoggerURL(crName, namespace)
+		return utils.GenerateHTTPSKServeLoggerURL(crName, namespace)
+	}
+	return utils.GenerateKServeLoggerURL(crName, namespace)
+}
+
+// servingLoggerURLOf returns the URL an object's logger points at, or "" when it
+// carries no logger or an unreadable one.
+func servingLoggerURLOf(logger map[string]interface{}) string {
+	url, _, err := unstructured.NestedString(logger, "url")
+	if err != nil {
+		return ""
+	}
+	return url
+}
+
+// servingObjectRejectedError reports a per-object rejection. A validation or
+// authorization rejection is a state for that object, not a transient error:
+// retrying every 30 seconds cannot fix it, so it is reported and the remaining
+// objects are still handled.
+type servingObjectRejectedError struct {
+	namespace string
+	name      string
+	err       error
+}
+
+func (e *servingObjectRejectedError) Error() string {
+	return fmt.Sprintf("the serving object %s/%s rejected the payload-capture update: %v", e.namespace, e.name, e.err)
+}
+
+func (e *servingObjectRejectedError) Unwrap() error { return e.err }
+
+// isServingObjectRejection distinguishes a rejection the API server will repeat
+// from an error that may clear on its own.
+func isServingObjectRejection(err error) bool {
+	return errors.IsInvalid(err) || errors.IsForbidden(err)
+}
+
+// servingResource returns the namespaced handle for the adopted serving version
+// on the dynamic client. The resource comes from the CRD, so nothing here needs a
+// scheme entry, an informer, or a RESTMapper lookup.
+func (r *TrustyAIServiceReconciler) servingResource(contract servingContract, namespace string) (dynamic.ResourceInterface, error) {
+	if r.Dynamic == nil {
+		return nil, fmt.Errorf("no dynamic client is configured, cannot reach serving resources")
+	}
+	return r.Dynamic.Resource(contract.gvr).Namespace(namespace), nil
+}
+
+// listServing reads the InferenceServices of the adopted version in one
+// namespace. It is a plain read on the dynamic client: no cached List, because
+// serving is not watched and a cached List would build a cluster-wide informer
+// on first use and answer empty while it syncs.
+func (r *TrustyAIServiceReconciler) listServing(ctx context.Context, contract servingContract, namespace string) (*unstructured.UnstructuredList, error) {
+	resource, err := r.servingResource(contract, namespace)
+	if err != nil {
+		return nil, err
+	}
+	return resource.List(ctx, metav1.ListOptions{})
+}
+
+// patchServingLogger makes one InferenceService's payload-capture configuration
+// match the desired state, and ensures the service-mesh objects it asks for.
+//
+// Three properties are load-bearing. It is idempotent: when the logger already
+// points where it should, or is already absent on removal, it writes nothing,
+// without which every reconcile would write every InferenceService every 30
+// seconds. It is a read-modify-write with conflict retry, because
+// odh-model-controller and the serving controllers write the same objects. And
+// it clears the logger rather than setting an empty struct, so removal leaves the
+// field absent instead of present and empty.
+func (r *TrustyAIServiceReconciler) patchServingLogger(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, contract servingContract, infService *unstructured.Unstructured, crName string, remove bool, useHTTPS bool) error {
+	namespace := infService.GetNamespace()
+	name := infService.GetName()
+	url := servingLoggerURL(crName, namespace, useHTTPS)
+
+	resource, err := r.servingResource(contract, namespace)
+	if err != nil {
+		return err
 	}
 
-	if remove {
-		if infService.Spec.Predictor.Logger == nil || *infService.Spec.Predictor.Logger.URL != url {
-			return nil // Removing, but InferenceLogger is not set or is not set to the expected URL. Do nothing.
+	current, err := resource.Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		if isServingObjectRejection(err) {
+			return &servingObjectRejectedError{namespace: namespace, name: name, err: err}
 		}
-
-		// Remove the InferenceLogger
-		infService.Spec.Predictor.Logger = nil
-
-		// Remove Annotations
-		annotations := infService.GetAnnotations()
-		delete(annotations, "internal.serving.kserve.io/logger")
-		delete(annotations, "internal.serving.kserve.io/logger-mode")
-		delete(annotations, "internal.serving.kserve.io/logger-sink-url")
-		infService.SetAnnotations(annotations)
-	} else {
-		if infService.Spec.Predictor.Logger != nil && *infService.Spec.Predictor.Logger.URL == url {
-			return nil // InferenceLogger is already set to the expected URL. Do nothing.
-		}
-
-		// Construct the logger object
-		logger := kservev1beta1.LoggerSpec{
-			Mode: "all",
-			URL:  &url,
-		}
-
-		// Set the InferenceLogger to the InferenceService instance
-		infService.Spec.Predictor.Logger = &logger
+		return fmt.Errorf("reading InferenceService %s/%s: %w", namespace, name, err)
+	}
+	if !servingLoggerNeedsUpdate(current, url, remove) {
+		return nil
 	}
 
-	// Only if the Istio sidecar annotation is set
-	annotations := infService.GetAnnotations()
-	if inject, exists := annotations["sidecar.istio.io/inject"]; exists && inject == "true" {
+	// The service-mesh objects are ensured before the write, so a failure there
+	// leaves the InferenceService untouched rather than half configured.
+	if err := r.ensureServingMeshObjects(ctx, instance, current); err != nil {
+		return err
+	}
 
-		// Check if DestinationRule CRD is present. If there's an error, don't proceed and return the error
-		exists, err := r.isDestinationRuleCRDPresent(ctx)
+	configured := false
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current, err := resource.Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
-			log.FromContext(ctx).Error(err, "Error verifying DestinationRule CRD is present")
+			return err
+		}
+		// Another writer may have reached the desired state while this pass was
+		// retrying; re-deciding keeps the write idempotent under contention.
+		if !servingLoggerNeedsUpdate(current, url, remove) {
+			configured = false
+			return nil
+		}
+
+		updated := current.DeepCopy()
+		if remove {
+			unstructured.RemoveNestedField(updated.Object, predictorLoggerFieldPathParts...)
+			annotations := updated.GetAnnotations()
+			for _, key := range servingLoggerAnnotationKeys {
+				delete(annotations, key)
+			}
+			if len(annotations) == 0 {
+				annotations = nil
+			}
+			updated.SetAnnotations(annotations)
+		} else if err := unstructured.SetNestedMap(updated.Object, map[string]interface{}{
+			"mode": loggerModeAll,
+			"url":  url,
+		}, predictorLoggerFieldPathParts...); err != nil {
 			return err
 		}
 
-		// Try to create the DestinationRule, since CRD exists
-		if exists {
-			err := r.ensureDestinationRule(ctx, instance)
-			if err != nil {
-				return fmt.Errorf("failed to ensure DestinationRule: %v", err)
-			}
-		} else {
-			// DestinationRule CRD does not exist. Do not attempt to create it and log error
-			err := fmt.Errorf("the DestinationRule CRD is not present in this cluster")
-			log.FromContext(ctx).Error(err, "InferenceService has service mesh annotation but DestinationRule CRD not found")
-		}
-
-		// Check if VirtualService CRD is present. If there's an error, don't proceed and return the error
-		exists, err = r.isVirtualServiceCRDPresent(ctx)
-		if err != nil {
-			log.FromContext(ctx).Error(err, "Error verifying VirtualService CRD is present")
+		if _, err := resource.Update(ctx, updated, metav1.UpdateOptions{}); err != nil {
 			return err
 		}
-
-		// Try to create the VirtualService, since CRD exists
-		if exists {
-			err := r.ensureVirtualService(ctx, instance)
-			if err != nil {
-				return fmt.Errorf("failed to ensure VirtualService: %v", err)
-			}
-		} else {
-			// VirtualService CRD does not exist. Do not attempt to create it and log error
-			err := fmt.Errorf("the VirtualService CRD is not present in this cluster")
-			log.FromContext(ctx).Error(err, "InferenceService has service mesh annotation but VirtualService CRD not found")
+		configured = true
+		return nil
+	})
+	if err != nil {
+		if isServingObjectRejection(err) {
+			return &servingObjectRejectedError{namespace: namespace, name: name, err: err}
 		}
-
+		return fmt.Errorf("updating InferenceService %s/%s: %w", namespace, name, err)
 	}
 
-	// Update the InferenceService
-	err := r.Update(ctx, &infService)
-	if err == nil {
+	if configured {
 		r.eventKServeConfigured(instance)
-	} else {
-		return fmt.Errorf("failed to update InferenceService %s/%s: %v", infService.Namespace, infService.Name, err)
 	}
+	return nil
+}
+
+// servingLoggerNeedsUpdate reports whether the object's logger differs from the
+// desired state. Absent-on-removal and equal-url-on-set are both "nothing to do".
+func servingLoggerNeedsUpdate(infService *unstructured.Unstructured, url string, remove bool) bool {
+	logger, _, err := unstructured.NestedMap(infService.Object, predictorLoggerFieldPathParts...)
+	if err != nil {
+		// An unreadable logger is not something this operator wrote; overwrite it
+		// rather than leaving payload capture silently off.
+		return true
+	}
+	if remove {
+		return logger != nil && servingLoggerURLOf(logger) == url
+	}
+	return servingLoggerURLOf(logger) != url
+}
+
+// ensureServingMeshObjects keeps the original branch: only an object that asks
+// for the Istio sidecar gets the DestinationRule and VirtualService, each guarded
+// by its own CRD. A missing CRD is logged and does not fail the reconcile,
+// because the logger write is still correct without them.
+func (r *TrustyAIServiceReconciler) ensureServingMeshObjects(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, infService *unstructured.Unstructured) error {
+	if inject := infService.GetAnnotations()[istioInjectAnnotation]; inject != "true" {
+		return nil
+	}
+
+	destinationRulePresent, err := r.isDestinationRuleCRDPresent(ctx)
+	if err != nil {
+		return fmt.Errorf("verifying the DestinationRule CRD is present: %w", err)
+	}
+	if destinationRulePresent {
+		if err := r.ensureDestinationRule(ctx, instance); err != nil {
+			return fmt.Errorf("failed to ensure DestinationRule: %w", err)
+		}
+	} else {
+		log.FromContext(ctx).Error(fmt.Errorf("the DestinationRule CRD is not present in this cluster"),
+			"InferenceService has service mesh annotation but DestinationRule CRD not found", "inferenceService", infService.GetName())
+	}
+
+	virtualServicePresent, err := r.isVirtualServiceCRDPresent(ctx)
+	if err != nil {
+		return fmt.Errorf("verifying the VirtualService CRD is present: %w", err)
+	}
+	if virtualServicePresent {
+		if err := r.ensureVirtualService(ctx, instance); err != nil {
+			return fmt.Errorf("failed to ensure VirtualService: %w", err)
+		}
+	} else {
+		log.FromContext(ctx).Error(fmt.Errorf("the VirtualService CRD is not present in this cluster"),
+			"InferenceService has service mesh annotation but VirtualService CRD not found", "inferenceService", infService.GetName())
+	}
+
 	return nil
 }
 
@@ -430,11 +570,11 @@ func (r *TrustyAIServiceReconciler) inferenceServicesReport(ctx context.Context,
 		return report, nil
 	}
 
-	infServiceList := &kservev1beta1.InferenceServiceList{}
-	if err := r.uncachedReader().List(ctx, infServiceList, client.InNamespace(namespace)); err != nil {
+	infServices, err := r.listServing(ctx, contract, namespace)
+	if err != nil {
 		return inferenceServicesReport{}, fmt.Errorf("could not list InferenceService objects: %w", err)
 	}
 
-	report.present = len(infServiceList.Items) > 0
+	report.present = len(infServices.Items) > 0
 	return report, nil
 }
