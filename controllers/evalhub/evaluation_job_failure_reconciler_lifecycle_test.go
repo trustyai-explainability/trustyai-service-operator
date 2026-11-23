@@ -1886,6 +1886,10 @@ func evalHubJobStateServer(t *testing.T, conflictBody, benchmarkState string) (*
 				http.Error(w, "state lookup injected failure", http.StatusInternalServerError)
 				return
 			}
+			if benchmarkState == "cancelled-without-benchmark" {
+				_, _ = fmt.Fprint(w, `{"status":{"state":"cancelled","benchmarks":[]}}`)
+				return
+			}
 			if benchmarkState == "notfound" {
 				w.WriteHeader(http.StatusNotFound)
 				return
@@ -2552,7 +2556,7 @@ func TestJobFailureReconciler_UncertainReportSurvivesPodRecovery(t *testing.T) {
 }
 
 func TestJobFailureReconciler_PendingRequestChecksRemoteState(t *testing.T) {
-	for _, state := range []string{"running", "failed", "completed", "cancelled", "notfound", "unavailable"} {
+	for _, state := range []string{"running", "pending-without-benchmark", "failed", "completed", "cancelled", "cancelled-without-benchmark", "notfound", "unavailable"} {
 		t.Run(state, func(t *testing.T) {
 			calls := make(chan recordedEvalHubRequest, 10)
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -2578,6 +2582,14 @@ func TestJobFailureReconciler_PendingRequestChecksRemoteState(t *testing.T) {
 					w.WriteHeader(http.StatusServiceUnavailable)
 					return
 				}
+				switch state {
+				case "pending-without-benchmark":
+					_, _ = fmt.Fprint(w, `{"status":{"state":"pending"}}`)
+					return
+				case "cancelled-without-benchmark":
+					_, _ = fmt.Fprint(w, `{"status":{"state":"cancelled","benchmarks":[]}}`)
+					return
+				}
 				_, _ = fmt.Fprintf(w, `{"status":{"benchmarks":[{"provider_id":"saved-provider","id":"saved-benchmark","benchmark_index":2,"status":%q}]}}`, state)
 			}))
 			defer srv.Close()
@@ -2600,8 +2612,9 @@ func TestJobFailureReconciler_PendingRequestChecksRemoteState(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, ctrl.Result{}, result)
 			}
+			shouldPost := state == "running" || state == "pending-without-benchmark"
 			expectedRequests := 1
-			if state == "running" {
+			if shouldPost {
 				expectedRequests = 2
 			}
 			require.Len(t, calls, expectedRequests, "recovery must read the remote state before settling or retrying")
@@ -2609,7 +2622,7 @@ func TestJobFailureReconciler_PendingRequestChecksRemoteState(t *testing.T) {
 			assert.Equal(t, http.MethodGet, first.Method)
 			assert.Equal(t, "/api/v1/evaluations/jobs/saved-job", first.Path)
 			assert.Equal(t, job.Namespace, first.Tenant)
-			if state == "running" {
+			if shouldPost {
 				require.Len(t, calls, 1)
 				assert.Equal(t, http.MethodPost, (<-calls).Method, "a request saved before sending must still be delivered")
 			}
@@ -2622,9 +2635,9 @@ func TestJobFailureReconciler_PendingRequestChecksRemoteState(t *testing.T) {
 			} else {
 				assert.NotContains(t, persisted.Annotations, annotationFailureRequest)
 				assert.NotContains(t, persisted.Annotations, annotationFailurePending)
-				assert.Equal(t, state == "running" || state == "failed", persisted.Labels[labelEvaluationPhase] == labelEvaluationPhaseFailed)
+				assert.Equal(t, shouldPost || state == "failed", persisted.Labels[labelEvaluationPhase] == labelEvaluationPhaseFailed)
 			}
-			if state != "running" && state != "failed" {
+			if !shouldPost && state != "failed" {
 				assert.Empty(t, rec.Events)
 			}
 		})

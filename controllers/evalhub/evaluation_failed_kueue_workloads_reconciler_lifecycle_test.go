@@ -180,7 +180,7 @@ func TestKueueReconciler_AlreadyRecordedFailure_PromotesWithoutRepost(t *testing
 }
 
 func TestKueueReconciler_TerminalConflictOutcomes(t *testing.T) {
-	for _, state := range []string{"cancelled", "completed", "", "running"} {
+	for _, state := range []string{"cancelled", "cancelled-without-benchmark", "completed", "", "running"} {
 		t.Run(state, func(t *testing.T) {
 			srv, requests := evalHubJobStateServer(t, `{"message":"The job can not be failed because it is 'cancelled'."}`, state)
 			job := evalHubEvaluationJob("eval-job-kueue-superseded", "tenant-ns", map[string]string{

@@ -1903,6 +1903,7 @@ type evalHubJobBenchmarkState struct {
 // evalHubJobResourceStatus carries the status section of the job resource.
 type evalHubJobResourceStatus struct {
 	Status struct {
+		State      string                     `json:"state"`
 		Benchmarks []evalHubJobBenchmarkState `json:"benchmarks"`
 	} `json:"status"`
 }
@@ -1970,11 +1971,20 @@ func fetchEvalHubBenchmarkState(ctx context.Context, restCfg *rest.Config, baseU
 	case len(unindexed) > 1:
 		return "", fmt.Errorf("benchmark %s/%s for index %d is ambiguous: %d unindexed records match in EvalHub job %s",
 			providerID, benchmarkID, benchmarkIndex, len(unindexed), jobID)
-	case explicitOtherIndex > 0:
-		return "", fmt.Errorf("benchmark %s/%s for index %d not found in EvalHub job %s: %d record(s) carry a different explicit index",
-			providerID, benchmarkID, benchmarkIndex, jobID, explicitOtherIndex)
+	case len(unindexed) == 1:
+		return "", fmt.Errorf("benchmark %s/%s for index %d is ambiguous: an unindexed record and records for other indices match in EvalHub job %s",
+			providerID, benchmarkID, benchmarkIndex, jobID)
 	default:
-		return "", fmt.Errorf("benchmark %s/%s (index %d) not found in EvalHub job %s", providerID, benchmarkID, benchmarkIndex, jobID)
+		// EvalHub creates benchmark status entries on the first event. An
+		// absent entry can still receive a report while the evaluation is active.
+		switch resource.Status.State {
+		case "pending", "running":
+			return "pending", nil
+		case "cancelled", "canceled":
+			return "cancelled", nil
+		default:
+			return "", fmt.Errorf("benchmark %s/%s (index %d) not found in EvalHub job %s", providerID, benchmarkID, benchmarkIndex, jobID)
+		}
 	}
 }
 
