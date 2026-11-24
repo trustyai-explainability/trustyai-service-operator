@@ -1,0 +1,178 @@
+name: Tier 3 - AI Safety end-to-end (k8s-tests)
+
+# Builds the operators from the pull request, stands them up on a Kind cluster, and runs
+# the checks from https://github.com/trustyai-explainability/k8s-tests against them.
+#
+# This mirrors the "Tier 3: AI Safety end-to-end" workflow kept in k8s-tests itself, with
+# one difference: there the operator is cloned from a named ref, here OPERATOR_REPO is the
+# pull request's own checkout, so what runs is the code under review. The harness builds
+# both operator images and renders the module overlays from that checkout, so nothing is
+# pulled from a published image.
+#
+# It runs for pull requests whose head branch is in this repository, and for a manual
+# dispatch; pull requests from forks are skipped for now (the job's `if` is the gate). To
+# gate merges on it, make the "TrustyAI operators on Kind" job a required status check in
+# the branch protection rules.
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      k8s_tests_ref:
+        description: k8s-tests branch, tag or commit to run
+        required: false
+        default: v0.1.0
+
+permissions:
+  contents: read
+
+concurrency:
+  # One run per pull request; a new push cancels the run it supersedes.
+  group: k8s-tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  K8S_TESTS_REPO: trustyai-explainability/k8s-tests
+  # Pinned to the k8s-tests release rather than to `main`, so a change in the suite does
+  # not change what this repository's pull requests run without a bump here.
+  K8S_TESTS_REF: ${{ github.event.inputs.k8s_tests_ref || 'v0.1.0' }}
+
+jobs:
+  harness:
+    name: TrustyAI operators on Kind
+    # Fork pull requests are skipped for now: only same-repository branches run the suite.
+    # A manual dispatch always runs, so a maintainer can still exercise it on demand.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # The two operator images are Go builds, the node image is a pull, and the checks
+    # create and wait for service operands; the default six hours is the ceiling for a
+    # hang, not for the run.
+    timeout-minutes: 120
+    env:
+      # Pull request checkouts land at the workspace root, so this is the code under test.
+      # actions/checkout checks out the pull request's merge commit by default.
+      OPERATOR_REPO: ${{ github.workspace }}
+    steps:
+      - name: Check out the operator under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out k8s-tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.K8S_TESTS_REPO }}
+          ref: ${{ env.K8S_TESTS_REF }}
+          path: k8s-tests
+          persist-credentials: false
+
+      - name: Free the disk the build does not need
+        # The runner's preinstalled toolchains are several gigabytes, and what fills up
+        # first is the disk the image builds and the Kind node share.
+        run: sudo rm -rf /usr/share/dotnet /usr/share/swift /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: Install kind and kubectl
+        env:
+          KIND_VERSION: v0.33.0
+          # The checks mint bearer tokens with `kubectl create token`, so 1.24 or newer.
+          KUBECTL_VERSION: v1.37.2
+          # A release version does not pin the bytes it names: these are the digests of
+          # the two assets, so a replaced or corrupted download stops here instead of
+          # being installed with sudo. Bump them together with the versions above.
+          KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+          KUBECTL_SHA256: c04487523e7aa7d1493f7808174c899db93d7a9cf57531420cd76b9bd415f8f4
+        run: |
+          curl -fsSLo /tmp/kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          curl -fsSLo /tmp/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          echo "${KIND_SHA256}  /tmp/kind" | sha256sum --check --strict -
+          echo "${KUBECTL_SHA256}  /tmp/kubectl" | sha256sum --check --strict -
+          chmod +x /tmp/kind /tmp/kubectl
+          sudo install -m 0755 /tmp/kind /tmp/kubectl /usr/local/bin/
+          kind version
+          kubectl version --client
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: k8s-tests/uv.lock
+
+      - name: Install the Python environment
+        working-directory: k8s-tests
+        run: uv sync --frozen
+
+      - name: Confirm the checkout under test
+        working-directory: k8s-tests
+        # Fails early, with a readable reason, when OPERATOR_REPO is not an operator
+        # checkout or its layout and the declared one disagree.
+        run: uv run k8s-tests check-operator-repo
+
+      - name: Create the Kind cluster, build the images, deploy the operators
+        working-directory: k8s-tests
+        # `up` is the four steps in order: cluster, images, load, deploy. It also creates
+        # the module resource and waits for both operators to run the images just built.
+        run: uv run k8s-tests up
+
+      - name: Run the checks
+        working-directory: k8s-tests
+        # The default section: every check except the adapters, whose benchmarks each
+        # take minutes. It writes reports/report.html, which is self-contained, and
+        # reports/junit.xml, which the summary below is rendered from.
+        run: |
+          mkdir -p reports
+          uv run k8s-tests test --pytest-args "--junitxml=reports/junit.xml"
+
+      - name: Collect what the cluster looked like
+        if: failure()
+        working-directory: k8s-tests
+        # The report says which check failed; this says what the cluster was doing.
+        run: |
+          set +e
+          mkdir -p reports
+          {
+            echo "## pods"
+            kubectl get pods --all-namespaces -o wide
+            echo
+            echo "## recent events"
+            kubectl get events --all-namespaces --sort-by=.lastTimestamp | tail -n 100
+            echo
+            echo "## module resource"
+            kubectl get trustyais.components.platform.opendatahub.io default-trustyai -o yaml
+            echo
+            echo "## module operator logs"
+            kubectl logs -l control-plane=controller-manager -n system --tail=200
+            echo
+            echo "## workload operator logs"
+            kubectl logs -l control-plane=trustyai-service-operator -n system --tail=200
+          } > reports/diagnostics.txt 2>&1 || true
+
+      - name: Upload the report
+        # Always, because a failing run is the one worth opening.
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: k8s-tests-report-${{ github.event.pull_request.number || github.run_id }}
+          path: k8s-tests/reports/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Say what the run tested, and list every check it ran
+        # Always: the run page is what a reviewer reads first, and a failed run is the one
+        # worth reading. The table is the same list report.html holds, rendered from the
+        # JUnit report so nothing has to be downloaded to see which checks passed.
+        if: always()
+        working-directory: k8s-tests
+        run: |
+          sha="${GITHUB_SHA}"
+          {
+            echo "### Tier 3: AI Safety end-to-end (k8s-tests at \`${K8S_TESTS_REF}\`)"
+            echo
+            echo "Tested [trustyai-service-operator at \`${sha}\`](https://github.com/${GITHUB_REPOSITORY}/commit/${sha})."
+            echo
+            uv run k8s-tests summary reports/junit.xml ||
+              echo "_The summary could not be rendered; \`report.html\` in the artifact is the record._"
+            echo
+            echo "The self-contained report is \`report.html\` in the \`k8s-tests-report-*\` artifact;"
+            echo "download it and open it in a browser. A failed run also carries \`diagnostics.txt\`."
+          } >> "${GITHUB_STEP_SUMMARY}"
