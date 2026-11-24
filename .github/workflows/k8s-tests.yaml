@@ -9,12 +9,18 @@ name: Tier 3 - AI Safety end-to-end (k8s-tests)
 # both operator images and renders the module overlays from that checkout, so nothing is
 # pulled from a published image.
 #
-# It runs for pull requests whose head branch is in this repository, and for a manual
-# dispatch; pull requests from forks are skipped for now (the job's `if` is the gate). To
-# gate merges on it, make the "TrustyAI operators on Kind" job a required status check in
-# the branch protection rules.
+# A run is gated on the `ok-to-test` label: a maintainer adds it to the pull request, and
+# the suite starts; it stays in force for later pushes to that PR. Without the label the
+# job is skipped, so an unlabelled pull request (a fork's, or one still under triage)
+# never builds or runs its code. Only a user with write access can add the label, so this
+# covers forks as well as same-repository branches. `workflow_dispatch` is the other way
+# in. To gate merges on it, make the "TrustyAI operators on Kind" job a required status
+# check in the branch protection rules.
 on:
   pull_request:
+    # `labeled` is what makes the gate work: adding `ok-to-test` starts the run.
+    # `synchronize` re-runs a labelled PR when it is pushed to.
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
     inputs:
       k8s_tests_ref:
@@ -39,11 +45,12 @@ env:
 jobs:
   harness:
     name: TrustyAI operators on Kind
-    # Fork pull requests are skipped for now: only same-repository branches run the suite.
-    # A manual dispatch always runs, so a maintainer can still exercise it on demand.
+    # The `ok-to-test` label is the gate: only a user with write access can add it, so
+    # this covers forks as well as same-repository branches and keeps unlabelled PRs from
+    # running the suite. A manual dispatch is already privileged and always runs.
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      contains(github.event.pull_request.labels.*.name, 'ok-to-test')
     runs-on: ubuntu-latest
     # The two operator images are Go builds, the node image is a pull, and the checks
     # create and wait for service operands; the default six hours is the ceiling for a
