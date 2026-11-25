@@ -187,6 +187,9 @@ func (r *EvalHubReconciler) reconcileConfigMapWithData(ctx context.Context, inst
 
 // generateConfigData generates the configuration data for the ConfigMap
 func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *evalhubv1.EvalHub) (map[string]string, error) {
+	if err := validateGenerationEnv(instance.Spec.Env); err != nil {
+		return nil, err
+	}
 	evalHubImage, err := images.ResolveImage(ctx, r.Client, images.EvalHubImageKey, r.effectiveOperatorConfigMapName(), r.Namespace, "")
 	if err != nil {
 		return nil, fmt.Errorf("resolving EvalHub image: %w", err)
@@ -237,17 +240,13 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 		Generation: GenerationConfig{RunnerImage: evalHubImage},
 	}
 
-	for _, effort := range []string{"low", "standard", "high"} {
-		for _, limit := range []string{
-			"max_iterations", "max_model_calls", "max_tool_calls",
-			"max_total_tokens", "max_output_tokens", "max_duration",
-		} {
-			envName := "EVALHUB_GENERATION_" + strings.ToUpper(effort+"_"+limit)
-			config.EnvMappings[envName] = "generation.effort_budget." + effort + "." + limit
+	for _, effort := range generationEfforts {
+		for _, limit := range generationLimits {
+			config.EnvMappings[generationEnvName(effort, limit.field)] = "generation.effort_budget." + effort + "." + limit.field
 		}
 	}
 	config.EnvMappings["EVALHUB_COLLECTION_GENERATION_RETENTION"] = "generation.retention"
-	config.EnvMappings["EVALHUB_RESOURCE_JANITOR_INTERVAL"] = "resource_janitor.interval"
+	config.EnvMappings[generationJanitorEnv] = "resource_janitor.interval"
 
 	// Database configuration — always present since the controller validates
 	// that spec.database is set before reaching this point.

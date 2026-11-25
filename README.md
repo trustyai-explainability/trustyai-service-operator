@@ -91,14 +91,23 @@ Use `EVALHUB_GENERATION_<EFFORT>_<LIMIT>`, where `<EFFORT>` is `LOW`,
 | `MAX_DURATION` | 2m | 2m | 10m |
 
 Supply positive integers for counts and Go duration strings such as `3m` for
-durations. Omitted values retain the EvalHub defaults. EvalHub rejects invalid
-settings, settings beyond its hard limits, and settings that decrease any limit
-as effort increases. Invalid settings prevent the service from starting.
+durations. Omitted or empty overrides use the EvalHub defaults. Each effort
+requires `MAX_MODEL_CALLS` to be at least `MAX_ITERATIONS` and
+`MAX_TOTAL_TOKENS` to be at least `MAX_OUTPUT_TOKENS`. Every limit must stay
+the same or increase from Low to Standard to High, within the EvalHub hard
+limits.
+
+The operator checks literal effort and cleanup-interval overrides against the
+supported EvalHub defaults before rolling out the Deployment. An invalid
+setting sets the EvalHub resource's `Ready` condition to `False` and identifies
+the affected variables. For `valueFrom` or Kubernetes `$(VAR)` expansions, the
+operator checks only constraints whose operands are known. EvalHub validates
+all effective settings at startup, including values resolved by Kubernetes.
 
 `EVALHUB_COLLECTION_GENERATION_RETENTION` sets how long terminal generation
 records stay visible (default `24h`). `EVALHUB_RESOURCE_JANITOR_INTERVAL` sets
-the database cleanup interval independently (default `24h`, whole-minute
-durations from `1m` to `24h`).
+the database cleanup interval independently. Use whole-minute durations from
+`1m` to `24h`, or `0` to select the default of `24h`.
 
 ## Contributing
 

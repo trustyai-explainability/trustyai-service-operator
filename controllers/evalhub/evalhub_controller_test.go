@@ -366,6 +366,52 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		Expect(service.Spec.Selector["instance"]).To(Equal(evalHubName))
 	})
 
+	It("should report invalid literal generation limits without rolling the Deployment", func() {
+		const iterations = "EVALHUB_GENERATION_STANDARD_MAX_ITERATIONS"
+		const calls = "EVALHUB_GENERATION_STANDARD_MAX_MODEL_CALLS"
+
+		for range 3 {
+			_, err := performReconcile(reconciler, evalHubName, testNamespace)
+			Expect(err).NotTo(HaveOccurred())
+		}
+		key := types.NamespacedName{Name: evalHubName, Namespace: testNamespace}
+		deployment := waitForDeployment(evalHubName, testNamespace)
+		deployment.Status.Replicas = *deployment.Spec.Replicas
+		deployment.Status.ReadyReplicas = *deployment.Spec.Replicas
+		Expect(k8sClient.Status().Update(ctx, deployment)).To(Succeed())
+		_, err := performReconcile(reconciler, evalHubName, testNamespace)
+		Expect(err).NotTo(HaveOccurred())
+		original := waitForDeployment(evalHubName, testNamespace)
+
+		Expect(k8sClient.Get(ctx, key, evalHub)).To(Succeed())
+		Expect(evalHub.Status.Ready).To(Equal(corev1.ConditionTrue))
+		evalHub.Spec.Env = append(evalHub.Spec.Env, corev1.EnvVar{Name: iterations, Value: "25"})
+		Expect(k8sClient.Update(ctx, evalHub)).To(Succeed())
+
+		_, err = performReconcile(reconciler, evalHubName, testNamespace)
+		Expect(err).To(MatchError(ContainSubstring(iterations)))
+		Expect(k8sClient.Get(ctx, key, evalHub)).To(Succeed())
+		Expect(evalHub.Status.Ready).To(Equal(corev1.ConditionFalse))
+		Expect(evalHub.Status.Conditions).To(ContainElement(And(
+			HaveField("Type", "Ready"),
+			HaveField("Status", corev1.ConditionFalse),
+			HaveField("Message", And(ContainSubstring(iterations), ContainSubstring(calls))),
+		)))
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		Expect(deployment.ResourceVersion).To(Equal(original.ResourceVersion))
+		Expect(deployment.Spec.Template).To(Equal(original.Spec.Template))
+
+		evalHub.Spec.Env = append(evalHub.Spec.Env, corev1.EnvVar{Name: calls, Value: "25"})
+		Expect(k8sClient.Update(ctx, evalHub)).To(Succeed())
+		_, err = performReconcile(reconciler, evalHubName, testNamespace)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElements(
+			corev1.EnvVar{Name: iterations, Value: "25"},
+			corev1.EnvVar{Name: calls, Value: "25"},
+		))
+	})
+
 	It("should update status based on deployment readiness", func() {
 		By("Going through initial reconciliation steps")
 		// Status initialization
