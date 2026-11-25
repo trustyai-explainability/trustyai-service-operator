@@ -9,7 +9,9 @@ package evalhub
 
 import (
 	"context"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -141,4 +143,70 @@ func TestKueueReconciler_Eviction_EmitsEventAndPatchesJobAndWorkload(t *testing.
 	require.NotNil(t, patchedJobLabels, "evaluation-phase=Failed patch was never applied to Job")
 	assert.Equal(t, labelEvaluationPhaseFailed, patchedJobLabels[labelEvaluationPhase])
 	assert.True(t, workloadAnnotated, "Workload should be annotated as reported")
+}
+
+func TestKueueReconciler_AlreadyRecordedFailure_PromotesWithoutRepost(t *testing.T) {
+	srv, requests := evalHubJobStateServer(t, `{"message":"The job can not be failed because it is 'failed'."}`, "failed")
+	job := evalHubEvaluationJob("eval-job-kueue-recorded", "tenant-ns", map[string]string{
+		evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
+	})
+	wl := inadmissibleWorkload("wl-recorded", job.Namespace, job.Name, job.UID, "insufficient quota")
+	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+	fc := fake.NewClientBuilder().WithScheme(kueueLifecycleScheme(t)).WithObjects(eh, job, wl).Build()
+	r, rec := buildKueueReconciler(fc, job.Namespace)
+	req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(wl)}
+	result, err := r.Reconcile(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, ctrl.Result{}, result)
+	var persistedJob batchv1.Job
+	require.NoError(t, fc.Get(context.Background(), client.ObjectKeyFromObject(job), &persistedJob))
+	assert.Equal(t, labelEvaluationPhaseFailed, persistedJob.Labels[labelEvaluationPhase])
+	var persistedWorkload kueue.Workload
+	require.NoError(t, fc.Get(context.Background(), client.ObjectKeyFromObject(wl), &persistedWorkload))
+	assert.Equal(t, "true", persistedWorkload.Annotations[annotationKueueFailedWorkloadEventReported])
+	select {
+	case ev := <-rec.Events:
+		assert.Contains(t, ev, eventReasonEvaluationFailed)
+	default:
+		t.Fatal("expected failure event")
+	}
+	require.Len(t, requests, 1)
+	<-requests
+	result, err = r.Reconcile(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, ctrl.Result{}, result)
+	assert.Empty(t, requests, "the recorded failure must not be posted again")
+	assert.Empty(t, rec.Events, "the failure event must not be emitted again")
+}
+
+func TestKueueReconciler_TerminalConflictOutcomes(t *testing.T) {
+	for _, state := range []string{"cancelled", "cancelled-without-benchmark", "completed", "", "running"} {
+		t.Run(state, func(t *testing.T) {
+			srv, requests := evalHubJobStateServer(t, `{"message":"The job can not be failed because it is 'cancelled'."}`, state)
+			job := evalHubEvaluationJob("eval-job-kueue-superseded", "tenant-ns", map[string]string{
+				evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
+			})
+			wl := inadmissibleWorkload("wl-superseded", job.Namespace, job.Name, job.UID, "insufficient quota")
+			eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+			fc := fake.NewClientBuilder().WithScheme(kueueLifecycleScheme(t)).WithObjects(eh, job, wl).Build()
+			r, rec := buildKueueReconciler(fc, job.Namespace)
+			result, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(wl)})
+			require.NoError(t, err)
+			if state == "" || state == "running" {
+				assert.Equal(t, 30*time.Second, result.RequeueAfter, "unknown outcomes must remain retryable")
+			} else {
+				assert.Equal(t, ctrl.Result{}, result, "superseded reports must stop requeueing")
+			}
+			require.Len(t, requests, 2)
+			assert.Equal(t, http.MethodPost, (<-requests).Method)
+			assert.Equal(t, http.MethodGet, (<-requests).Method)
+			var persisted batchv1.Job
+			require.NoError(t, fc.Get(context.Background(), client.ObjectKeyFromObject(job), &persisted))
+			assert.NotEqual(t, labelEvaluationPhaseFailed, persisted.Labels[labelEvaluationPhase])
+			var persistedWorkload kueue.Workload
+			require.NoError(t, fc.Get(context.Background(), client.ObjectKeyFromObject(wl), &persistedWorkload))
+			assert.Empty(t, persistedWorkload.Annotations[annotationKueueFailedWorkloadEventReported])
+			assert.Empty(t, rec.Events)
+		})
+	}
 }
