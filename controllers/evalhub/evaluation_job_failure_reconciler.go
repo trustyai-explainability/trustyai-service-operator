@@ -294,8 +294,7 @@ func jobUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 			if failureAcceptedReport(newJob) || newJob.Annotations[annotationFailureRequest] != "" {
 				return true
 			}
-			// Job updates often lag pod/container status; the assessment only
-			// posts when init/adapter/sidecar show operator-only failure reasons.
+			// The assessment prefers specific Pod diagnostics to the final Job condition.
 			return jobStatusIndicatesTerminalFailure(newJob)
 		},
 		DeleteFunc:  func(event.DeleteEvent) bool { return false },
@@ -556,6 +555,25 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 
 			benchmarkIndex := benchmarkIndexFromJob(&job)
 
+			if assessment.terminalJobFallback {
+				// The adapter may already have reported this occurrence while sibling
+				// benchmarks are still running. Only report for an active occurrence.
+				state, err := fetchEvalHubBenchmarkState(ctx, r.RESTConfig, resolvedURL, job.Namespace, jobID, providerID, benchmarkID, benchmarkIndex)
+				if errors.Is(err, errEvalHubJobNotFound) {
+					return ctrl.Result{}, nil
+				}
+				if err != nil {
+					return ctrl.Result{}, fmt.Errorf("check benchmark before terminal Job fallback: %w", err)
+				}
+				switch state {
+				case "pending", "running":
+				case "completed", "failed", "cancelled", "canceled":
+					return ctrl.Result{}, nil
+				default:
+					return ctrl.Result{}, fmt.Errorf("unexpected benchmark state %q before terminal Job fallback", state)
+				}
+			}
+
 			baseURL = resolvedURL
 			report = &evalHubFailureRequest{JobID: jobID, ProviderID: providerID, BenchmarkID: benchmarkID, BenchmarkIndex: benchmarkIndex, Message: msg, ExitCode: assessment.exitCode}
 			raw, err := json.Marshal(report)
@@ -708,11 +726,12 @@ func terminatedExitCodeFromContainerStatuses(statuses []corev1.ContainerStatus, 
 }
 
 type failureAssessment struct {
-	message      string
-	failed       bool
-	requeueAfter time.Duration
-	err          error
-	exitCode     int32
+	terminalJobFallback bool
+	message             string
+	failed              bool
+	requeueAfter        time.Duration
+	err                 error
+	exitCode            int32
 }
 
 func (a *failureAssessment) waitFor(wait time.Duration) {
@@ -788,6 +807,11 @@ func (r *EvalHubEvaluationJobFailureReconciler) assessJobFailure(ctx context.Con
 	assessment.message = strings.Join(parts, "; ")
 	assessment.failed = len(parts) > 0
 	assessment.err = firstErr
+	if !assessment.failed && firstErr == nil && jobConditionTrue(job.Status.Conditions, batchv1.JobFailed) {
+		assessment.failed = true
+		assessment.terminalJobFallback = true
+		assessment.message = "Kubernetes marked the evaluation Job as failed."
+	}
 	return assessment
 }
 
