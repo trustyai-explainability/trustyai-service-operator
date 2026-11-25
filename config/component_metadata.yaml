@@ -14,3 +14,6 @@ releases:
   - name: EvalHub
     version: v0.3.0
     repoUrl: https://github.com/eval-hub/eval-hub
+  - name: Nemo Guardrails
+    version: v0.25.0
+    repoUrl: https://github.com/trustyai-explainability/NeMo-Guardrails/
