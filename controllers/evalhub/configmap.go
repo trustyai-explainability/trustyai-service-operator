@@ -111,15 +111,21 @@ type SidecarConfig struct {
 	SidecarContainer *SidecarContainerConfig `json:"sidecar_container,omitempty"`
 }
 
+// GenerationConfig configures the collection-generation worker in config.yaml.
+type GenerationConfig struct {
+	RunnerImage string `json:"runner_image"`
+}
+
 // EvalHubConfig represents the eval-hub configuration structure
 type EvalHubConfig struct {
-	Service     ServiceConfig   `json:"service"`
-	Secrets     *SecretsMapping `json:"secrets,omitempty"`
-	EnvMappings EnvMappings     `json:"env_mappings"`
-	Database    *DatabaseConfig `json:"database"`
-	OTEL        *OTELConfig     `json:"otel,omitempty"`
-	Prometheus  map[string]any  `json:"prometheus,omitempty"`
-	Sidecar     *SidecarConfig  `json:"sidecar,omitempty"`
+	Service     ServiceConfig    `json:"service"`
+	Secrets     *SecretsMapping  `json:"secrets,omitempty"`
+	EnvMappings EnvMappings      `json:"env_mappings"`
+	Database    *DatabaseConfig  `json:"database"`
+	OTEL        *OTELConfig      `json:"otel,omitempty"`
+	Prometheus  map[string]any   `json:"prometheus,omitempty"`
+	Sidecar     *SidecarConfig   `json:"sidecar,omitempty"`
+	Generation  GenerationConfig `json:"generation"`
 }
 
 // evalHubConfigMapName returns a ConfigMap name tied to the instance and the
@@ -228,7 +234,20 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 				},
 			},
 		},
+		Generation: GenerationConfig{RunnerImage: evalHubImage},
 	}
+
+	for _, effort := range []string{"low", "standard", "high"} {
+		for _, limit := range []string{
+			"max_iterations", "max_model_calls", "max_tool_calls",
+			"max_total_tokens", "max_output_tokens", "max_duration",
+		} {
+			envName := "EVALHUB_GENERATION_" + strings.ToUpper(effort+"_"+limit)
+			config.EnvMappings[envName] = "generation.effort_budget." + effort + "." + limit
+		}
+	}
+	config.EnvMappings["EVALHUB_COLLECTION_GENERATION_RETENTION"] = "generation.retention"
+	config.EnvMappings["EVALHUB_RESOURCE_JANITOR_INTERVAL"] = "resource_janitor.interval"
 
 	// Database configuration — always present since the controller validates
 	// that spec.database is set before reaching this point.

@@ -359,8 +359,8 @@ func (r *EvalHubReconciler) createAPIAccessRole(ctx context.Context, instance *e
 }
 
 // createJobsAPIAccessRole creates a per-instance namespaced Role for the job SA.
-// Job pods only need to post status events back to the EvalHub service — they do
-// not proxy requests, so evalhubs/proxy is not included here.
+// It authorizes lifecycle callbacks and read-only catalog requests through the
+// EvalHub proxy in the namespace where the job runs.
 func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instance *evalhubv1.EvalHub, targetNamespace string) error {
 	log := log.FromContext(ctx)
 
@@ -376,6 +376,11 @@ func (r *EvalHubReconciler) createJobsAPIAccessRole(ctx context.Context, instanc
 				APIGroups: []string{"trustyai.opendatahub.io"},
 				Resources: []string{"status-events"},
 				Verbs:     []string{"create"},
+			},
+			{
+				APIGroups: []string{"trustyai.opendatahub.io"},
+				Resources: []string{"providers", "collections"},
+				Verbs:     []string{"get", "list"},
 			},
 		},
 	}
@@ -592,7 +597,7 @@ func (r *EvalHubReconciler) createAPIAccessRoleBinding(ctx context.Context, inst
 }
 
 // createJobsAPIAccessRoleBinding creates a namespace-scoped RoleBinding for the job
-// ServiceAccount to the per-instance Role for status-events access.
+// ServiceAccount to the per-instance Role for status events and catalog reads.
 func (r *EvalHubReconciler) createJobsAPIAccessRoleBinding(ctx context.Context, instance *evalhubv1.EvalHub, serviceAccountName string, targetNamespace string) error {
 	roleBindingName := normalizeDNS1123LabelValue(instance.Name + "-" + instance.Namespace + "-job-access-rb")
 	roleName := generateJobsAPIAccessRoleName(instance)

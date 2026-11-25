@@ -71,6 +71,35 @@ For usage information, please see the [OpenDataHub documentation of TrustyAI](ht
 
 For database-backed deployments, see the [TrustyAI Service database tuning guide](docs/database-tuning.md) for ConfigMap-based tuning options.
 
+### EvalHub collection-generation configuration
+
+The operator uses the resolved EvalHub operand image for the API service and the
+generation worker, init, and sidecar containers. Use an EvalHub image that
+contains the generation worker binary.
+
+Administrators can override effort limits in the EvalHub resource's `spec.env`.
+Use `EVALHUB_GENERATION_<EFFORT>_<LIMIT>`, where `<EFFORT>` is `LOW`,
+`STANDARD`, or `HIGH`. Their defaults are:
+
+| `<LIMIT>` | Low | Standard | High |
+| --- | ---: | ---: | ---: |
+| `MAX_ITERATIONS` | 8 | 20 | 40 |
+| `MAX_MODEL_CALLS` | 8 | 20 | 40 |
+| `MAX_TOOL_CALLS` | 24 | 60 | 120 |
+| `MAX_TOTAL_TOKENS` | 32768 | 131072 | 524288 |
+| `MAX_OUTPUT_TOKENS` | 2048 | 4096 | 8192 |
+| `MAX_DURATION` | 2m | 2m | 10m |
+
+Supply positive integers for counts and Go duration strings such as `3m` for
+durations. Omitted values retain the EvalHub defaults. EvalHub rejects invalid
+settings, settings beyond its hard limits, and settings that decrease any limit
+as effort increases. Invalid settings prevent the service from starting.
+
+`EVALHUB_COLLECTION_GENERATION_RETENTION` sets how long terminal generation
+records stay visible (default `24h`). `EVALHUB_RESOURCE_JANITOR_INTERVAL` sets
+the database cleanup interval independently (default `24h`, whole-minute
+durations from `1m` to `24h`).
+
 ## Contributing
 
 Please see the [CONTRIBUTING.md](./CONTRIBUTING.md) file for more details on how to contribute to this project.
