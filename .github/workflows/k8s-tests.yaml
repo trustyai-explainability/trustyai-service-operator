@@ -9,12 +9,23 @@ name: Tier 3 - AI Safety end-to-end (k8s-tests)
 # both operator images and renders the module overlays from that checkout, so nothing is
 # pulled from a published image.
 #
-# It runs for pull requests whose head branch is in this repository, and for a manual
-# dispatch; pull requests from forks are skipped for now (the job's `if` is the gate). To
-# gate merges on it, make the "TrustyAI operators on Kind" job a required status check in
-# the branch protection rules.
+# It runs in this repository only, never in a fork or a downstream mirror of it. Pull
+# requests from branches in this repository run immediately; pull requests from forks run
+# once a maintainer applies the `ok-to-test` label, which is also what admits later pushes
+# to the same pull request. To gate merges on it, make the "TrustyAI operators on Kind"
+# job a required status check in the branch protection rules.
+#
+# Security model: a fork pull request runs a read-only GITHUB_TOKEN, carries no secrets,
+# and lands on an ephemeral runner, so the worst a malicious change can spend is runner
+# minutes. The label gate is therefore throttling and review, not a secret boundary. Note
+# that `pull_request` runs the pull request's own copy of this file, so a fork can drop the
+# gate; making it tamper-proof would mean a `pull_request_target` dispatcher that starts
+# this workflow from `main` via `workflow_dispatch`.
 on:
   pull_request:
+    # `labeled` is what admits a fork pull request: a maintainer applies `ok-to-test` and
+    # the run starts. `synchronize` then carries that admission to later pushes.
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
     inputs:
       k8s_tests_ref:
@@ -39,11 +50,19 @@ env:
 jobs:
   harness:
     name: TrustyAI operators on Kind
-    # Fork pull requests are skipped for now: only same-repository branches run the suite.
-    # A manual dispatch always runs, so a maintainer can still exercise it on demand.
+    # Three ways in, and one way to be in the wrong repository:
+    #   - the repository guard keeps this file inert wherever it is copied to (forks,
+    #     downstream mirrors), so the suite only ever runs against this repository;
+    #   - same-repository pull requests run without a label;
+    #   - fork pull requests run once a maintainer has applied `ok-to-test`;
+    #   - a manual dispatch always runs, so a maintainer can exercise it on demand.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.repository == 'trustyai-explainability/trustyai-service-operator' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        github.event.pull_request.head.repo.full_name == github.repository ||
+        contains(github.event.pull_request.labels.*.name, 'ok-to-test')
+      )
     runs-on: ubuntu-latest
     # The two operator images are Go builds, the node image is a pull, and the checks
     # create and wait for service operands; the default six hours is the ceiling for a
