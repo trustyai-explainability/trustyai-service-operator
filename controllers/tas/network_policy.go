@@ -30,9 +30,10 @@ const (
 	tasPrometheusComponentValue         = "prometheus"
 	tasModelMeshServiceLabel            = "modelmesh-service"
 	tasModelMeshServiceValue            = "modelmesh-serving"
-	tasKServeInferenceServiceLabel      = "serving.kserve.io/inferenceservice"
-	tasNetworkPolicyRole                = "service"
-	tasNetworkPolicyPurpose             = "service"
+	// tasKServeInferenceServiceLabel is declared with the rest of the serving
+	// API surface in serving_fields.go.
+	tasNetworkPolicyRole    = "service"
+	tasNetworkPolicyPurpose = "service"
 )
 
 // tasNetworkPolicyOwner supplies an explicit GVK to shared identity and

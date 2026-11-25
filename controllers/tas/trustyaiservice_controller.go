@@ -23,7 +23,6 @@ import (
 	templateParser "github.com/trustyai-explainability/trustyai-service-operator/controllers/tas/templates"
 	"time"
 
-	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
@@ -32,6 +31,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -45,10 +45,14 @@ import (
 
 var ErrPVCNotReady = goerrors.New("PVC is not ready")
 
-// crdReader returns an uncached reader for one-off CRD-existence checks, avoiding
-// the manager cache's informer-sync race on first access to a not-yet-watched GVK.
+// uncachedReader returns a reader that never touches the manager cache. It is
+// used for the optional-CRD existence checks and for the serving reads, because
+// neither may depend on an informer: the CRD checks run before anything is
+// watched, and serving.kserve.io is deliberately not watched, so a cached List
+// would either build a cluster-wide informer on first use or answer empty while
+// that informer syncs.
 // Falls back to Client if APIReader is unset (e.g. unit tests using a fake client).
-func (r *TrustyAIServiceReconciler) crdReader() client.Reader {
+func (r *TrustyAIServiceReconciler) uncachedReader() client.Reader {
 	if r.APIReader != nil {
 		return r.APIReader
 	}
@@ -56,9 +60,19 @@ func (r *TrustyAIServiceReconciler) crdReader() client.Reader {
 }
 
 func ControllerSetUp(mgr manager.Manager, ns, configmap string, recorder record.EventRecorder) error {
+	// One dynamic client for every serving read and write. It is built from the
+	// manager's REST config and never wrapped by the cache, so it creates no
+	// informer; the resource it talks to comes from the CRD, not from a
+	// RESTMapper lookup, so it triggers no discovery either.
+	servingClient, err := dynamic.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		return fmt.Errorf("creating the dynamic client for serving resources: %w", err)
+	}
+
 	return (&TrustyAIServiceReconciler{
 		Client:        mgr.GetClient(),
 		APIReader:     mgr.GetAPIReader(),
+		Dynamic:       servingClient,
 		Scheme:        mgr.GetScheme(),
 		Namespace:     ns,
 		EventRecorder: recorder,
@@ -72,7 +86,11 @@ type TrustyAIServiceReconciler struct {
 	// CRD presence) that must not be affected by the manager cache's informer-sync race
 	// on first access to a not-yet-watched GVK. Falls back to Client if unset (e.g. in
 	// tests that don't wire it up).
-	APIReader     client.Reader
+	APIReader client.Reader
+	// Dynamic is the unstructured client for serving resources. Its resource is
+	// derived from the InferenceService CRD on every pass, so a served version
+	// change needs no release and no scheme entry.
+	Dynamic       dynamic.Interface
 	Scheme        *runtime.Scheme
 	Namespace     string
 	EventRecorder record.EventRecorder
@@ -93,8 +111,8 @@ type TrustyAIServiceReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=list;get;watch
 //+kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=list;get;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=list;watch;get;create;update;patch;delete
-//+kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=list;watch;get;update;patch
-//+kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices/finalizers,verbs=list;watch;get;update;patch;delete
+//+kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=list;get;update;patch
+//+kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices/finalizers,verbs=list;get;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;delete
@@ -203,9 +221,15 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return RequeueWithError(err)
 	}
 
+	// Serving is an optional dependency and its state is read once here, then
+	// shared with the status pass at the end of the reconcile: deriving it twice
+	// costs two cluster-scoped CRD gets and two namespace lists per pass, and lets
+	// the write path and the condition disagree when serving changes between them.
+	serving := r.inferenceServicesReport(ctx, instance.Namespace)
+
 	// CR found, add or update the URL
 	// Call the function to patch environment variables for Deployments that match the label
-	shouldContinue, err := r.handleInferenceServices(ctx, instance, req.Namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, req.Name, false)
+	shouldContinue, err := r.handleInferenceServices(ctx, instance, serving, req.Namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, req.Name, false)
 	if err != nil {
 		return RequeueWithErrorMessage(ctx, err, "Could not patch environment variables for Deployments.")
 	}
@@ -354,7 +378,7 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Reconcile statuses
-	result, err := r.reconcileStatuses(ctx, instance)
+	result, err := r.reconcileStatuses(ctx, instance, serving)
 	if err != nil {
 		return result, err
 	}
@@ -364,6 +388,13 @@ func (r *TrustyAIServiceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 }
 
 // SetupWithManager sets up the controller with the Manager.
+//
+// No source is registered for serving.kserve.io on purpose. The reconciler
+// requeues on defaultRequeueDelay and each pass re-derives serving state from
+// the CRD, so a serving event would only shorten adaptation below that interval
+// while making the operator refuse to start on a cluster with no serving CRD:
+// source.Kind.Start retries GetInformer and the controller then misses its
+// cache-sync deadline. See the architecture decision recorded on RHAI-22332.
 func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Reconcile v1 (hub version); conversion webhook handles v1alpha1->v1
 	return ctrl.NewControllerManagedBy(mgr).
@@ -380,6 +411,5 @@ func (r *TrustyAIServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			UpdateFunc:  func(e event.UpdateEvent) bool { return tasPodLabelsChanged(e.ObjectOld, e.ObjectNew) },
 			GenericFunc: func(e event.GenericEvent) bool { return hasTASPodIdentityHint(e.Object) },
 		})).
-		Watches(&kservev1beta1.InferenceService{}, &handler.EnqueueRequestForObject{}).
 		Complete(r)
 }

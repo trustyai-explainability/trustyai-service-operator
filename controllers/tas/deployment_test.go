@@ -14,6 +14,8 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
@@ -294,13 +296,33 @@ func setupAndTestDeploymentInferenceService(instance *trustyaiopendatahubiov1.Tr
 		return reconciler.ensureDeployment(ctx, instance, caBundle, false)
 	}, "failed to create deployment")
 
-	// Creating the InferenceService
-	inferenceService := createInferenceService("my-model", namespace)
+	// Creating the InferenceService where the reconciler reads it. Serving goes
+	// through the dynamic client against the envtest API server, so a fixture
+	// created on the fake client below was invisible to the operator: the specs
+	// that name this helper asserted nothing about InferenceService linkage once
+	// the direct patchKServe assertion went away.
+	envtestClient, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred())
 	WaitFor(func() error {
-		return k8sClient.Create(ctx, inferenceService)
-	}, "failed to create deployment")
+		return createNamespace(ctx, envtestClient, namespace)
+	}, "failed to create the namespace in the API server")
 
-	Expect(reconciler.patchKServe(ctx, instance, *inferenceService, namespace, instance.Name, false, false)).ToNot(HaveOccurred())
+	servingResource := servingDynamic.Resource(testServingContract().gvr).Namespace(namespace)
+	inferenceService := createInferenceService("my-model", namespace)
+	// RawDeployment is the mode whose sink is written with the https URL; without
+	// a mode the object is skipped as unknown, which is how this fixture could
+	// look configured while nothing happened.
+	inferenceService.SetAnnotations(map[string]string{deploymentModeAnnotation: DEPLOYMENT_MODE_RAW})
+	WaitFor(func() error {
+		_, createErr := servingResource.Create(ctx, inferenceService, metav1.CreateOptions{})
+		if apierrors.IsAlreadyExists(createErr) {
+			return nil
+		}
+		return createErr
+	}, "failed to create InferenceService")
+	DeferCleanup(func() {
+		Expect(client.IgnoreNotFound(servingResource.Delete(ctx, "my-model", metav1.DeleteOptions{}))).To(Succeed())
+	})
 
 	deployment := &appsv1.Deployment{}
 	WaitFor(func() error {
@@ -340,6 +362,36 @@ func setupAndTestDeploymentInferenceService(instance *trustyaiopendatahubiov1.Tr
 	Expect(serviceAccount.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
 	Expect(serviceAccount.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
 
+	// Drive the write path a reconcile would drive, and assert the linkage this
+	// spec is named for. The reconciler under test reads serving through the
+	// dynamic client, so the serving work runs on a reconciler backed by the API
+	// server while the rest of the assertions stay on the fake client.
+	servingReconciler := &TrustyAIServiceReconciler{
+		Client:        envtestClient,
+		APIReader:     envtestClient,
+		Dynamic:       servingDynamic,
+		Scheme:        scheme.Scheme,
+		EventRecorder: recorder,
+		Namespace:     operatorNamespace,
+	}
+
+	report := servingReconciler.inferenceServicesReport(ctx, namespace)
+	Expect(report.err).NotTo(HaveOccurred())
+	Expect(report.contract.state).To(Equal(servingStateUsable))
+	Expect(report.present).To(BeTrue(), "the reconciler cannot see the InferenceService fixture")
+
+	shouldContinue, handleErr := servingReconciler.handleInferenceServices(ctx, instance, report, namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, instance.Name, false)
+	Expect(handleErr).NotTo(HaveOccurred())
+	Expect(shouldContinue).To(BeTrue())
+
+	patched, err := servingResource.Get(ctx, "my-model", metav1.GetOptions{})
+	Expect(err).NotTo(HaveOccurred())
+	logger, found, err := unstructured.NestedMap(patched.Object, predictorLoggerFieldPathParts...)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(found).To(BeTrue(), "payload capture was not written to the InferenceService")
+	Expect(servingLoggerURLOf(logger)).To(Equal(utils.GenerateHTTPSKServeLoggerURL(instance.Name, namespace)),
+		"the InferenceService was not linked to this TrustyAIService instance")
+
 }
 
 var _ = Describe("TrustyAI operator", func() {
@@ -349,6 +401,7 @@ var _ = Describe("TrustyAI operator", func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
+			Dynamic:       servingDynamic,
 			Scheme:        scheme.Scheme,
 			EventRecorder: recorder,
 			Namespace:     operatorNamespace,
@@ -791,6 +844,7 @@ var _ = Describe("TrustyAI operator", func() {
 			k8sClient = trackingClient
 			reconciler = &TrustyAIServiceReconciler{
 				Client:        trackingClient,
+				Dynamic:       servingDynamic,
 				Scheme:        scheme.Scheme,
 				EventRecorder: recorder,
 				Namespace:     operatorNamespace,
@@ -1076,6 +1130,7 @@ var _ = Describe("TrustyAI operator", func() {
 			k8sClient = trackingClient
 			reconciler = &TrustyAIServiceReconciler{
 				Client:        trackingClient,
+				Dynamic:       servingDynamic,
 				Scheme:        scheme.Scheme,
 				EventRecorder: recorder,
 				Namespace:     operatorNamespace,
@@ -1189,6 +1244,7 @@ var _ = Describe("TrustyAI operator", func() {
 		recorder = record.NewFakeRecorder(10)
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
+			Dynamic:       servingDynamic,
 			Scheme:        scheme.Scheme,
 			EventRecorder: recorder,
 			Namespace:     operatorNamespace,
@@ -1230,6 +1286,7 @@ var _ = Describe("TrustyAI operator", func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
+			Dynamic:       servingDynamic,
 			Scheme:        scheme.Scheme,
 			EventRecorder: recorder,
 			Namespace:     operatorNamespace,

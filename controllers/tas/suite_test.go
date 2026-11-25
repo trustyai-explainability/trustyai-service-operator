@@ -26,8 +26,6 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 
 	"github.com/google/uuid"
-	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
-	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
@@ -40,7 +38,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
@@ -58,13 +59,15 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var (
-	cfg        *rest.Config
-	k8sClient  client.Client
-	testEnv    *envtest.Environment
-	ctx        context.Context
-	cancel     context.CancelFunc
-	reconciler *TrustyAIServiceReconciler
-	recorder   *record.FakeRecorder
+	cfg            *rest.Config
+	servingDynamic dynamic.Interface
+	servingFake    *dynamicfake.FakeDynamicClient
+	k8sClient      client.Client
+	testEnv        *envtest.Environment
+	ctx            context.Context
+	cancel         context.CancelFunc
+	reconciler     *TrustyAIServiceReconciler
+	recorder       *record.FakeRecorder
 )
 
 const (
@@ -313,23 +316,59 @@ func createTestPVC(ctx context.Context, k8sClient client.Client, instance *trust
 	return nil
 }
 
-// createInferenceService Function to create the InferenceService
-func createInferenceService(name string, namespace string) *kservev1beta1.InferenceService {
-	return &kservev1beta1.InferenceService{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: kservev1beta1.InferenceServiceSpec{
-			Predictor: kservev1beta1.PredictorSpec{
-				Model: &kservev1beta1.ModelSpec{
-					ModelFormat: kservev1beta1.ModelFormat{
-						Name: "sklearn",
+// servingCRDFixture is the serving CRD as the operator reads it: one served
+// version whose schema declares the predictor logger. Version adoption is a
+// schema decision, so a fixture that only carries a name is reported as
+// unsupported rather than silently treated as usable.
+func servingCRDFixture() *apiextensionsv1.CustomResourceDefinition {
+	return &apiextensionsv1.CustomResourceDefinition{
+		ObjectMeta: metav1.ObjectMeta{Name: inferenceServiceCRDName},
+		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+			Group: "serving.kserve.io",
+			Names: apiextensionsv1.CustomResourceDefinitionNames{
+				Plural: "inferenceservices",
+				Kind:   "InferenceService",
+			},
+			Scope: apiextensionsv1.NamespaceScoped,
+			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{{
+				Name:    "v1beta1",
+				Served:  true,
+				Storage: true,
+				Schema: &apiextensionsv1.CustomResourceValidation{OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+					Type: "object",
+					Properties: map[string]apiextensionsv1.JSONSchemaProps{
+						"spec": {Type: "object", Properties: map[string]apiextensionsv1.JSONSchemaProps{
+							"predictor": {Type: "object", Properties: map[string]apiextensionsv1.JSONSchemaProps{
+								"logger": {Type: "object"},
+							}},
+						}},
 					},
+				}},
+			}},
+		},
+	}
+}
+
+// createInferenceService builds the InferenceService the environment has a CRD
+// for, as the unstructured object the operator reads and writes. Nothing in the
+// test tree needs the serving module: the resource, its version and its fields
+// are what the CRD declares.
+func createInferenceService(name, namespace string) *unstructured.Unstructured {
+	return &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "serving.kserve.io/v1beta1",
+		"kind":       "InferenceService",
+		"metadata": map[string]interface{}{
+			"name":      name,
+			"namespace": namespace,
+		},
+		"spec": map[string]interface{}{
+			"predictor": map[string]interface{}{
+				"model": map[string]interface{}{
+					"modelFormat": map[string]interface{}{"name": "sklearn"},
 				},
 			},
 		},
-	}
+	}}
 }
 
 func makePVCReady(ctx context.Context, k8sClient client.Client, instance *trustyaiopendatahubiov1.TrustyAIService) error {
@@ -513,13 +552,6 @@ var _ = BeforeSuite(func() {
 	err = monitoringv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	// Add InferenceServices
-	err = kservev1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = kservev1beta1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
 	// Add Routes
 	err = routev1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
@@ -529,6 +561,11 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	//+kubebuilder:scaffold:scheme
+
+	// The operator reaches serving through one dynamic client on the GVR the CRD
+	// declares; the reconcilers below use the same client against envtest.
+	servingDynamic, err = dynamic.NewForConfig(cfg)
+	Expect(err).NotTo(HaveOccurred())
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
@@ -551,6 +588,7 @@ var _ = BeforeSuite(func() {
 	err = (&TrustyAIServiceReconciler{
 		Client:        k8sManager.GetClient(),
 		APIReader:     k8sManager.GetAPIReader(),
+		Dynamic:       servingDynamic,
 		Scheme:        k8sManager.GetScheme(),
 		EventRecorder: recorder,
 		Namespace:     operatorNamespace,

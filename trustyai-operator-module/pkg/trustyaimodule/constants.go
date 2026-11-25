@@ -13,10 +13,19 @@ const (
 	// Alias of precondition.ConditionTypeDependenciesAvailable for local use.
 	ConditionTypeDependenciesAvailable = precondition.ConditionTypeDependenciesAvailable
 
-	// ConditionTypeKServeAvailable is the condition type for the optional KServe InferenceService CRD check.
-	// Kept separate from ConditionTypeDependenciesAvailable so the informational KServe result cannot
-	// overwrite or hide the required Prometheus dependency result during RunAll aggregation.
+	// ConditionTypeKServeAvailable reports whether the optional KServe
+	// InferenceService API is installed. It is an observation, not a gate: the API
+	// is an integration TrustyAI works without, so an absent one is reported with
+	// ConditionReasonServingAPINotInstalled and never as a failed precondition.
+	// Kept separate from ConditionTypeDependenciesAvailable, which carries the
+	// required Prometheus dependency.
 	ConditionTypeKServeAvailable = "KServeAvailable"
+
+	// Reasons the optional serving API reports. Only ConditionReasonServingAPIUnreadable
+	// describes a problem; the other two are the normal states of a supported install.
+	ConditionReasonServingAPIAvailable    = "Available"
+	ConditionReasonServingAPINotInstalled = "NotInstalled"
+	ConditionReasonServingAPIUnreadable   = "ReadFailed"
 
 	// Event reasons
 	EventReasonRemoved       = "Removed"

@@ -21,11 +21,10 @@ func (rs *AvailabilityStatus) IsAllReady(mode string) bool {
 
 // AvailabilityStatus has the readiness status of various resources.
 type AvailabilityStatus struct {
-	PVCReady              bool
-	DeploymentReady       bool
-	RouteReady            bool
-	InferenceServiceReady bool
-	DBReady               bool
+	PVCReady        bool
+	DeploymentReady bool
+	RouteReady      bool
+	DBReady         bool
 }
 
 func (r *TrustyAIServiceReconciler) updateStatus(ctx context.Context, original *trustyaiopendatahubiov1.TrustyAIService, update func(saved *trustyaiopendatahubiov1.TrustyAIService),
@@ -52,38 +51,38 @@ func (r *TrustyAIServiceReconciler) updateStatus(ctx context.Context, original *
 	return saved, err
 }
 
-// reconcileStatuses checks the readiness status of required resources
-func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService) (ctrl.Result, error) {
-	var err error
+// reconcileStatuses checks the readiness status of required resources and
+// reports the serving state it is given. Serving is passed in rather than read
+// here: the caller derives it once per pass, so the writer and this condition
+// cannot disagree, and one pass costs one CRD read instead of two.
+func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, serving inferenceServicesReport) (ctrl.Result, error) {
+	var pvcErr, deploymentErr, routeErr error
 	status := AvailabilityStatus{}
 
 	if instance.Spec.Storage.IsStoragePVC() || instance.IsMigration() {
 		// Check for PVC readiness
-		status.PVCReady, err = r.checkPVCReady(ctx, instance)
+		status.PVCReady, pvcErr = r.checkPVCReady(ctx, instance)
 	}
 
 	// Check for deployment readiness
-	status.DeploymentReady, err = r.checkDeploymentReady(ctx, instance)
+	status.DeploymentReady, deploymentErr = r.checkDeploymentReady(ctx, instance)
 
 	if instance.Spec.Storage.IsStorageDatabase() || instance.IsMigration() {
 		status.DBReady, _ = r.checkDatabaseAccessible(ctx, instance)
 	}
 
 	// Check for route readiness
-	status.RouteReady, err = utils.CheckRouteReady(ctx, r.Client, instance.Name, instance.Namespace)
+	status.RouteReady, routeErr = utils.CheckRouteReady(ctx, r.Client, instance.Name, instance.Namespace)
 
-	// Check if InferenceServices present
-	status.InferenceServiceReady, err = r.checkInferenceServicesPresent(ctx, instance.Namespace)
+	// Every condition below is written even when one of the reads above failed:
+	// each check reports "not ready" as a state on its own, and the failures are
+	// logged after the write rather than suppressing it.
 
 	// All checks passed, resources are ready
 	if status.IsAllReady(instance.Spec.Storage.Format) {
 		_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1.TrustyAIService) {
 
-			if status.InferenceServiceReady {
-				UpdateInferenceServicePresent(saved)
-			} else {
-				UpdateInferenceServiceNotPresent(saved)
-			}
+			UpdateInferenceServicesCondition(saved, serving)
 
 			if instance.Spec.Storage.IsStoragePVC() || instance.IsMigration() {
 				UpdatePVCAvailable(saved)
@@ -116,16 +115,12 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 			saved.SetStatus(ConditionTypeDegraded, "FullyFunctional", "All components are fully functional", v1.ConditionFalse)
 		})
 		if updateErr != nil {
-			return RequeueWithErrorMessage(ctx, err, "Failed to update status")
+			return RequeueWithErrorMessage(ctx, updateErr, "Failed to update status")
 		}
 	} else {
 		_, updateErr := r.updateStatus(ctx, instance, func(saved *trustyaiopendatahubiov1.TrustyAIService) {
 
-			if status.InferenceServiceReady {
-				UpdateInferenceServicePresent(saved)
-			} else {
-				UpdateInferenceServiceNotPresent(saved)
-			}
+			UpdateInferenceServicesCondition(saved, serving)
 
 			if instance.Spec.Storage.IsStoragePVC() || instance.IsMigration() {
 				if status.PVCReady {
@@ -161,21 +156,48 @@ func (r *TrustyAIServiceReconciler) reconcileStatuses(ctx context.Context, insta
 			}
 		})
 		if updateErr != nil {
-			return RequeueWithErrorMessage(ctx, err, "Failed to update status")
+			return RequeueWithErrorMessage(ctx, updateErr, "Failed to update status")
 		}
 	}
+
+	// None of the required-component reads change the reconcile result: each check
+	// already reports "not ready" as a state. They are logged rather than shared
+	// through one err variable, which is how the earlier ones were discarded and a
+	// read failure disappeared without trace.
+	for _, readErr := range []error{pvcErr, deploymentErr, routeErr} {
+		if readErr != nil {
+			log.FromContext(ctx).Error(readErr, "Could not read a required component's readiness, reporting it as not ready")
+		}
+	}
+
+	// Serving is the exception: its read failure is returned so the reconcile is
+	// retried, and only after the status above was written, because a serving blip
+	// may not suppress the conditions this pass established.
+	if serving.err != nil {
+		return RequeueWithError(serving.err)
+	}
+
 	// All resources are reconciled, return no error and do not requeue
 	return ctrl.Result{}, nil
 }
 
-func UpdateInferenceServiceNotPresent(saved *trustyaiopendatahubiov1.TrustyAIService) {
-	saved.SetStatus(StatusTypeInferenceServicesPresent, StatusReasonInferenceServicesNotFound, "InferenceServices not found", v1.ConditionFalse)
-	saved.Status.Ready = v1.ConditionFalse
-
-}
-
-func UpdateInferenceServicePresent(saved *trustyaiopendatahubiov1.TrustyAIService) {
-	saved.SetStatus(StatusTypeInferenceServicesPresent, StatusReasonInferenceServicesFound, "InferenceServices found", v1.ConditionTrue)
+// UpdateInferenceServicesCondition reports the serving state. Absence of the
+// serving CRD, an unsupported served version and an empty namespace are all
+// reported but are not degradations, so this never touches Ready: IsAllReady has
+// no serving term and the caller owns readiness.
+//
+// A failed serving read is not a state: the condition keeps its previous value
+// rather than flapping to "absent", and the caller returns the error so the
+// reconcile is retried.
+func UpdateInferenceServicesCondition(saved *trustyaiopendatahubiov1.TrustyAIService, report inferenceServicesReport) {
+	if report.err != nil {
+		return
+	}
+	condition := v1.ConditionFalse
+	if report.present {
+		condition = v1.ConditionTrue
+	}
+	saved.SetStatus(StatusTypeInferenceServicesPresent, report.reason(), report.message(), condition)
 }
 
 func UpdatePVCNotAvailable(saved *trustyaiopendatahubiov1.TrustyAIService) {
