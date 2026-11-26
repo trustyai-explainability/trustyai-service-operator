@@ -75,7 +75,9 @@ For database-backed deployments, see the [TrustyAI Service database tuning guide
 
 The operator uses the resolved EvalHub operand image for the API service and the
 generation worker, init, and sidecar containers. Use an EvalHub image that
-contains the generation worker binary.
+contains the generation worker binary. The operator rejects
+`EVALHUB_COLLECTION_GENERATION_RUNNER_IMAGE` in `spec.env` because the worker
+image is managed alongside the service image.
 
 Administrators can override effort limits in the EvalHub resource's `spec.env`.
 Use `EVALHUB_GENERATION_<EFFORT>_<LIMIT>`, where `<EFFORT>` is `LOW`,
@@ -97,15 +99,18 @@ requires `MAX_MODEL_CALLS` to be at least `MAX_ITERATIONS` and
 the same or increase from Low to Standard to High, within the EvalHub hard
 limits.
 
-The operator checks literal effort and cleanup-interval overrides against the
-supported EvalHub defaults before rolling out the Deployment. An invalid
-setting sets the EvalHub resource's `Ready` condition to `False` and identifies
-the affected variables. For `valueFrom` or Kubernetes `$(VAR)` expansions, the
-operator checks only constraints whose operands are known. EvalHub validates
-all effective settings at startup, including values resolved by Kubernetes.
+Before updating the Deployment, the operator validates literal effort limits,
+relationships between explicitly supplied literal limits, and literal
+retention and cleanup-interval durations. If preflight fails, the EvalHub
+resource's `Ready` condition becomes `False` and names the affected variables.
+At startup, EvalHub applies its own effort defaults and hard limits and
+validates the effective settings, including `valueFrom` references and
+Kubernetes `$(VAR)` expansions.
 
 `EVALHUB_COLLECTION_GENERATION_RETENTION` sets how long terminal generation
-records stay visible (default `24h`). `EVALHUB_RESOURCE_JANITOR_INTERVAL` sets
+records stay visible. Use a non-negative Go duration, or omit the value or set
+it to `0` to use the default of `24h`.
+`EVALHUB_RESOURCE_JANITOR_INTERVAL` sets
 the database cleanup interval independently. Use whole-minute durations from
 `1m` to `24h`, or `0` to select the default of `24h`.
 

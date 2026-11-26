@@ -280,6 +280,38 @@ var _ = Describe("EvalHub API RBAC", func() {
 			}
 		})
 
+		It("should upgrade the existing callback-only job Role and reconcile it idempotently", func() {
+			key := types.NamespacedName{
+				Name:      generateJobsAPIAccessRoleName(evalHub),
+				Namespace: testNamespace,
+			}
+			callbackRule := rbacv1.PolicyRule{
+				APIGroups: []string{"trustyai.opendatahub.io"},
+				Resources: []string{"status-events"},
+				Verbs:     []string{"create"},
+			}
+			legacy := &rbacv1.Role{
+				ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
+				Rules:      []rbacv1.PolicyRule{callbackRule},
+			}
+			Expect(k8sClient.Create(ctx, legacy)).To(Succeed())
+
+			Expect(reconciler.createJobsServiceAccount(ctx, evalHub, testNamespace)).To(Succeed())
+			upgraded := &rbacv1.Role{}
+			Expect(k8sClient.Get(ctx, key, upgraded)).To(Succeed())
+			Expect(upgraded.UID).To(Equal(legacy.UID))
+			Expect(upgraded.Rules).To(ConsistOf(callbackRule, rbacv1.PolicyRule{
+				APIGroups: []string{"trustyai.opendatahub.io"},
+				Resources: []string{"providers", "collections"},
+				Verbs:     []string{"get", "list"},
+			}))
+
+			Expect(reconciler.createJobsServiceAccount(ctx, evalHub, testNamespace)).To(Succeed())
+			current := &rbacv1.Role{}
+			Expect(k8sClient.Get(ctx, key, current)).To(Succeed())
+			Expect(current.ResourceVersion).To(Equal(upgraded.ResourceVersion))
+		})
+
 		It("should handle existing service account gracefully", func() {
 			By("Creating service account initially")
 			err := reconciler.createServiceAccount(ctx, evalHub)

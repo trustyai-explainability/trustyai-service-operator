@@ -245,7 +245,7 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 			config.EnvMappings[generationEnvName(effort, limit.field)] = "generation.effort_budget." + effort + "." + limit.field
 		}
 	}
-	config.EnvMappings["EVALHUB_COLLECTION_GENERATION_RETENTION"] = "generation.retention"
+	config.EnvMappings[generationRetentionEnv] = "generation.retention"
 	config.EnvMappings[generationJanitorEnv] = "resource_janitor.interval"
 
 	// Database configuration — always present since the controller validates
