@@ -3582,6 +3582,37 @@ func TestGenerateAuthConfigData_MethodsPresent(t *testing.T) {
 		endpointIndexes[endpoint.Path] = i
 	}
 
+	for _, check := range []struct {
+		path     string
+		method   string
+		resource string
+		verb     string
+	}{
+		{"/api/v1/evaluations/providers", "get", "providers", "list"},
+		{"/api/v1/evaluations/providers/*", "get", "providers", "{{.FromMethod}}"},
+		{"/api/v1/evaluations/collections", "get", "collections", "list"},
+		{"/api/v1/evaluations/collections/*", "get", "collections", "{{.FromMethod}}"},
+		{"/api/v1/evaluations/jobs/*/events", "post", "status-events", "create"},
+	} {
+		i, ok := endpointIndexes[check.path]
+		require.True(t, ok, "missing job endpoint %s", check.path)
+		matches := 0
+		for _, mapping := range parsed.Authorization.Endpoints[i].Mappings {
+			if !slices.Contains(mapping.Methods, check.method) {
+				continue
+			}
+			matches++
+			require.Len(t, mapping.Resources, 1, "endpoint %s", check.path)
+			resource := mapping.Resources[0]
+			assert.Equal(t, "X-Tenant", resource.Rewrites.ByHTTPHeader.Name)
+			assert.Equal(t, "{{.FromHeader}}", resource.ResourceAttributes.Namespace)
+			assert.Equal(t, "trustyai.opendatahub.io", resource.ResourceAttributes.APIGroup)
+			assert.Equal(t, check.resource, resource.ResourceAttributes.Resource)
+			assert.Equal(t, check.verb, resource.ResourceAttributes.Verb)
+		}
+		assert.Equal(t, 1, matches, "%s %s must have exactly one authorization mapping", check.method, check.path)
+	}
+
 	createIndex, ok := endpointIndexes[generationCreatePath]
 	require.True(t, ok, "generation POST endpoint must be declared")
 	resourceIndex, ok := endpointIndexes[generationResourcePath]

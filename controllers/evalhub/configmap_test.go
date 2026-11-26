@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
+	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -112,6 +113,39 @@ var _ = Describe("EvalHub ConfigMap", func() {
 			var config EvalHubConfig
 			err = yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), &config)
 			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("uses the resolved service image and exposes generation overrides through spec.env", func() {
+			image := "registry.example/evalhub@sha256:" + strings.Repeat("a", 64)
+			GinkgoT().Setenv(images.RelatedImageEvalHub, image)
+			override := corev1.EnvVar{Name: "EVALHUB_GENERATION_STANDARD_MAX_TOOL_CALLS", Value: "80"}
+			evalHub.Spec.Env = append(evalHub.Spec.Env, override)
+
+			data, err := reconciler.generateConfigData(ctx, evalHub)
+			Expect(err).NotTo(HaveOccurred())
+			var config EvalHubConfig
+			Expect(yaml.Unmarshal([]byte(data["config.yaml"]), &config)).To(Succeed())
+
+			Expect(config.Generation.RunnerImage).To(Equal(image))
+			Expect(config.Service.EvalInitImage).To(Equal(image))
+			Expect(config.Sidecar.SidecarContainer.Image).To(Equal(image))
+			for _, effort := range []string{"low", "standard", "high"} {
+				for _, limit := range []string{
+					"max_iterations", "max_model_calls", "max_tool_calls",
+					"max_total_tokens", "max_output_tokens", "max_duration",
+				} {
+					env := "EVALHUB_GENERATION_" + strings.ToUpper(effort+"_"+limit)
+					Expect(config.EnvMappings).To(HaveKeyWithValue(env, "generation.effort_budget."+effort+"."+limit))
+				}
+			}
+			Expect(config.EnvMappings).To(HaveKeyWithValue("EVALHUB_COLLECTION_GENERATION_RETENTION", "generation.retention"))
+			Expect(config.EnvMappings).To(HaveKeyWithValue("EVALHUB_RESOURCE_JANITOR_INTERVAL", "resource_janitor.interval"))
+			Expect(config.EnvMappings).NotTo(HaveKey("EVALHUB_COLLECTION_GENERATION_RUNNER_IMAGE"))
+
+			spec, err := reconciler.buildDeploymentSpecWithConfigData(ctx, evalHub, nil, nil, nil, nil, data)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(spec.Template.Spec.Containers[0].Image).To(Equal(image))
+			Expect(spec.Template.Spec.Containers[0].Env).To(ContainElement(override))
 		})
 
 		It("should update existing configmap", func() {

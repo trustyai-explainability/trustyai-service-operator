@@ -111,15 +111,21 @@ type SidecarConfig struct {
 	SidecarContainer *SidecarContainerConfig `json:"sidecar_container,omitempty"`
 }
 
+// GenerationConfig configures the collection-generation worker in config.yaml.
+type GenerationConfig struct {
+	RunnerImage string `json:"runner_image"`
+}
+
 // EvalHubConfig represents the eval-hub configuration structure
 type EvalHubConfig struct {
-	Service     ServiceConfig   `json:"service"`
-	Secrets     *SecretsMapping `json:"secrets,omitempty"`
-	EnvMappings EnvMappings     `json:"env_mappings"`
-	Database    *DatabaseConfig `json:"database"`
-	OTEL        *OTELConfig     `json:"otel,omitempty"`
-	Prometheus  map[string]any  `json:"prometheus,omitempty"`
-	Sidecar     *SidecarConfig  `json:"sidecar,omitempty"`
+	Service     ServiceConfig    `json:"service"`
+	Secrets     *SecretsMapping  `json:"secrets,omitempty"`
+	EnvMappings EnvMappings      `json:"env_mappings"`
+	Database    *DatabaseConfig  `json:"database"`
+	OTEL        *OTELConfig      `json:"otel,omitempty"`
+	Prometheus  map[string]any   `json:"prometheus,omitempty"`
+	Sidecar     *SidecarConfig   `json:"sidecar,omitempty"`
+	Generation  GenerationConfig `json:"generation"`
 }
 
 // evalHubConfigMapName returns a ConfigMap name tied to the instance and the
@@ -181,6 +187,9 @@ func (r *EvalHubReconciler) reconcileConfigMapWithData(ctx context.Context, inst
 
 // generateConfigData generates the configuration data for the ConfigMap
 func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *evalhubv1.EvalHub) (map[string]string, error) {
+	if err := validateGenerationEnv(instance.Spec.Env); err != nil {
+		return nil, err
+	}
 	evalHubImage, err := images.ResolveImage(ctx, r.Client, images.EvalHubImageKey, r.effectiveOperatorConfigMapName(), r.Namespace, "")
 	if err != nil {
 		return nil, fmt.Errorf("resolving EvalHub image: %w", err)
@@ -228,7 +237,16 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 				},
 			},
 		},
+		Generation: GenerationConfig{RunnerImage: evalHubImage},
 	}
+
+	for _, effort := range generationEfforts {
+		for _, limit := range generationLimits {
+			config.EnvMappings[generationEnvName(effort, limit.field)] = "generation.effort_budget." + effort + "." + limit.field
+		}
+	}
+	config.EnvMappings[generationRetentionEnv] = "generation.retention"
+	config.EnvMappings[generationJanitorEnv] = "resource_janitor.interval"
 
 	// Database configuration — always present since the controller validates
 	// that spec.database is set before reaching this point.

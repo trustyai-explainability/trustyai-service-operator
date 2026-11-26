@@ -71,6 +71,49 @@ For usage information, please see the [OpenDataHub documentation of TrustyAI](ht
 
 For database-backed deployments, see the [TrustyAI Service database tuning guide](docs/database-tuning.md) for ConfigMap-based tuning options.
 
+### EvalHub collection-generation configuration
+
+The operator uses the resolved EvalHub operand image for the API service and the
+generation worker, init, and sidecar containers. Use an EvalHub image that
+contains the generation worker binary. The operator rejects
+`EVALHUB_COLLECTION_GENERATION_RUNNER_IMAGE` in `spec.env` because the worker
+image is managed alongside the service image.
+
+Administrators can override effort limits in the EvalHub resource's `spec.env`.
+Use `EVALHUB_GENERATION_<EFFORT>_<LIMIT>`, where `<EFFORT>` is `LOW`,
+`STANDARD`, or `HIGH`. Their defaults are:
+
+| `<LIMIT>` | Low | Standard | High |
+| --- | ---: | ---: | ---: |
+| `MAX_ITERATIONS` | 8 | 20 | 40 |
+| `MAX_MODEL_CALLS` | 8 | 20 | 40 |
+| `MAX_TOOL_CALLS` | 24 | 60 | 120 |
+| `MAX_TOTAL_TOKENS` | 32768 | 131072 | 524288 |
+| `MAX_OUTPUT_TOKENS` | 2048 | 4096 | 8192 |
+| `MAX_DURATION` | 2m | 2m | 10m |
+
+Supply positive integers for counts and Go duration strings such as `3m` for
+durations. Omitted or empty overrides use the EvalHub defaults. Each effort
+requires `MAX_MODEL_CALLS` to be at least `MAX_ITERATIONS` and
+`MAX_TOTAL_TOKENS` to be at least `MAX_OUTPUT_TOKENS`. Every limit must stay
+the same or increase from Low to Standard to High, within the EvalHub hard
+limits.
+
+Before updating the Deployment, the operator validates literal effort limits,
+relationships between explicitly supplied literal limits, and literal
+retention and cleanup-interval durations. If preflight fails, the EvalHub
+resource's `Ready` condition becomes `False` and names the affected variables.
+At startup, EvalHub applies its own effort defaults and hard limits and
+validates the effective settings, including `valueFrom` references and
+Kubernetes `$(VAR)` expansions.
+
+`EVALHUB_COLLECTION_GENERATION_RETENTION` sets how long terminal generation
+records stay visible. Use a non-negative Go duration, or omit the value or set
+it to `0` to use the default of `24h`.
+`EVALHUB_RESOURCE_JANITOR_INTERVAL` sets
+the database cleanup interval independently. Use whole-minute durations from
+`1m` to `24h`, or `0` to select the default of `24h`.
+
 ## Contributing
 
 Please see the [CONTRIBUTING.md](./CONTRIBUTING.md) file for more details on how to contribute to this project.

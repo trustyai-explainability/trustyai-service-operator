@@ -366,6 +366,69 @@ var _ = Describe("EvalHub Lifecycle Integration", func() {
 		Expect(service.Spec.Selector["instance"]).To(Equal(evalHubName))
 	})
 
+	DescribeTable("rejects invalid generation overrides without rolling the Deployment", func(invalid, corrected []corev1.EnvVar) {
+
+		for range 3 {
+			_, err := performReconcile(reconciler, evalHubName, testNamespace)
+			Expect(err).NotTo(HaveOccurred())
+		}
+		key := types.NamespacedName{Name: evalHubName, Namespace: testNamespace}
+		deployment := waitForDeployment(evalHubName, testNamespace)
+		deployment.Status.Replicas = *deployment.Spec.Replicas
+		deployment.Status.ReadyReplicas = *deployment.Spec.Replicas
+		Expect(k8sClient.Status().Update(ctx, deployment)).To(Succeed())
+		_, err := performReconcile(reconciler, evalHubName, testNamespace)
+		Expect(err).NotTo(HaveOccurred())
+		original := waitForDeployment(evalHubName, testNamespace)
+
+		Expect(k8sClient.Get(ctx, key, evalHub)).To(Succeed())
+		Expect(evalHub.Status.Ready).To(Equal(corev1.ConditionTrue))
+		originalEnv := append([]corev1.EnvVar(nil), evalHub.Spec.Env...)
+		evalHub.Spec.Env = append(append([]corev1.EnvVar(nil), originalEnv...), invalid...)
+		Expect(k8sClient.Update(ctx, evalHub)).To(Succeed())
+
+		_, err = performReconcile(reconciler, evalHubName, testNamespace)
+		Expect(err).To(HaveOccurred())
+		Expect(k8sClient.Get(ctx, key, evalHub)).To(Succeed())
+		Expect(evalHub.Status.Ready).To(Equal(corev1.ConditionFalse))
+		for _, override := range invalid {
+			Expect(err).To(MatchError(ContainSubstring(override.Name)))
+			Expect(evalHub.Status.Conditions).To(ContainElement(And(
+				HaveField("Type", "Ready"),
+				HaveField("Status", corev1.ConditionFalse),
+				HaveField("Message", ContainSubstring(override.Name)),
+			)))
+		}
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		Expect(deployment.ResourceVersion).To(Equal(original.ResourceVersion))
+		Expect(deployment.Spec.Template).To(Equal(original.Spec.Template))
+
+		evalHub.Spec.Env = append(originalEnv, corrected...)
+		Expect(k8sClient.Update(ctx, evalHub)).To(Succeed())
+		_, err = performReconcile(reconciler, evalHubName, testNamespace)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
+		for _, override := range corrected {
+			Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElement(override))
+		}
+	},
+		Entry("inconsistent effort limits",
+			[]corev1.EnvVar{
+				{Name: "EVALHUB_GENERATION_STANDARD_MAX_ITERATIONS", Value: "25"},
+				{Name: "EVALHUB_GENERATION_STANDARD_MAX_MODEL_CALLS", Value: "20"},
+			},
+			[]corev1.EnvVar{
+				{Name: "EVALHUB_GENERATION_STANDARD_MAX_ITERATIONS", Value: "25"},
+				{Name: "EVALHUB_GENERATION_STANDARD_MAX_MODEL_CALLS", Value: "25"},
+			}),
+		Entry("invalid retention",
+			[]corev1.EnvVar{{Name: generationRetentionEnv, Value: "-1h"}},
+			[]corev1.EnvVar{{Name: generationRetentionEnv, Value: "2h"}}),
+		Entry("unsupported runner image",
+			[]corev1.EnvVar{{Name: generationRunnerImageEnv, Value: "example.test/evalhub:override"}},
+			[]corev1.EnvVar(nil)),
+	)
+
 	It("should update status based on deployment readiness", func() {
 		By("Going through initial reconciliation steps")
 		// Status initialization

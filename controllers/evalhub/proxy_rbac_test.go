@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
+	authv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -226,20 +227,89 @@ var _ = Describe("EvalHub API RBAC", func() {
 			Expect(roleBinding.RoleRef.Kind).To(Equal("Role"))
 			Expect(roleBinding.RoleRef.Name).To(Equal(generateJobsAPIAccessRoleName(evalHub)))
 
-			By("Verifying job Role only grants status-events create, not evalhubs/proxy")
+			By("Verifying job Role grants status callbacks and read-only catalog access")
 			jobRole := &rbacv1.Role{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      generateJobsAPIAccessRoleName(evalHub),
 				Namespace: testNamespace,
 			}, jobRole)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(jobRole.Rules).To(HaveLen(1))
-			Expect(jobRole.Rules[0].Resources).To(Equal([]string{"status-events"}))
-			Expect(jobRole.Rules[0].Verbs).To(Equal([]string{"create"}))
-			for _, rule := range jobRole.Rules {
-				Expect(rule.Resources).NotTo(ContainElement("evalhubs/proxy"),
-					"Job Role must not grant access to evalhubs/proxy")
+			Expect(jobRole.Rules).To(ConsistOf(
+				rbacv1.PolicyRule{APIGroups: []string{"trustyai.opendatahub.io"}, Resources: []string{"status-events"}, Verbs: []string{"create"}},
+				rbacv1.PolicyRule{APIGroups: []string{"trustyai.opendatahub.io"}, Resources: []string{"providers", "collections"}, Verbs: []string{"get", "list"}},
+			))
+
+			By("Checking the access reviews the proxy makes with the job token and X-Tenant namespace")
+			for _, check := range []struct {
+				namespace string
+				resource  string
+				verb      string
+				allowed   bool
+			}{
+				{testNamespace, "providers", "list", true},
+				{testNamespace, "providers", "get", true},
+				{testNamespace, "collections", "list", true},
+				{testNamespace, "collections", "get", true},
+				{testNamespace, "status-events", "create", true},
+				{testNamespace, "providers", "create", false},
+				{testNamespace, "providers", "update", false},
+				{testNamespace, "collections", "create", false},
+				{testNamespace, "collections", "patch", false},
+				{testNamespace, "collections", "delete", false},
+				{operatorNamespace, "providers", "list", false},
+				{operatorNamespace, "collections", "get", false},
+				{operatorNamespace, "status-events", "create", false},
+			} {
+				Eventually(func(g Gomega) {
+					review := &authv1.SubjectAccessReview{
+						Spec: authv1.SubjectAccessReviewSpec{
+							User: "system:serviceaccount:" + testNamespace + ":" + roleBinding.Subjects[0].Name,
+							ResourceAttributes: &authv1.ResourceAttributes{
+								Namespace: check.namespace,
+								Group:     "trustyai.opendatahub.io",
+								Resource:  check.resource,
+								Verb:      check.verb,
+							},
+						},
+					}
+					g.Expect(k8sClient.Create(ctx, review)).To(Succeed())
+					g.Expect(review.Status.EvaluationError).To(BeEmpty())
+					g.Expect(review.Status.Allowed).To(Equal(check.allowed),
+						"%s %s in %s", check.verb, check.resource, check.namespace)
+				}).Should(Succeed())
 			}
+		})
+
+		It("should upgrade the existing callback-only job Role and reconcile it idempotently", func() {
+			key := types.NamespacedName{
+				Name:      generateJobsAPIAccessRoleName(evalHub),
+				Namespace: testNamespace,
+			}
+			callbackRule := rbacv1.PolicyRule{
+				APIGroups: []string{"trustyai.opendatahub.io"},
+				Resources: []string{"status-events"},
+				Verbs:     []string{"create"},
+			}
+			legacy := &rbacv1.Role{
+				ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
+				Rules:      []rbacv1.PolicyRule{callbackRule},
+			}
+			Expect(k8sClient.Create(ctx, legacy)).To(Succeed())
+
+			Expect(reconciler.createJobsServiceAccount(ctx, evalHub, testNamespace)).To(Succeed())
+			upgraded := &rbacv1.Role{}
+			Expect(k8sClient.Get(ctx, key, upgraded)).To(Succeed())
+			Expect(upgraded.UID).To(Equal(legacy.UID))
+			Expect(upgraded.Rules).To(ConsistOf(callbackRule, rbacv1.PolicyRule{
+				APIGroups: []string{"trustyai.opendatahub.io"},
+				Resources: []string{"providers", "collections"},
+				Verbs:     []string{"get", "list"},
+			}))
+
+			Expect(reconciler.createJobsServiceAccount(ctx, evalHub, testNamespace)).To(Succeed())
+			current := &rbacv1.Role{}
+			Expect(k8sClient.Get(ctx, key, current)).To(Succeed())
+			Expect(current.ResourceVersion).To(Equal(upgraded.ResourceVersion))
 		})
 
 		It("should handle existing service account gracefully", func() {
