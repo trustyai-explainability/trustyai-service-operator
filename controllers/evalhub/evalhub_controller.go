@@ -241,8 +241,17 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		return RequeueWithError(err)
 	}
 
+	var evalHubConfigData map[string]string
 	err = tracing.WithPhase(ctx, spanReconcileConfigMap, func(ctx context.Context) error {
-		if err := r.reconcileConfigMap(ctx, instance); err != nil {
+		var generateErr error
+		evalHubConfigData, generateErr = r.generateConfigData(ctx, instance)
+		if generateErr != nil {
+			log.Error(generateErr, "Failed to generate ConfigMap data")
+			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to generate ConfigMap data: %v", generateErr), corev1.ConditionFalse)
+			r.Status().Update(ctx, instance)
+			return generateErr
+		}
+		if err := r.reconcileConfigMapWithData(ctx, instance, evalHubConfigData); err != nil {
 			log.Error(err, "Failed to reconcile ConfigMap")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile ConfigMap: %v", err), corev1.ConditionFalse)
 			r.Status().Update(ctx, instance)
@@ -312,7 +321,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 			}
 			return err
 		}
-		if err := r.reconcileDeployment(ctx, instance, providerCMNames, collectionCMNames, tenantProviderCMNames, tenantCollectionCMNames); err != nil {
+		if err := r.reconcileDeploymentWithConfigData(ctx, instance, providerCMNames, collectionCMNames, tenantProviderCMNames, tenantCollectionCMNames, evalHubConfigData); err != nil {
 			log.Error(err, "Failed to reconcile Deployment")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Deployment: %v", err), corev1.ConditionFalse)
 			r.Status().Update(ctx, instance)

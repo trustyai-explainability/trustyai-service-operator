@@ -23,6 +23,14 @@ import (
 // systemProviderCMNames and systemCollectionCMNames are CMs copied from the operator namespace.
 // tenantProviderCMNames and tenantCollectionCMNames are CMs in the instance namespace labeled with type=tenant.
 func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *evalhubv1.EvalHub, providerCMNames []string, collectionCMNames []string, tenantProviderCMNames []string, tenantCollectionCMNames []string) error {
+	configData, err := r.generateConfigData(ctx, instance)
+	if err != nil {
+		return fmt.Errorf("failed to generate config data: %w", err)
+	}
+	return r.reconcileDeploymentWithConfigData(ctx, instance, providerCMNames, collectionCMNames, tenantProviderCMNames, tenantCollectionCMNames, configData)
+}
+
+func (r *EvalHubReconciler) reconcileDeploymentWithConfigData(ctx context.Context, instance *evalhubv1.EvalHub, providerCMNames []string, collectionCMNames []string, tenantProviderCMNames []string, tenantCollectionCMNames []string, configData map[string]string) error {
 	log := log.FromContext(ctx)
 	log.Info("Reconciling Deployment", "name", instance.Name)
 
@@ -43,7 +51,7 @@ func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *e
 	}
 
 	// Define the desired deployment spec
-	desiredSpec, err := r.buildDeploymentSpec(ctx, instance, providerCMNames, collectionCMNames, tenantProviderCMNames, tenantCollectionCMNames)
+	desiredSpec, err := r.buildDeploymentSpecWithConfigData(ctx, instance, providerCMNames, collectionCMNames, tenantProviderCMNames, tenantCollectionCMNames, configData)
 	if err != nil {
 		return err
 	}
@@ -80,6 +88,14 @@ func (r *EvalHubReconciler) reconcileDeployment(ctx context.Context, instance *e
 
 // buildDeploymentSpec builds the deployment specification for EvalHub
 func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *evalhubv1.EvalHub, providerCMNames []string, collectionCMNames []string, tenantProviderCMNames []string, tenantCollectionCMNames []string) (appsv1.DeploymentSpec, error) {
+	configData, err := r.generateConfigData(ctx, instance)
+	if err != nil {
+		return appsv1.DeploymentSpec{}, fmt.Errorf("failed to generate config data: %w", err)
+	}
+	return r.buildDeploymentSpecWithConfigData(ctx, instance, providerCMNames, collectionCMNames, tenantProviderCMNames, tenantCollectionCMNames, configData)
+}
+
+func (r *EvalHubReconciler) buildDeploymentSpecWithConfigData(ctx context.Context, instance *evalhubv1.EvalHub, providerCMNames []string, collectionCMNames []string, tenantProviderCMNames []string, tenantCollectionCMNames []string, configData map[string]string) (appsv1.DeploymentSpec, error) {
 	if err := validateManagedTLS(instance); err != nil {
 		return appsv1.DeploymentSpec{}, err
 	}
@@ -459,11 +475,13 @@ func (r *EvalHubReconciler) buildDeploymentSpec(ctx context.Context, instance *e
 	// Pod template with EvalHub + kube-rbac-proxy and required volumes
 	// Hash auth.yaml so authorization changes trigger a rollout and existing proxy pods use the new policy.
 	authConfigHash := fmt.Sprintf("%x", sha256.Sum256([]byte(generateAuthConfigData())))
+	configDataHash := evalHubConfigDataHash(configData)
 	podTemplate := corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: labels,
 			Annotations: map[string]string{
 				evalHubAuthConfigHashAnnotation: authConfigHash,
+				evalHubConfigHashAnnotation:     configDataHash,
 			},
 		},
 		Spec: corev1.PodSpec{

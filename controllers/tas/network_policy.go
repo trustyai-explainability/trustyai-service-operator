@@ -30,9 +30,10 @@ const (
 	tasPrometheusComponentValue         = "prometheus"
 	tasModelMeshServiceLabel            = "modelmesh-service"
 	tasModelMeshServiceValue            = "modelmesh-serving"
-	tasKServeInferenceServiceLabel      = "serving.kserve.io/inferenceservice"
-	tasNetworkPolicyRole                = "service"
-	tasNetworkPolicyPurpose             = "service"
+	// tasKServeInferenceServiceLabel is declared with the rest of the serving
+	// API surface in serving_fields.go.
+	tasNetworkPolicyRole    = "service"
+	tasNetworkPolicyPurpose = "service"
 )
 
 // tasNetworkPolicyOwner supplies an explicit GVK to shared identity and
@@ -339,6 +340,24 @@ func (r *TrustyAIServiceReconciler) labelOwnedTASPods(ctx context.Context, insta
 			continue
 		}
 		if err := r.Update(ctx, pod); err != nil {
+			// Admission or Pod validation can refuse an edit to a running Pod:
+			// for example a mutating webhook that also appends imagePullSecrets
+			// makes the update change an immutable spec field. Labelling live
+			// Pods only narrows the migration window, because the Deployment
+			// template receives the same labels and its rollout replaces the
+			// Pod. Failing here would return before ensureDeployment runs, so
+			// the template would never be labelled and the rejected Pod would
+			// never be replaced. Report the rejection and keep reconciling.
+			// Conflicts, timeouts and server errors are still returned.
+			if apierrors.IsInvalid(err) || apierrors.IsForbidden(err) {
+				log.FromContext(ctx).Info("Live Pod identity label rejected by the API server; relying on the Deployment rollout",
+					"pod", client.ObjectKeyFromObject(pod), "error", err.Error())
+				if r.EventRecorder != nil {
+					r.EventRecorder.Eventf(instance, corev1.EventTypeWarning, "PodIdentityLabelRejected",
+						"Could not label running Pod %s with the NetworkPolicy identity; it will be replaced by the Deployment rollout: %v", pod.Name, err)
+				}
+				continue
+			}
 			return fmt.Errorf("add reserved TAS identity to Pod %s/%s: %w", pod.Namespace, pod.Name, err)
 		}
 	}

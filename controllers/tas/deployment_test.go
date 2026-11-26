@@ -14,6 +14,8 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
@@ -294,13 +296,33 @@ func setupAndTestDeploymentInferenceService(instance *trustyaiopendatahubiov1.Tr
 		return reconciler.ensureDeployment(ctx, instance, caBundle, false)
 	}, "failed to create deployment")
 
-	// Creating the InferenceService
-	inferenceService := createInferenceService("my-model", namespace)
+	// Creating the InferenceService where the reconciler reads it. Serving goes
+	// through the dynamic client against the envtest API server, so a fixture
+	// created on the fake client below was invisible to the operator: the specs
+	// that name this helper asserted nothing about InferenceService linkage once
+	// the direct patchKServe assertion went away.
+	envtestClient, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred())
 	WaitFor(func() error {
-		return k8sClient.Create(ctx, inferenceService)
-	}, "failed to create deployment")
+		return createNamespace(ctx, envtestClient, namespace)
+	}, "failed to create the namespace in the API server")
 
-	Expect(reconciler.patchKServe(ctx, instance, *inferenceService, namespace, instance.Name, false, false)).ToNot(HaveOccurred())
+	servingResource := servingDynamic.Resource(testServingContract().gvr).Namespace(namespace)
+	inferenceService := createInferenceService("my-model", namespace)
+	// RawDeployment is the mode whose sink is written with the https URL; without
+	// a mode the object is skipped as unknown, which is how this fixture could
+	// look configured while nothing happened.
+	inferenceService.SetAnnotations(map[string]string{deploymentModeAnnotation: DEPLOYMENT_MODE_RAW})
+	WaitFor(func() error {
+		_, createErr := servingResource.Create(ctx, inferenceService, metav1.CreateOptions{})
+		if apierrors.IsAlreadyExists(createErr) {
+			return nil
+		}
+		return createErr
+	}, "failed to create InferenceService")
+	DeferCleanup(func() {
+		Expect(client.IgnoreNotFound(servingResource.Delete(ctx, "my-model", metav1.DeleteOptions{}))).To(Succeed())
+	})
 
 	deployment := &appsv1.Deployment{}
 	WaitFor(func() error {
@@ -340,6 +362,36 @@ func setupAndTestDeploymentInferenceService(instance *trustyaiopendatahubiov1.Tr
 	Expect(serviceAccount.Labels["app.kubernetes.io/part-of"]).Should(Equal(componentName))
 	Expect(serviceAccount.Labels["app.kubernetes.io/version"]).Should(Equal(constants.Version))
 
+	// Drive the write path a reconcile would drive, and assert the linkage this
+	// spec is named for. The reconciler under test reads serving through the
+	// dynamic client, so the serving work runs on a reconciler backed by the API
+	// server while the rest of the assertions stay on the fake client.
+	servingReconciler := &TrustyAIServiceReconciler{
+		Client:        envtestClient,
+		APIReader:     envtestClient,
+		Dynamic:       servingDynamic,
+		Scheme:        scheme.Scheme,
+		EventRecorder: recorder,
+		Namespace:     operatorNamespace,
+	}
+
+	report := servingReconciler.inferenceServicesReport(ctx, namespace)
+	Expect(report.err).NotTo(HaveOccurred())
+	Expect(report.contract.state).To(Equal(servingStateUsable))
+	Expect(report.present).To(BeTrue(), "the reconciler cannot see the InferenceService fixture")
+
+	shouldContinue, handleErr := servingReconciler.handleInferenceServices(ctx, instance, report, namespace, modelMeshLabelKey, modelMeshLabelValue, payloadProcessorName, instance.Name, false)
+	Expect(handleErr).NotTo(HaveOccurred())
+	Expect(shouldContinue).To(BeTrue())
+
+	patched, err := servingResource.Get(ctx, "my-model", metav1.GetOptions{})
+	Expect(err).NotTo(HaveOccurred())
+	logger, found, err := unstructured.NestedMap(patched.Object, predictorLoggerFieldPathParts...)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(found).To(BeTrue(), "payload capture was not written to the InferenceService")
+	Expect(servingLoggerURLOf(logger)).To(Equal(utils.GenerateHTTPSKServeLoggerURL(instance.Name, namespace)),
+		"the InferenceService was not linked to this TrustyAIService instance")
+
 }
 
 var _ = Describe("TrustyAI operator", func() {
@@ -349,6 +401,7 @@ var _ = Describe("TrustyAI operator", func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
+			Dynamic:       servingDynamic,
 			Scheme:        scheme.Scheme,
 			EventRecorder: recorder,
 			Namespace:     operatorNamespace,
@@ -791,6 +844,7 @@ var _ = Describe("TrustyAI operator", func() {
 			k8sClient = trackingClient
 			reconciler = &TrustyAIServiceReconciler{
 				Client:        trackingClient,
+				Dynamic:       servingDynamic,
 				Scheme:        scheme.Scheme,
 				EventRecorder: recorder,
 				Namespace:     operatorNamespace,
@@ -825,6 +879,233 @@ var _ = Describe("TrustyAI operator", func() {
 		})
 	})
 
+	Context("When an existing Deployment was rendered by a previous operator release", func() {
+		const oldServiceImage = "registry.example.com/odh-trustyai-service-rhel9@sha256:java35"
+		const oldProxyImage = "registry.example.com/odh-kube-rbac-proxy-rhel9@sha256:oldproxy"
+
+		type counters struct{ updates, patches, deletes int }
+
+		setup := func(namespace string, instance *trustyaiopendatahubiov1.TrustyAIService) (*counters, CustomCertificatesBundle) {
+			count := &counters{}
+			trackingClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithStatusSubresource(&appsv1.Deployment{}).WithInterceptorFuncs(interceptor.Funcs{
+				Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+					if _, ok := obj.(*appsv1.Deployment); ok {
+						count.updates++
+					}
+					return c.Update(ctx, obj, opts...)
+				},
+				Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					if _, ok := obj.(*appsv1.Deployment); ok {
+						count.patches++
+					}
+					return c.Patch(ctx, obj, patch, opts...)
+				},
+				Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					if _, ok := obj.(*appsv1.Deployment); ok {
+						count.deletes++
+					}
+					return c.Delete(ctx, obj, opts...)
+				},
+			}).Build()
+			k8sClient = trackingClient
+			reconciler = &TrustyAIServiceReconciler{
+				Client:        trackingClient,
+				Scheme:        scheme.Scheme,
+				EventRecorder: recorder,
+				Namespace:     operatorNamespace,
+			}
+			Expect(createNamespace(ctx, k8sClient, namespace)).To(Succeed())
+			Expect(k8sClient.Create(ctx, createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage))).To(Succeed())
+			caBundle := reconciler.GetCustomCertificatesBundle(ctx, instance)
+			if !instance.Spec.Storage.IsDatabaseConfigurationsSet() {
+				Expect(createTestPVC(ctx, k8sClient, instance)).To(Succeed())
+			}
+			Expect(reconciler.createServiceAccount(ctx, instance)).To(Succeed())
+			return count, caBundle
+		}
+
+		// release35 shapes a current render like a Deployment written by the 3.5
+		// operator: Java and proxy images from the old release, no internal TLS
+		// proxy, old proxy flags, no TLS/port env, the native serving-key mount and
+		// no record of the images it was rendered from.
+		release35 := func(instance *trustyaiopendatahubiov1.TrustyAIService, caBundle CustomCertificatesBundle) *appsv1.Deployment {
+			d, err := reconciler.createDeploymentObject(ctx, instance, testTrustAIServiceImage, caBundle)
+			Expect(err).ToNot(HaveOccurred())
+			delete(d.Annotations, renderedImagesAnnotation)
+			var containers []corev1.Container
+			for _, c := range d.Spec.Template.Spec.Containers {
+				switch c.Name {
+				case "trustyai-service":
+					c.Image = oldServiceImage
+					var env []corev1.EnvVar
+					for _, e := range c.Env {
+						if !tasTLSEnvNames[e.Name] {
+							env = append(env, e)
+						}
+					}
+					c.Env = env
+					c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{Name: instance.Name + "-internal", MountPath: "/etc/tls/internal"})
+					containers = append(containers, c)
+				case KubeRBACProxyName:
+					c.Image = oldProxyImage
+					c.Args = []string{"--secure-listen-address=0.0.0.0:8443", "--upstream=http://127.0.0.1:8080/", "--tls-min-version=VersionTLS12"}
+					containers = append(containers, c)
+				}
+			}
+			d.Spec.Template.Spec.Containers = containers
+			return d
+		}
+
+		images := func(d *appsv1.Deployment) map[string]string {
+			m := map[string]string{}
+			for _, c := range d.Spec.Template.Spec.Containers {
+				m[c.Name] = c.Image
+			}
+			return m
+		}
+
+		get := func(instance *trustyaiopendatahubiov1.TrustyAIService) *appsv1.Deployment {
+			d := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, d)).To(Succeed())
+			return d
+		}
+
+		expectCurrentTopology := func(d *appsv1.Deployment, instance *trustyaiopendatahubiov1.TrustyAIService) {
+			got := images(d)
+			Expect(got["trustyai-service"]).To(Equal(testTrustAIServiceImage))
+			Expect(got[KubeRBACProxyName]).To(Equal(testKubeRBACProxyImage))
+			Expect(got["internal-tls-proxy"]).To(Equal(testKubeRBACProxyImage))
+			Expect(d.Annotations[renderedImagesAnnotation]).To(Equal(renderedImages(testTrustAIServiceImage, testKubeRBACProxyImage)))
+			env := map[string]string{}
+			for _, e := range serviceContainer(d).Env {
+				env[e.Name] = e.Value
+			}
+			Expect(env).To(HaveKey("TLS_POLICY"))
+			Expect(env).To(HaveKey("HTTP_PORT"))
+			for _, m := range serviceContainer(d).VolumeMounts {
+				Expect(m.MountPath).ToNot(Equal("/etc/tls/internal"), "native serving-key mount must be gone")
+			}
+		}
+
+		It("converges a 3.5 Deployment to the resolved images and topology, then stays stable", func() {
+			instance := createDefaultPVCCustomResource("trusty-ns-a-6-upgrade-35")
+			count, caBundle := setup(instance.Namespace, instance)
+			legacy := release35(instance, caBundle)
+			Expect(k8sClient.Create(ctx, legacy)).To(Succeed())
+			Expect(images(get(instance))["trustyai-service"]).To(Equal(oldServiceImage))
+
+			Expect(reconciler.ensureDeployment(ctx, instance, caBundle, false)).To(Succeed())
+			expectCurrentTopology(get(instance), instance)
+			Expect(count.updates).To(BeNumerically(">=", 1))
+			Expect(count.deletes).To(BeZero(), "the Deployment must be updated in place, not recreated")
+
+			settled := *count
+			Expect(reconciler.ensureDeployment(ctx, instance, caBundle, false)).To(Succeed())
+			Expect(*count).To(Equal(settled), "a second reconcile must not touch the Deployment")
+		})
+
+		It("converges a Deployment already broken by the TLS-only patch on the old images", func() {
+			instance := createDefaultPVCCustomResource("trusty-ns-a-6-upgrade-broken")
+			count, caBundle := setup(instance.Namespace, instance)
+			legacy := release35(instance, caBundle)
+			desired, err := reconciler.createDeploymentObject(ctx, instance, testTrustAIServiceImage, caBundle)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(applyTASTLSDeployment(legacy, desired)).To(Succeed())
+			Expect(images(legacy)["trustyai-service"]).To(Equal(oldServiceImage), "the TLS patch keeps the old image")
+			Expect(k8sClient.Create(ctx, legacy)).To(Succeed())
+
+			Expect(reconciler.ensureDeployment(ctx, instance, caBundle, false)).To(Succeed())
+			expectCurrentTopology(get(instance), instance)
+
+			settled := *count
+			Expect(reconciler.ensureDeployment(ctx, instance, caBundle, false)).To(Succeed())
+			Expect(*count).To(Equal(settled))
+		})
+
+		It("re-renders when only the proxy image changed", func() {
+			instance := createDefaultPVCCustomResource("trusty-ns-a-6-upgrade-proxy")
+			_, caBundle := setup(instance.Namespace, instance)
+			current, err := reconciler.createDeploymentObject(ctx, instance, testTrustAIServiceImage, caBundle)
+			Expect(err).ToNot(HaveOccurred())
+			current.Annotations[renderedImagesAnnotation] = renderedImages(testTrustAIServiceImage, oldProxyImage)
+			for i := range current.Spec.Template.Spec.Containers {
+				if current.Spec.Template.Spec.Containers[i].Name != "trustyai-service" {
+					current.Spec.Template.Spec.Containers[i].Image = oldProxyImage
+				}
+			}
+			Expect(k8sClient.Create(ctx, current)).To(Succeed())
+
+			Expect(reconciler.ensureDeployment(ctx, instance, caBundle, false)).To(Succeed())
+			expectCurrentTopology(get(instance), instance)
+		})
+
+		It("does not touch a Deployment that already matches the resolved images", func() {
+			instance := createDefaultPVCCustomResource("trusty-ns-a-6-upgrade-current")
+			count, caBundle := setup(instance.Namespace, instance)
+			current, err := reconciler.createDeploymentObject(ctx, instance, testTrustAIServiceImage, caBundle)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(k8sClient.Create(ctx, current)).To(Succeed())
+
+			Expect(reconciler.ensureDeployment(ctx, instance, caBundle, false)).To(Succeed())
+			Expect(*count).To(Equal(counters{}))
+		})
+
+		Context("and the CR stops requesting migration", func() {
+			prepare := func(namespace string) (*trustyaiopendatahubiov1.TrustyAIService, *counters, CustomCertificatesBundle) {
+				migrating := createDefaultMigrationCustomResource(namespace)
+				count, caBundle := setup(namespace, migrating)
+				running, err := reconciler.createDeploymentObject(ctx, migrating, testTrustAIServiceImage, caBundle)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(deploymentHasMigration(running)).To(BeTrue())
+				Expect(k8sClient.Create(ctx, running)).To(Succeed())
+
+				finished := migrating.DeepCopy()
+				finished.Spec.Storage.Folder = ""
+				finished.Spec.Data.Filename = ""
+				Expect(finished.IsMigration()).To(BeFalse())
+				return finished, count, caBundle
+			}
+
+			It("keeps the migration settings while the rollout is still in progress", func() {
+				finished, count, caBundle := prepare("trusty-ns-a-6-migration-wait")
+
+				Expect(reconciler.ensureDeployment(ctx, finished, caBundle, false)).To(Succeed())
+
+				Expect(deploymentHasMigration(get(finished))).To(BeTrue(), "an unfinished migration must not be restarted")
+				Expect(count.updates).To(BeZero())
+			})
+
+			It("removes them once the rollout is complete", func() {
+				finished, count, caBundle := prepare("trusty-ns-a-6-migration-done")
+				ready := get(finished)
+				one := int32(1)
+				ready.Spec.Replicas = &one
+				ready.Status = appsv1.DeploymentStatus{UpdatedReplicas: 1, ReadyReplicas: 1, AvailableReplicas: 1}
+				Expect(k8sClient.Status().Update(ctx, ready)).To(Succeed())
+				before := count.updates
+
+				Expect(reconciler.ensureDeployment(ctx, finished, caBundle, false)).To(Succeed())
+
+				Expect(deploymentHasMigration(get(finished))).To(BeFalse())
+				Expect(count.updates).To(BeNumerically(">", before))
+			})
+
+			It("still converges a stale image even though the rollout never completed", func() {
+				finished, _, caBundle := prepare("trusty-ns-a-6-migration-stale")
+				stale := get(finished)
+				stale.Annotations[renderedImagesAnnotation] = renderedImages(oldServiceImage, oldProxyImage)
+				serviceContainer(stale).Image = oldServiceImage
+				Expect(k8sClient.Update(ctx, stale)).To(Succeed())
+
+				Expect(reconciler.ensureDeployment(ctx, finished, caBundle, false)).To(Succeed())
+
+				d := get(finished)
+				Expect(images(d)["trustyai-service"]).To(Equal(testTrustAIServiceImage))
+				Expect(deploymentHasMigration(d)).To(BeFalse(), "a crash-looping old image cannot be mid-migration")
+			})
+		})
+	})
+
 	Context("When a same-named Deployment exists but is not owned by the CR", func() {
 		var instance *trustyaiopendatahubiov1.TrustyAIService
 		It("refuses to delete or update the foreign Deployment", func() {
@@ -849,6 +1130,7 @@ var _ = Describe("TrustyAI operator", func() {
 			k8sClient = trackingClient
 			reconciler = &TrustyAIServiceReconciler{
 				Client:        trackingClient,
+				Dynamic:       servingDynamic,
 				Scheme:        scheme.Scheme,
 				EventRecorder: recorder,
 				Namespace:     operatorNamespace,
@@ -962,6 +1244,7 @@ var _ = Describe("TrustyAI operator", func() {
 		recorder = record.NewFakeRecorder(10)
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
+			Dynamic:       servingDynamic,
 			Scheme:        scheme.Scheme,
 			EventRecorder: recorder,
 			Namespace:     operatorNamespace,
@@ -1003,6 +1286,7 @@ var _ = Describe("TrustyAI operator", func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
+			Dynamic:       servingDynamic,
 			Scheme:        scheme.Scheme,
 			EventRecorder: recorder,
 			Namespace:     operatorNamespace,

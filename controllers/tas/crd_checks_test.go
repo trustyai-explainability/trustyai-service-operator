@@ -38,8 +38,5 @@ var _ = Describe("Optional CRD presence checks", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(present).To(BeFalse(), "VirtualService CRD should be reported absent when only DestinationRule exists")
 
-		present, err = r.isInferenceServiceCRDPresent(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(present).To(BeFalse(), "InferenceService CRD should be reported absent when only DestinationRule exists")
 	})
 })

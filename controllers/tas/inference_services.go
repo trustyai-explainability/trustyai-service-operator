@@ -2,18 +2,20 @@ package tas
 
 import (
 	"context"
+	goerrors "errors"
 	"fmt"
 	"strings"
 
-	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -25,25 +27,10 @@ const (
 	DEPLOYMENT_MODE_SERVERLESS = "Serverless"
 	DEPLOYMENT_MODE_KNATIVE    = "Knative"
 
-	inferenceServiceCRDName = "inferenceservices.serving.kserve.io"
+	// The annotations that select a write path, the deployment-mode values and
+	// the logger mode are declared in serving_fields.go with the rest of the
+	// serving API surface.
 )
-
-// isInferenceServiceCRDPresent returns true if the KServe InferenceService CRD is present, false otherwise
-func (r *TrustyAIServiceReconciler) isInferenceServiceCRDPresent(ctx context.Context) (bool, error) {
-	crd := &apiextensionsv1.CustomResourceDefinition{}
-
-	err := r.crdReader().Get(ctx, types.NamespacedName{Name: inferenceServiceCRDName}, crd)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return false, fmt.Errorf("error getting "+inferenceServiceCRDName+" CRD: %v", err)
-		}
-		// Not found
-		return false, nil
-	}
-
-	// Found
-	return true, nil
-}
 
 // GetDeploymentsByLabel returns a list of Deployments that match a label key-value pair
 func (r *TrustyAIServiceReconciler) GetDeploymentsByLabel(ctx context.Context, namespace string, labelKey string, labelValue string) ([]appsv1.Deployment, error) {
@@ -77,109 +64,187 @@ func (r *TrustyAIServiceReconciler) patchEnvVarsForDeployments(ctx context.Conte
 			return false, nil
 		}
 
-		// If the secret volume doesn't exist, add it
-		volumeExists := false
-		for _, vol := range deployment.Spec.Template.Spec.Volumes {
-			if vol.Name == instance.Name+"-internal" {
-				volumeExists = true
-				break
-			}
+		// Removal runs from the finalizer, as the instance's TLS Secret is about
+		// to disappear with the instance. Publishing the serving-certificate
+		// volume, mount and cert path here pointed ModelMesh Pods at a Secret that
+		// no longer exists, so Pods created after the uninstall could not start.
+		// Removal therefore only takes back the material this operator added.
+		var changed bool
+		if remove {
+			sinkChanged := removePayloadProcessorEnvVar(&deployment.Spec.Template.Spec, envVarName, url)
+			tlsChanged := removeTLSCertMaterial(&deployment.Spec.Template.Spec, instance.Name)
+			changed = sinkChanged || tlsChanged
+		} else {
+			sinkChanged := addPayloadProcessorEnvVar(&deployment.Spec.Template.Spec, envVarName, url)
+			tlsChanged := addTLSCertMaterial(&deployment.Spec.Template.Spec, certVolumes)
+			changed = sinkChanged || tlsChanged
 		}
-		if !volumeExists {
-			deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, certVolumes.volume)
+
+		// One write per Deployment. The sink edit and the TLS material the same
+		// pass adds used to be two updates, so a partially applied pass could
+		// publish the mount without the env var that explains it.
+		if !changed {
+			continue
 		}
-
-		// Loop over all containers in the Deployment's Pod template
-		for i := range deployment.Spec.Template.Spec.Containers {
-			mountExists := false
-			for _, mount := range deployment.Spec.Template.Spec.Containers[i].VolumeMounts {
-				if mount.Name == instance.Name+"-internal" {
-					mountExists = true
-					break
-				}
-			}
-			if !mountExists {
-				deployment.Spec.Template.Spec.Containers[i].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[i].VolumeMounts, certVolumes.volumeMount)
-			}
-
-			// Store the original environment variable list
-			// Get the existing env var
-			var envVar *corev1.EnvVar
-			for j, e := range deployment.Spec.Template.Spec.Containers[i].Env {
-				if e.Name == envVarName {
-					envVar = &deployment.Spec.Template.Spec.Containers[i].Env[j]
-					break
-				}
-			}
-
-			var originalValue string
-			if envVar != nil {
-				originalValue = envVar.Value
-			}
-
-			// If the env var doesn't exist, add it (if we are not removing)
-			if envVar == nil && !remove {
-				envVar = &corev1.EnvVar{
-					Name:  envVarName,
-					Value: url,
-				}
-				deployment.Spec.Template.Spec.Containers[i].Env = append(deployment.Spec.Template.Spec.Containers[i].Env, *envVar)
-			} else if envVar != nil {
-				// If the env var exists and already contains the value, don't do anything
-				existingValues := strings.Split(envVar.Value, " ")
-				valueExists := false
-				for _, v := range existingValues {
-					if v == url {
-						valueExists = true
-						break
-					}
-				}
-
-				if !valueExists {
-					envVar.Value = generateEnvVarValue(envVar.Value, url, remove)
-				}
-			}
-
-			// Only update the deployment if the var value has to change, or we are removing it
-			if originalValue != envVar.Value || remove {
-				// Update the Deployment
-				if err := r.Update(ctx, &deployment); err != nil {
-					log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
-					return false, err
-				}
-				r.eventModelMeshConfigured(instance)
-				log.FromContext(ctx).Info("Updating Deployment " + deployment.Name + ", container spec " + deployment.Spec.Template.Spec.Containers[i].Name + ", env var " + envVarName + " to " + url)
-			}
-
-			// Check TLS environment variable on ModelMesh
-			if deployment.Spec.Template.Spec.Containers[i].Name == mmContainerName {
-				tlsKeyCertPathEnvValue := tlsMountPath + "/tls.crt"
-				tlsKeyCertPathExists := false
-				for _, envVar := range deployment.Spec.Template.Spec.Containers[i].Env {
-					if envVar.Name == tlsKeyCertPathName {
-						tlsKeyCertPathExists = true
-						break
-					}
-				}
-
-				// Doesn't exist, so we can add
-				if !tlsKeyCertPathExists {
-					deployment.Spec.Template.Spec.Containers[i].Env = append(deployment.Spec.Template.Spec.Containers[i].Env, corev1.EnvVar{
-						Name:  tlsKeyCertPathName,
-						Value: tlsKeyCertPathEnvValue,
-					})
-
-					if err := r.Update(ctx, &deployment); err != nil {
-						log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
-						return false, err
-					}
-					log.FromContext(ctx).Info("Added environment variable " + tlsKeyCertPathName + " to deployment " + deployment.Name + " for container " + mmContainerName)
-				}
-			}
+		if err := r.Update(ctx, &deployment); err != nil {
+			log.FromContext(ctx).Error(err, "Could not update Deployment", "Deployment", deployment.Name)
+			return false, err
 		}
+		r.eventModelMeshConfigured(instance)
+		log.FromContext(ctx).Info("Updated Deployment " + deployment.Name + ", env var " + envVarName + " to " + url)
 	}
 
 	return true, nil
+}
+
+// envVarIndex returns the position of an environment variable in a container, or
+// -1 when the container does not carry it.
+func envVarIndex(container *corev1.Container, name string) int {
+	for i := range container.Env {
+		if container.Env[i].Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// addPayloadProcessorEnvVar adds this operator's sink to every container that
+// does not carry it, and appends it to a container whose value already lists
+// other sinks. The value is space separated, so a sink this operator does not
+// own is never rewritten.
+func addPayloadProcessorEnvVar(spec *corev1.PodSpec, envVarName, url string) bool {
+	changed := false
+	for i := range spec.Containers {
+		container := &spec.Containers[i]
+		index := envVarIndex(container, envVarName)
+		if index < 0 {
+			container.Env = append(container.Env, corev1.EnvVar{Name: envVarName, Value: url})
+			changed = true
+			continue
+		}
+		current := container.Env[index].Value
+		updated := generateEnvVarValue(current, url, false)
+		if updated == current {
+			continue
+		}
+		container.Env[index].Value = updated
+		changed = true
+	}
+	return changed
+}
+
+// removePayloadProcessorEnvVar takes this operator's sink back out. A container
+// that never carried the variable has nothing to remove, which is the case the
+// old nil dereference panicked on.
+func removePayloadProcessorEnvVar(spec *corev1.PodSpec, envVarName, url string) bool {
+	changed := false
+	for i := range spec.Containers {
+		container := &spec.Containers[i]
+		index := envVarIndex(container, envVarName)
+		if index < 0 {
+			continue
+		}
+		current := container.Env[index].Value
+		updated := generateEnvVarValue(current, url, true)
+		if updated == current {
+			continue
+		}
+		container.Env[index].Value = updated
+		changed = true
+	}
+	return changed
+}
+
+// addTLSCertMaterial mounts the instance's serving Secret on a ModelMesh
+// Deployment and points the ModelMesh certificate path at it.
+func addTLSCertMaterial(spec *corev1.PodSpec, certVolumes TLSCertVolumes) bool {
+	changed := false
+
+	volumeExists := false
+	for _, vol := range spec.Volumes {
+		if vol.Name == certVolumes.volume.Name {
+			volumeExists = true
+			break
+		}
+	}
+	if !volumeExists {
+		spec.Volumes = append(spec.Volumes, certVolumes.volume)
+		changed = true
+	}
+
+	for i := range spec.Containers {
+		container := &spec.Containers[i]
+		mountExists := false
+		for _, mount := range container.VolumeMounts {
+			if mount.Name == certVolumes.volumeMount.Name {
+				mountExists = true
+				break
+			}
+		}
+		if !mountExists {
+			container.VolumeMounts = append(container.VolumeMounts, certVolumes.volumeMount)
+			changed = true
+		}
+
+		if container.Name != mmContainerName {
+			continue
+		}
+		if envVarIndex(container, tlsKeyCertPathName) < 0 {
+			container.Env = append(container.Env, corev1.EnvVar{Name: tlsKeyCertPathName, Value: tlsMountPath + "/tls.crt"})
+			changed = true
+		}
+	}
+
+	return changed
+}
+
+// removeTLSCertMaterial takes back the volume, mounts and certificate path that
+// addTLSCertMaterial adds, so an uninstall does not leave ModelMesh mounting a
+// Secret that is deleted with the instance. Every removal is matched on what
+// this operator wrote (Secret name, mount path, certificate path), so a mount a
+// user happened to name the same way is left alone.
+func removeTLSCertMaterial(spec *corev1.PodSpec, instanceName string) bool {
+	changed := false
+	volumeName := instanceName + "-internal"
+
+	volumes := make([]corev1.Volume, 0, len(spec.Volumes))
+	for _, volume := range spec.Volumes {
+		if volume.Name == volumeName && volume.Secret != nil && volume.Secret.SecretName == volumeName {
+			changed = true
+			continue
+		}
+		volumes = append(volumes, volume)
+	}
+	spec.Volumes = volumes
+
+	for i := range spec.Containers {
+		container := &spec.Containers[i]
+
+		mounts := make([]corev1.VolumeMount, 0, len(container.VolumeMounts))
+		for _, mount := range container.VolumeMounts {
+			if mount.Name == volumeName && mount.MountPath == tlsMountPath {
+				changed = true
+				continue
+			}
+			mounts = append(mounts, mount)
+		}
+		container.VolumeMounts = mounts
+
+		if container.Name != mmContainerName {
+			continue
+		}
+		env := make([]corev1.EnvVar, 0, len(container.Env))
+		for _, variable := range container.Env {
+			if variable.Name == tlsKeyCertPathName && variable.Value == tlsMountPath+"/tls.crt" {
+				changed = true
+				continue
+			}
+			env = append(env, variable)
+		}
+		container.Env = env
+	}
+
+	return changed
 }
 
 func (r *TrustyAIServiceReconciler) patchEnvVarsByLabelForDeployments(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, namespace string, labelKey string, labelValue string, envVarName string, crName string, remove bool) (bool, error) {
@@ -235,20 +300,26 @@ func generateEnvVarValue(currentValue, newValue string, remove bool) string {
 	return currentValue
 }
 
-func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, namespace string, labelKey, labelValue, envVarName, crName string, remove bool) (bool, error) {
-	crdPresent, err := r.isInferenceServiceCRDPresent(ctx)
-	if err != nil {
-		log.FromContext(ctx).Error(err, "Error verifying InferenceService CRD is present")
-		return false, err
-	}
-	if !crdPresent {
-		log.FromContext(ctx).Info("InferenceService CRD not found, skipping InferenceService handling. Will retry on next reconcile.")
+func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, report inferenceServicesReport, namespace string, labelKey, labelValue, envVarName, crName string, remove bool) (bool, error) {
+	// The report is derived once per pass by the caller and shared with the status
+	// pass, so the writer and the condition cannot disagree inside one reconcile.
+	if report.err != nil {
+		// Serving is an optional dependency: a failed read must not stop the
+		// required work. The error is carried rather than dropped, so the status
+		// pass still returns it and the reconcile is retried.
+		log.FromContext(ctx).Error(report.err, "Could not read the serving state, skipping InferenceService handling")
 		return true, nil
 	}
 
-	var inferenceServices kservev1beta1.InferenceServiceList
+	contract := report.contract
+	if contract.state != servingStateUsable {
+		log.FromContext(ctx).Info("Serving API not usable, skipping InferenceService handling. Will retry on next reconcile.",
+			"state", contract.state, "reason", contract.servingReason(), "message", contract.unusableMessage())
+		return true, nil
+	}
 
-	if err := r.List(ctx, &inferenceServices, client.InNamespace(namespace)); err != nil {
+	inferenceServices, err := r.listServing(ctx, contract, namespace)
+	if err != nil {
 		log.FromContext(ctx).Error(err, "Could not list InferenceService objects.")
 		return false, err
 	}
@@ -259,18 +330,18 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 		kServeServerlessEnabled = false
 	}
 
-	if len(inferenceServices.Items) == 0 {
-		return true, nil
-	}
+	for i := range inferenceServices.Items {
+		infService := &inferenceServices.Items[i]
+		deploymentMode := infService.GetAnnotations()[deploymentModeAnnotation]
 
-	for _, infService := range inferenceServices.Items {
-		annotations := infService.GetAnnotations()
-		deploymentMode := annotations["serving.kserve.io/deploymentMode"]
-
+		var patchErr error
 		switch deploymentMode {
 		case DEPLOYMENT_MODE_MODELMESH:
-			// Handle ModelMesh deployments
-			shouldContinue, err := r.patchEnvVarsByLabelForDeployments(ctx, instance, namespace, labelKey, labelValue, envVarName, crName, remove)
+			// ModelMesh carries the sink in an environment variable on its own
+			// Deployment rather than in a logger field, so this branch patches
+			// Deployments and never touches the InferenceService.
+			var shouldContinue bool
+			shouldContinue, err = r.patchEnvVarsByLabelForDeployments(ctx, instance, namespace, labelKey, labelValue, envVarName, crName, remove)
 			if err != nil {
 				log.FromContext(ctx).Error(err, "Could not patch environment variables for ModelMesh deployments")
 				return shouldContinue, err
@@ -278,139 +349,361 @@ func (r *TrustyAIServiceReconciler) handleInferenceServices(ctx context.Context,
 			continue
 
 		case DEPLOYMENT_MODE_RAW, DEPLOYMENT_MODE_STANDARD:
-			// Handle KServe Raw/Standard deployments (KServe v0.17+ renamed RawDeployment to Standard)
-			err := r.patchKServe(ctx, instance, infService, namespace, crName, remove, true)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "Could not patch InferenceLogger for KServe Raw deployment")
-				return false, err
-			}
-			continue
+			// KServe v0.17+ renamed RawDeployment to Standard.
+			patchErr = r.patchServingLogger(ctx, instance, contract, infService, crName, remove, true)
 
 		case DEPLOYMENT_MODE_SERVERLESS, DEPLOYMENT_MODE_KNATIVE:
-			// Handle KServe Serverless/Knative deployments (KServe v0.17+ renamed Serverless to Knative)
+			// KServe v0.17+ renamed Serverless to Knative, and payload capture is
+			// only configured for these modes when serverless is enabled here.
 			if kServeServerlessEnabled {
-				err := r.patchKServe(ctx, instance, infService, namespace, crName, remove, false)
-				if err != nil {
-					log.FromContext(ctx).Error(err, "Could not patch InferenceLogger for KServe Serverless deployment")
-					return false, err
-				}
+				patchErr = r.patchServingLogger(ctx, instance, contract, infService, crName, remove, false)
 			}
-			continue
 
 		default:
-			log.FromContext(ctx).Info("Unknown deployment mode, skipping InferenceService", "deploymentMode", deploymentMode, "inferenceService", infService.Name)
+			log.FromContext(ctx).Info("Unknown deployment mode, skipping InferenceService",
+				"deploymentMode", deploymentMode, "inferenceService", infService.GetName())
 			continue
 		}
+
+		if patchErr == nil {
+			continue
+		}
+
+		var rejected *servingObjectRejectedError
+		if goerrors.As(patchErr, &rejected) {
+			log.FromContext(ctx).Error(patchErr, "Serving object rejected the payload-capture update; reporting it as state")
+			r.eventServingObjectRejected(instance, rejected)
+			continue
+		}
+		log.FromContext(ctx).Error(patchErr, "Could not configure payload capture on InferenceService", "inferenceService", infService.GetName())
+		return false, patchErr
 	}
 	return true, nil
 }
 
-// patchKServe adds a TrustyAI service as an InferenceLogger to a KServe InferenceService
-func (r *TrustyAIServiceReconciler) patchKServe(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, infService kservev1beta1.InferenceService, namespace string, crName string, remove bool, useHTTPS bool) error {
-
-	var url string
+// servingLoggerURL is the payload-processor endpoint written into
+// spec.predictor.logger: the HTTPS URL for Raw/Standard deployments, whose
+// predictor sidecar can present the service certificate, and the plain URL for
+// Serverless/Knative, where it does not.
+func servingLoggerURL(crName, namespace string, useHTTPS bool) string {
 	if useHTTPS {
-		url = utils.GenerateHTTPSKServeLoggerURL(crName, namespace)
-	} else {
-		url = utils.GenerateKServeLoggerURL(crName, namespace)
+		return utils.GenerateHTTPSKServeLoggerURL(crName, namespace)
+	}
+	return utils.GenerateKServeLoggerURL(crName, namespace)
+}
+
+// servingLoggerURLOf returns the URL an object's logger points at, or "" when it
+// carries no logger or an unreadable one.
+func servingLoggerURLOf(logger map[string]interface{}) string {
+	url, _, err := unstructured.NestedString(logger, "url")
+	if err != nil {
+		return ""
+	}
+	return url
+}
+
+// servingObjectRejectedError reports a per-object rejection. A validation or
+// authorization rejection is a state for that object, not a transient error:
+// retrying every 30 seconds cannot fix it, so it is reported and the remaining
+// objects are still handled.
+type servingObjectRejectedError struct {
+	namespace string
+	name      string
+	err       error
+}
+
+func (e *servingObjectRejectedError) Error() string {
+	return fmt.Sprintf("the serving object %s/%s rejected the payload-capture update: %v", e.namespace, e.name, e.err)
+}
+
+func (e *servingObjectRejectedError) Unwrap() error { return e.err }
+
+// isServingObjectRejection distinguishes a rejection the API server will repeat
+// from an error that may clear on its own.
+func isServingObjectRejection(err error) bool {
+	return errors.IsInvalid(err) || errors.IsForbidden(err)
+}
+
+// servingResource returns the namespaced handle for the adopted serving version
+// on the dynamic client. The resource comes from the CRD, so nothing here needs a
+// scheme entry, an informer, or a RESTMapper lookup.
+func (r *TrustyAIServiceReconciler) servingResource(contract servingContract, namespace string) (dynamic.ResourceInterface, error) {
+	if r.Dynamic == nil {
+		return nil, fmt.Errorf("no dynamic client is configured, cannot reach serving resources")
+	}
+	return r.Dynamic.Resource(contract.gvr).Namespace(namespace), nil
+}
+
+// listServing reads the InferenceServices of the adopted version in one
+// namespace. It is a plain read on the dynamic client: no cached List, because
+// serving is not watched and a cached List would build a cluster-wide informer
+// on first use and answer empty while it syncs.
+func (r *TrustyAIServiceReconciler) listServing(ctx context.Context, contract servingContract, namespace string) (*unstructured.UnstructuredList, error) {
+	resource, err := r.servingResource(contract, namespace)
+	if err != nil {
+		return nil, err
+	}
+	return resource.List(ctx, metav1.ListOptions{})
+}
+
+// patchServingLogger makes one InferenceService's payload-capture configuration
+// match the desired state, and ensures the service-mesh objects it asks for.
+//
+// Three properties are load-bearing. It is idempotent: when the logger already
+// points where it should, or is already absent on removal, it writes nothing,
+// without which every reconcile would write every InferenceService every 30
+// seconds. It is a read-modify-write with conflict retry, because
+// odh-model-controller and the serving controllers write the same objects. And
+// it clears the logger rather than setting an empty struct, so removal leaves the
+// field absent instead of present and empty.
+func (r *TrustyAIServiceReconciler) patchServingLogger(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, contract servingContract, infService *unstructured.Unstructured, crName string, remove bool, useHTTPS bool) error {
+	namespace := infService.GetNamespace()
+	name := infService.GetName()
+	url := servingLoggerURL(crName, namespace, useHTTPS)
+
+	resource, err := r.servingResource(contract, namespace)
+	if err != nil {
+		return err
 	}
 
-	if remove {
-		if infService.Spec.Predictor.Logger == nil || *infService.Spec.Predictor.Logger.URL != url {
-			return nil // Removing, but InferenceLogger is not set or is not set to the expected URL. Do nothing.
+	current, err := resource.Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		if isServingObjectRejection(err) {
+			return &servingObjectRejectedError{namespace: namespace, name: name, err: err}
 		}
-
-		// Remove the InferenceLogger
-		infService.Spec.Predictor.Logger = nil
-
-		// Remove Annotations
-		annotations := infService.GetAnnotations()
-		delete(annotations, "internal.serving.kserve.io/logger")
-		delete(annotations, "internal.serving.kserve.io/logger-mode")
-		delete(annotations, "internal.serving.kserve.io/logger-sink-url")
-		infService.SetAnnotations(annotations)
-	} else {
-		if infService.Spec.Predictor.Logger != nil && *infService.Spec.Predictor.Logger.URL == url {
-			return nil // InferenceLogger is already set to the expected URL. Do nothing.
-		}
-
-		// Construct the logger object
-		logger := kservev1beta1.LoggerSpec{
-			Mode: "all",
-			URL:  &url,
-		}
-
-		// Set the InferenceLogger to the InferenceService instance
-		infService.Spec.Predictor.Logger = &logger
+		return fmt.Errorf("reading InferenceService %s/%s: %w", namespace, name, err)
+	}
+	if !servingLoggerNeedsUpdate(current, url, remove) {
+		return nil
 	}
 
-	// Only if the Istio sidecar annotation is set
-	annotations := infService.GetAnnotations()
-	if inject, exists := annotations["sidecar.istio.io/inject"]; exists && inject == "true" {
+	// The service-mesh objects are ensured before the write, so a failure there
+	// leaves the InferenceService untouched rather than half configured.
+	if err := r.ensureServingMeshObjects(ctx, instance, current); err != nil {
+		return err
+	}
 
-		// Check if DestinationRule CRD is present. If there's an error, don't proceed and return the error
-		exists, err := r.isDestinationRuleCRDPresent(ctx)
+	configured := false
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current, err := resource.Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
-			log.FromContext(ctx).Error(err, "Error verifying DestinationRule CRD is present")
+			return err
+		}
+		// Another writer may have reached the desired state while this pass was
+		// retrying; re-deciding keeps the write idempotent under contention.
+		if !servingLoggerNeedsUpdate(current, url, remove) {
+			configured = false
+			return nil
+		}
+
+		updated := current.DeepCopy()
+		if remove {
+			// Only the logger this operator wrote is removed: an object pointing at
+			// another sink is not ours to reconfigure. The three annotations are
+			// deleted whenever they are present, because they record our sink and
+			// are stale as soon as payload capture is off, whoever cleared it.
+			if logger, found, loggerErr := unstructured.NestedMap(updated.Object, predictorLoggerFieldPathParts...); loggerErr == nil && found && servingLoggerIsOurs(logger, url) {
+				unstructured.RemoveNestedField(updated.Object, predictorLoggerFieldPathParts...)
+			}
+			annotations := updated.GetAnnotations()
+			for _, key := range servingLoggerAnnotationKeys {
+				delete(annotations, key)
+			}
+			if len(annotations) == 0 {
+				annotations = nil
+			}
+			updated.SetAnnotations(annotations)
+		} else if err := unstructured.SetNestedMap(updated.Object, map[string]interface{}{
+			"mode": loggerModeAll,
+			"url":  url,
+		}, predictorLoggerFieldPathParts...); err != nil {
 			return err
 		}
 
-		// Try to create the DestinationRule, since CRD exists
-		if exists {
-			err := r.ensureDestinationRule(ctx, instance)
-			if err != nil {
-				return fmt.Errorf("failed to ensure DestinationRule: %v", err)
-			}
-		} else {
-			// DestinationRule CRD does not exist. Do not attempt to create it and log error
-			err := fmt.Errorf("the DestinationRule CRD is not present in this cluster")
-			log.FromContext(ctx).Error(err, "InferenceService has service mesh annotation but DestinationRule CRD not found")
-		}
-
-		// Check if VirtualService CRD is present. If there's an error, don't proceed and return the error
-		exists, err = r.isVirtualServiceCRDPresent(ctx)
-		if err != nil {
-			log.FromContext(ctx).Error(err, "Error verifying VirtualService CRD is present")
+		if _, err := resource.Update(ctx, updated, metav1.UpdateOptions{}); err != nil {
 			return err
 		}
-
-		// Try to create the VirtualService, since CRD exists
-		if exists {
-			err := r.ensureVirtualService(ctx, instance)
-			if err != nil {
-				return fmt.Errorf("failed to ensure VirtualService: %v", err)
-			}
-		} else {
-			// VirtualService CRD does not exist. Do not attempt to create it and log error
-			err := fmt.Errorf("the VirtualService CRD is not present in this cluster")
-			log.FromContext(ctx).Error(err, "InferenceService has service mesh annotation but VirtualService CRD not found")
+		configured = true
+		return nil
+	})
+	if err != nil {
+		if isServingObjectRejection(err) {
+			return &servingObjectRejectedError{namespace: namespace, name: name, err: err}
 		}
-
+		return fmt.Errorf("updating InferenceService %s/%s: %w", namespace, name, err)
 	}
 
-	// Update the InferenceService
-	err := r.Update(ctx, &infService)
-	if err == nil {
+	if configured {
 		r.eventKServeConfigured(instance)
-	} else {
-		return fmt.Errorf("failed to update InferenceService %s/%s: %v", infService.Namespace, infService.Name, err)
 	}
 	return nil
 }
 
-func (r *TrustyAIServiceReconciler) checkInferenceServicesPresent(ctx context.Context, namespace string) (bool, error) {
-	crdPresent, err := r.isInferenceServiceCRDPresent(ctx)
+// servingLoggerIsOurs reports whether the logger points at the sink this
+// operator writes, and so is the operator's to remove. A logger with no sink at
+// all points nowhere else and is cleared too.
+func servingLoggerIsOurs(logger map[string]interface{}, url string) bool {
+	if logger == nil {
+		return false
+	}
+	if len(logger) == 0 {
+		return true
+	}
+	return servingLoggerURLOf(logger) == url
+}
+
+// servingLoggerIsDesired reports whether the logger already carries the whole
+// desired state. The mode is compared as well as the sink: comparing only the
+// URL let an object with the right URL and a different mode persist, so the
+// operator reported the state it wrote while the object held another.
+func servingLoggerIsDesired(logger map[string]interface{}, url string) bool {
+	if logger == nil {
+		return false
+	}
+	mode, _, err := unstructured.NestedString(logger, "mode")
+	if err != nil || mode != loggerModeAll {
+		return false
+	}
+	return servingLoggerURLOf(logger) == url
+}
+
+// servingHasLoggerAnnotations reports whether the annotations this operator's
+// writes leave behind are still present.
+func servingHasLoggerAnnotations(infService *unstructured.Unstructured) bool {
+	annotations := infService.GetAnnotations()
+	for _, key := range servingLoggerAnnotationKeys {
+		if _, present := annotations[key]; present {
+			return true
+		}
+	}
+	return false
+}
+
+// servingLoggerNeedsUpdate reports whether the object differs from the desired
+// state. Absent-on-removal and already-desired-on-set are both "nothing to do".
+func servingLoggerNeedsUpdate(infService *unstructured.Unstructured, url string, remove bool) bool {
+	logger, _, err := unstructured.NestedMap(infService.Object, predictorLoggerFieldPathParts...)
 	if err != nil {
-		return false, err
+		// An unreadable logger is not something this operator wrote; overwrite it
+		// rather than leaving payload capture silently off.
+		return true
 	}
-	if !crdPresent {
-		return false, nil
+	if remove {
+		// Removal has two independent pieces of state to clear: the logger, when it
+		// is ours, and the annotations, whenever they are present. Gating both on
+		// the URL left the annotations behind whenever the logger had already been
+		// cleared or pointed at another sink.
+		return servingLoggerIsOurs(logger, url) || servingHasLoggerAnnotations(infService)
+	}
+	return !servingLoggerIsDesired(logger, url)
+}
+
+// ensureServingMeshObjects keeps the original branch: only an object that asks
+// for the Istio sidecar gets the DestinationRule and VirtualService, each guarded
+// by its own CRD. A missing CRD is logged and does not fail the reconcile,
+// because the logger write is still correct without them.
+func (r *TrustyAIServiceReconciler) ensureServingMeshObjects(ctx context.Context, instance *trustyaiopendatahubiov1.TrustyAIService, infService *unstructured.Unstructured) error {
+	if inject := infService.GetAnnotations()[istioInjectAnnotation]; inject != "true" {
+		return nil
 	}
 
-	infServiceList := &kservev1beta1.InferenceServiceList{}
-	if err := r.List(ctx, infServiceList, client.InNamespace(namespace)); err != nil {
-		return false, err
+	destinationRulePresent, err := r.isDestinationRuleCRDPresent(ctx)
+	if err != nil {
+		return fmt.Errorf("verifying the DestinationRule CRD is present: %w", err)
+	}
+	if destinationRulePresent {
+		if err := r.ensureDestinationRule(ctx, instance); err != nil {
+			return fmt.Errorf("failed to ensure DestinationRule: %w", err)
+		}
+	} else {
+		log.FromContext(ctx).Error(fmt.Errorf("the DestinationRule CRD is not present in this cluster"),
+			"InferenceService has service mesh annotation but DestinationRule CRD not found", "inferenceService", infService.GetName())
 	}
 
-	return len(infServiceList.Items) > 0, nil
+	virtualServicePresent, err := r.isVirtualServiceCRDPresent(ctx)
+	if err != nil {
+		return fmt.Errorf("verifying the VirtualService CRD is present: %w", err)
+	}
+	if virtualServicePresent {
+		if err := r.ensureVirtualService(ctx, instance); err != nil {
+			return fmt.Errorf("failed to ensure VirtualService: %w", err)
+		}
+	} else {
+		log.FromContext(ctx).Error(fmt.Errorf("the VirtualService CRD is not present in this cluster"),
+			"InferenceService has service mesh annotation but VirtualService CRD not found", "inferenceService", infService.GetName())
+	}
+
+	return nil
+}
+
+// inferenceServicesReport is the serving state as reported through the
+// InferenceServicesPresent condition, with the reason that distinguishes the
+// three ways serving can be unusable.
+type inferenceServicesReport struct {
+	contract  servingContract
+	namespace string
+	// present is true only when the serving API is usable and the namespace
+	// holds at least one InferenceService.
+	present bool
+	// err is a transient failure to read the serving state on this pass. It is
+	// carried rather than returned so the status of the required components is
+	// still written: serving is informational, and a CRD in Terminating or an API
+	// blip must not freeze Ready at its previous value.
+	err error
+}
+
+// reason is the condition reason for this state. Serving usable but idle has its
+// own reason, so "no InferenceService yet" is distinguishable from "no serving".
+func (rep inferenceServicesReport) reason() string {
+	if rep.contract.state != servingStateUsable {
+		return rep.contract.servingReason()
+	}
+	if rep.present {
+		return StatusReasonInferenceServicesFound
+	}
+	return StatusReasonNoInferenceServices
+}
+
+// message names the group and version that was adopted whenever one was, which
+// is what makes version adoption observable from outside the process.
+func (rep inferenceServicesReport) message() string {
+	if rep.contract.state != servingStateUsable {
+		return rep.contract.unusableMessage()
+	}
+	if rep.present {
+		return fmt.Sprintf("InferenceServices found (serving API %s)", rep.contract.groupVersion())
+	}
+	return fmt.Sprintf("no InferenceService in namespace %s (serving API %s); payload capture activates when one is created",
+		rep.namespace, rep.contract.groupVersion())
+}
+
+// inferenceServicesReport resolves the serving contract and, when serving is
+// usable, whether the namespace holds an InferenceService.
+//
+// A CRD read failure or a list failure while the CRD is present is transient and
+// carried in the report for the caller to requeue on; both are distinct from an
+// absent API, which is a state.
+func (r *TrustyAIServiceReconciler) inferenceServicesReport(ctx context.Context, namespace string) inferenceServicesReport {
+	report := inferenceServicesReport{namespace: namespace}
+
+	contract, err := r.servingContractOf(ctx)
+	if err != nil {
+		report.err = err
+		return report
+	}
+	report.contract = contract
+	if contract.state != servingStateUsable {
+		return report
+	}
+
+	infServices, err := r.listServing(ctx, contract, namespace)
+	if err != nil {
+		// Keep the contract: what was read is still what this pass adopted, and
+		// the condition is left untouched rather than reported as absent.
+		report.err = fmt.Errorf("could not list InferenceService objects: %w", err)
+		return report
+	}
+
+	report.present = len(infServices.Items) > 0
+	return report
 }

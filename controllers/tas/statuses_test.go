@@ -10,9 +10,11 @@ import (
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -48,7 +50,7 @@ func setupAndTestStatusNoComponent(instance *trustyaiopendatahubiov1.TrustyAISer
 	}, "failed to create namespace")
 
 	// Call the reconcileStatuses function
-	_, _ = reconciler.reconcileStatuses(ctx, instance)
+	_, _ = reconciler.reconcileStatuses(ctx, instance, reconciler.inferenceServicesReport(ctx, instance.Namespace))
 
 	readyCondition, statusMatch, err := checkCondition(instance.Status.Conditions, PhaseReady, corev1.ConditionTrue, true)
 	Expect(err).NotTo(HaveOccurred(), "Error checking Ready condition")
@@ -67,10 +69,16 @@ var _ = Describe("Status and condition tests", func() {
 
 	BeforeEach(func() {
 		operatorCM := createConfigMap(operatorNamespace, testKubeRBACProxyImage, testTrustAIServiceImage)
-		inferenceServiceCRD := &apiextensionsv1.CustomResourceDefinition{
-			ObjectMeta: metav1.ObjectMeta{Name: inferenceServiceCRDName},
-		}
+		inferenceServiceCRD := servingCRDFixture()
+		// Serving is read on the dynamic client on the GVR the CRD declares, so
+		// the fake world needs one too; a spec that seeds an InferenceService
+		// seeds both clients.
+		servingFake = dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(),
+			map[schema.GroupVersionResource]string{
+				{Group: "serving.kserve.io", Version: "v1beta1", Resource: "inferenceservices"}: "InferenceServiceList",
+			})
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).WithStatusSubresource(
+			&appsv1.Deployment{},
 			&routev1.Route{},
 			&trustyaiopendatahubiov1.TrustyAIService{},
 		).WithObjects(operatorCM, inferenceServiceCRD).Build()
@@ -78,6 +86,7 @@ var _ = Describe("Status and condition tests", func() {
 		reconciler = &TrustyAIServiceReconciler{
 			Client:        k8sClient,
 			Scheme:        scheme.Scheme,
+			Dynamic:       servingFake,
 			EventRecorder: recorder,
 			Namespace:     operatorNamespace,
 		}
@@ -97,6 +106,11 @@ var _ = Describe("Status and condition tests", func() {
 		Expect(reconciler.ensureDeployment(ctx, instance, CustomCertificatesBundle{}, false)).To(Succeed())
 		Expect(k8sClient.Get(ctx, key, deployment)).To(Succeed())
 		Expect(deployment.ResourceVersion).To(Equal(originalVersion))
+
+		// Removing migration settings restarts the pod, so it waits for the current
+		// rollout to finish. Model a completed rollout.
+		deployment.Status = appsv1.DeploymentStatus{UpdatedReplicas: 1, ReadyReplicas: 1, AvailableReplicas: 1}
+		Expect(k8sClient.Status().Update(ctx, deployment)).To(Succeed())
 
 		if clearFolder {
 			instance.Spec.Storage.Folder = ""
@@ -256,7 +270,7 @@ var _ = Describe("Status and condition tests", func() {
 
 			// Call the reconcileStatuses function
 			WaitFor(func() error {
-				_, err := reconciler.reconcileStatuses(ctx, instance)
+				_, err := reconciler.reconcileStatuses(ctx, instance, reconciler.inferenceServicesReport(ctx, instance.Namespace))
 				return err
 			}, "failed to update statuses")
 
@@ -320,7 +334,7 @@ var _ = Describe("Status and condition tests", func() {
 
 			// Call the reconcileStatuses function
 			WaitFor(func() error {
-				_, err := reconciler.reconcileStatuses(ctx, instance)
+				_, err := reconciler.reconcileStatuses(ctx, instance, reconciler.inferenceServicesReport(ctx, instance.Namespace))
 				return err
 			}, "failed to update statuses")
 
@@ -391,7 +405,7 @@ var _ = Describe("Status and condition tests", func() {
 
 			// Call the reconcileStatuses function
 			WaitFor(func() error {
-				_, err := reconciler.reconcileStatuses(ctx, instance)
+				_, err := reconciler.reconcileStatuses(ctx, instance, reconciler.inferenceServicesReport(ctx, instance.Namespace))
 				return err
 			}, "failed to update statuses")
 
@@ -461,11 +475,7 @@ var _ = Describe("Status and condition tests", func() {
 			}, "failed to make deployment ready")
 
 			inferenceService := createInferenceService("my-model", namespace)
-			WaitFor(func() error {
-				return k8sClient.Create(ctx, inferenceService)
-			}, "failed to create InferenceService")
-
-			Expect(reconciler.patchKServe(ctx, instance, *inferenceService, namespace, instance.Name, false, false)).ToNot(HaveOccurred())
+			Expect(servingFake.Tracker().Add(inferenceService)).To(Succeed())
 
 			WaitFor(func() error {
 				return k8sClient.Create(ctx, instance)
@@ -473,7 +483,7 @@ var _ = Describe("Status and condition tests", func() {
 
 			// Call the reconcileStatuses function
 			WaitFor(func() error {
-				_, err := reconciler.reconcileStatuses(ctx, instance)
+				_, err := reconciler.reconcileStatuses(ctx, instance, reconciler.inferenceServicesReport(ctx, instance.Namespace))
 				return err
 			}, "failed to update statuses")
 

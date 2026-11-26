@@ -2,6 +2,7 @@ package evalhub
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -296,6 +297,84 @@ func TestGenerateConfigData(t *testing.T) {
 		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &config)
 		require.NoError(t, err)
 
+	})
+
+	t.Run("should render init timeout only when configured", func(t *testing.T) {
+		instance := evalHub.DeepCopy()
+		configData, err := reconciler.generateConfigData(context.Background(), instance)
+		require.NoError(t, err)
+
+		var defaultConfig EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &defaultConfig)
+		require.NoError(t, err)
+		assert.Nil(t, defaultConfig.Service.Init)
+
+		instance.Spec.Init = &evalhubv1.EvalHubInitSpec{}
+		configData, err = reconciler.generateConfigData(context.Background(), instance)
+		require.NoError(t, err)
+
+		var emptyInitConfig EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &emptyInitConfig)
+		require.NoError(t, err)
+		assert.Nil(t, emptyInitConfig.Service.Init)
+
+		instance.Spec.Init = &evalhubv1.EvalHubInitSpec{
+			TestDataTimeout: "30m",
+		}
+
+		configData, err = reconciler.generateConfigData(context.Background(), instance)
+		require.NoError(t, err)
+
+		var configured EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &configured)
+		require.NoError(t, err)
+		require.NotNil(t, configured.Service.Init)
+		assert.Equal(t, "30m", configured.Service.Init.TestDataTimeout)
+		assert.Contains(t, configData["config.yaml"], "test_data_timeout: 30m")
+
+		instance.Spec.Init = &evalhubv1.EvalHubInitSpec{
+			TestDataTimeout: "0s",
+		}
+
+		configData, err = reconciler.generateConfigData(context.Background(), instance)
+		require.NoError(t, err)
+
+		var zeroConfig EvalHubConfig
+		err = yaml.Unmarshal([]byte(configData["config.yaml"]), &zeroConfig)
+		require.NoError(t, err)
+		assert.Nil(t, zeroConfig.Service.Init)
+		assert.NotContains(t, configData["config.yaml"], "test_data_timeout")
+	})
+
+	t.Run("should reject invalid init timeout", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			value string
+		}{
+			{name: "unparseable", value: "not-a-duration"},
+			{name: "negative", value: "-5s"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				instance := evalHub.DeepCopy()
+				instance.Spec.Init = &evalhubv1.EvalHubInitSpec{TestDataTimeout: tc.value}
+
+				_, err := reconciler.generateConfigData(context.Background(), instance)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "init.testDataTimeout")
+			})
+		}
+	})
+
+	t.Run("should change config hash when init timeout changes", func(t *testing.T) {
+		defaultData, err := reconciler.generateConfigData(context.Background(), evalHub.DeepCopy())
+		require.NoError(t, err)
+
+		instance := evalHub.DeepCopy()
+		instance.Spec.Init = &evalhubv1.EvalHubInitSpec{TestDataTimeout: "30m"}
+		configuredData, err := reconciler.generateConfigData(context.Background(), instance)
+		require.NoError(t, err)
+
+		assert.NotEqual(t, evalHubConfigDataHash(defaultData), evalHubConfigDataHash(configuredData))
 	})
 }
 
@@ -3492,6 +3571,61 @@ func TestGenerateAuthConfigData_MethodsPresent(t *testing.T) {
 		assert.ElementsMatch(t, []string{"create", "get"}, verbs)
 	}
 	assert.Equal(t, 1, cloneEndpoints, "collection clone endpoint must be declared exactly once")
+
+	const (
+		generationCreatePath   = "/api/v1/evaluations/collections/generation"
+		generationResourcePath = "/api/v1/evaluations/collections/generation/*"
+		collectionsPath        = "/api/v1/evaluations/collections/*"
+	)
+	endpointIndexes := make(map[string]int, len(parsed.Authorization.Endpoints))
+	for i, endpoint := range parsed.Authorization.Endpoints {
+		endpointIndexes[endpoint.Path] = i
+	}
+
+	createIndex, ok := endpointIndexes[generationCreatePath]
+	require.True(t, ok, "generation POST endpoint must be declared")
+	resourceIndex, ok := endpointIndexes[generationResourcePath]
+	require.True(t, ok, "generation resource endpoint must be declared")
+	collectionsIndex, ok := endpointIndexes[collectionsPath]
+	require.True(t, ok, "generic collections endpoint must be declared")
+	assert.Less(t, createIndex, collectionsIndex, "specific generation POST mapping must precede the generic collection mapping")
+	assert.Less(t, resourceIndex, collectionsIndex, "specific generation resource mapping must precede the generic collection mapping")
+	assert.NotContains(t, endpointIndexes, "/api/v1/evaluations/collections/generation/models", "generation model discovery is not part of the API contract")
+
+	for _, test := range []struct {
+		path    string
+		methods []string
+		verb    string
+	}{
+		{path: generationCreatePath, methods: []string{"post"}, verb: "create"},
+		{path: generationResourcePath, methods: []string{"get", "delete"}, verb: "{{.FromMethod}}"},
+	} {
+		endpoint := parsed.Authorization.Endpoints[endpointIndexes[test.path]]
+		require.Len(t, endpoint.Mappings, 1, "endpoint %s should have one mapping", test.path)
+		mapping := endpoint.Mappings[0]
+		assert.Equal(t, test.methods, mapping.Methods, "endpoint %s methods", test.path)
+		require.Len(t, mapping.Resources, 1, "endpoint %s should perform one tenant-scoped SAR", test.path)
+		resource := mapping.Resources[0]
+		assert.Equal(t, "X-Tenant", resource.Rewrites.ByHTTPHeader.Name)
+		assert.Equal(t, "{{.FromHeader}}", resource.ResourceAttributes.Namespace)
+		assert.Equal(t, "trustyai.opendatahub.io", resource.ResourceAttributes.APIGroup)
+		assert.Equal(t, "evaluations", resource.ResourceAttributes.Resource)
+		assert.Equal(t, test.verb, resource.ResourceAttributes.Verb)
+	}
+}
+
+func TestTenantUserRulesAllowCollectionGenerationLifecycle(t *testing.T) {
+	rules := tenantUserRules(&evalhubv1.EvalHub{})
+	var evaluationVerbs []string
+	for _, rule := range rules {
+		if slices.Contains(rule.APIGroups, "trustyai.opendatahub.io") && slices.Contains(rule.Resources, "evaluations") {
+			evaluationVerbs = rule.Verbs
+		}
+		if slices.Contains(rule.APIGroups, "trustyai.opendatahub.io") && slices.Contains(rule.Resources, "collections") {
+			assert.NotContains(t, rule.Verbs, "create", "generation authorization must not grant collection writes")
+		}
+	}
+	assert.Subset(t, evaluationVerbs, []string{"get", "create", "delete"})
 }
 
 func TestGenerateMCPAuthConfigData_MethodsPresent(t *testing.T) {

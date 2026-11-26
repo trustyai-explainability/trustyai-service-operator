@@ -57,8 +57,12 @@ const (
 
 // Status reasons
 const (
-	StatusReasonInferenceServicesNotFound = "InferenceServicesNotFound"
-	StatusReasonInferenceServicesFound    = "InferenceServicesFound"
+	StatusReasonInferenceServicesFound = "InferenceServicesFound"
+	// Serving state reasons, one per way serving can be unusable. Absence is a
+	// supported configuration, so none of these is a failure.
+	StatusReasonServingCRDNotFound        = "ServingCRDNotFound"
+	StatusReasonServingVersionUnsupported = "ServingVersionUnsupported"
+	StatusReasonNoInferenceServices       = "NoInferenceServices"
 	StatusReasonPVCNotFound               = "PVCNotFound"
 	StatusReasonPVCFound                  = "PVCFound"
 	StatusReasonRouteNotFound             = "RouteNotFound"
@@ -80,6 +84,7 @@ const (
 	EventReasonPVCCreated                      = "PVCCreated"
 	EventReasonDeploymentCreated               = "DeploymentCreated"
 	EventReasonInferenceServiceConfigured      = "InferenceServiceConfigured"
+	EventReasonInferenceServiceRejected        = "InferenceServiceRejected"
 	EventReasonServiceMonitorCreated           = "ServiceMonitorCreated"
 	EventReasonMetricsReaderSACreated          = "MetricsReaderServiceAccountCreated"
 	EventReasonMetricsCABundleConfigMapCreated = "MetricsCABundleConfigMapCreated"
