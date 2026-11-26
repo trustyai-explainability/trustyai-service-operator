@@ -319,6 +319,14 @@ func onlyFailurePendingAnnotationChanged(oldJob, newJob *batchv1.Job) bool {
 	delete(oldCopy.Annotations, annotationFailureRequest)
 	delete(newCopy.Annotations, annotationFailurePending)
 	delete(newCopy.Annotations, annotationFailureRequest)
+	// Removing the last annotation leaves an empty map. Treat it like an
+	// omitted map so persisting or clearing a request does not re-enqueue the Job.
+	if len(oldCopy.Annotations) == 0 {
+		oldCopy.Annotations = nil
+	}
+	if len(newCopy.Annotations) == 0 {
+		newCopy.Annotations = nil
+	}
 	// These fields change on every write and must not count as a difference.
 	oldCopy.ResourceVersion, newCopy.ResourceVersion = "", ""
 	oldCopy.ManagedFields, newCopy.ManagedFields = nil, nil

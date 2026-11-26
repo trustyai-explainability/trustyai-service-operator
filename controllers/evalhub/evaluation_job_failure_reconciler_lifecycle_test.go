@@ -2708,6 +2708,28 @@ func TestJobFailureReconciler_RequestUpdatesDoNotLoop(t *testing.T) {
 	assert.True(t, pred.Update(event.UpdateEvent{ObjectOld: pending, ObjectNew: changed}), "a request must remain recoverable after Job status changes")
 }
 
+func TestJobFailureReconciler_LabelOnlyRequestUpdatesDoNotLoop(t *testing.T) {
+	job := evalHubEvaluationJob("eval-job-label-only", "tenant-ns", nil)
+	job.Annotations = nil
+	job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}
+	r, _ := buildJobFailureReconciler(fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).Build(), job.Namespace)
+	pred := jobUpdatePredicate(r)
+
+	pending := job.DeepCopy()
+	pending.Annotations = map[string]string{
+		annotationFailurePending: "true",
+		annotationFailureRequest: `{"message":"original failure"}`,
+	}
+	assert.False(t, pred.Update(event.UpdateEvent{ObjectOld: job, ObjectNew: pending}), "persisting a request must not re-enqueue a label-only Job")
+
+	cleared := job.DeepCopy()
+	assert.False(t, pred.Update(event.UpdateEvent{ObjectOld: pending, ObjectNew: cleared}), "clearing a request must not re-enqueue a label-only Job")
+
+	changed := cleared.DeepCopy()
+	changed.Annotations = map[string]string{"example.com/diagnostic": "updated"}
+	assert.True(t, pred.Update(event.UpdateEvent{ObjectOld: pending, ObjectNew: changed}), "a separate annotation change must still enqueue the Job")
+}
+
 func TestJobFailureReconciler_StaleJobCannotReplaceSavedRequest(t *testing.T) {
 	for _, observationWrite := range []string{"none", "record", "prune"} {
 		t.Run(observationWrite, func(t *testing.T) {
