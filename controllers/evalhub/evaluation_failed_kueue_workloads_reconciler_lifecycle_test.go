@@ -145,6 +145,43 @@ func TestKueueReconciler_Eviction_EmitsEventAndPatchesJobAndWorkload(t *testing.
 	assert.True(t, workloadAnnotated, "Workload should be annotated as reported")
 }
 
+func TestKueueReconciler_ResolvesBenchmarkID(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		annotation string
+		label      string
+		expected   string
+	}{
+		{"canonical annotation", "lcb:codegeneration_v6", "lcb-codegeneration_v6", "lcb:codegeneration_v6"},
+		{"legacy label", "", "arc_easy", "arc_easy"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, requests := capturingEvalHubServer(t)
+			job := evalHubEvaluationJob("eval-job-kueue-id", "tenant-ns", map[string]string{
+				evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
+				evalHubBenchmarkIDLabel: tc.label,
+			})
+			if tc.annotation == "" {
+				delete(job.Annotations, evalHubBenchmarkIDAnnotation)
+			} else {
+				job.Annotations[evalHubBenchmarkIDAnnotation] = tc.annotation
+			}
+			wl := inadmissibleWorkload("wl-kueue-id", job.Namespace, job.Name, job.UID, "insufficient quota")
+			eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+			fc := fake.NewClientBuilder().WithScheme(kueueLifecycleScheme(t)).WithObjects(eh, job, wl).Build()
+			r, _ := buildKueueReconciler(fc, job.Namespace)
+			result, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(wl)})
+			require.NoError(t, err)
+			require.Equal(t, ctrl.Result{}, result)
+			require.Len(t, requests, 1)
+			event := (<-requests).BenchmarkStatusEvent
+			require.NotNil(t, event)
+			assert.Equal(t, tc.expected, event.ID)
+			assert.Empty(t, event.Precondition)
+		})
+	}
+}
+
 func TestKueueReconciler_AlreadyRecordedFailure_PromotesWithoutRepost(t *testing.T) {
 	srv, requests := evalHubJobStateServer(t, `{"message":"The job can not be failed because it is 'failed'."}`, "failed")
 	job := evalHubEvaluationJob("eval-job-kueue-recorded", "tenant-ns", map[string]string{
