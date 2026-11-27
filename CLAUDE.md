@@ -16,7 +16,7 @@ make docker-buildx                  # Multi-arch build
 
 # Run locally (requires kubeconfig)
 make run                            # Default: TAS only
-ENABLED_SERVICES=TAS,LMES,EVALHUB make run
+ENABLED_SERVICES=TAS,EVALHUB make run
 
 # Code generation (run after changing api/ types or RBAC markers)
 make manifests                      # CRDs, RBAC, webhooks → config/
@@ -43,7 +43,6 @@ make test                           # All tests with envtest (cover.out)
 Run a specific controller's tests:
 ```bash
 go test -v ./controllers/evalhub/...
-go test -v ./controllers/lmes/... -run TestValidation
 ```
 
 ## Deploy
@@ -64,7 +63,7 @@ oc apply -f release/trustyai_bundle.yaml -n opendatahub
 - Health: `:8081/healthz`, `:8081/readyz`
 - Metrics: `:8080/metrics` (Prometheus)
 - Flags:
-  - `--enable-services TAS,LMES,EVALHUB` — which controllers to start
+  - `--enable-services TAS,EVALHUB` — which controllers to start
   - `--configmap <name>` — operator settings ConfigMap (default: `trustyai-service-operator-config`)
   - `--leader-elect` — HA mode
   - Zap flags via `--zap-log-level`, `--zap-devel`, etc.
@@ -88,20 +87,19 @@ func init() {
 | Name | Controller | CRD |
 |------|-----------|-----|
 | `TAS` | `controllers/tas/` | `TrustyAIService` (v1alpha1, v1) |
-| `LMES` | `controllers/lmes/` | `LMEvalJob` (v1alpha1) |
 | `EVALHUB` | `controllers/evalhub/` | `EvalHub` (v1alpha1, v1) |
 | `NEMO_GUARDRAILS` | `controllers/nemo_guardrails/` | `NemoGuardrail` (v1alpha1) |
-| `JOB_MGR` | `controllers/job_mgr/` | (watches external jobs) |
+
+`GORCH` and `LMES` are retired: they are still accepted on `--enable-services` for
+rollout-ordering safety and enable nothing.
 
 ### Project Structure
 
 ```
 cmd/
   main.go                           # Entrypoint: scheme registration, manager setup, flag parsing
-  lmes_driver/                      # LMES driver job entrypoint
 api/                                # CRD type definitions (kubebuilder markers)
   tas/v1alpha1/, tas/v1/            # TrustyAIService (with version conversion)
-  lmes/v1alpha1/                    # LMEvalJob
   evalhub/v1alpha1/, evalhub/v1/    # EvalHub (v1 is storage version)
   nemo_guardrails/v1alpha1/         # NemoGuardrail
   common/                           # Shared types (Condition, CABundle)
@@ -189,7 +187,7 @@ Tenant ConfigMap changes trigger reconciliation via a ConfigMap watch (`tenantCo
 
 Registers all API groups in order:
 - Kubernetes core (`clientgoscheme`)
-- TrustyAI: `tasv1alpha1`, `tasv1`, `lmesv1alpha1`, `evalhubv1alpha1`, `evalhubv1`, `nemoguardrailsv1alpha1`
+- TrustyAI: `tasv1alpha1`, `tasv1`, `evalhubv1alpha1`, `evalhubv1`, `nemoguardrailsv1alpha1`
 - External: `monitoringv1` (Prometheus), `kservev1alpha1`/`v1beta1`, `routev1` (OpenShift), `apiextensionsv1`, `kueuev1beta1`
 
 ### Key Dependencies

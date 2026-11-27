@@ -6,7 +6,7 @@ import (
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers"
 )
 
-func TestEnabledServicesSetIgnoresGORCH(t *testing.T) {
+func TestEnabledServicesSetIgnoresRetiredServices(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -21,6 +21,21 @@ func TestEnabledServicesSetIgnoresGORCH(t *testing.T) {
 			name:     "GORCH mixed with valid services is dropped",
 			input:    "TAS,GORCH",
 			expected: controllers.EnabledServices{"TAS"},
+		},
+		{
+			name:     "LMES alone enables nothing",
+			input:    "LMES",
+			expected: controllers.EnabledServices{},
+		},
+		{
+			name:     "LMES mixed with valid services is dropped",
+			input:    "TAS,LMES",
+			expected: controllers.EnabledServices{"TAS"},
+		},
+		{
+			name:     "a service list still carrying LMES starts the remaining services",
+			input:    "TAS,LMES,EVALHUB,NEMO_GUARDRAILS",
+			expected: controllers.EnabledServices{"TAS", "EVALHUB", "NEMO_GUARDRAILS"},
 		},
 	}
 

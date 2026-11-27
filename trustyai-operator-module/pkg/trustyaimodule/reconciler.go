@@ -281,7 +281,6 @@ func effectiveEnabledServices(es platformv1alpha1.EnabledServices, mcpMode bool)
 	if es == (platformv1alpha1.EnabledServices{}) {
 		return platformv1alpha1.EnabledServices{
 			TAS:            true,
-			LMES:           true,
 			EvalHub:        true,
 			NemoGuardrails: true,
 		}
@@ -325,9 +324,6 @@ func (r *TrustyAIModuleReconciler) buildHealthCheckers(es platformv1alpha1.Enabl
 	}
 	if es.TAS {
 		checkers = append(checkers, NewOperandHealthChecker("TAS", r.Client))
-	}
-	if es.LMES {
-		checkers = append(checkers, NewOperandHealthChecker("LMES", r.Client))
 	}
 	if es.EvalHub {
 		checkers = append(checkers, NewOperandHealthChecker("EVALHUB", r.Client))
