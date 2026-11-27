@@ -61,6 +61,7 @@ func (r *TrustyAIServiceReconciler) validateDatabaseSecret(secret *corev1.Secret
 		"databaseService",
 		"databasePort",
 		"databaseName",
+		"databaseGeneration",
 	}
 
 	for _, key := range mandatoryKeys {

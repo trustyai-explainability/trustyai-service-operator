@@ -74,7 +74,7 @@ spec:
 ```
 
 The referenced Secret must continue to provide `databaseKind`,
-`databaseUsername`, `databasePassword`, `databaseService`, `databasePort`, and
-`databaseName`. Keep credentials, database connection details, and TLS material
+`databaseUsername`, `databasePassword`, `databaseService`, `databasePort`,
+`databaseName`, and `databaseGeneration`. Keep credentials, database connection details, and TLS material
 in their existing Secret-backed configuration; use the tuning ConfigMap only
 for nonsecret tuning values.
