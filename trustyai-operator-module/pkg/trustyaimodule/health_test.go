@@ -78,6 +78,24 @@ func TestOperandHealthCheckerTreatsNoInstancesAsHealthy(t *testing.T) {
 	}
 }
 
+func TestLMEvalJobLifecycleDoesNotDegradeModule(t *testing.T) {
+	for _, state := range []string{"", "New", "Scheduled", "Running", "Complete", "Cancelled", "Suspended"} {
+		for _, reason := range []string{"", "Succeeded", "Failed", "Cancelled"} {
+			t.Run(state+"/"+reason, func(t *testing.T) {
+				job := &unstructured.Unstructured{Object: map[string]interface{}{
+					"apiVersion": "trustyai.opendatahub.io/v1alpha1", "kind": "LMEvalJob",
+					"metadata": map[string]interface{}{"name": "job", "namespace": "team-a"},
+					"status":   map[string]interface{}{"state": state, "reason": reason},
+				}}
+				result := NewOperandHealthChecker("LMES", fake.NewClientBuilder().WithObjects(job).Build()).Check(context.Background())
+				if !result.Healthy || result.Degraded || result.Unknown {
+					t.Fatalf("job lifecycle must not affect service availability: %#v", result)
+				}
+			})
+		}
+	}
+}
+
 func testOperand(kind, version, namespace, name, ready, message string) *unstructured.Unstructured {
 	return testOperandWithReason(kind, version, namespace, name, ready, "", message)
 }
