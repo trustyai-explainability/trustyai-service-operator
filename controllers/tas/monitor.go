@@ -25,7 +25,7 @@ const (
 	metricsCABundleConfigMapSuffix = "-metrics-ca-bundle"
 	metricsCABundleConfigMapKey    = "service-ca.crt"
 	metricsReaderSuffix            = "-metrics-reader"
-	metricsReaderTokenSuffix       = "-metrics-reader-token"
+	metricsReaderTokenSuffix       = "-metrics-reader-token" // #nosec G101 -- a name suffix, not a credential
 )
 
 type ServiceMonitorConfig struct {

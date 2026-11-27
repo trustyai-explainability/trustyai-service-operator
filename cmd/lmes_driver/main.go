@@ -164,11 +164,14 @@ func copyExec(destination string) (err error) {
 	if err != nil {
 		return err
 	}
-	src, err := os.Open(path)
+	// path comes from os.Executable(), not from user input
+	src, err := os.Open(path) // #nosec G304 -- path comes from os.Executable(), not from user input
 	if err != nil {
 		return err
 	}
 	defer src.Close()
+	// #nosec G302 G304 -- the copy replaces the driver binary inside the shared volume of the
+	// job pod, so it must keep an executable mode, and destination is the operator-passed path
 	dst, err := os.OpenFile(destination, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o555) // 0o555 -> readable and executable by all
 	if err != nil {
 		return err

@@ -32,6 +32,7 @@ func fipsModeEnabled() bool {
 }
 
 func kernelFIPSModeEnabled(path string) bool {
+	// #nosec G304 -- path is the kernel FIPS flag; it is a parameter only so tests can point it at a fixture
 	contents, err := os.ReadFile(path)
 	return err == nil && strings.TrimSpace(string(contents)) == "1"
 }

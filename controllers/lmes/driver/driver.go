@@ -32,6 +32,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/go-logr/logr"
@@ -153,9 +154,14 @@ func (d *driverImpl) Run() error {
 
 	// dump stderr and stdout to the console
 	var toConsole = func(file string) {
-		if data, err := os.ReadFile(file); err == nil {
-			os.Stdout.Write(data)
+		// #nosec G304 -- file is always joined onto d.Option.OutputPath, the driver's own output directory
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return
 		}
+		// The console dump is diagnostic only: the job status already carries the outcome,
+		// so a failed write must not change the result of the run.
+		_, _ = os.Stdout.Write(data)
 	}
 	toConsole(filepath.Join(d.Option.OutputPath, "stdout.log"))
 	// TODO: Remove so that log is not printed again at job's completion
@@ -283,6 +289,8 @@ func (d *driverImpl) uploadToOCI() error {
 		return nil
 	})
 
+	// #nosec G204 G702 -- scriptPath is a fixed driver-owned script; registryFromEnv and
+	// outputPath come from the LMEvalJob spec, whose owner already controls the command run in the pod
 	output, err := exec.Command("python", scriptPath, registryFromEnv, outputPath).Output()
 	fmt.Println(string(output))
 	if err != nil {
@@ -314,7 +322,12 @@ func (d *driverImpl) setupComm() error {
 
 	serve := http.NewServeMux()
 	d.comm = &driverComm{
-		server:     &http.Server{Handler: serve},
+		server: &http.Server{
+			Handler: serve,
+			// The listener is a loopback-only status endpoint; bound header reads so a
+			// stalled client cannot hold a connection open indefinitely.
+			ReadHeaderTimeout: 5 * time.Second,
+		},
 		connection: make(chan int),
 		port:       d.Option.CommPort,
 	}
@@ -324,20 +337,23 @@ func (d *driverImpl) setupComm() error {
 	serve.HandleFunc(GetStatusURI, func(w http.ResponseWriter, _ *http.Request) {
 		status, err := json.Marshal(d.status)
 		if err == nil {
-			w.Write(status)
+			// The status endpoint has no recovery path if the client disappears mid-response.
+			_, _ = w.Write(status)
 		} else {
-			w.Write([]byte(fmt.Sprintf(`{"err": "%s"}`, err.Error())))
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"err": "%s"}`, err.Error())))
 		}
 	})
 
 	// handle the `Shutdown` API: tear down the communication server.
 	serve.HandleFunc(ShutdownURI, func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(`{"msg": "ok"}`))
+		_, _ = w.Write([]byte(`{"msg": "ok"}`))
 		d.comm.notifyShutdownWait()
 	})
 
 	go func() {
-		d.comm.serve()
+		if err := d.comm.serve(); err != nil {
+			d.Option.Logger.Error(err, "driver communication server stopped")
+		}
 	}()
 
 	return nil
@@ -358,7 +374,8 @@ func (dc *driverComm) serve() error {
 
 func (dc *driverComm) close() {
 	if dc.server != nil && dc.connection != nil {
-		dc.server.Shutdown(context.Background())
+		// Shutdown is best effort: the process is exiting and the listener is loopback-only.
+		_ = dc.server.Shutdown(context.Background())
 		close(dc.connection)
 	}
 }
@@ -440,6 +457,8 @@ func (d *driverImpl) exec() error {
 	mwriter := io.MultiWriter(stderr, PodLogAndPipeWriter{pw})
 	scanner := bufio.NewScanner(pr)
 
+	// #nosec G204 -- the command and its arguments are the LMEvalJob's own spec, which the
+	// job owner already controls; the driver runs trusted workloads on their behalf
 	executor := exec.Command(d.Option.Args[0], args...)
 	stdin, err := executor.StdinPipe()
 	if err != nil {
@@ -452,17 +471,22 @@ func (d *driverImpl) exec() error {
 
 	executor.Env = env
 
+	// The job outcome is reported through the harness' exit status and the captured
+	// logs, so a failure to flush or close one of these descriptors is not actionable.
 	var freeRes = func() {
-		stdin.Close()
-		stdout.Sync()
-		stdout.Close()
-		stderr.Sync()
-		stderr.Close()
-		pr.Close()
+		_ = stdin.Close()
+		_ = stdout.Sync()
+		_ = stdout.Close()
+		_ = stderr.Sync()
+		_ = stderr.Close()
+		_ = pr.Close()
 	}
 
 	// temporally fix the trust_remote_code issue
-	io.WriteString(stdin, "y\n")
+	if _, err := io.WriteString(stdin, "y\n"); err != nil {
+		freeRes()
+		return err
+	}
 	if err := executor.Start(); err != nil {
 		freeRes()
 		return err
@@ -545,13 +569,24 @@ func (d *driverImpl) updateProgressStatus(state lmesv1alpha1.JobState, reason lm
 func (d *driverImpl) getResults() (string, error) {
 	var results string
 	pattern := "*result*.json"
-	if err := filepath.WalkDir(d.Option.OutputPath, func(path string, dir fs.DirEntry, err error) error {
+
+	// Open the output directory once and resolve every read through it, so the walk
+	// cannot be redirected outside OutputPath by a path swapped in after the walk
+	// began (the walk-versus-open race).
+	root, err := os.OpenRoot(d.Option.OutputPath)
+	if err != nil {
+		return "", err
+	}
+	defer root.Close() //nolint:errcheck
+
+	rootFS := root.FS()
+	if err := fs.WalkDir(rootFS, ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		if matched, _ := filepath.Match(pattern, filepath.Base(path)); matched {
-			bytes, err := os.ReadFile(path)
+		if matched, _ := filepath.Match(pattern, entry.Name()); matched {
+			bytes, err := fs.ReadFile(rootFS, path)
 			if err != nil {
 				d.Option.Logger.Error(err, "failed to retrieve the results")
 			} else {
@@ -623,7 +658,7 @@ func (d *driverImpl) createTaskRecipes() error {
 				fmt.Sprintf("%s_%d", TaskRecipePrefix, i),
 				taskRecipe,
 			)),
-			0666,
+			0o600,
 		)
 		if err != nil {
 			return err
@@ -669,13 +704,13 @@ func createCustomArtifact(rootDir, artifactName, artifactValue string) error {
 		dirs = append(dirs, tokens[0:len(tokens)-1]...)
 	}
 	fullPath := filepath.Join(dirs...)
-	if err := os.MkdirAll(fullPath, 0770); err != nil {
+	if err := os.MkdirAll(fullPath, 0o750); err != nil {
 		return err
 	}
 	return os.WriteFile(
 		filepath.Join(fullPath, fmt.Sprintf("%s.json", tokens[len(tokens)-1])),
 		[]byte(artifactValue),
-		0666,
+		0o600,
 	)
 }
 
@@ -685,7 +720,7 @@ func createDirectory(path string) error {
 		return fmt.Errorf("%s is a file. can not create a directory", path)
 	}
 	if os.IsNotExist(err) {
-		return os.MkdirAll(path, 0770)
+		return os.MkdirAll(path, 0o750)
 	}
 	return nil
 }

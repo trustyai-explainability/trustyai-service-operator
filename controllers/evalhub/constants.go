@@ -55,13 +55,13 @@ const (
 	configMapKubeRBACProxyMemoryLimitKey   = "kubeRBACProxyMemoryLimit"
 
 	// TLS configuration (OpenShift service serving certificates)
-	tlsSecretMountPath = "/etc/tls/private"
+	tlsSecretMountPath = "/etc/tls/private" // #nosec G101 -- a mount path, not a credential
 	tlsCertFile        = "tls.crt"
 	tlsKeyFile         = "tls.key"
 
 	// Database configuration
-	dbSecretVolumeName = "evalhub-db-secret"
-	dbSecretMountPath  = "/etc/evalhub/secrets"
+	dbSecretVolumeName = "evalhub-db-secret"    // #nosec G101 -- a volume name, not a credential
+	dbSecretMountPath  = "/etc/evalhub/secrets" // #nosec G101 -- a mount path, not a credential
 	dbSecretKey        = "db-url"
 	dbDriver           = "pgx"
 	dbDefaultMaxOpen   = 25
@@ -88,7 +88,7 @@ const (
 
 	// MLFlow projected token configuration
 	mlflowTokenVolumeName = "mlflow-token"
-	mlflowTokenMountPath  = "/var/run/secrets/mlflow"
+	mlflowTokenMountPath  = "/var/run/secrets/mlflow" // #nosec G101 -- a mount path for a projected token, not a credential
 	mlflowTokenFile       = "token"
 	mlflowTokenExpiration = 3600 // seconds
 

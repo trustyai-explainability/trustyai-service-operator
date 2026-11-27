@@ -203,6 +203,7 @@ func (r *EvalHubReconciler) generateConfigData(ctx context.Context, instance *ev
 			TerminationFile: "/tmp/termination-log",
 			EvalInitImage:   evalHubImage,
 		},
+		// #nosec G101 -- environment variable names and the config keys they map to, no credential values
 		EnvMappings: EnvMappings{
 			"PORT":                        "service.port",
 			"API_HOST":                    "service.host",

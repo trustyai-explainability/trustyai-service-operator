@@ -147,7 +147,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 				"The operator does not assume a default database.",
 			corev1.ConditionFalse)
 		instance.Status.Phase = "Error"
-		r.Status().Update(ctx, instance)
+		r.recordErrorStatus(ctx, instance)
 		r.EventRecorder.Event(instance, corev1.EventTypeWarning, "DatabaseConfigMissing",
 			"Database configuration is required but not provided in spec.database")
 		tracing.SetSpanOutcome(span, "validation_error")
@@ -161,7 +161,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 			"spec.database.secret is required when type is \"postgresql\"",
 			corev1.ConditionFalse)
 		instance.Status.Phase = "Error"
-		r.Status().Update(ctx, instance)
+		r.recordErrorStatus(ctx, instance)
 		r.EventRecorder.Event(instance, corev1.EventTypeWarning, "DatabaseConfigInvalid",
 			"PostgreSQL database type requires spec.database.secret to reference a Secret with a db-url key")
 		tracing.SetSpanOutcome(span, "validation_error")
@@ -214,25 +214,25 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		if err := r.createServiceAccount(ctx, instance); err != nil {
 			log.Error(err, "Failed to create ServiceAccount")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to create ServiceAccount: %v", err), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			r.recordErrorStatus(ctx, instance)
 			return err
 		}
 		if err := r.createJobsServiceAccount(ctx, instance, instance.Namespace); err != nil {
 			log.Error(err, "Failed to create job ServiceAccount")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to create job ServiceAccount: %v", err), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			r.recordErrorStatus(ctx, instance)
 			return err
 		}
 		if err := r.reconcileTenantNamespaces(ctx, instance); err != nil {
 			log.Error(err, "Failed to reconcile tenant namespaces")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile tenant namespaces: %v", err), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			r.recordErrorStatus(ctx, instance)
 			return err
 		}
 		if err := r.reconcileSingleTenancyRoles(ctx, instance); err != nil {
 			log.Error(err, "Failed to reconcile single-tenancy roles")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile single-tenancy roles: %v", err), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			r.recordErrorStatus(ctx, instance)
 			return err
 		}
 		return nil
@@ -248,19 +248,19 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		if generateErr != nil {
 			log.Error(generateErr, "Failed to generate ConfigMap data")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to generate ConfigMap data: %v", generateErr), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			r.recordErrorStatus(ctx, instance)
 			return generateErr
 		}
 		if err := r.reconcileConfigMapWithData(ctx, instance, evalHubConfigData); err != nil {
 			log.Error(err, "Failed to reconcile ConfigMap")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile ConfigMap: %v", err), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			r.recordErrorStatus(ctx, instance)
 			return err
 		}
 		if err := r.reconcileServiceCAConfigMap(ctx, instance); err != nil {
 			log.Error(err, "Failed to reconcile Service CA ConfigMap")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Service CA ConfigMap: %v", err), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			r.recordErrorStatus(ctx, instance)
 			return err
 		}
 
@@ -268,7 +268,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		if err := r.reconcileMLflowCABundleConfigMap(ctx, instance); err != nil {
 			log.Error(err, "Failed to reconcile MLflow CA bundle ConfigMap")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile MLflow CA bundle ConfigMap: %v", err), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			r.recordErrorStatus(ctx, instance)
 			return err
 		}
 
@@ -277,7 +277,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		if reconcileErr != nil {
 			log.Error(reconcileErr, "Failed to reconcile Provider ConfigMaps")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Provider ConfigMaps: %v", reconcileErr), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			r.recordErrorStatus(ctx, instance)
 			return reconcileErr
 		}
 
@@ -287,7 +287,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 			log.Error(reconcileErr, "Failed to reconcile Collection ConfigMaps")
 			instance.SetStatus("CollectionOverridesReady", "RenderFailed", reconcileErr.Error(), corev1.ConditionFalse)
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Collection ConfigMaps: %v", reconcileErr), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			r.recordErrorStatus(ctx, instance)
 			return reconcileErr
 		}
 		instance.SetStatus("CollectionOverridesReady", "Rendered", fmt.Sprintf("Rendered %d collection override(s)", len(instance.Spec.CollectionOverrides)), corev1.ConditionTrue)
@@ -296,14 +296,14 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		if reconcileErr != nil {
 			log.Error(reconcileErr, "Failed to reconcile tenant Provider ConfigMaps")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile tenant Provider ConfigMaps: %v", reconcileErr), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			r.recordErrorStatus(ctx, instance)
 			return reconcileErr
 		}
 		tenantCollectionCMNames, reconcileErr = r.reconcileTenantCollectionConfigMaps(ctx, instance)
 		if reconcileErr != nil {
 			log.Error(reconcileErr, "Failed to reconcile tenant Collection ConfigMaps")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile tenant Collection ConfigMaps: %v", reconcileErr), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			r.recordErrorStatus(ctx, instance)
 			return reconcileErr
 		}
 		return nil
@@ -324,7 +324,7 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		if err := r.reconcileDeploymentWithConfigData(ctx, instance, providerCMNames, collectionCMNames, tenantProviderCMNames, tenantCollectionCMNames, evalHubConfigData); err != nil {
 			log.Error(err, "Failed to reconcile Deployment")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Deployment: %v", err), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			r.recordErrorStatus(ctx, instance)
 			return err
 		}
 		return nil
@@ -337,13 +337,13 @@ func (r *EvalHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		if err := r.reconcileService(ctx, instance); err != nil {
 			log.Error(err, "Failed to reconcile Service")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile Service: %v", err), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			r.recordErrorStatus(ctx, instance)
 			return err
 		}
 		if err := r.reconcileMetricsService(ctx, instance); err != nil {
 			log.Error(err, "Failed to reconcile metrics Service")
 			instance.SetStatus("Ready", "Error", fmt.Sprintf("Failed to reconcile metrics Service: %v", err), corev1.ConditionFalse)
-			r.Status().Update(ctx, instance)
+			r.recordErrorStatus(ctx, instance)
 			return err
 		}
 		if r.isServiceMonitorSupported() {
@@ -655,6 +655,17 @@ func (r *EvalHubReconciler) deleteClusterRoleBinding(ctx context.Context, crbNam
 	} else {
 		// Error getting ClusterRoleBinding
 		return err
+	}
+}
+
+// recordErrorStatus persists the failure status that the caller just set on the
+// EvalHub instance. It is only used on paths that are already returning the error
+// that caused the failure, so a status write failure is logged instead of
+// replacing that cause with a second, less useful error.
+func (r *EvalHubReconciler) recordErrorStatus(ctx context.Context, instance *evalhubv1.EvalHub) {
+	if err := r.Status().Update(ctx, instance); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to record EvalHub failure status",
+			"namespace", instance.Namespace, "name", instance.Name)
 	}
 }
 
