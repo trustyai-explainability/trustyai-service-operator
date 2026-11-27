@@ -62,6 +62,14 @@ func (r *OperandHealthChecker) Check(ctx context.Context) ServiceHealthResult {
 		return ServiceHealthResult{Reason: fmt.Sprintf("failed to list operand instances: %v", err), Unknown: true}
 	}
 
+	// LMEvalJobs are finite user workloads, not persistent serving instances.
+	// Their lifecycle (including failed evaluations) does not describe whether
+	// LMES is available. Still list them above so API/RBAC failures stay Unknown.
+	// In particular they expose status.state, not a Ready condition or phase.
+	if r.definition.serviceName == "LMES" {
+		return ServiceHealthResult{Healthy: true, Reason: "Evaluation job lifecycle does not affect service availability"}
+	}
+
 	if len(operands.Items) == 0 {
 		return ServiceHealthResult{
 			Healthy: true,
