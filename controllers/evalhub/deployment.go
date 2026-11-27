@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"strings"
 
 	evalhubv1 "github.com/trustyai-explainability/trustyai-service-operator/api/evalhub/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
@@ -17,6 +18,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+)
+
+const (
+	configMapPostProcessorImageKey = "evalHubPostProcessorImage"
+	postProcessorImageEnv          = "EVALHUB_POST_PROCESSING_IMAGE"
 )
 
 // reconcileDeployment creates or updates the Deployment for EvalHub.
@@ -116,7 +122,8 @@ func (r *EvalHubReconciler) buildDeploymentSpecWithConfigData(ctx context.Contex
 		return appsv1.DeploymentSpec{}, fmt.Errorf("resolving kube-rbac-proxy image: %w", err)
 	}
 
-	settings := mergeEvalHubDeploymentOperatorSettings(ctx, r.readOperatorConfigMapData(ctx))
+	operatorConfig := r.readOperatorConfigMapData(ctx)
+	settings := mergeEvalHubDeploymentOperatorSettings(ctx, operatorConfig)
 
 	// Build default environment variables
 	// EvalHub listens on loopback only; kube-rbac-proxy terminates TLS on servicePort and enforces SAR (auth.yaml).
@@ -183,6 +190,10 @@ func (r *EvalHubReconciler) buildDeploymentSpecWithConfigData(ctx context.Contex
 			Name:  "METRICS_HOST",
 			Value: "0.0.0.0",
 		},
+	}
+
+	if image := strings.TrimSpace(operatorConfig[configMapPostProcessorImageKey]); image != "" {
+		defaultEnvVars = append(defaultEnvVars, corev1.EnvVar{Name: postProcessorImageEnv, Value: image})
 	}
 
 	// Merge environment variables with CR values taking precedence.
