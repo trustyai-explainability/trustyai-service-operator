@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // jobFailureLifecycleScheme builds the minimal scheme for job failure reconciler lifecycle tests.
@@ -54,7 +56,7 @@ func noopEvalHubServer(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// capturingEvalHubServer records EvalHub status event requests and returns 204.
+// capturingEvalHubServer records status events and acknowledges their delivery.
 func capturingEvalHubServer(t *testing.T) (*httptest.Server, <-chan statusEventPayload) {
 	t.Helper()
 	requests := make(chan statusEventPayload, 10)
@@ -65,6 +67,10 @@ func capturingEvalHubServer(t *testing.T) (*httptest.Server, <-chan statusEventP
 			return
 		}
 		requests <- payload
+		if payload.BenchmarkStatusEvent != nil && payload.BenchmarkStatusEvent.Precondition == failurePreconditionNonterminal {
+			_, _ = fmt.Fprint(w, `{"outcome":"applied"}`)
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	t.Cleanup(srv.Close)
@@ -82,7 +88,7 @@ func readyEvalHubCR(name, ns, url string) *evalhubv1.EvalHub {
 	}
 }
 
-// evalHubEvaluationJob builds a failed Job with the mandatory EvalHub labels.
+// evalHubEvaluationJob builds a Job with the mandatory EvalHub labels.
 // extra is merged into the label map (use it to add instance/phase labels per test).
 func evalHubEvaluationJob(name, ns string, extra map[string]string) *batchv1.Job {
 	labels := map[string]string{
@@ -102,11 +108,6 @@ func evalHubEvaluationJob(name, ns string, extra map[string]string) *batchv1.Job
 			UID:         types.UID("uid-" + name),
 			Labels:      labels,
 			Annotations: map[string]string{evalHubBenchmarkIDAnnotation: "inspect/docvqa"},
-		},
-		Status: batchv1.JobStatus{
-			Conditions: []batchv1.JobCondition{{
-				Type: batchv1.JobFailed, Status: corev1.ConditionTrue,
-			}},
 		},
 	}
 }
@@ -131,6 +132,16 @@ func oomKilledAdapterPod(jobName, ns string, jobUID types.UID) *corev1.Pod {
 			}},
 		},
 	}
+}
+
+// fatalWaitingAdapterPod builds a Pod with a pre-start failure that can be reported before the Job is terminal.
+func fatalWaitingAdapterPod(jobName, ns string, jobUID types.UID) *corev1.Pod {
+	pod := oomKilledAdapterPod(jobName, ns, jobUID)
+	pod.Status.Phase = corev1.PodPending
+	pod.Status.ContainerStatuses[0].State = corev1.ContainerState{
+		Waiting: &corev1.ContainerStateWaiting{Reason: waitingReasonCreateContainerConfigError},
+	}
+	return pod
 }
 
 // errImagePullInitPod builds a Pod owned by the given Job where the init container has ErrImagePull.
@@ -322,6 +333,7 @@ func TestJobFailureReconciler_OOMKill_EmitsEventAndPatchesJob(t *testing.T) {
 		evalHubInstanceNameLabel:      "evalhub-1",
 		evalHubInstanceNamespaceLabel: "control-ns",
 	})
+	job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}
 	pod := oomKilledAdapterPod(job.Name, ns, job.UID)
 	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
 
@@ -353,6 +365,9 @@ func TestJobFailureReconciler_OOMKill_EmitsEventAndPatchesJob(t *testing.T) {
 	case payload := <-requests:
 		require.NotNil(t, payload.BenchmarkStatusEvent)
 		assert.Equal(t, "inspect/docvqa", payload.BenchmarkStatusEvent.ID)
+		assert.Equal(t, failurePreconditionNonterminal, payload.BenchmarkStatusEvent.Precondition)
+		require.NotNil(t, payload.BenchmarkStatusEvent.ErrorMessage)
+		assert.Contains(t, payload.BenchmarkStatusEvent.ErrorMessage.Message, "OOMKilled")
 	default:
 		t.Fatal("expected EvalHub status event POST but none was captured")
 	}
@@ -375,46 +390,40 @@ func TestJobFailureReconciler_OOMKill_EmitsEventAndPatchesJob(t *testing.T) {
 	assert.NoError(t, err, "job should be retained after successful failure sync")
 }
 
-// TestJobFailureReconciler_MissingBenchmarkAnnotation_SkipsPost verifies that the operator does not
-// fall back to the sanitized benchmark_id label when the original EvalHub benchmark ID annotation is missing.
-func TestJobFailureReconciler_MissingBenchmarkAnnotation_SkipsPost(t *testing.T) {
-	srv, requests := capturingEvalHubServer(t)
-	sc := jobFailureLifecycleScheme(t)
-	ns := "tenant-ns"
+func TestJobFailureReconciler_UsesLegacyBenchmarkLabel(t *testing.T) {
+	for _, legacyID := range []string{"arc_easy", ""} {
+		name := "with label"
+		if legacyID == "" {
+			name = "without label"
+		}
+		t.Run(name, func(t *testing.T) {
+			srv, requests := capturingEvalHubServer(t)
+			job := evalHubEvaluationJob("legacy-job", "tenant-ns", map[string]string{
+				evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
+				evalHubBenchmarkIDLabel: legacyID,
+			})
+			job.Annotations = nil
+			job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}
+			eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+			fc := fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).WithObjects(eh, job).Build()
+			r, rec := buildJobFailureReconciler(fc, job.Namespace)
 
-	job := evalHubEvaluationJob("eval-job-missing-benchmark-annotation", ns, map[string]string{
-		evalHubInstanceNameLabel:      "evalhub-1",
-		evalHubInstanceNamespaceLabel: "control-ns",
-	})
-	job.Annotations = nil
-	pod := oomKilledAdapterPod(job.Name, ns, job.UID)
-	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
-
-	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(eh, job, pod).Build()
-	r, rec := buildJobFailureReconciler(fc, ns)
-
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Namespace: ns, Name: job.Name},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, ctrl.Result{}, result)
-
-	select {
-	case payload := <-requests:
-		t.Fatalf("expected no EvalHub status event POST without benchmark annotation, got: %#v", payload)
-	default:
+			ctx := context.Background()
+			result, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(job)})
+			require.NoError(t, err)
+			require.Equal(t, ctrl.Result{}, result)
+			if legacyID == "" {
+				assert.Empty(t, requests)
+				assert.Empty(t, rec.Events)
+				return
+			}
+			require.NotEmpty(t, requests)
+			payload := <-requests
+			require.NotNil(t, payload.BenchmarkStatusEvent)
+			assert.Equal(t, legacyID, payload.BenchmarkStatusEvent.ID)
+			assert.Equal(t, failurePreconditionNonterminal, payload.BenchmarkStatusEvent.Precondition)
+		})
 	}
-
-	select {
-	case ev := <-rec.Events:
-		t.Fatalf("expected no Kubernetes event without benchmark annotation, got: %s", ev)
-	default:
-	}
-
-	var persisted batchv1.Job
-	require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: job.Name}, &persisted))
-	assert.Empty(t, persisted.Labels[labelEvaluationPhase])
-	assert.Empty(t, persisted.Annotations[annotationFailureReported])
 }
 
 // TestJobFailureReconciler_ErrImagePull_DoesNotEmitEvent verifies a transient
@@ -1251,7 +1260,7 @@ func TestJobFailureReconciler_PostAlreadyTerminal_PromotesWithoutRepost(t *testi
 		evalHubInstanceNameLabel:      "evalhub-1",
 		evalHubInstanceNamespaceLabel: "control-ns",
 	})
-	pod := oomKilledAdapterPod(job.Name, ns, job.UID)
+	pod := fatalWaitingAdapterPod(job.Name, ns, job.UID)
 	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
 
 	var patchedLabels map[string]string
@@ -1297,7 +1306,7 @@ func TestJobFailureReconciler_PostAlreadyTerminal_PromotesWithoutRepost(t *testi
 // that an Event-list failure during one pod's volume-mount check does not discard a
 // failure already confirmed for another pod.
 func TestJobFailureReconciler_MountLookupError_DoesNotDiscardConfirmedFailure(t *testing.T) {
-	srv := noopEvalHubServer(t)
+	srv, _ := capturingEvalHubServer(t)
 	sc := jobFailureLifecycleScheme(t)
 	ns := "tenant-ns"
 
@@ -1305,6 +1314,7 @@ func TestJobFailureReconciler_MountLookupError_DoesNotDiscardConfirmedFailure(t 
 		evalHubInstanceNameLabel:      "evalhub-1",
 		evalHubInstanceNamespaceLabel: "control-ns",
 	})
+	job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}
 	oomPod := oomKilledAdapterPod(job.Name, ns, job.UID)
 	mountPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1919,7 +1929,7 @@ func TestJobFailureReconciler_PostPartiallyFailed_BenchmarkCompleted_DoesNotProm
 		evalHubInstanceNameLabel:      "evalhub-1",
 		evalHubInstanceNamespaceLabel: "control-ns",
 	})
-	pod := oomKilledAdapterPod(job.Name, ns, job.UID)
+	pod := fatalWaitingAdapterPod(job.Name, ns, job.UID)
 	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
 
 	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(eh, job, pod).Build()
@@ -1957,7 +1967,7 @@ func TestJobFailureReconciler_PostPartiallyFailed_BenchmarkFailed_Promotes(t *te
 		evalHubInstanceNameLabel:      "evalhub-1",
 		evalHubInstanceNamespaceLabel: "control-ns",
 	})
-	pod := oomKilledAdapterPod(job.Name, ns, job.UID)
+	pod := fatalWaitingAdapterPod(job.Name, ns, job.UID)
 	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
 
 	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(eh, job, pod).Build()
@@ -1995,7 +2005,7 @@ func TestJobFailureReconciler_PostPartiallyFailed_StateLookupFails_Requeues(t *t
 		evalHubInstanceNameLabel:      "evalhub-1",
 		evalHubInstanceNamespaceLabel: "control-ns",
 	})
-	pod := oomKilledAdapterPod(job.Name, ns, job.UID)
+	pod := fatalWaitingAdapterPod(job.Name, ns, job.UID)
 	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
 
 	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(eh, job, pod).Build()
@@ -2059,7 +2069,7 @@ func TestJobFailureReconciler_PostPartiallyFailed_JobNotFound_DoesNotPromote(t *
 		evalHubInstanceNameLabel:      "evalhub-1",
 		evalHubInstanceNamespaceLabel: "control-ns",
 	})
-	pod := oomKilledAdapterPod(job.Name, ns, job.UID)
+	pod := fatalWaitingAdapterPod(job.Name, ns, job.UID)
 	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
 
 	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(eh, job, pod).Build()
@@ -2153,7 +2163,7 @@ func TestJobFailureReconciler_PostUnknownConflict_Requeues(t *testing.T) {
 		evalHubInstanceNameLabel:      "evalhub-1",
 		evalHubInstanceNamespaceLabel: "control-ns",
 	})
-	pod := oomKilledAdapterPod(job.Name, ns, job.UID)
+	pod := fatalWaitingAdapterPod(job.Name, ns, job.UID)
 	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
 
 	fc := fake.NewClientBuilder().WithScheme(sc).WithObjects(eh, job, pod).Build()
@@ -2190,7 +2200,7 @@ func TestJobFailureReconciler_SupersededCleanupPatchFailure_Requeues(t *testing.
 		evalHubInstanceNameLabel:      "evalhub-1",
 		evalHubInstanceNamespaceLabel: "control-ns",
 	})
-	pod := oomKilledAdapterPod(job.Name, ns, job.UID)
+	pod := fatalWaitingAdapterPod(job.Name, ns, job.UID)
 	eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
 
 	var failedRevert bool
@@ -2269,7 +2279,7 @@ func TestJobFailureReconciler_PostCancelled_ChecksBenchmarkState(t *testing.T) {
 				job := evalHubEvaluationJob("eval-job-cancelled", "tenant-ns", map[string]string{
 					evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
 				})
-				pod := oomKilledAdapterPod(job.Name, job.Namespace, job.UID)
+				pod := fatalWaitingAdapterPod(job.Name, job.Namespace, job.UID)
 				eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
 				fc := fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).WithObjects(eh, job, pod).Build()
 				r, rec := buildJobFailureReconciler(fc, job.Namespace)
@@ -2506,7 +2516,7 @@ func TestJobFailureReconciler_UncertainReportSurvivesPodRecovery(t *testing.T) {
 			job := evalHubEvaluationJob("eval-job-uncertain", "tenant-ns", map[string]string{
 				evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
 			})
-			pod := oomKilledAdapterPod(job.Name, job.Namespace, job.UID)
+			pod := fatalWaitingAdapterPod(job.Name, job.Namespace, job.UID)
 			eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
 			failMarkers := outcome == "lost markers"
 			markerFailures := 0
@@ -2547,7 +2557,7 @@ func TestJobFailureReconciler_UncertainReportSurvivesPodRecovery(t *testing.T) {
 			assert.Equal(t, http.MethodGet, <-calls, "confirmed acceptance must not POST again")
 			require.NoError(t, fc.Get(context.Background(), req.NamespacedName, &persisted))
 			assert.Equal(t, labelEvaluationPhaseFailed, persisted.Labels[labelEvaluationPhase])
-			assert.Contains(t, persisted.Annotations[annotationEvaluationStatus], "OOMKilled")
+			assert.Contains(t, persisted.Annotations[annotationEvaluationStatus], waitingReasonCreateContainerConfigError)
 			assert.NotContains(t, persisted.Annotations, annotationFailureRequest)
 			assert.NotContains(t, persisted.Annotations, annotationFailurePending)
 			assert.Len(t, rec.Events, 1)
@@ -2693,6 +2703,7 @@ func TestJobFailureReconciler_AssessmentUsesOneSnapshot(t *testing.T) {
 
 func TestJobFailureReconciler_RequestUpdatesDoNotLoop(t *testing.T) {
 	job := evalHubEvaluationJob("eval-job-request-predicate", "tenant-ns", nil)
+	job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}
 	r, _ := buildJobFailureReconciler(fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).Build(), job.Namespace)
 	pred := jobUpdatePredicate(r)
 	pending := job.DeepCopy()
@@ -2709,6 +2720,28 @@ func TestJobFailureReconciler_RequestUpdatesDoNotLoop(t *testing.T) {
 	assert.True(t, pred.Update(event.UpdateEvent{ObjectOld: pending, ObjectNew: changed}), "a request must remain recoverable after Job status changes")
 }
 
+func TestJobFailureReconciler_LabelOnlyRequestUpdatesDoNotLoop(t *testing.T) {
+	job := evalHubEvaluationJob("eval-job-label-only", "tenant-ns", nil)
+	job.Annotations = nil
+	job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}
+	r, _ := buildJobFailureReconciler(fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).Build(), job.Namespace)
+	pred := jobUpdatePredicate(r)
+
+	pending := job.DeepCopy()
+	pending.Annotations = map[string]string{
+		annotationFailurePending: "true",
+		annotationFailureRequest: `{"message":"original failure"}`,
+	}
+	assert.False(t, pred.Update(event.UpdateEvent{ObjectOld: job, ObjectNew: pending}), "persisting a request must not re-enqueue a label-only Job")
+
+	cleared := job.DeepCopy()
+	assert.False(t, pred.Update(event.UpdateEvent{ObjectOld: pending, ObjectNew: cleared}), "clearing a request must not re-enqueue a label-only Job")
+
+	changed := cleared.DeepCopy()
+	changed.Annotations = map[string]string{"example.com/diagnostic": "updated"}
+	assert.True(t, pred.Update(event.UpdateEvent{ObjectOld: pending, ObjectNew: changed}), "a separate annotation change must still enqueue the Job")
+}
+
 func TestJobFailureReconciler_StaleJobCannotReplaceSavedRequest(t *testing.T) {
 	for _, observationWrite := range []string{"none", "record", "prune"} {
 		t.Run(observationWrite, func(t *testing.T) {
@@ -2717,7 +2750,7 @@ func TestJobFailureReconciler_StaleJobCannotReplaceSavedRequest(t *testing.T) {
 			job := evalHubEvaluationJob("eval-job-stale-request", "tenant-ns", map[string]string{
 				evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
 			})
-			pod := oomKilledAdapterPod(job.Name, job.Namespace, job.UID)
+			pod := fatalWaitingAdapterPod(job.Name, job.Namespace, job.UID)
 			var backOffEvent *corev1.Event
 			if observationWrite != "none" {
 				pod = imagePullBackOffAdapterPod(job.Name, job.Namespace, job.UID)
@@ -2782,6 +2815,232 @@ func TestJobFailureReconciler_StaleJobCannotReplaceSavedRequest(t *testing.T) {
 			assert.Equal(t, "original accepted failure", persisted.Annotations[annotationEvaluationStatus])
 			require.Len(t, rec.Events, 1)
 			assert.Contains(t, <-rec.Events, "original accepted failure")
+		})
+	}
+}
+
+func TestJobFailureReconciler_TerminalJobFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		terminal     bool
+		statusCode   int
+		body         string
+		wantReport   bool
+		wantRejected bool
+	}{
+		{name: "failed pod count alone"},
+		{name: "terminal job without pod", terminal: true, statusCode: http.StatusOK, body: `{"outcome":"applied"}`, wantReport: true},
+		{name: "adapter already reported", terminal: true, statusCode: http.StatusOK, body: `{"outcome":"already_terminal"}`},
+		{name: "missing or mismatched identity", terminal: true, statusCode: http.StatusNotFound, wantRejected: true},
+		{name: "invalid request", terminal: true, statusCode: http.StatusBadRequest, wantRejected: true},
+		{name: "validation failure", terminal: true, statusCode: http.StatusUnprocessableEntity, wantRejected: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			job := evalHubEvaluationJob("terminal-test", "tenant-ns", map[string]string{
+				evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
+			})
+			job.Status.Failed = 1
+			if tc.terminal {
+				job.Status.Conditions = []batchv1.JobCondition{{
+					Type: batchv1.JobFailed, Status: corev1.ConditionTrue,
+					Reason:             "  BackoffLimitExceeded\x00  ",
+					Message:            "\n Job has reached the specified backoff limit.\t\x1b " + strings.Repeat("é", 300),
+					LastTransitionTime: metav1.NewTime(time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)),
+				}}
+			}
+			requests := make(chan statusEventPayload, 2)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if !assert.Equal(t, http.MethodPost, req.Method) {
+					http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+					return
+				}
+				assert.Equal(t, job.Namespace, req.Header.Get(httpHeaderTenant))
+				var payload statusEventPayload
+				if !assert.NoError(t, json.NewDecoder(req.Body).Decode(&payload)) {
+					http.Error(w, "invalid payload", http.StatusBadRequest)
+					return
+				}
+				requests <- payload
+				if !tc.terminal {
+					http.Error(w, "unexpected report", http.StatusBadRequest)
+					return
+				}
+				w.WriteHeader(tc.statusCode)
+				_, _ = fmt.Fprint(w, tc.body)
+			}))
+			defer srv.Close()
+			eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+			fc := fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).WithObjects(job, eh).Build()
+			r, rec := buildJobFailureReconciler(fc, job.Namespace)
+			ctx := context.Background()
+			req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(job)}
+			result, err := r.Reconcile(ctx, req)
+			if tc.wantRejected {
+				require.ErrorIs(t, err, errEvalHubConditionalReportRejected)
+				require.ErrorIs(t, err, reconcile.TerminalError(nil))
+				assert.ErrorContains(t, err, fmt.Sprintf("HTTP %d", tc.statusCode))
+				assert.ErrorContains(t, err, "provider-1/inspect/docvqa at index 0")
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, ctrl.Result{}, result)
+			if tc.terminal {
+				require.Len(t, requests, 1)
+				status := (<-requests).BenchmarkStatusEvent
+				require.NotNil(t, status)
+				assert.Equal(t, "inspect/docvqa", status.ID)
+				assert.Equal(t, "failed", status.Status)
+				assert.Equal(t, failurePreconditionNonterminal, status.Precondition)
+				assert.Equal(t, "2026-11-24T12:00:00Z", status.CompletedAt)
+				require.NotNil(t, status.ErrorMessage)
+				wantDiagnostic := "Kubernetes marked the evaluation Job as failed. Reason: BackoffLimitExceeded Message: Job has reached the specified backoff limit. "
+				assert.Equal(t, wantDiagnostic+strings.Repeat("é", (512-len("Job has reached the specified backoff limit. "))/2), status.ErrorMessage.Message)
+			}
+			var stored batchv1.Job
+			require.NoError(t, fc.Get(ctx, req.NamespacedName, &stored))
+			if tc.wantRejected {
+				assert.NotEmpty(t, stored.Annotations[annotationFailureRequest])
+				assert.Equal(t, "true", stored.Annotations[annotationFailurePending])
+			} else {
+				assert.NotContains(t, stored.Annotations, annotationFailureRequest)
+				assert.NotContains(t, stored.Annotations, annotationFailurePending)
+			}
+			if tc.wantReport {
+				assert.Equal(t, "true", stored.Annotations[annotationFailureReported])
+				assert.Equal(t, labelEvaluationPhaseFailed, stored.Labels[labelEvaluationPhase])
+				assert.Len(t, rec.Events, 1)
+				result, err = r.Reconcile(ctx, req)
+				require.NoError(t, err)
+				assert.Equal(t, ctrl.Result{}, result)
+			} else {
+				assert.NotContains(t, stored.Annotations, annotationFailureReported)
+				assert.NotContains(t, stored.Labels, labelEvaluationPhase)
+				assert.Empty(t, rec.Events)
+			}
+			assert.Empty(t, requests, "no extra failure report should be sent")
+		})
+	}
+}
+
+func TestJobFailureReconciler_RetryableContainerFailureWaitsForTerminalJob(t *testing.T) {
+	for _, container := range []string{adapterContainerName, initContainerName, sidecarContainerName} {
+		t.Run(container, func(t *testing.T) {
+			srv, requests := capturingEvalHubServer(t)
+			job := evalHubEvaluationJob("retryable-job", "tenant-ns", map[string]string{
+				evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
+			})
+			job.Spec.BackoffLimit = new(int32(1))
+			job.Status.Failed = 1
+			pod := oomKilledAdapterPod(job.Name, job.Namespace, job.UID)
+			pod.Status.Phase = corev1.PodFailed
+			pod.Status.ContainerStatuses[0].Name = container
+			if container == initContainerName {
+				pod.Status.InitContainerStatuses = pod.Status.ContainerStatuses
+				pod.Status.ContainerStatuses = nil
+			}
+			eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+			fc := fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).
+				WithStatusSubresource(job).WithObjects(job, pod, eh).Build()
+			r, recorder := buildJobFailureReconciler(fc, job.Namespace)
+			ctx := context.Background()
+			req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(job)}
+
+			result, err := r.Reconcile(ctx, req)
+			require.NoError(t, err)
+			assert.Equal(t, ctrl.Result{}, result)
+			assert.Empty(t, requests)
+			assert.Empty(t, recorder.Events)
+			require.NoError(t, fc.Get(ctx, req.NamespacedName, job))
+			assert.NotContains(t, job.Annotations, annotationFailureRequest)
+
+			job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}
+			require.NoError(t, fc.Status().Update(ctx, job))
+			result, err = r.Reconcile(ctx, req)
+			require.NoError(t, err)
+			assert.Equal(t, ctrl.Result{}, result)
+			require.Len(t, requests, 1)
+			report := (<-requests).BenchmarkStatusEvent
+			assert.Equal(t, failurePreconditionNonterminal, report.Precondition)
+			assert.Contains(t, report.ErrorMessage.Message, container+": terminated reason=OOMKilled")
+			assert.Len(t, recorder.Events, 1)
+		})
+	}
+}
+
+func TestJobFailureReconciler_RetriesConditionalReportWithoutInferringDelivery(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		statusCode int
+		body       string
+	}{
+		{"temporary error", http.StatusServiceUnavailable, ""},
+		{"legacy response", http.StatusNoContent, ""},
+		{"malformed response", http.StatusOK, "{"},
+		{"unknown outcome", http.StatusOK, `{"outcome":"unknown"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			job := evalHubEvaluationJob("conditional-retry", "tenant-ns", map[string]string{
+				evalHubInstanceNameLabel: "evalhub-1", evalHubInstanceNamespaceLabel: "control-ns",
+			})
+			job.Status.Conditions = []batchv1.JobCondition{{
+				Type: batchv1.JobFailed, Status: corev1.ConditionTrue,
+				LastTransitionTime: metav1.NewTime(time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)),
+			}}
+			requests := make(chan statusEventPayload, 2)
+			var replies atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if !assert.Equal(t, http.MethodPost, req.Method, "retry the original conditional POST") {
+					http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+					return
+				}
+				var payload statusEventPayload
+				if !assert.NoError(t, json.NewDecoder(req.Body).Decode(&payload)) {
+					http.Error(w, "invalid payload", http.StatusBadRequest)
+					return
+				}
+				requests <- payload
+				if replies.Add(1) == 1 {
+					w.WriteHeader(tc.statusCode)
+					if tc.body != "" {
+						_, _ = fmt.Fprint(w, tc.body)
+					}
+					return
+				}
+				_, _ = fmt.Fprint(w, `{"outcome":"already_terminal"}`)
+			}))
+			defer srv.Close()
+			eh := readyEvalHubCR("evalhub-1", "control-ns", srv.URL)
+			fc := fake.NewClientBuilder().WithScheme(jobFailureLifecycleScheme(t)).WithObjects(job, eh).Build()
+			r, rec := buildJobFailureReconciler(fc, job.Namespace)
+			ctx := context.Background()
+			req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(job)}
+			result, err := r.Reconcile(ctx, req)
+			require.NoError(t, err)
+			assert.Equal(t, 30*time.Second, result.RequeueAfter)
+			require.Len(t, requests, 1)
+			first := <-requests
+			require.NotNil(t, first.BenchmarkStatusEvent)
+			assert.Equal(t, failurePreconditionNonterminal, first.BenchmarkStatusEvent.Precondition)
+			var stored batchv1.Job
+			require.NoError(t, fc.Get(ctx, req.NamespacedName, &stored))
+			require.NotEmpty(t, stored.Annotations[annotationFailureRequest])
+			assert.NotContains(t, stored.Annotations, annotationFailureAccepted)
+			assert.Empty(t, rec.Events)
+			// EvalHub has since published the adapter's terminal failure. The
+			// restarted operator must still resolve its own pending report.
+			stored.Labels[labelEvaluationPhase] = labelEvaluationPhaseFailed
+			require.NoError(t, fc.Update(ctx, &stored))
+			restarted, rec := buildJobFailureReconciler(fc, job.Namespace)
+			result, err = restarted.Reconcile(ctx, req)
+			require.NoError(t, err)
+			assert.Equal(t, ctrl.Result{}, result)
+			require.Len(t, requests, 1)
+			assert.Equal(t, first, <-requests)
+			require.NoError(t, fc.Get(ctx, req.NamespacedName, &stored))
+			assert.NotContains(t, stored.Annotations, annotationFailurePending)
+			assert.NotContains(t, stored.Annotations, annotationFailureRequest)
+			assert.NotContains(t, stored.Annotations, annotationFailureReported)
+			assert.Empty(t, rec.Events)
 		})
 	}
 }

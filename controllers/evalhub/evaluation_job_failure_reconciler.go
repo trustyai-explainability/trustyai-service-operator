@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/trustyai-explainability/trustyai-service-operator/pkg/tracing"
 	"go.opentelemetry.io/otel/attribute"
@@ -72,6 +74,7 @@ const (
 	eventsPathFmt                          = "%s/api/v1/evaluations/jobs/%s/events"
 	evalHubJobPathFmt                      = "%s/api/v1/evaluations/jobs/%s"
 	messageCodeRuntimeFailure              = "RUNTIME_FAILURE"
+	failurePreconditionNonterminal         = "nonterminal"
 	// messageCodeQueueError is used when reporting EvalHub benchmark failure from a Kueue Workload
 	// with QuotaReserved=False and Reason=Inadmissible (see evaluation_failed_kueue_workloads_reconciler.go).
 	messageCodeQueueError = "queue_error"
@@ -294,8 +297,7 @@ func jobUpdatePredicate(r *EvalHubEvaluationJobFailureReconciler) predicate.Pred
 			if failureAcceptedReport(newJob) || newJob.Annotations[annotationFailureRequest] != "" {
 				return true
 			}
-			// Job updates often lag pod/container status; the assessment only
-			// posts when init/adapter/sidecar show operator-only failure reasons.
+			// The assessment prefers specific Pod diagnostics to the final Job condition.
 			return jobStatusIndicatesTerminalFailure(newJob)
 		},
 		DeleteFunc:  func(event.DeleteEvent) bool { return false },
@@ -319,6 +321,14 @@ func onlyFailurePendingAnnotationChanged(oldJob, newJob *batchv1.Job) bool {
 	delete(oldCopy.Annotations, annotationFailureRequest)
 	delete(newCopy.Annotations, annotationFailurePending)
 	delete(newCopy.Annotations, annotationFailureRequest)
+	// Removing the last annotation leaves an empty map. Treat it like an
+	// omitted map so persisting or clearing a request does not re-enqueue the Job.
+	if len(oldCopy.Annotations) == 0 {
+		oldCopy.Annotations = nil
+	}
+	if len(newCopy.Annotations) == 0 {
+		newCopy.Annotations = nil
+	}
 	// These fields change on every write and must not count as a difference.
 	oldCopy.ResourceVersion, newCopy.ResourceVersion = "", ""
 	oldCopy.ManagedFields, newCopy.ManagedFields = nil, nil
@@ -418,13 +428,6 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 		setJobFailureAction("skip")
 		return ctrl.Result{}, nil
 	}
-	if serverAlreadyHandledFailure(&job) {
-		log.Info("skip: EvalHub server already set failure label",
-			append(failureWatcherLogFields(), "action", "skip_server_handled",
-				"job", job.Name, "namespace", job.Namespace)...)
-		setJobFailureAction("skip")
-		return ctrl.Result{}, nil
-	}
 
 	msg := acceptedFailureMessage(&job)
 	accepted := failureAcceptedReport(&job)
@@ -440,14 +443,25 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 			return ctrl.Result{}, fmt.Errorf("incomplete pending failure request on Job %s/%s", job.Namespace, job.Name)
 		}
 		msg = report.Message
-		if !accepted {
-			resolvedURL, err := evalHubBaseURLFromJob(ctx, r.Client, &job)
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("resolve pending failure request URL: %w", err)
-			}
-			baseURL = resolvedURL
-			// Pending is not proof of delivery. Read this benchmark's status before
-			// either promoting a previously accepted report or retrying an unsent one.
+	}
+	// A conditional request still needs a definite outcome when the server has
+	// already published a phase label. The label cannot identify who reported it.
+	if serverAlreadyHandledFailure(&job) && (report == nil || report.Precondition == "") {
+		log.Info("skip: EvalHub server already set failure label",
+			append(failureWatcherLogFields(), "action", "skip_server_handled",
+				"job", job.Name, "namespace", job.Namespace)...)
+		setJobFailureAction("skip")
+		return ctrl.Result{}, nil
+	}
+	if report != nil && !accepted {
+		resolvedURL, err := evalHubBaseURLFromJob(ctx, r.Client, &job)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("resolve pending failure request URL: %w", err)
+		}
+		baseURL = resolvedURL
+		if report.Precondition == "" {
+			// Retain the existing delivery check for unconditional reports. Retry a
+			// conditional request with its original payload and let EvalHub decide.
 			state, stateErr := fetchEvalHubBenchmarkState(ctx, r.RESTConfig, baseURL, job.Namespace, report.JobID, report.ProviderID, report.BenchmarkID, report.BenchmarkIndex)
 			if errors.Is(stateErr, errEvalHubJobNotFound) || (stateErr == nil && (state == "completed" || state == "cancelled" || state == "canceled")) {
 				if err := r.clearFailurePendingAnnotation(ctx, &job, "clear superseded failure request"); err != nil {
@@ -546,7 +560,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 			}
 
 			providerID := job.Labels[evalHubProviderIDLabel]
-			benchmarkID := strings.TrimSpace(job.Annotations[evalHubBenchmarkIDAnnotation])
+			benchmarkID := benchmarkIDFromJob(&job)
 			if providerID == "" || benchmarkID == "" {
 				log.Info("skip EvalHub POST: missing provider_id label or benchmark_id metadata",
 					append(failureWatcherLogFields(), "action", "skip_missing_label", "job", job.Name, "namespace", job.Namespace)...)
@@ -554,10 +568,17 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 				return ctrl.Result{}, nil
 			}
 
-			benchmarkIndex := benchmarkIndexFromJob(&job)
-
 			baseURL = resolvedURL
-			report = &evalHubFailureRequest{JobID: jobID, ProviderID: providerID, BenchmarkID: benchmarkID, BenchmarkIndex: benchmarkIndex, Message: msg, ExitCode: assessment.exitCode}
+			report = &evalHubFailureRequest{
+				JobID: jobID, ProviderID: providerID, BenchmarkID: benchmarkID,
+				BenchmarkIndex: benchmarkIndexFromJob(&job), Message: msg, ExitCode: assessment.exitCode,
+			}
+			if condition := trueJobCondition(job.Status.Conditions, batchv1.JobFailed); condition != nil {
+				report.Precondition = failurePreconditionNonterminal
+				if !condition.LastTransitionTime.IsZero() {
+					report.CompletedAt = condition.LastTransitionTime.UTC().Format(time.RFC3339)
+				}
+			}
 			raw, err := json.Marshal(report)
 			if err != nil {
 				return ctrl.Result{}, err
@@ -578,26 +599,30 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 		}
 		setJobFailureAction("post")
 
-		if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, report.JobID, report.ProviderID, report.BenchmarkID, report.BenchmarkIndex, msg, ""); err != nil {
-			if errors.Is(err, errEvalHubReportAlreadyTerminal) {
+		if err := postEvalHubBenchmarkFailed(ctx, r.RESTConfig, baseURL, job.Namespace, *report, ""); err != nil {
+			switch {
+			case errors.Is(err, errEvalHubConditionalReportRejected):
+				setJobFailureAction("post_rejected")
+				return ctrl.Result{}, reconcile.TerminalError(fmt.Errorf("report terminal Job %s/%s to EvalHub (evaluation %s, benchmark %s/%s at index %d): %w",
+					job.Namespace, job.Name, report.JobID, report.ProviderID, report.BenchmarkID, report.BenchmarkIndex, err))
+			case errors.Is(err, errEvalHubReportAlreadyTerminal):
 				// EvalHub already holds a terminal failure status for this job: a
 				// previous POST was accepted before a restart lost the accepted
 				// marker. Promote instead of re-posting forever.
 				log.Info("EvalHub already holds a terminal status for the job; promoting without re-posting",
 					append(failureWatcherLogFields(), "action", "post_events_already_terminal", "job", job.Name, "evalJobID", report.JobID)...)
-			} else if errors.Is(err, errEvalHubReportSuperseded) {
-				// The benchmark has a confirmed non-failure terminal outcome,
-				// or the evaluation was deleted. Stop without promoting the Job.
-				log.Info("EvalHub job already in a non-failure terminal state; not reporting failure",
+			case errors.Is(err, errEvalHubReportSuperseded):
+				// EvalHub declined this report. Clear the pending request without
+				// marking the Job or emitting an operator failure event.
+				log.Info("EvalHub skipped the failure report",
 					append(failureWatcherLogFields(), "action", "post_events_superseded", "job", job.Name, "evalJobID", report.JobID)...)
 				setJobFailureAction("skip")
 				if err2 := r.clearFailurePendingAnnotation(ctx, &job, "failed to revert failure-pending annotation after superseded report; requeuing cleanup"); err2 != nil {
-					// Keep the saved request so a retry can recheck the remote
-					// outcome and finish cleanup without another POST.
+					// Keep the saved request so a later reconcile can retry cleanup.
 					return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 				}
 				return ctrl.Result{}, nil
-			} else {
+			default:
 				// Preserve the durable request for both unknown conflicts and transport
 				// errors. A later reconcile resolves its outcome even if the Pod recovers.
 				log.Error(err, "failure report outcome unresolved; requeuing", append(failureWatcherLogFields(), "job", job.Name, "evalJobID", report.JobID)...)
@@ -656,12 +681,16 @@ func (r *EvalHubEvaluationJobFailureReconciler) Reconcile(ctx context.Context, r
 }
 
 func jobConditionTrue(conditions []batchv1.JobCondition, t batchv1.JobConditionType) bool {
+	return trueJobCondition(conditions, t) != nil
+}
+
+func trueJobCondition(conditions []batchv1.JobCondition, t batchv1.JobConditionType) *batchv1.JobCondition {
 	for i := range conditions {
 		if conditions[i].Type == t && conditions[i].Status == corev1.ConditionTrue {
-			return true
+			return &conditions[i]
 		}
 	}
-	return false
+	return nil
 }
 
 // jobStatusIndicatesTerminalFailure is used in predicates (no API calls).
@@ -735,6 +764,7 @@ func (r *EvalHubEvaluationJobFailureReconciler) assessJobFailure(ctx context.Con
 	var parts []string
 	var firstErr error
 	matchedOwner := 0
+	failedCondition := trueJobCondition(job.Status.Conditions, batchv1.JobFailed)
 	for i := range list.Items {
 		pod := &list.Items[i]
 		ownedByJob := false
@@ -748,10 +778,10 @@ func (r *EvalHubEvaluationJobFailureReconciler) assessJobFailure(ctx context.Con
 			continue
 		}
 		matchedOwner++
-		if assessment.exitCode == 0 {
+		if failedCondition != nil && assessment.exitCode == 0 {
 			assessment.exitCode, _ = exitCodeFromPod(pod)
 		}
-		if msg, fatal := podOperatorOnlyFailureMessage(pod); fatal {
+		if msg, fatal := podOperatorOnlyFailureMessage(pod, failedCondition != nil); fatal {
 			parts = append(parts, fmt.Sprintf("pod %s: %s", pod.Name, msg))
 			continue
 		}
@@ -788,12 +818,54 @@ func (r *EvalHubEvaluationJobFailureReconciler) assessJobFailure(ctx context.Con
 	assessment.message = strings.Join(parts, "; ")
 	assessment.failed = len(parts) > 0
 	assessment.err = firstErr
+	if !assessment.failed && firstErr == nil && failedCondition != nil {
+		assessment.failed = true
+		assessment.message = terminalJobFailureMessage(failedCondition)
+	}
 	return assessment
 }
 
 func podIndicatesOperatorOnlyFailure(pod *corev1.Pod) bool {
-	_, ok := podOperatorOnlyFailureMessage(pod)
+	_, ok := podOperatorOnlyFailureMessage(pod, true)
 	return ok
+}
+
+func terminalJobFailureMessage(condition *batchv1.JobCondition) string {
+	message := "Kubernetes marked the evaluation Job as failed."
+	if reason := boundedJobDiagnostic(condition.Reason, 64); reason != "" {
+		message += " Reason: " + reason
+	}
+	if detail := boundedJobDiagnostic(condition.Message, 512); detail != "" {
+		message += " Message: " + detail
+	}
+	return message
+}
+
+func boundedJobDiagnostic(value string, limit int) string {
+	var result strings.Builder
+	spacePending := false
+	for _, r := range value {
+		if unicode.IsSpace(r) {
+			spacePending = result.Len() > 0
+			continue
+		}
+		if !unicode.IsPrint(r) {
+			continue
+		}
+		width := utf8.RuneLen(r)
+		if spacePending {
+			width++
+		}
+		if result.Len()+width > limit {
+			break
+		}
+		if spacePending {
+			result.WriteByte(' ')
+			spacePending = false
+		}
+		result.WriteRune(r)
+	}
+	return result.String()
 }
 
 // podIsUnschedulable returns true when the pod is Pending and has an Unschedulable condition,
@@ -1527,13 +1599,13 @@ func (r *EvalHubEvaluationJobFailureReconciler) failedMountEventMessage(ctx cont
 // that typically means EvalHub was never notified (vs. adapter exiting after reporting failure).
 // Scheduling failures (pod stuck in Pending, e.g. missing PVC) are also detected here.
 // Volume mount failures (FailedMount) are handled separately in podVolumeMountFailureMessage (needs Events).
-func podOperatorOnlyFailureMessage(pod *corev1.Pod) (string, bool) {
+func podOperatorOnlyFailureMessage(pod *corev1.Pod, includeTerminated bool) (string, bool) {
 	// A pod that never scheduled cannot run any container and will never call EvalHub.
 	if msg, ok := podSchedulingFailureMessage(pod); ok {
 		return msg, true
 	}
 	for _, name := range []string{initContainerName, adapterContainerName, sidecarContainerName} {
-		if msg, ok := containerCannotReportToEvalHub(pod, name); ok {
+		if msg, ok := containerCannotReportToEvalHub(pod, name, includeTerminated); ok {
 			return fmt.Sprintf("%s: %s", name, msg), true
 		}
 	}
@@ -1599,12 +1671,12 @@ func waitingContainerFailureMessage(w *corev1.ContainerStateWaiting) (string, bo
 }
 
 // containerCannotReportToEvalHub detects fatal init/adapter/sidecar states before or without a successful callback.
-func containerCannotReportToEvalHub(pod *corev1.Pod, containerName string) (string, bool) {
+func containerCannotReportToEvalHub(pod *corev1.Pod, containerName string, includeTerminated bool) (string, bool) {
 	for _, cs := range pod.Status.ContainerStatuses {
 		if cs.Name != containerName {
 			continue
 		}
-		if cs.State.Terminated != nil {
+		if includeTerminated && cs.State.Terminated != nil {
 			t := cs.State.Terminated
 			needReport := terminatedInitOrSidecarNeedsOperatorReport(t)
 			if containerName == adapterContainerName {
@@ -1625,7 +1697,7 @@ func containerCannotReportToEvalHub(pod *corev1.Pod, containerName string) (stri
 		if ics.Name != containerName {
 			continue
 		}
-		if ics.State.Terminated != nil {
+		if includeTerminated && ics.State.Terminated != nil {
 			t := ics.State.Terminated
 			// Only eval-hub "init" appears here; use full non-adapter rules.
 			if terminatedInitOrSidecarNeedsOperatorReport(t) {
@@ -1649,6 +1721,15 @@ func isEvalHubEvaluationJob(job *batchv1.Job) bool {
 		return false
 	}
 	return true
+}
+
+// benchmarkIDFromJob prefers the original EvalHub benchmark ID. Older Jobs may
+// only carry a label, which can be used when the ID needed no sanitization.
+func benchmarkIDFromJob(job *batchv1.Job) string {
+	if id := strings.TrimSpace(job.Annotations[evalHubBenchmarkIDAnnotation]); id != "" {
+		return id
+	}
+	return strings.TrimSpace(job.Labels[evalHubBenchmarkIDLabel])
 }
 
 // benchmarkIndexFromJob returns the EvalHub benchmark_index from the Job label (set by eval-hub k8s runtime).
@@ -1727,6 +1808,8 @@ type evalHubFailureRequest struct {
 	BenchmarkIndex int    `json:"benchmark_index"`
 	Message        string `json:"message"`
 	ExitCode       int32  `json:"exit_code,omitempty"`
+	Precondition   string `json:"precondition,omitempty"`
+	CompletedAt    string `json:"completed_at,omitempty"`
 }
 
 // JSON body compatible with EvalHub pkg/api StatusEvent.
@@ -1736,6 +1819,8 @@ type benchmarkStatusEventPayload struct {
 	BenchmarkIndex int          `json:"benchmark_index,omitempty"`
 	Status         string       `json:"status"`
 	ErrorMessage   *msgInfoJSON `json:"error_message,omitempty"`
+	CompletedAt    string       `json:"completed_at,omitempty"`
+	Precondition   string       `json:"precondition,omitempty"`
 }
 
 type msgInfoJSON struct {
@@ -1800,7 +1885,7 @@ func newEvalHubHTTPClient(restCfg *rest.Config) (*http.Client, error) {
 // status, so a previous report was delivered and the POST must not be retried.
 var errEvalHubReportAlreadyTerminal = errors.New("evalhub job already in a terminal state")
 
-func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseURL, tenant, jobID, providerID, benchmarkID string, benchmarkIndex int, failureMsg, messageCode string) error {
+func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseURL, tenant string, report evalHubFailureRequest, messageCode string) error {
 	httpClient, err := newEvalHubHTTPClient(restCfg)
 	if err != nil {
 		return err
@@ -1811,12 +1896,14 @@ func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseU
 
 	body := statusEventPayload{
 		BenchmarkStatusEvent: &benchmarkStatusEventPayload{
-			ProviderID:     providerID,
-			ID:             benchmarkID,
-			BenchmarkIndex: benchmarkIndex,
+			ProviderID:     report.ProviderID,
+			ID:             report.BenchmarkID,
+			BenchmarkIndex: report.BenchmarkIndex,
 			Status:         "failed",
+			CompletedAt:    report.CompletedAt,
+			Precondition:   report.Precondition,
 			ErrorMessage: &msgInfoJSON{
-				Message:     failureMsg,
+				Message:     report.Message,
 				MessageCode: messageCode,
 			},
 		},
@@ -1826,7 +1913,7 @@ func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseU
 		return err
 	}
 
-	url := fmt.Sprintf(eventsPathFmt, baseURL, jobID)
+	url := fmt.Sprintf(eventsPathFmt, baseURL, report.JobID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(raw))
 	if err != nil {
 		return err
@@ -1839,6 +1926,9 @@ func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseU
 		return err
 	}
 	defer resp.Body.Close()
+	if report.Precondition != "" {
+		return conditionalFailureReportResult(resp)
+	}
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusConflict {
 			body, readErr := io.ReadAll(resp.Body)
@@ -1863,7 +1953,7 @@ func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseU
 				// Aggregate states do not prove this benchmark's outcome. In
 				// particular, cancellation preserves previously failed benchmarks.
 				// Recover a lost failure marker only after checking its own state.
-				state, stateErr := fetchEvalHubBenchmarkState(ctx, restCfg, baseURL, tenant, jobID, providerID, benchmarkID, benchmarkIndex)
+				state, stateErr := fetchEvalHubBenchmarkState(ctx, restCfg, baseURL, tenant, report.JobID, report.ProviderID, report.BenchmarkID, report.BenchmarkIndex)
 				if errors.Is(stateErr, errEvalHubJobNotFound) {
 					// EvalHub no longer holds the job: no failure report can be
 					// recorded or recovered, and retrying can never succeed.
@@ -1889,6 +1979,40 @@ func postEvalHubBenchmarkFailed(ctx context.Context, restCfg *rest.Config, baseU
 		return fmt.Errorf("EvalHub events returned %s", resp.Status)
 	}
 	return nil
+}
+
+// conditionalFailureReportResult confirms delivery only from EvalHub's explicit outcome.
+func conditionalFailureReportResult(resp *http.Response) error {
+	switch resp.StatusCode {
+	case http.StatusBadRequest, http.StatusNotFound, http.StatusUnprocessableEntity:
+		return fmt.Errorf("%w: HTTP %d", errEvalHubConditionalReportRejected, resp.StatusCode)
+	case http.StatusOK:
+		// The response carries only one small status field.
+		const maxOutcomeBytes = 4096
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxOutcomeBytes+1))
+		if err != nil {
+			return fmt.Errorf("read conditional EvalHub failure outcome: %w", err)
+		}
+		if len(body) > maxOutcomeBytes {
+			return fmt.Errorf("conditional EvalHub failure outcome exceeds %d bytes", maxOutcomeBytes)
+		}
+		var result struct {
+			Outcome string `json:"outcome"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			return fmt.Errorf("decode conditional EvalHub failure outcome: %w", err)
+		}
+		switch result.Outcome {
+		case "applied":
+			return nil
+		case "already_terminal":
+			return fmt.Errorf("%w: evaluation or benchmark already terminal", errEvalHubReportSuperseded)
+		default:
+			return fmt.Errorf("unexpected conditional EvalHub failure outcome %q", result.Outcome)
+		}
+	default:
+		return fmt.Errorf("conditional EvalHub failure report returned %s without an outcome", resp.Status)
+	}
 }
 
 // evalHubJobBenchmarkState is the per-benchmark status returned by
@@ -1994,13 +2118,12 @@ func fetchEvalHubBenchmarkState(ctx context.Context, restCfg *rest.Config, baseU
 // job (404): no failure report can be recorded or recovered.
 var errEvalHubJobNotFound = errors.New("evalhub job not found")
 
-// errEvalHubReportSuperseded is returned when EvalHub answers the failure POST
-// with 409 Conflict because the job (and this benchmark) is already in a
-// non-failure terminal state (cancelled or completed): no failure report for
-// this benchmark was or will be delivered, and the Job must not be promoted to
-// Failed. The aggregate partially_failed state is never classified here: it is
-// resolved from this benchmark's own status instead.
-var errEvalHubReportSuperseded = errors.New("evalhub job already in a non-failure terminal state")
+var errEvalHubConditionalReportRejected = errors.New("conditional EvalHub failure report rejected")
+
+// errEvalHubReportSuperseded indicates that this report cannot be applied.
+// Conditional requests use EvalHub's explicit outcome. Unconditional requests
+// still resolve conflicts from the benchmark's status.
+var errEvalHubReportSuperseded = errors.New("evalhub failure report superseded")
 
 // errEvalHubReportConflictUnknown is returned when EvalHub answers the failure
 // POST with 409 Conflict but the response body cannot be classified: it is

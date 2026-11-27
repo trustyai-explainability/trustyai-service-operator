@@ -45,7 +45,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 					}},
 				},
 			}
-			_, ok := podOperatorOnlyFailureMessage(pod)
+			_, ok := podOperatorOnlyFailureMessage(pod, true)
 			Expect(ok).To(BeTrue(), "expected operator-only failure for adapter OOMKilled")
 		})
 
@@ -60,7 +60,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 					}},
 				},
 			}
-			_, ok := podOperatorOnlyFailureMessage(pod)
+			_, ok := podOperatorOnlyFailureMessage(pod, true)
 			Expect(ok).To(BeFalse(), "ErrImagePull is retriable and should not fail the evaluation immediately")
 		})
 
@@ -86,7 +86,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 					}},
 				},
 			}
-			_, ok := podOperatorOnlyFailureMessage(pod)
+			_, ok := podOperatorOnlyFailureMessage(pod, true)
 			Expect(ok).To(BeFalse(), "ImagePullBackOff should wait for the grace period")
 			Expect(imagePullGracePeriodRemaining(pod, observedAt, now)).To(BeNumerically(">", 0))
 		})
@@ -113,7 +113,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 					}},
 				},
 			}
-			_, ok := podOperatorOnlyFailureMessage(pod)
+			_, ok := podOperatorOnlyFailureMessage(pod, true)
 			Expect(ok).To(BeFalse(), "ImagePullBackOff grace is checked from pod event timestamps")
 			Expect(imagePullGracePeriodRemaining(pod, startedAt, now)).To(Equal(time.Duration(0)))
 		})
@@ -132,7 +132,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 					}},
 				},
 			}
-			_, ok := podOperatorOnlyFailureMessage(pod)
+			_, ok := podOperatorOnlyFailureMessage(pod, true)
 			Expect(ok).To(BeFalse(), "init ImagePullBackOff should wait for the grace period")
 			Expect(podHasImagePullBackOff(pod)).To(BeTrue())
 			Expect(imagePullGracePeriodRemaining(pod, observedAt, now)).To(BeNumerically(">", 0))
@@ -167,7 +167,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 					}},
 				},
 			}
-			_, ok := podOperatorOnlyFailureMessage(pod)
+			_, ok := podOperatorOnlyFailureMessage(pod, true)
 			Expect(ok).To(BeTrue(), "InvalidImageName is not a retriable pull backoff")
 		})
 
@@ -182,7 +182,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 					}},
 				},
 			}
-			_, ok := podOperatorOnlyFailureMessage(pod)
+			_, ok := podOperatorOnlyFailureMessage(pod, true)
 			Expect(ok).To(BeFalse(), "did not expect operator-only failure for successful adapter completion")
 		})
 
@@ -197,7 +197,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 					}},
 				},
 			}
-			_, ok := podOperatorOnlyFailureMessage(pod)
+			_, ok := podOperatorOnlyFailureMessage(pod, true)
 			Expect(ok).To(BeFalse(), "did not expect operator-only failure: adapter often exits Error/1 after POSTing failed to EvalHub")
 		})
 
@@ -212,7 +212,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 					}},
 				},
 			}
-			_, ok := podOperatorOnlyFailureMessage(pod)
+			_, ok := podOperatorOnlyFailureMessage(pod, true)
 			Expect(ok).To(BeTrue(), "expected operator-only failure for sidecar Error exit 1")
 		})
 
@@ -227,7 +227,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 					}},
 				},
 			}
-			_, ok := podOperatorOnlyFailureMessage(pod)
+			_, ok := podOperatorOnlyFailureMessage(pod, true)
 			Expect(ok).To(BeTrue(), "expected operator-only failure for sidecar CrashLoopBackOff")
 		})
 
@@ -244,7 +244,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 					}},
 				},
 			}
-			msg, ok := podOperatorOnlyFailureMessage(pod)
+			msg, ok := podOperatorOnlyFailureMessage(pod, true)
 			Expect(ok).To(BeTrue(), "expected operator-only failure for unschedulable pod past grace period")
 			Expect(msg).To(ContainSubstring("unschedulable"))
 			Expect(msg).To(ContainSubstring("my-pvc"))
@@ -263,7 +263,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 					}},
 				},
 			}
-			_, ok := podOperatorOnlyFailureMessage(pod)
+			_, ok := podOperatorOnlyFailureMessage(pod, true)
 			Expect(ok).To(BeFalse(), "should not report unschedulable pod within grace period")
 		})
 
@@ -277,7 +277,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 					}},
 				},
 			}
-			_, ok := podOperatorOnlyFailureMessage(pod)
+			_, ok := podOperatorOnlyFailureMessage(pod, true)
 			Expect(ok).To(BeFalse(), "should not report a successfully scheduled running pod")
 		})
 
@@ -292,7 +292,7 @@ var _ = Describe("Evaluation job failure reconciler helpers", func() {
 					}},
 				},
 			}
-			_, ok := podOperatorOnlyFailureMessage(pod)
+			_, ok := podOperatorOnlyFailureMessage(pod, true)
 			Expect(ok).To(BeFalse(), "should not report pending pod without Unschedulable reason")
 		})
 	})
