@@ -1699,6 +1699,35 @@ func TestEvalHubReconciler_reconcileDeployment_WithDB(t *testing.T) {
 		EventRecorder: record.NewFakeRecorder(10),
 	}
 
+	t.Run("post-processor image is injected only when configured", func(t *testing.T) {
+		assertImage := func(expected string) {
+			t.Helper()
+			spec, err := reconciler.buildDeploymentSpec(ctx, evalHub, nil, nil, nil, nil)
+			require.NoError(t, err)
+			server := spec.Template.Spec.Containers[0]
+			require.Equal(t, containerName, server.Name)
+			var images []string
+			for _, env := range server.Env {
+				if env.Name == postProcessorImageEnv {
+					images = append(images, env.Value)
+				}
+			}
+			if expected == "" {
+				assert.Empty(t, images)
+			} else {
+				assert.Equal(t, []string{expected}, images)
+			}
+		}
+		assertImage("")
+		const image = "registry.example.com/evalhub/post-processor:test"
+		cm := configMap.DeepCopy()
+		key := types.NamespacedName{Namespace: cm.Namespace, Name: cm.Name}
+		require.NoError(t, fakeClient.Get(ctx, key, cm))
+		cm.Data[configMapPostProcessorImageKey] = " " + image + " "
+		require.NoError(t, fakeClient.Update(ctx, cm))
+		assertImage(image)
+	})
+
 	t.Run("should add DB secret volume and mount when database configured", func(t *testing.T) {
 		err := reconciler.reconcileDeployment(ctx, evalHub, nil, nil, nil, nil)
 		require.NoError(t, err)
@@ -3593,6 +3622,9 @@ func TestGenerateAuthConfigData_MethodsPresent(t *testing.T) {
 		{"/api/v1/evaluations/collections", "get", "collections", "list"},
 		{"/api/v1/evaluations/collections/*", "get", "collections", "{{.FromMethod}}"},
 		{"/api/v1/evaluations/jobs/*/events", "post", "status-events", "create"},
+		{"/api/v1/evaluations/post-processing", "post", "evaluations", "create"},
+		{"/api/v1/evaluations/post-processing/*", "get", "evaluations", "{{.FromMethod}}"},
+		{"/api/v1/evaluations/post-processing/*", "delete", "evaluations", "{{.FromMethod}}"},
 	} {
 		i, ok := endpointIndexes[check.path]
 		require.True(t, ok, "missing job endpoint %s", check.path)
