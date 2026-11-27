@@ -35,7 +35,6 @@ type operandHealthDefinition struct {
 
 var operandHealthDefinitions = map[string]operandHealthDefinition{
 	"TAS":             {serviceName: "TAS", gvk: schema.GroupVersionKind{Group: "trustyai.opendatahub.io", Version: "v1", Kind: "TrustyAIServiceList"}},
-	"LMES":            {serviceName: "LMES", gvk: schema.GroupVersionKind{Group: "trustyai.opendatahub.io", Version: "v1alpha1", Kind: "LMEvalJobList"}},
 	"EVALHUB":         {serviceName: "EVALHUB", gvk: schema.GroupVersionKind{Group: "trustyai.opendatahub.io", Version: "v1", Kind: "EvalHubList"}},
 	"NEMO_GUARDRAILS": {serviceName: "NEMO_GUARDRAILS", gvk: schema.GroupVersionKind{Group: "trustyai.opendatahub.io", Version: "v1alpha1", Kind: "NemoGuardrailsList"}},
 }

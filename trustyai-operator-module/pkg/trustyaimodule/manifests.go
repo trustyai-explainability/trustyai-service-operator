@@ -165,13 +165,12 @@ func filterUnsupportedResources(objs []unstructured.Unstructured) []unstructured
 // enabledServiceNames maps EnabledServices booleans to the canonical service
 // names accepted by trustyai-service-operator's --enable-services flag
 // (see controllers/<service>/constants.go ServiceName in the parent repo).
+// The retired LMES domain has no service name any more: an explicit "lmes: true"
+// contributes nothing, so the operator starts without it.
 func enabledServiceNames(es platformv1alpha1.EnabledServices) []string {
 	var names []string
 	if es.TAS {
 		names = append(names, "TAS")
-	}
-	if es.LMES {
-		names = append(names, "LMES")
 	}
 	if es.EvalHub {
 		names = append(names, "EVALHUB")
@@ -180,7 +179,7 @@ func enabledServiceNames(es platformv1alpha1.EnabledServices) []string {
 		names = append(names, "NEMO_GUARDRAILS")
 	}
 	if len(names) == 0 {
-		names = []string{"TAS", "LMES", "EVALHUB", "NEMO_GUARDRAILS"}
+		names = []string{"TAS", "EVALHUB", "NEMO_GUARDRAILS"}
 	}
 	return names
 }

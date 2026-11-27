@@ -38,8 +38,15 @@ var _ = Describe("enabledServiceNames", func() {
 
 	It("returns all services when none are explicitly enabled", func() {
 		Expect(enabledServiceNames(platformv1alpha1.EnabledServices{})).To(ConsistOf(
-			"TAS", "LMES", "EVALHUB", "NEMO_GUARDRAILS",
+			"TAS", "EVALHUB", "NEMO_GUARDRAILS",
 		))
+	})
+
+	It("drops the retired LMES selection", func() {
+		Expect(enabledServiceNames(platformv1alpha1.EnabledServices{LMES: true})).To(ConsistOf(
+			"TAS", "EVALHUB", "NEMO_GUARDRAILS",
+		))
+		Expect(enabledServiceNames(platformv1alpha1.EnabledServices{TAS: true, LMES: true})).To(ConsistOf("TAS"))
 	})
 })
 
@@ -109,7 +116,7 @@ var _ = Describe("injectEnabledServices", func() {
 
 		container, ok := containers[0].(map[string]interface{})
 		Expect(ok).To(BeTrue())
-		Expect(container["args"]).To(Equal([]interface{}{"--enable-services=TAS,LMES"}))
+		Expect(container["args"]).To(Equal([]interface{}{"--enable-services=TAS"}))
 	})
 
 	It("ignores non-Deployment and non-matching-name objects", func() {

@@ -141,8 +141,8 @@ func TestTLSProfileRBACRendered(t *testing.T) {
 	}
 	for _, path := range []string{
 		"config/base", "config/overlays/odh", "config/overlays/rhoai",
-		"config/overlays/odh-kueue", "config/overlays/mcp-guardrails",
-		"config/overlays/testing", "config/overlays/evalhub-only", "config/overlays/lmes",
+		"config/overlays/mcp-guardrails", "config/overlays/testing",
+		"config/overlays/evalhub-only",
 		"trustyai-operator-module/config/default",
 	} {
 		t.Run(path, func(t *testing.T) {

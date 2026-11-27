@@ -45,8 +45,8 @@ for component_dir in "${COMPONENTS_DIR}"/*; do
         continue
     fi
 
-    # Check CRD exists (skip for job-mgr which shares CRD with lmes)
-    if [[ "${component_name}" != "job-mgr" ]] && ! compgen -G "${component_dir}/crd/*.yaml" > /dev/null; then
+    # Check CRD exists
+    if ! compgen -G "${component_dir}/crd/*.yaml" > /dev/null; then
         echo "  ✗ Missing CRD YAML inside of ${component_name}/crd directory"
         FAILED_COMPONENTS+=("${component_name}")
         continue
@@ -59,15 +59,11 @@ for component_dir in "${COMPONENTS_DIR}"/*; do
         # Check that output contains expected resources
         output=$("${KUSTOMIZE}" build "${component_dir}")
 
-        # Verify CRD is present (skip for job-mgr)
-        if [[ "${component_name}" != "job-mgr" ]]; then
-            if echo "${output}" | grep -q "^kind: CustomResourceDefinition"; then
-                echo "  ✓ CRD present in output"
-            else
-                echo "  ✗ Warning: CRD not found in output"
-            fi
+        # Verify CRD is present
+        if echo "${output}" | grep -q "^kind: CustomResourceDefinition"; then
+            echo "  ✓ CRD present in output"
         else
-            echo "  ✓ No CRD (shares with LMES component)"
+            echo "  ✗ Warning: CRD not found in output"
         fi
 
         # Verify ClusterRole is present

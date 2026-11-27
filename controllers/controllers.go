@@ -35,8 +35,11 @@ var (
 	TasServices = map[string]ControllerSetupFunc{}
 	// convenient list to store all registered services
 	AllTasServices = []string{}
-	// accepted during flag parsing but filtered out before controller setup
-	LegacyServices = []string{"GORCH"}
+	// accepted during flag parsing but filtered out before controller setup.
+	// GORCH was retired before 3.6. LMES is retired in 3.7 but stays accepted for
+	// one release so an operand rollout that still passes the previous service
+	// list starts instead of failing argument parsing; it enables nothing.
+	LegacyServices = []string{"GORCH", "LMES"}
 )
 
 type EnabledServices []string

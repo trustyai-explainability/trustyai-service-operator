@@ -5,7 +5,6 @@ components:
   - ../../components/webhook
   - ../../components/tas
   - ../../components/evalhub
-  - ../../components/lmes
   - ../../components/nemo-guardrails
 
 labels:
@@ -26,7 +25,7 @@ patches:
         value: "--enable-services"
       - op: add
         path: /spec/template/spec/containers/0/args/-
-        value: "TAS,LMES,NEMO_GUARDRAILS,EVALHUB"
+        value: "TAS,NEMO_GUARDRAILS,EVALHUB"
 
 patchesStrategicMerge:
   - image-pull-policy.yaml

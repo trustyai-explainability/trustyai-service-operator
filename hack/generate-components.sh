@@ -17,15 +17,13 @@ RBAC_DIR="${CONFIG_DIR}/rbac"
 COMPONENTS_DIR="${CONFIG_DIR}/components"
 
 # Component list (bash 3.2 compatible)
-COMPONENT_NAMES="tas evalhub lmes job-mgr nemo-guardrails"
+COMPONENT_NAMES="tas evalhub nemo-guardrails"
 
 # Function to get component details -> leave blank if the component has no CRDs
 get_crd_pattern() {
     case "$1" in
         tas) echo "trustyaiservices" ;;
         evalhub) echo "evalhubs" ;;
-        lmes) echo "lmevaljobs" ;;
-        job-mgr) echo "" ;;  # JOB_MGR shares CRD with LMES
         nemo-guardrails) echo "nemoguardrails" ;;
     esac
 }
@@ -34,8 +32,6 @@ get_controller_dirs() {
     case "$1" in
         tas) echo "controllers/tas" ;;
         evalhub) echo "controllers/evalhub" ;;
-        lmes) echo "controllers/lmes" ;;
-        job-mgr) echo "controllers/job_mgr" ;;
         nemo-guardrails) echo "controllers/nemo_guardrails" ;;
     esac
 }
@@ -58,7 +54,7 @@ for component in ${COMPONENT_NAMES}; do
     component_dir="${COMPONENTS_DIR}/${component}"
     mkdir -p "${component_dir}/rbac"
 
-    # 1. Move CRD file (skip for job-mgr as it shares CRD with lmes)
+    # 1. Move CRD file
     # Auto-generated CRDs are moved from config/crd/bases/ to component directories
     if [[ ! -z ${crd_pattern} ]]; then
       echo "  - Moving CRD (pattern: ${crd_pattern})"
