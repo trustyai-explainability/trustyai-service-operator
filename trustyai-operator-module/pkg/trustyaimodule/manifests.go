@@ -88,7 +88,7 @@ func selectOverlay(manifestsDir string, mcpMode bool) string {
 func applyParams(overlayDir string) error {
 	paramsPath := filepath.Join(overlayDir, paramsEnvFile)
 
-	data, err := os.ReadFile(paramsPath)
+	data, err := os.ReadFile(paramsPath) // #nosec G304 -- paramsPath is a fixed file inside the operator's own staged manifests tree
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -112,7 +112,8 @@ func applyParams(overlayDir string) error {
 		}
 	}
 
-	return os.WriteFile(paramsPath, []byte(strings.Join(lines, "\n")), 0o644)
+	// #nosec G703 -- paramsPath is a fixed file inside the operator's own staged manifests tree
+	return os.WriteFile(paramsPath, []byte(strings.Join(lines, "\n")), 0o600)
 }
 
 // RenderManifests stages the manifests (once) and renders the selected
@@ -242,7 +243,7 @@ func injectEnabledServices(objs []unstructured.Unstructured, es platformv1alpha1
 func clearDir(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
-		return os.MkdirAll(dir, 0o755)
+		return os.MkdirAll(dir, 0o750)
 	}
 	if err != nil {
 		return err
@@ -266,20 +267,20 @@ func copyDir(src, dst string) error {
 		}
 		target := filepath.Join(dst, rel)
 		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
+			return os.MkdirAll(target, 0o750)
 		}
 		return copyFile(path, target)
 	})
 }
 
 func copyFile(src, dst string) error {
-	in, err := os.Open(src)
+	in, err := os.Open(src) // #nosec G304 -- src is walked from the operator's own embedded manifests tree
 	if err != nil {
 		return err
 	}
 	defer in.Close() //nolint:errcheck
 
-	out, err := os.Create(dst)
+	out, err := os.Create(dst) // #nosec G304 -- dst is src re-rooted under the operator's own staging directory
 	if err != nil {
 		return err
 	}

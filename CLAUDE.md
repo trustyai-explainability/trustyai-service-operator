@@ -232,7 +232,8 @@ GitHub Actions in `.github/workflows/`:
 - `controller-tests.yaml` — runs `make test`
 - `lint-yaml.yaml` — yamllint on `config/**/*.yaml`
 - `conftest.yaml` — OPA manifest policy checks against all kustomize overlays
-- `gosec.yaml` — security scanning (SARIF output)
+- `gosec.yaml` — gosec security scanning (SARIF output); findings fail the PR
+- `scorecard.yml` — OpenSSF Scorecard analysis (SARIF output, weekly and on push)
 - `smoke.yaml` — smoke tests
 - `operator-chaos.yml` — shift-left upgrade validation (L1: knowledge model + CRD diff)
 - `.dependabot.yml` — auto-updates Go deps

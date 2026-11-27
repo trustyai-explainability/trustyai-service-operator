@@ -942,8 +942,18 @@ func unmarshal(custom string, props []string) (map[string]interface{}, error) {
 	return obj, nil
 }
 
-func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig *PermissionConfig, caBundle *corev1.ConfigMap, caBundleKey string, log logr.Logger) *corev1.Pod {
+// driverContainerPort returns the driver port in the int32 form the Pod API
+// requires. Zero means "not configured" and is preserved as-is; a value outside
+// the TCP port range is treated as not configured rather than truncated, so the
+// conversion can never wrap around.
+func driverContainerPort(port int) int32 {
+	if port < 0 || port > 65535 {
+		return 0
+	}
+	return int32(port)
+}
 
+func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig *PermissionConfig, caBundle *corev1.ConfigMap, caBundleKey string, log logr.Logger) *corev1.Pod {
 	// Do not alias mutable resource declarations or container configuration from
 	// the CR, which may be held in the controller's cache.
 	podSpec := job.Spec.Pod.DeepCopy()
@@ -1367,7 +1377,7 @@ func CreatePod(svcOpts *serviceOptions, job *lmesv1alpha1.LMEvalJob, permConfig 
 			Resources:       *resources,
 			Ports: []corev1.ContainerPort{
 				{
-					ContainerPort: int32(svcOpts.DriverPort),
+					ContainerPort: driverContainerPort(svcOpts.DriverPort),
 				},
 			},
 		},

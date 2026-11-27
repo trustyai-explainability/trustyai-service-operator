@@ -1758,6 +1758,8 @@ func evalHubTLSRootCAs() (*x509.CertPool, error) {
 		pool.AppendCertsFromPEM(b)
 	}
 	if extraPath := strings.TrimSpace(os.Getenv(evalHubExtraCABundleEnv)); extraPath != "" {
+		// #nosec G304 G703 -- extraPath is an operator deployment setting, not workload input; it
+		// names an extra CA bundle the operator administrator mounts into the operator pod
 		b, err := os.ReadFile(extraPath)
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", evalHubExtraCABundleEnv, err)
