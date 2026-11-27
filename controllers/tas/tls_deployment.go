@@ -17,6 +17,9 @@ var tasTLSEnvNames = map[string]bool{
 	"TLS_POLICY": true, "TLS_REQUIRED": true, "TLS_CERT_FILE": true,
 	"TLS_KEY_FILE": true, "TLS_MIN_VERSION": true, "TLS_CIPHERS": true,
 	"TLS_CURVES": true, "HTTP_PORT": true, "HEALTH_PORT": true,
+	// SSL_PORT is unused by sidecars but required so Hypercorn enables
+	// insecure_bind on HTTP_PORT when cert files are present.
+	"SSL_PORT": true,
 }
 
 // ensureTASTLSDeployment upgrades old native-TLS pods and refreshes both proxies
@@ -66,10 +69,24 @@ func applyTASTLSDeployment(current, desired *appsv1.Deployment) error {
 		}
 	}
 	app.Env = envs
-	mounts := app.VolumeMounts[:0]
+	app.ReadinessProbe = wantedApp.ReadinessProbe.DeepCopy()
+	app.LivenessProbe = wantedApp.LivenessProbe.DeepCopy()
+	if wantedApp.StartupProbe != nil {
+		app.StartupProbe = wantedApp.StartupProbe.DeepCopy()
+	}
+	// Ensure the internal Service certificate is mounted so Hypercorn binds
+	// HTTP_PORT; strip any stale duplicate mounts first.
+	mounts := make([]corev1.VolumeMount, 0, len(app.VolumeMounts)+1)
 	for _, mount := range app.VolumeMounts {
-		if mount.Name != current.Name+"-internal" && mount.MountPath != "/etc/tls/internal" {
+		if mount.Name == current.Name+"-internal" || mount.MountPath == "/etc/tls/internal" {
+			continue
+		}
+		mounts = append(mounts, mount)
+	}
+	for _, mount := range wantedApp.VolumeMounts {
+		if mount.Name == desired.Name+"-internal" && mount.MountPath == "/etc/tls/internal" {
 			mounts = append(mounts, mount)
+			break
 		}
 	}
 	app.VolumeMounts = mounts
