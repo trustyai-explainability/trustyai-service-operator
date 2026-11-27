@@ -73,13 +73,20 @@ func TestTASTLSDeploymentUpgradeAndPolicyRefresh(t *testing.T) {
 			for _, e := range app.Env {
 				env[e.Name] = e.Value
 			}
-			if env["KEEP_ALIVE"] != "99" || env["TLS_REQUIRED"] != "false" || env["TLS_POLICY"] != "system" || env["TLS_CURVES"] != "" || !strings.Contains(env["TLS_CERT_FILE"], "no-native-tls") {
+			if env["KEEP_ALIVE"] != "99" || env["TLS_REQUIRED"] != "false" || env["TLS_POLICY"] != "system" || env["TLS_CURVES"] != "" || env["TLS_CERT_FILE"] != "/etc/tls/internal/tls.crt" || env["TLS_KEY_FILE"] != "/etc/tls/internal/tls.key" || env["SSL_PORT"] != "8444" || env["HTTP_PORT"] != "8081" {
 				t.Fatalf("wrong application policy: %#v", env)
 			}
+			hasInternalMount := false
 			for _, mount := range app.VolumeMounts {
-				if mount.Name == owner.Name+"-internal" || mount.MountPath == "/etc/tls/internal" {
-					t.Fatal("native app still has serving keys")
+				if mount.Name == owner.Name+"-internal" && mount.MountPath == "/etc/tls/internal" && mount.ReadOnly {
+					hasInternalMount = true
 				}
+			}
+			if !hasInternalMount {
+				t.Fatal("application must mount internal Service certificate for Hypercorn bind")
+			}
+			if app.ReadinessProbe == nil || app.ReadinessProbe.Exec == nil || !slices.Contains(app.ReadinessProbe.Exec.Command, "http://127.0.0.1:8081/q/health/ready") {
+				t.Fatalf("expected loopback exec readiness probe, got %#v", app.ReadinessProbe)
 			}
 			if len(current.Spec.Template.Spec.Containers) != 3 {
 				t.Fatal("missing internal terminator")
@@ -91,7 +98,7 @@ func TestTASTLSDeploymentUpgradeAndPolicyRefresh(t *testing.T) {
 					}
 				}
 				if proxy.Name == "internal-tls-proxy" {
-					if !slices.Contains(proxy.Args, "--upstream=http://127.0.0.1:8080/") || !slices.Contains(proxy.Args, "--ignore-paths=/,/consumer/kserve/v2,/q/health/live,/q/health/ready") {
+					if !slices.Contains(proxy.Args, "--upstream=http://127.0.0.1:8081/") || !slices.Contains(proxy.Args, "--ignore-paths=/,/consumer/kserve/v2,/q/health/live,/q/health/ready") {
 						t.Fatal("internal proxy changed consumer/auth boundary")
 					}
 					if len(proxy.VolumeMounts) != 2 || proxy.VolumeMounts[0].Name != owner.Name+"-internal" || !proxy.VolumeMounts[0].ReadOnly {

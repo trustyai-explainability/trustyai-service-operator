@@ -3,11 +3,14 @@ package tas
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/images"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/utils"
 	pkgtls "github.com/trustyai-explainability/trustyai-service-operator/pkg/tls"
-	"reflect"
-	"strconv"
 
 	trustyaiopendatahubiov1 "github.com/trustyai-explainability/trustyai-service-operator/api/tas/v1"
 	"github.com/trustyai-explainability/trustyai-service-operator/controllers/constants"
@@ -24,10 +27,33 @@ import (
 
 const (
 	defaultBatchSize       = 5000
+	defaultMetricsSchedule = 5
 	deploymentTemplatePath = "service/deployment.tmpl.yaml"
 	caBundleAnnotation     = "config.openshift.io/inject-trusted-cabundle"
 	caBundleName           = "odh-trusted-ca-bundle"
 )
+
+// metricsScheduleSeconds converts CR metrics.schedule (Quarkus-style "5s"/"5m"
+// or a bare integer) into whole seconds for the Python service, which only
+// accepts SERVICE_METRICS_SCHEDULE as an integer.
+func metricsScheduleSeconds(schedule string) string {
+	schedule = strings.TrimSpace(schedule)
+	if schedule == "" {
+		return strconv.Itoa(defaultMetricsSchedule)
+	}
+	if secs, err := strconv.Atoi(schedule); err == nil && secs > 0 {
+		return strconv.Itoa(secs)
+	}
+	d, err := time.ParseDuration(schedule)
+	if err != nil || d <= 0 {
+		return strconv.Itoa(defaultMetricsSchedule)
+	}
+	secs := int(d.Round(time.Second) / time.Second)
+	if secs < 1 {
+		secs = 1
+	}
+	return strconv.Itoa(secs)
+}
 
 type CustomCertificatesBundle struct {
 	IsDefined     bool
@@ -74,7 +100,7 @@ func (r *TrustyAIServiceReconciler) createDeploymentObject(ctx context.Context, 
 		Instance:                 instance,
 		ServiceImage:             serviceImage,
 		KubeRBACProxyImage:       kubeRBACProxyImage,
-		Schedule:                 strconv.Itoa(batchSize),
+		Schedule:                 metricsScheduleSeconds(instance.Spec.Metrics.Schedule),
 		VolumeMountName:          volumeMountName,
 		PVCClaimName:             pvcName,
 		CustomCertificatesBundle: caBunble,

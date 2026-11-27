@@ -46,17 +46,24 @@ spec:
         - name: trustyai-service
           image: {{ .ServiceImage }}
           env:
-            # The sidecars own TLS; never mount serving keys in the Python app.
+            # Sidecars terminate Service TLS (8443/4443). The Python image only
+            # honors insecure_bind (127.0.0.1:HTTP_PORT) when cert files exist;
+            # without them Hypercorn falls back to 127.0.0.1:8000 and kubelet
+            # probes on :8080 CrashLoop the container. Mount the internal
+            # Service cert and bind native HTTPS on an unused port so HTTP_PORT
+            # stays reachable for the proxies.
             - name: TLS_POLICY
               value: system
             - name: TLS_REQUIRED
               value: "false"
             - name: TLS_CERT_FILE
-              value: /var/run/trustyai/no-native-tls/tls.crt
+              value: /etc/tls/internal/tls.crt
             - name: TLS_KEY_FILE
-              value: /var/run/trustyai/no-native-tls/tls.key
+              value: /etc/tls/internal/tls.key
             - name: HTTP_PORT
               value: "8081"
+            - name: SSL_PORT
+              value: "8444"
             - name: HEALTH_PORT
               value: "8080"
             - name: SERVICE_STORAGE_FORMAT
@@ -131,7 +138,7 @@ spec:
                   key: databaseGeneration
             {{ end }}
             - name: SERVICE_METRICS_SCHEDULE
-              value: {{ .Instance.Spec.Metrics.Schedule }}
+              value: "{{ .Schedule }}"
             - name: SERVICE_BATCH_SIZE
               value: {{ .BatchSize }}
             {{ if .Instance.IsMigration }}
@@ -142,29 +149,32 @@ spec:
             {{ end }}
           {{ if .Instance.IsMigration }}
           # Allow up to 30 minutes for migration before liveness takes over.
+          # Exec against loopback HTTP_PORT: the app binds 127.0.0.1 only.
           startupProbe:
-            httpGet:
-              path: /q/health/live
-              port: 8080
+            exec:
+              command: ["curl", "-sf", "http://127.0.0.1:8081/q/health/live"]
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 180
           {{ end }}
+          # HTTP is loopback-only (kube-rbac-proxy upstream); kubelet httpGet
+          # to the pod IP cannot reach it. Probe via exec on 127.0.0.1:8081.
           readinessProbe:
-            httpGet:
-              path: /q/health/ready
-              port: 8080
+            exec:
+              command: ["curl", "-sf", "http://127.0.0.1:8081/q/health/ready"]
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 2
           livenessProbe:
-            httpGet:
-              path: /q/health/live
-              port: 8080
+            exec:
+              command: ["curl", "-sf", "http://127.0.0.1:8081/q/health/live"]
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 2
           volumeMounts:
+            - name: {{ .Instance.Name }}-internal
+              mountPath: /etc/tls/internal
+              readOnly: true
             {{ if or (eq .Instance.Spec.Storage.Format "PVC") (.Instance.IsMigration) }}
             - name: {{ .VolumeMountName }}
               mountPath: {{ .Instance.Spec.Storage.Folder }}
@@ -241,7 +251,9 @@ spec:
           image: {{ .KubeRBACProxyImage }}
           args:
             - --secure-listen-address=0.0.0.0:4443
-            - --upstream=http://127.0.0.1:8080/
+            # Same loopback HTTP listener as kube-rbac-proxy; the Python image
+            # no longer serves a separate health app on :8080.
+            - --upstream=http://127.0.0.1:8081/
             - --config-file=/etc/kube-rbac-proxy/config.yaml
             - --ignore-paths=/,/consumer/kserve/v2,/q/health/live,/q/health/ready
 {{- range .ProxyTLSArgs }}

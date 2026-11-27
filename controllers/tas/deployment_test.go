@@ -536,7 +536,7 @@ var _ = Describe("TrustyAI operator", func() {
 
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_METRICS_SCHEDULE")
 			Expect(envVar).NotTo(BeNil(), "Env var SERVICE_METRICS_SCHEDULE not found")
-			Expect(envVar.Value).To(Equal("5s"))
+			Expect(envVar.Value).To(Equal("5"))
 
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "QUARKUS_HIBERNATE_ORM_ACTIVE")
 			Expect(envVar).NotTo(BeNil(), "Env var QUARKUS_HIBERNATE_ORM_ACTIVE not found")
@@ -624,7 +624,7 @@ var _ = Describe("TrustyAI operator", func() {
 
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_METRICS_SCHEDULE")
 			Expect(envVar).NotTo(BeNil(), "Env var SERVICE_METRICS_SCHEDULE not found")
-			Expect(envVar.Value).To(Equal("5s"))
+			Expect(envVar.Value).To(Equal("5"))
 
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "QUARKUS_HIBERNATE_ORM_ACTIVE")
 			Expect(envVar).NotTo(BeNil(), "Env var QUARKUS_HIBERNATE_ORM_ACTIVE not found")
@@ -757,7 +757,7 @@ var _ = Describe("TrustyAI operator", func() {
 
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "SERVICE_METRICS_SCHEDULE")
 			Expect(envVar).NotTo(BeNil(), "Env var SERVICE_METRICS_SCHEDULE not found")
-			Expect(envVar.Value).To(Equal("5s"))
+			Expect(envVar.Value).To(Equal("5"))
 
 			envVar = foundEnvVar(trustyaiServiceContainer.Env, "QUARKUS_HIBERNATE_ORM_ACTIVE")
 			Expect(envVar).NotTo(BeNil(), "Env var QUARKUS_HIBERNATE_ORM_ACTIVE not found")
